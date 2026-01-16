@@ -97,6 +97,7 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
         .create_topics { version >= 5 }
         .delete_topics { version >= 4 }
         .delete_records { version >= 2 }
+        .init_producer_id { version >= 2 }
         .describe_configs { version >= 4 }
         .alter_configs { version >= 2 }
         .create_partitions { version >= 2 }
@@ -134,6 +135,7 @@ pub fn parse_request_body(api_key ApiKey, version i16, body []u8) !RequestBody {
         .delete_topics { RequestBody(parse_delete_topics_request(mut reader, version, is_flexible)!) }
         .list_groups { RequestBody(parse_list_groups_request(mut reader, version, is_flexible)!) }
         .describe_groups { RequestBody(parse_describe_groups_request(mut reader, version, is_flexible)!) }
+        .init_producer_id { RequestBody(parse_init_producer_id_request(mut reader, version, is_flexible)!) }
         else { return error('unsupported API key: ${int(api_key)}') }
     }
 }
@@ -155,6 +157,7 @@ pub type RequestBody = ApiVersionsRequest
     | DeleteTopicsRequest
     | ListGroupsRequest
     | DescribeGroupsRequest
+    | InitProducerIdRequest
 
 // ApiVersions Request
 pub struct ApiVersionsRequest {
@@ -902,4 +905,45 @@ fn parse_describe_groups_request(mut reader BinaryReader, version i16, is_flexib
     if version >= 3 { include_authorized_operations = reader.read_i8()! != 0 }
     if is_flexible { reader.skip_tagged_fields()! }
     return DescribeGroupsRequest{ groups: groups, include_authorized_operations: include_authorized_operations }
+}
+
+// InitProducerId Request (API Key 22)
+// Used by idempotent/transactional producers to obtain a producer ID
+pub struct InitProducerIdRequest {
+pub:
+    transactional_id       ?string  // Nullable - null for non-transactional producer
+    transaction_timeout_ms i32      // Timeout for transactions
+    producer_id            i64      // Existing producer ID or -1 for new
+    producer_epoch         i16      // Existing epoch or -1 for new
+}
+
+fn parse_init_producer_id_request(mut reader BinaryReader, version i16, is_flexible bool) !InitProducerIdRequest {
+    // transactional_id: NULLABLE_STRING (v0-v1) / COMPACT_NULLABLE_STRING (v2+)
+    transactional_id := if is_flexible {
+        reader.read_compact_nullable_string()!
+    } else {
+        reader.read_nullable_string()!
+    }
+    
+    // transaction_timeout_ms: INT32
+    transaction_timeout_ms := reader.read_i32()!
+    
+    // producer_id and producer_epoch added in v3
+    mut producer_id := i64(-1)
+    mut producer_epoch := i16(-1)
+    if version >= 3 {
+        producer_id = reader.read_i64()!
+        producer_epoch = reader.read_i16()!
+    }
+    
+    if is_flexible {
+        reader.skip_tagged_fields()!
+    }
+    
+    return InitProducerIdRequest{
+        transactional_id: transactional_id
+        transaction_timeout_ms: transaction_timeout_ms
+        producer_id: producer_id
+        producer_epoch: producer_epoch
+    }
 }

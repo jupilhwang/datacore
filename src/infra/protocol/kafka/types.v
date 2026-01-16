@@ -223,6 +223,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
         ApiVersionRange{.create_topics, 0, 7},
         ApiVersionRange{.delete_topics, 0, 6},
         ApiVersionRange{.delete_records, 0, 2},
+        ApiVersionRange{.init_producer_id, 0, 4},
         ApiVersionRange{.describe_configs, 0, 4},
         ApiVersionRange{.alter_configs, 0, 2},
         ApiVersionRange{.create_partitions, 0, 3},

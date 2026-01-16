@@ -58,6 +58,7 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
         .describe_groups { h.handle_describe_groups(req.body, version)! }
         .create_topics { h.handle_create_topics(req.body, version)! }
         .delete_topics { h.handle_delete_topics(req.body, version)! }
+        .init_producer_id { h.handle_init_producer_id(req.body, version)! }
         else {
             // h.logger.warn('Unsupported API key: ${int(api_key)}')
             return error('unsupported API key: ${int(api_key)}')
@@ -85,11 +86,39 @@ fn (h Handler) handle_api_versions(version i16) []u8 {
 }
 
 // Metadata handler
-fn (h Handler) handle_metadata(body []u8, version i16) ![]u8 {
+fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
     _ := parse_metadata_request(mut reader, version, is_flexible_version(.metadata, version))!
     
-    // Build basic metadata response
+    // Get topics from storage
+    mut resp_topics := []MetadataResponseTopic{}
+    topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
+    
+    for topic in topic_list {
+        mut partitions := []MetadataResponsePartition{}
+        for p in 0 .. topic.partition_count {
+            partitions << MetadataResponsePartition{
+                error_code: 0
+                partition_index: p
+                leader_id: h.broker_id
+                leader_epoch: 0
+                replica_nodes: [h.broker_id]
+                isr_nodes: [h.broker_id]
+                offline_replicas: []
+            }
+        }
+        
+        resp_topics << MetadataResponseTopic{
+            error_code: 0
+            name: topic.name
+            topic_id: generate_uuid()  // TODO: Store and retrieve actual topic_id
+            is_internal: topic.is_internal
+            partitions: partitions
+            topic_authorized_ops: -2147483648  // Unknown
+        }
+    }
+    
+    // Build metadata response
     resp := MetadataResponse{
         throttle_time_ms: 0
         brokers: [
@@ -102,7 +131,7 @@ fn (h Handler) handle_metadata(body []u8, version i16) ![]u8 {
         ]
         cluster_id: h.cluster_id
         controller_id: h.broker_id
-        topics: []  // TODO: Get topics from storage
+        topics: resp_topics
     }
     
     return resp.encode(version)
@@ -125,8 +154,8 @@ fn (h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
     return resp.encode(version)
 }
 
-// Produce handler (placeholder)
-fn (h Handler) handle_produce(body []u8, version i16) ![]u8 {
+// Produce handler - stores records in storage
+fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
     req := parse_produce_request(mut reader, version, is_flexible_version(.produce, version))!
     
@@ -134,13 +163,59 @@ fn (h Handler) handle_produce(body []u8, version i16) ![]u8 {
     for t in req.topic_data {
         mut partitions := []ProduceResponsePartition{}
         for p in t.partition_data {
-            // TODO: Store records
+            // Parse RecordBatch to extract records
+            parsed := parse_record_batch(p.records) or {
+                // If parsing fails, return error
+                partitions << ProduceResponsePartition{
+                    index: p.index
+                    error_code: i16(ErrorCode.corrupt_message)
+                    base_offset: -1
+                    log_append_time: -1
+                    log_start_offset: -1
+                }
+                continue
+            }
+            
+            if parsed.records.len == 0 {
+                // No records to store
+                partitions << ProduceResponsePartition{
+                    index: p.index
+                    error_code: 0
+                    base_offset: 0
+                    log_append_time: -1
+                    log_start_offset: 0
+                }
+                continue
+            }
+            
+            // Store records in storage
+            result := h.storage.append(t.name, int(p.index), parsed.records) or {
+                // Determine error code based on error
+                error_code := if err.str().contains('not found') {
+                    i16(ErrorCode.unknown_topic_or_partition)
+                } else if err.str().contains('out of range') {
+                    i16(ErrorCode.unknown_topic_or_partition)
+                } else {
+                    i16(ErrorCode.unknown_server_error)
+                }
+                
+                partitions << ProduceResponsePartition{
+                    index: p.index
+                    error_code: error_code
+                    base_offset: -1
+                    log_append_time: -1
+                    log_start_offset: -1
+                }
+                continue
+            }
+            
+            // Success
             partitions << ProduceResponsePartition{
                 index: p.index
                 error_code: 0
-                base_offset: 0
-                log_append_time: -1
-                log_start_offset: 0
+                base_offset: result.base_offset
+                log_append_time: result.log_append_time
+                log_start_offset: result.log_start_offset
             }
         }
         topics << ProduceResponseTopic{
@@ -157,8 +232,8 @@ fn (h Handler) handle_produce(body []u8, version i16) ![]u8 {
     return resp.encode(version)
 }
 
-// Fetch handler (placeholder)
-fn (h Handler) handle_fetch(body []u8, version i16) ![]u8 {
+// Fetch handler - retrieves records from storage
+fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
     req := parse_fetch_request(mut reader, version, is_flexible_version(.fetch, version))!
     
@@ -166,14 +241,42 @@ fn (h Handler) handle_fetch(body []u8, version i16) ![]u8 {
     for t in req.topics {
         mut partitions := []FetchResponsePartition{}
         for p in t.partitions {
-            // TODO: Fetch records from storage
+            // Fetch records from storage
+            result := h.storage.fetch(t.name, int(p.partition), p.fetch_offset, p.partition_max_bytes) or {
+                // Handle errors
+                error_code := if err.str().contains('not found') {
+                    i16(ErrorCode.unknown_topic_or_partition)
+                } else if err.str().contains('out of range') {
+                    i16(ErrorCode.offset_out_of_range)
+                } else {
+                    i16(ErrorCode.unknown_server_error)
+                }
+                
+                partitions << FetchResponsePartition{
+                    partition_index: p.partition
+                    error_code: error_code
+                    high_watermark: 0
+                    last_stable_offset: 0
+                    log_start_offset: 0
+                    records: []u8{}
+                }
+                continue
+            }
+            
+            // Encode records as RecordBatch
+            records_data := if result.records.len > 0 {
+                encode_record_batch(result.records, p.fetch_offset)
+            } else {
+                []u8{}
+            }
+            
             partitions << FetchResponsePartition{
                 partition_index: p.partition
                 error_code: 0
-                high_watermark: 0
-                last_stable_offset: 0
-                log_start_offset: 0
-                records: []u8{}
+                high_watermark: result.high_watermark
+                last_stable_offset: result.last_stable_offset
+                log_start_offset: result.log_start_offset
+                records: records_data
             }
         }
         topics << FetchResponseTopic{
@@ -192,8 +295,8 @@ fn (h Handler) handle_fetch(body []u8, version i16) ![]u8 {
     return resp.encode(version)
 }
 
-// ListOffsets handler (placeholder)
-fn (h Handler) handle_list_offsets(body []u8, version i16) ![]u8 {
+// ListOffsets handler - retrieves partition offset info from storage
+fn (mut h Handler) handle_list_offsets(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
     req := parse_list_offsets_request(mut reader, version, is_flexible_version(.list_offsets, version))!
     
@@ -201,11 +304,31 @@ fn (h Handler) handle_list_offsets(body []u8, version i16) ![]u8 {
     for t in req.topics {
         mut partitions := []ListOffsetsResponsePartition{}
         for p in t.partitions {
+            // Get partition info from storage
+            info := h.storage.get_partition_info(t.name, int(p.partition_index)) or {
+                partitions << ListOffsetsResponsePartition{
+                    partition_index: p.partition_index
+                    error_code: i16(ErrorCode.unknown_topic_or_partition)
+                    timestamp: -1
+                    offset: -1
+                }
+                continue
+            }
+            
+            // Handle special timestamps:
+            // -1 = latest offset (high watermark)
+            // -2 = earliest offset
+            offset := match p.timestamp {
+                -1 { info.latest_offset }      // LATEST
+                -2 { info.earliest_offset }    // EARLIEST
+                else { info.latest_offset }    // For specific timestamps, return latest (simplified)
+            }
+            
             partitions << ListOffsetsResponsePartition{
                 partition_index: p.partition_index
                 error_code: 0
-                timestamp: -1
-                offset: 0
+                timestamp: p.timestamp
+                offset: offset
             }
         }
         topics << ListOffsetsResponseTopic{
@@ -508,4 +631,49 @@ fn generate_uuid() []u8 {
     uuid[6] = (uuid[6] & 0x0f) | 0x40  // Version 4
     uuid[8] = (uuid[8] & 0x3f) | 0x80  // Variant RFC 4122
     return uuid
+}
+
+// Handle InitProducerId (API Key 22)
+// Returns a producer ID for idempotent/transactional producers
+fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
+    is_flexible := is_flexible_version(.init_producer_id, version)
+    mut reader := new_reader(body)
+    req := parse_init_producer_id_request(mut reader, version, is_flexible)!
+    
+    mut producer_id := req.producer_id
+    mut producer_epoch := req.producer_epoch
+    mut error_code := i16(ErrorCode.none)
+    
+    // For new producers (producer_id == -1), generate a new producer ID
+    if producer_id == -1 {
+        // Generate a unique producer ID using random number
+        // In production, this should be coordinated across brokers
+        producer_id = rand.i64()
+        if producer_id < 0 {
+            producer_id = -producer_id  // Ensure positive
+        }
+        producer_epoch = 0
+    } else {
+        // Existing producer - increment epoch
+        producer_epoch += 1
+    }
+    
+    // Note: Transactional ID handling would require additional state management
+    // For now, we support idempotent producers only
+    if transactional_id := req.transactional_id {
+        if transactional_id.len > 0 {
+            // Transactional producers require coordinator support
+            // For now, return success but don't track transactions
+            _ = transactional_id  // Acknowledge but don't use yet
+        }
+    }
+    
+    resp := InitProducerIdResponse{
+        throttle_time_ms: 0
+        error_code: error_code
+        producer_id: producer_id
+        producer_epoch: producer_epoch
+    }
+    
+    return resp.encode(version)
 }

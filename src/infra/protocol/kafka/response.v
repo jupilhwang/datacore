@@ -54,6 +54,7 @@ pub type ResponseBody = ApiVersionsResponse
     | DeleteTopicsResponse
     | ListGroupsResponse
     | DescribeGroupsResponse
+    | InitProducerIdResponse
 
 // ApiVersions Response
 pub struct ApiVersionsResponse {
@@ -352,6 +353,22 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
             }
             if version >= 5 {
                 writer.write_i64(p.log_start_offset)
+            }
+            // v8+: record_errors (empty array for success)
+            if version >= 8 {
+                if is_flexible {
+                    writer.write_compact_array_len(0)  // No record errors
+                } else {
+                    writer.write_array_len(0)
+                }
+            }
+            // v8+: error_message (null for success)
+            if version >= 8 {
+                if is_flexible {
+                    writer.write_compact_nullable_string(none)
+                } else {
+                    writer.write_nullable_string(none)
+                }
             }
             if is_flexible {
                 writer.write_tagged_fields()
@@ -1098,6 +1115,40 @@ pub fn (r DescribeGroupsResponse) encode(version i16) []u8 {
         }
     }
     
+    if is_flexible {
+        writer.write_tagged_fields()
+    }
+    
+    return writer.bytes()
+}
+
+// InitProducerId Response (API Key 22)
+// Returns a producer ID for idempotent/transactional producers
+pub struct InitProducerIdResponse {
+pub:
+    throttle_time_ms i32  // Throttle time in milliseconds
+    error_code       i16  // Error code (0 = success)
+    producer_id      i64  // Assigned producer ID
+    producer_epoch   i16  // Producer epoch
+}
+
+pub fn (r InitProducerIdResponse) encode(version i16) []u8 {
+    is_flexible := version >= 2
+    mut writer := new_writer()
+    
+    // throttle_time_ms: INT32 (v0+)
+    writer.write_i32(r.throttle_time_ms)
+    
+    // error_code: INT16 (v0+)
+    writer.write_i16(r.error_code)
+    
+    // producer_id: INT64 (v0+)
+    writer.write_i64(r.producer_id)
+    
+    // producer_epoch: INT16 (v0+)
+    writer.write_i16(r.producer_epoch)
+    
+    // Tagged fields for flexible versions
     if is_flexible {
         writer.write_tagged_fields()
     }

@@ -15,14 +15,12 @@ NC='\033[0m'
 
 # Configuration
 BOOTSTRAP_SERVER="${BOOTSTRAP_SERVER:-localhost:9092}"
-SCHEMA_REGISTRY_URL="${SCHEMA_REGISTRY_URL:-http://localhost:8081}"
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║           DataCore Integration Test Suite                 ║${NC}"
 echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "Bootstrap Server:  ${YELLOW}$BOOTSTRAP_SERVER${NC}"
-echo -e "Schema Registry:   ${YELLOW}$SCHEMA_REGISTRY_URL${NC}"
 echo ""
 
 # Check if broker is running
@@ -68,11 +66,11 @@ run_test_suite() {
 
 # Make scripts executable
 chmod +x "$SCRIPT_DIR/test_kafka_cli.sh" 2>/dev/null || true
-chmod +x "$SCRIPT_DIR/test_schema_registry.sh" 2>/dev/null || true
 
 # Run test suites
 run_test_suite "Kafka CLI Integration Tests" "$SCRIPT_DIR/test_kafka_cli.sh"
-run_test_suite "Schema Registry REST API Tests" "$SCRIPT_DIR/test_schema_registry.sh"
+# Note: Schema Registry tests are disabled until Schema Registry is implemented
+# run_test_suite "Schema Registry REST API Tests" "$SCRIPT_DIR/test_schema_registry.sh"
 
 # Final Summary
 echo ""

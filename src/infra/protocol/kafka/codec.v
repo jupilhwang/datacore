@@ -2,6 +2,9 @@
 // Binary Reader/Writer in Big Endian format (Kafka wire format)
 module kafka
 
+import domain
+import time
+
 // Binary Reader
 pub struct BinaryReader {
 pub mut:
@@ -353,4 +356,250 @@ pub fn (mut w BinaryWriter) write_tagged_fields() {
 
 pub fn (mut w BinaryWriter) write_raw(b []u8) {
     w.data << b
+}
+
+// ============================================================
+// RecordBatch Parsing (Kafka Message Format v2)
+// ============================================================
+
+// ParsedRecordBatch represents a parsed Kafka RecordBatch
+pub struct ParsedRecordBatch {
+pub:
+    base_offset             i64
+    partition_leader_epoch  i32
+    magic                   i8
+    attributes              i16
+    last_offset_delta       i32
+    first_timestamp         i64
+    max_timestamp           i64
+    producer_id             i64
+    producer_epoch          i16
+    base_sequence           i32
+    records                 []domain.Record
+}
+
+// parse_record_batch parses a Kafka RecordBatch (v2 format, magic=2)
+// Returns parsed records or empty array if parsing fails
+pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
+    if data.len < 61 {
+        // Minimum RecordBatch size: 8+4+4+1+4+2+4+8+8+8+2+4+4 = 61 bytes header
+        return error('record batch too small')
+    }
+    
+    mut reader := new_reader(data)
+    
+    // RecordBatch header
+    base_offset := reader.read_i64()!
+    batch_length := reader.read_i32()!
+    
+    if data.len < 12 + int(batch_length) {
+        return error('incomplete record batch')
+    }
+    
+    partition_leader_epoch := reader.read_i32()!
+    magic := reader.read_i8()!
+    
+    if magic != 2 {
+        // Only support v2 format (magic=2)
+        // For older formats, return empty records
+        return ParsedRecordBatch{
+            base_offset: base_offset
+            magic: magic
+            records: []
+        }
+    }
+    
+    _ = reader.read_i32()!  // crc (skip validation for now)
+    attributes := reader.read_i16()!
+    last_offset_delta := reader.read_i32()!
+    first_timestamp := reader.read_i64()!
+    max_timestamp := reader.read_i64()!
+    producer_id := reader.read_i64()!
+    producer_epoch := reader.read_i16()!
+    base_sequence := reader.read_i32()!
+    record_count := reader.read_i32()!
+    
+    // Parse records
+    mut records := []domain.Record{cap: int(record_count)}
+    
+    for _ in 0 .. record_count {
+        record := parse_record(mut reader, first_timestamp) or { break }
+        records << record
+    }
+    
+    return ParsedRecordBatch{
+        base_offset: base_offset
+        partition_leader_epoch: partition_leader_epoch
+        magic: magic
+        attributes: attributes
+        last_offset_delta: last_offset_delta
+        first_timestamp: first_timestamp
+        max_timestamp: max_timestamp
+        producer_id: producer_id
+        producer_epoch: producer_epoch
+        base_sequence: base_sequence
+        records: records
+    }
+}
+
+// parse_record parses a single Record from RecordBatch v2
+fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
+    _ = reader.read_varint()!  // length (already included in batch)
+    _ = reader.read_i8()!      // attributes (unused in v2)
+    timestamp_delta := reader.read_varint()!
+    _ = reader.read_varint()!  // offset_delta
+    
+    // Key
+    key_length := reader.read_varint()!
+    mut key := []u8{}
+    if key_length > 0 {
+        if reader.remaining() < int(key_length) {
+            return error('not enough data for key')
+        }
+        key = reader.data[reader.pos..reader.pos + int(key_length)].clone()
+        reader.pos += int(key_length)
+    }
+    
+    // Value
+    value_length := reader.read_varint()!
+    mut value := []u8{}
+    if value_length > 0 {
+        if reader.remaining() < int(value_length) {
+            return error('not enough data for value')
+        }
+        value = reader.data[reader.pos..reader.pos + int(value_length)].clone()
+        reader.pos += int(value_length)
+    }
+    
+    // Headers
+    headers_count := reader.read_varint()!
+    mut headers := map[string][]u8{}
+    
+    for _ in 0 .. headers_count {
+        header_key_len := reader.read_varint()!
+        mut header_key := ''
+        if header_key_len > 0 {
+            if reader.remaining() < int(header_key_len) {
+                return error('not enough data for header key')
+            }
+            header_key = reader.data[reader.pos..reader.pos + int(header_key_len)].bytestr()
+            reader.pos += int(header_key_len)
+        }
+        
+        header_value_len := reader.read_varint()!
+        mut header_value := []u8{}
+        if header_value_len > 0 {
+            if reader.remaining() < int(header_value_len) {
+                return error('not enough data for header value')
+            }
+            header_value = reader.data[reader.pos..reader.pos + int(header_value_len)].clone()
+            reader.pos += int(header_value_len)
+        }
+        
+        if header_key.len > 0 {
+            headers[header_key] = header_value
+        }
+    }
+    
+    // Calculate timestamp
+    ts_millis := base_timestamp + timestamp_delta
+    ts := time.unix(ts_millis / 1000)
+    
+    return domain.Record{
+        key: key
+        value: value
+        headers: headers
+        timestamp: ts
+    }
+}
+
+// ============================================================
+// RecordBatch Encoding (for Fetch responses)
+// ============================================================
+
+// encode_record_batch encodes records into Kafka RecordBatch v2 format
+pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
+    if records.len == 0 {
+        return []u8{}
+    }
+    
+    mut writer := new_writer()
+    
+    // Calculate timestamps
+    now := time.now()
+    first_timestamp := now.unix() * 1000
+    
+    // Encode records first to calculate batch size
+    mut records_data := new_writer()
+    for i, record in records {
+        encode_record(mut records_data, record, i, first_timestamp)
+    }
+    
+    records_bytes := records_data.bytes()
+    
+    // RecordBatch header fields
+    // Batch length = header (49 bytes) + records
+    batch_length := 49 + records_bytes.len
+    
+    writer.write_i64(base_offset)                    // baseOffset
+    writer.write_i32(i32(batch_length))              // batchLength
+    writer.write_i32(0)                              // partitionLeaderEpoch
+    writer.write_i8(2)                               // magic (v2)
+    writer.write_i32(0)                              // crc (TODO: calculate)
+    writer.write_i16(0)                              // attributes
+    writer.write_i32(i32(records.len - 1))           // lastOffsetDelta
+    writer.write_i64(first_timestamp)                // firstTimestamp
+    writer.write_i64(first_timestamp)                // maxTimestamp
+    writer.write_i64(-1)                             // producerId
+    writer.write_i16(-1)                             // producerEpoch
+    writer.write_i32(-1)                             // baseSequence
+    writer.write_i32(i32(records.len))               // recordCount
+    writer.write_raw(records_bytes)                  // records
+    
+    return writer.bytes()
+}
+
+// encode_record encodes a single record in RecordBatch v2 format
+fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int, base_timestamp i64) {
+    // Build record body first to calculate length
+    mut body := new_writer()
+    
+    body.write_i8(0)  // attributes
+    
+    // timestamp delta
+    ts_millis := record.timestamp.unix() * 1000
+    body.write_varint(ts_millis - base_timestamp)
+    
+    // offset delta
+    body.write_varint(i64(offset_delta))
+    
+    // key
+    if record.key.len > 0 {
+        body.write_varint(i64(record.key.len))
+        body.write_raw(record.key)
+    } else {
+        body.write_varint(-1)  // null key
+    }
+    
+    // value
+    if record.value.len > 0 {
+        body.write_varint(i64(record.value.len))
+        body.write_raw(record.value)
+    } else {
+        body.write_varint(-1)  // null value
+    }
+    
+    // headers
+    body.write_varint(i64(record.headers.len))
+    for key, value in record.headers {
+        body.write_varint(i64(key.len))
+        body.write_raw(key.bytes())
+        body.write_varint(i64(value.len))
+        body.write_raw(value)
+    }
+    
+    // Write length + body
+    body_bytes := body.bytes()
+    writer.write_varint(i64(body_bytes.len))
+    writer.write_raw(body_bytes)
 }
