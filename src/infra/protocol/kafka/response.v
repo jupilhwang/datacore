@@ -402,6 +402,7 @@ pub:
 pub struct FetchResponseTopic {
 pub:
     name        string
+    topic_id    []u8  // UUID for v13+
     partitions  []FetchResponsePartition
 }
 
@@ -434,11 +435,18 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
     }
     
     for t in r.topics {
-        if is_flexible {
+        // v13+: topic_id (UUID) instead of name
+        if version >= 13 {
+            writer.write_uuid(t.topic_id)
+        } else if is_flexible {
             writer.write_compact_string(t.name)
-            writer.write_compact_array_len(t.partitions.len)
         } else {
             writer.write_string(t.name)
+        }
+        
+        if is_flexible {
+            writer.write_compact_array_len(t.partitions.len)
+        } else {
             writer.write_array_len(t.partitions.len)
         }
         
@@ -451,6 +459,10 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
             }
             if version >= 5 {
                 writer.write_i64(p.log_start_offset)
+            }
+            // v11+: preferred_read_replica
+            if version >= 11 {
+                writer.write_i32(-1)  // No preferred replica
             }
             // Aborted transactions (skip for now)
             if version >= 4 {

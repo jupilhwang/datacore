@@ -375,6 +375,7 @@ pub:
 pub struct FetchRequestTopic {
 pub:
     name        string
+    topic_id    []u8  // UUID for v13+
     partitions  []FetchRequestPartition
 }
 
@@ -386,6 +387,12 @@ pub:
 }
 
 fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequest {
+    // v12+: cluster_id (COMPACT_NULLABLE_STRING)
+    if version >= 12 {
+        _ = reader.read_compact_nullable_string()!
+    }
+    
+    // replica_id: removed in v15, but still present in v13
     replica_id := reader.read_i32()!
     max_wait_ms := reader.read_i32()!
     min_bytes := reader.read_i32()!
@@ -400,7 +407,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
         isolation_level = reader.read_i8()!
     }
     
-    // Skip session_id and session_epoch for version >= 7
+    // session_id and session_epoch for version >= 7
     if version >= 7 {
         _ = reader.read_i32()!  // session_id
         _ = reader.read_i32()!  // session_epoch
@@ -414,10 +421,18 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
     
     mut topics := []FetchRequestTopic{}
     for _ in 0 .. topic_count {
-        name := if is_flexible {
-            reader.read_compact_string()!
+        // v13+: topic_id (UUID) instead of name
+        mut name := ''
+        mut topic_id := []u8{}
+        if version >= 13 {
+            topic_id = reader.read_uuid()!  // UUID is 16 bytes
+            // We need to look up the topic name by topic_id
+            // For now, we'll store the topic_id and handle it in the handler
+            name = ''  // Empty name, will use topic_id
+        } else if is_flexible {
+            name = reader.read_compact_string()!
         } else {
-            reader.read_string()!
+            name = reader.read_string()!
         }
         
         partition_count := if is_flexible {
@@ -462,11 +477,51 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
         
         topics << FetchRequestTopic{
             name: name
+            topic_id: topic_id
             partitions: partitions
         }
         
         if is_flexible {
             reader.skip_tagged_fields()!
+        }
+    }
+    
+    // v7+: forgotten_topics_data
+    if version >= 7 {
+        forgotten_count := if is_flexible {
+            reader.read_compact_array_len()!
+        } else {
+            reader.read_array_len()!
+        }
+        for _ in 0 .. forgotten_count {
+            if version >= 13 {
+                _ = reader.read_uuid()!  // topic_id UUID
+            } else if is_flexible {
+                _ = reader.read_compact_string()!  // topic name
+            } else {
+                _ = reader.read_string()!
+            }
+            // partitions array
+            forgotten_partitions_count := if is_flexible {
+                reader.read_compact_array_len()!
+            } else {
+                reader.read_array_len()!
+            }
+            for _ in 0 .. forgotten_partitions_count {
+                _ = reader.read_i32()!  // partition
+            }
+            if is_flexible {
+                reader.skip_tagged_fields()!
+            }
+        }
+    }
+    
+    // v11+: rack_id
+    if version >= 11 {
+        if is_flexible {
+            _ = reader.read_compact_string()!
+        } else {
+            _ = reader.read_string()!
         }
     }
     
