@@ -199,6 +199,7 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
         cluster_id: h.cluster_id
         controller_id: h.broker_id
         topics: resp_topics
+        cluster_authorized_ops: -2147483648  // Unknown
     }
 }
 
@@ -389,7 +390,7 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
         resp_topics << MetadataResponseTopic{
             error_code: 0
             name: topic.name
-            topic_id: generate_uuid()  // TODO: Store and retrieve actual topic_id
+            topic_id: topic.topic_id
             is_internal: topic.is_internal
             partitions: partitions
             topic_authorized_ops: -2147483648  // Unknown
@@ -410,6 +411,7 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
         cluster_id: h.cluster_id
         controller_id: h.broker_id
         topics: resp_topics
+        cluster_authorized_ops: -2147483648  // Unknown
     }
     
     return resp.encode(version)
@@ -521,17 +523,13 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
     mut topics := []FetchResponseTopic{}
     for t in req.topics {
         // For v13+, we need to find topic name from topic_id
-        // Since we don't have a topic_id -> name mapping in storage yet,
-        // we'll try to find it from the topic list
         mut topic_name := t.name
+        mut topic_id := t.topic_id.clone()
         if version >= 13 && t.topic_id.len == 16 {
-            // Search for topic by iterating through all topics
-            // This is inefficient but works for now
-            topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
-            if topic_list.len > 0 {
-                // Just use the first topic as a workaround
-                // In a real implementation, we'd store and match topic_id
-                topic_name = topic_list[0].name
+            // Look up topic by ID
+            if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
+                topic_name = topic_meta.name
+                topic_id = topic_meta.topic_id.clone()
             }
         }
         
@@ -577,7 +575,7 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
         }
         topics << FetchResponseTopic{
             name: topic_name
-            topic_id: t.topic_id
+            topic_id: topic_id
             partitions: partitions
         }
     }
@@ -828,7 +826,7 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
         // Try to create topic in storage
         partitions := if t.num_partitions <= 0 { 1 } else { int(t.num_partitions) }
         
-        h.storage.create_topic(t.name, partitions, topic_config) or {
+        created_meta := h.storage.create_topic(t.name, partitions, topic_config) or {
             // Determine error code based on error message
             error_code := if err.str().contains('already exists') {
                 i16(ErrorCode.topic_already_exists)
@@ -849,10 +847,10 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
             continue
         }
         
-        // Success
+        // Success - use topic_id from created metadata
         topics << CreateTopicsResponseTopic{
             name: t.name
-            topic_id: generate_uuid()
+            topic_id: created_meta.topic_id
             error_code: 0
             error_message: none
             num_partitions: t.num_partitions
@@ -886,9 +884,28 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
     req := parse_delete_topics_request(mut reader, version, is_flexible_version(.delete_topics, version))!
     
     mut topics := []DeleteTopicsResponseTopic{}
-    for name in req.topics {
+    for t in req.topics {
+        // For v6+, we may need to find topic name from topic_id
+        mut topic_name := t.name
+        mut topic_id := t.topic_id.clone()
+        
+        if version >= 6 && t.name.len == 0 && t.topic_id.len == 16 {
+            // Look up topic by ID
+            if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
+                topic_name = topic_meta.name
+                topic_id = topic_meta.topic_id.clone()
+            } else {
+                topics << DeleteTopicsResponseTopic{
+                    name: ''
+                    topic_id: t.topic_id
+                    error_code: i16(ErrorCode.unknown_topic_or_partition)
+                }
+                continue
+            }
+        }
+        
         // Try to delete topic from storage
-        h.storage.delete_topic(name) or {
+        h.storage.delete_topic(topic_name) or {
             // Determine error code based on error message
             error_code := if err.str().contains('not found') {
                 i16(ErrorCode.unknown_topic_or_partition)
@@ -899,7 +916,8 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
             }
             
             topics << DeleteTopicsResponseTopic{
-                name: name
+                name: topic_name
+                topic_id: topic_id
                 error_code: error_code
             }
             continue
@@ -907,7 +925,8 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
         
         // Success
         topics << DeleteTopicsResponseTopic{
-            name: name
+            name: topic_name
+            topic_id: topic_id
             error_code: 0
         }
     }

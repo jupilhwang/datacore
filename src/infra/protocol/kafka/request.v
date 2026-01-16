@@ -758,10 +758,14 @@ pub:
 
 fn parse_offset_commit_request(mut reader BinaryReader, version i16, is_flexible bool) !OffsetCommitRequest {
     group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-    // Skip generation_id, member_id for older versions
+    // v1+: generation_id
     if version >= 1 { _ = reader.read_i32()! }
+    // v1+: member_id
     if version >= 1 { _ = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! } }
-    if version >= 7 { _ = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! } }
+    // v7+: group_instance_id
+    if version >= 7 { _ = if is_flexible { reader.read_compact_nullable_string()! } else { reader.read_nullable_string()! } }
+    // v2-v4: retention_time_ms (deprecated, removed in v5)
+    if version >= 2 && version <= 4 { _ = reader.read_i64()! }
     
     count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
     mut topics := []OffsetCommitRequestTopic{}
@@ -772,8 +776,11 @@ fn parse_offset_commit_request(mut reader BinaryReader, version i16, is_flexible
         for _ in 0 .. pcount {
             pi := reader.read_i32()!
             co := reader.read_i64()!
-            if version >= 6 { _ = reader.read_i32()! }  // committed_leader_epoch
-            cm := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+            // v6+: committed_leader_epoch
+            if version >= 6 { _ = reader.read_i32()! }
+            // v1-v4: commit_timestamp (deprecated, removed in v5)
+            if version >= 1 && version <= 4 { _ = reader.read_i64()! }
+            cm := if is_flexible { reader.read_compact_nullable_string() or { '' } } else { reader.read_nullable_string() or { '' } }
             partitions << OffsetCommitRequestPartition{ partition_index: pi, committed_offset: co, committed_metadata: cm }
             if is_flexible { reader.skip_tagged_fields()! }
         }
@@ -862,8 +869,9 @@ fn parse_list_offsets_request(mut reader BinaryReader, version i16, is_flexible 
 
 pub struct CreateTopicsRequest {
 pub:
-    topics      []CreateTopicsRequestTopic
-    timeout_ms  i32
+    topics        []CreateTopicsRequestTopic
+    timeout_ms    i32
+    validate_only bool  // v4+
 }
 
 pub struct CreateTopicsRequestTopic {
@@ -905,22 +913,42 @@ fn parse_create_topics_request(mut reader BinaryReader, version i16, is_flexible
         if is_flexible { reader.skip_tagged_fields()! }
     }
     timeout_ms := reader.read_i32()!
+    // v4+: validate_only field
+    validate_only := if version >= 4 { reader.read_i8()! != 0 } else { false }
     if is_flexible { reader.skip_tagged_fields()! }
-    return CreateTopicsRequest{ topics: topics, timeout_ms: timeout_ms }
+    return CreateTopicsRequest{ topics: topics, timeout_ms: timeout_ms, validate_only: validate_only }
 }
 
 pub struct DeleteTopicsRequest {
 pub:
-    topics      []string
+    topics      []DeleteTopicsRequestTopic
     timeout_ms  i32
+}
+
+pub struct DeleteTopicsRequestTopic {
+pub:
+    name     string  // v0-v5, or empty for v6+
+    topic_id []u8    // v6+: UUID (16 bytes)
 }
 
 fn parse_delete_topics_request(mut reader BinaryReader, version i16, is_flexible bool) !DeleteTopicsRequest {
     count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
-    mut topics := []string{}
+    mut topics := []DeleteTopicsRequestTopic{}
     for _ in 0 .. count {
-        topics << if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-        if is_flexible && version >= 6 { reader.skip_tagged_fields()! }
+        mut name := ''
+        mut topic_id := []u8{}
+        
+        if version >= 6 {
+            // v6+: topics array contains { name: compact_nullable_string, topic_id: uuid }
+            name = reader.read_compact_nullable_string() or { '' }
+            topic_id = reader.read_uuid()!
+        } else {
+            // v0-v5: topics is just string array
+            name = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+        }
+        
+        topics << DeleteTopicsRequestTopic{ name: name, topic_id: topic_id }
+        if is_flexible { reader.skip_tagged_fields()! }
     }
     timeout_ms := reader.read_i32()!
     if is_flexible { reader.skip_tagged_fields()! }
@@ -974,11 +1002,13 @@ pub:
 
 fn parse_init_producer_id_request(mut reader BinaryReader, version i16, is_flexible bool) !InitProducerIdRequest {
     // transactional_id: NULLABLE_STRING (v0-v1) / COMPACT_NULLABLE_STRING (v2+)
-    transactional_id := if is_flexible {
+    raw_transactional_id := if is_flexible {
         reader.read_compact_nullable_string()!
     } else {
         reader.read_nullable_string()!
     }
+    // Convert empty string to none for optional type
+    transactional_id := if raw_transactional_id.len > 0 { ?string(raw_transactional_id) } else { ?string(none) }
     
     // transaction_timeout_ms: INT32
     transaction_timeout_ms := reader.read_i32()!

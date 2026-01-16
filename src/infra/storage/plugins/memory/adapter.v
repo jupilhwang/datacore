@@ -6,6 +6,7 @@ import domain
 import service.port
 import sync
 import time
+import rand
 
 // MemoryStorageAdapter implements port.StoragePort
 pub struct MemoryStorageAdapter {
@@ -63,13 +64,22 @@ pub fn new_memory_adapter_with_config(config MemoryConfig) &MemoryStorageAdapter
 // Topic Operations
 // ============================================================
 
-pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) ! {
+pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
     a.global_lock.@lock()
     defer { a.global_lock.unlock() }
     
     if name in a.topics {
         return error('topic already exists')
     }
+    
+    // Generate UUID for topic_id
+    mut topic_id := []u8{len: 16}
+    for i in 0 .. 16 {
+        topic_id[i] = u8(rand.intn(256) or { 0 })
+    }
+    // Set UUID version 4 (random)
+    topic_id[6] = (topic_id[6] & 0x0f) | 0x40
+    topic_id[8] = (topic_id[8] & 0x3f) | 0x80
     
     // Create partition stores
     mut partition_stores := []&PartitionStore{cap: partitions}
@@ -81,16 +91,21 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
         }
     }
     
+    metadata := domain.TopicMetadata{
+        name: name
+        topic_id: topic_id
+        partition_count: partitions
+        config: map[string]string{}
+        is_internal: name.starts_with('__')
+    }
+    
     a.topics[name] = &TopicStore{
-        metadata: domain.TopicMetadata{
-            name: name
-            partition_count: partitions
-            config: map[string]string{}
-            is_internal: name.starts_with('__')
-        }
+        metadata: metadata
         config: config
         partitions: partition_stores
     }
+    
+    return metadata
 }
 
 pub fn (mut a MemoryStorageAdapter) delete_topic(name string) ! {
@@ -120,6 +135,18 @@ pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata
     
     if topic := a.topics[name] {
         return topic.metadata
+    }
+    return error('topic not found')
+}
+
+pub fn (mut a MemoryStorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+    a.global_lock.rlock()
+    defer { a.global_lock.runlock() }
+    
+    for _, topic in a.topics {
+        if topic.metadata.topic_id == topic_id {
+            return topic.metadata
+        }
     }
     return error('topic not found')
 }

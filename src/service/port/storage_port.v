@@ -9,10 +9,11 @@ import domain
 pub interface StoragePort {
 mut:
     // Topic operations
-    create_topic(name string, partitions int, config domain.TopicConfig) !
+    create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata
     delete_topic(name string) !
     list_topics() ![]domain.TopicMetadata
     get_topic(name string) !domain.TopicMetadata
+    get_topic_by_id(topic_id []u8) !domain.TopicMetadata
     add_partitions(name string, new_count int) !
     
     // Record operations

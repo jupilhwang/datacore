@@ -26,6 +26,7 @@ pub:
 pub struct TopicMetadata {
 pub:
     name                string
+    topic_id            []u8  // UUID, 16 bytes
     partition_count     int
     config              map[string]string
     is_internal         bool

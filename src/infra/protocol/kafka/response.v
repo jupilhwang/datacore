@@ -126,11 +126,12 @@ pub fn new_api_versions_response() ApiVersionsResponse {
 // Metadata Response
 pub struct MetadataResponse {
 pub:
-    throttle_time_ms i32
-    brokers         []MetadataResponseBroker
-    cluster_id      ?string
-    controller_id   i32
-    topics          []MetadataResponseTopic
+    throttle_time_ms            i32
+    brokers                     []MetadataResponseBroker
+    cluster_id                  ?string
+    controller_id               i32
+    topics                      []MetadataResponseTopic
+    cluster_authorized_ops      i32  // v8-v10 only
 }
 
 pub struct MetadataResponseBroker {
@@ -294,6 +295,11 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
         if is_flexible {
             writer.write_tagged_fields()
         }
+    }
+    
+    // v8-v10: cluster_authorized_operations (removed in v11, moved to DescribeCluster API)
+    if version >= 8 && version <= 10 {
+        writer.write_i32(r.cluster_authorized_ops)
     }
     
     if is_flexible {
@@ -550,8 +556,9 @@ pub:
 
 pub struct JoinGroupResponseMember {
 pub:
-    member_id   string
-    metadata    []u8
+    member_id         string
+    group_instance_id ?string  // v5+
+    metadata          []u8
 }
 
 pub fn (r JoinGroupResponse) encode(version i16) []u8 {
@@ -593,10 +600,18 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
     for m in r.members {
         if is_flexible {
             writer.write_compact_string(m.member_id)
+            // v5+: group_instance_id
+            if version >= 5 {
+                writer.write_compact_nullable_string(m.group_instance_id)
+            }
             writer.write_compact_bytes(m.metadata)
             writer.write_tagged_fields()
         } else {
             writer.write_string(m.member_id)
+            // v5+: group_instance_id
+            if version >= 5 {
+                writer.write_nullable_string(m.group_instance_id)
+            }
             writer.write_bytes(m.metadata)
         }
     }
@@ -961,6 +976,7 @@ pub:
 pub struct DeleteTopicsResponseTopic {
 pub:
     name        string
+    topic_id    []u8  // v6+: UUID (16 bytes)
     error_code  i16
 }
 
@@ -984,7 +1000,19 @@ pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
         } else {
             writer.write_string(t.name)
         }
+        // v6+: topic_id (UUID, 16 bytes)
+        if version >= 6 {
+            writer.write_uuid(t.topic_id)
+        }
         writer.write_i16(t.error_code)
+        // v5+: error_message (nullable string, we send null for now)
+        if version >= 5 {
+            if is_flexible {
+                writer.write_compact_nullable_string(none)
+            } else {
+                writer.write_nullable_string(none)
+            }
+        }
         if is_flexible {
             writer.write_tagged_fields()
         }
