@@ -818,6 +818,7 @@ pub:
     error_code      i16
     timestamp       i64
     offset          i64
+    leader_epoch    i32  // v4+
 }
 
 pub fn (r ListOffsetsResponse) encode(version i16) []u8 {
@@ -848,6 +849,10 @@ pub fn (r ListOffsetsResponse) encode(version i16) []u8 {
             if version >= 1 {
                 writer.write_i64(p.timestamp)
                 writer.write_i64(p.offset)
+            }
+            // v4+: leader_epoch
+            if version >= 4 {
+                writer.write_i32(p.leader_epoch)
             }
             if is_flexible {
                 writer.write_tagged_fields()

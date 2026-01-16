@@ -79,7 +79,7 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
     return build_response(correlation_id, response_body)
 }
 
-// Handle incoming Frame and return response Frame (tansu style)
+// Handle incoming Frame and return response Frame 
 // This is the recommended way to process requests
 pub fn (mut h Handler) handle_frame(frame Frame) !Frame {
     // Extract request header info
@@ -99,7 +99,7 @@ pub fn (mut h Handler) handle_frame(frame Frame) !Frame {
     return frame_response(correlation_id, api_key, version, response_body)
 }
 
-// Process body and return response body (tansu style dispatch)
+// Process body and return response body
 fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
     return match body {
         ApiVersionsRequest {
@@ -159,7 +159,7 @@ fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
     }
 }
 
-// Process Metadata request (tansu style)
+// Process Metadata request
 fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
     mut resp_topics := []MetadataResponseTopic{}
     topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
@@ -202,7 +202,7 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
     }
 }
 
-// Process InitProducerId request (tansu style)
+// Process InitProducerId request
 fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i16) !InitProducerIdResponse {
     mut producer_id := req.producer_id
     mut producer_epoch := req.producer_epoch
@@ -589,6 +589,7 @@ fn (mut h Handler) handle_list_offsets(body []u8, version i16) ![]u8 {
                     error_code: i16(ErrorCode.unknown_topic_or_partition)
                     timestamp: -1
                     offset: -1
+                    leader_epoch: -1
                 }
                 continue
             }
@@ -607,6 +608,7 @@ fn (mut h Handler) handle_list_offsets(body []u8, version i16) ![]u8 {
                 error_code: 0
                 timestamp: p.timestamp
                 offset: offset
+                leader_epoch: 0  // Leader epoch for v4+
             }
         }
         topics << ListOffsetsResponseTopic{

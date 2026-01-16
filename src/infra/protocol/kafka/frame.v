@@ -1,4 +1,4 @@
-// Kafka Protocol Frame - tansu style implementation
+// Kafka Protocol Frame
 // Frame-based request/response processing
 module kafka
 
@@ -198,7 +198,7 @@ fn encode_body(body Body, version i16) []u8 {
     }
 }
 
-// API Version information per API key (tansu style)
+// API Version information per API key
 pub struct ApiVersionInfo {
 pub:
     api_key             ApiKey
