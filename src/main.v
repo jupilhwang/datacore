@@ -249,28 +249,43 @@ fn show_status(opts cli.CliOptions) ! {
     }
 }
 
-// Placeholder implementations for future CLI commands
+// Topic commands
 fn run_topic(args []string) ! {
     if args.len == 0 {
         return error('Usage: datacore topic <create|list|delete|describe> [options]')
     }
     
+    opts := cli.parse_topic_options(args[1..])
+    
     match args[0] {
         'create' {
-            println('\x1b[33m⚠\x1b[0m  Topic create command not yet implemented.')
-            println('    Use kafka-topics.sh --bootstrap-server localhost:9092 --create ...')
+            cli.run_topic_create(opts)!
         }
         'list' {
-            println('\x1b[33m⚠\x1b[0m  Topic list command not yet implemented.')
-            println('    Use kafka-topics.sh --bootstrap-server localhost:9092 --list')
+            cli.run_topic_list(opts)!
         }
         'delete' {
-            println('\x1b[33m⚠\x1b[0m  Topic delete command not yet implemented.')
-            println('    Use kafka-topics.sh --bootstrap-server localhost:9092 --delete ...')
+            cli.run_topic_delete(opts)!
         }
         'describe' {
-            println('\x1b[33m⚠\x1b[0m  Topic describe command not yet implemented.')
-            println('    Use kafka-topics.sh --bootstrap-server localhost:9092 --describe ...')
+            cli.run_topic_describe(opts)!
+        }
+        'help', '-h', '--help' {
+            println('\x1b[33mTopic Commands:\x1b[0m')
+            println('')
+            println('Usage: datacore topic <command> [options]')
+            println('')
+            println('Commands:')
+            println('  create    Create a new topic')
+            println('  list      List all topics')
+            println('  delete    Delete a topic')
+            println('  describe  Describe a topic')
+            println('')
+            println('Options:')
+            println('  -b, --bootstrap-server  Broker address (default: localhost:9092)')
+            println('  -t, --topic             Topic name')
+            println('  -p, --partitions        Number of partitions (default: 1)')
+            println('  -r, --replication-factor Replication factor (default: 1)')
         }
         else {
             return error('Unknown topic command: ${args[0]}')
@@ -278,16 +293,29 @@ fn run_topic(args []string) ! {
     }
 }
 
+// Produce command
 fn run_produce(args []string) ! {
-    println('\x1b[33m⚠\x1b[0m  Produce command not yet implemented.')
-    println('    Use kafka-console-producer.sh --bootstrap-server localhost:9092 --topic <topic>')
+    if args.len == 0 || args[0] == 'help' || args[0] == '-h' || args[0] == '--help' {
+        cli.print_produce_help()
+        return
+    }
+    
+    opts := cli.parse_produce_options(args)
+    cli.run_produce(opts)!
 }
 
+// Consume command
 fn run_consume(args []string) ! {
-    println('\x1b[33m⚠\x1b[0m  Consume command not yet implemented.')
-    println('    Use kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic <topic> --from-beginning')
+    if args.len == 0 || args[0] == 'help' || args[0] == '-h' || args[0] == '--help' {
+        cli.print_consume_help()
+        return
+    }
+    
+    opts := cli.parse_consume_options(args)
+    cli.run_consume(opts)!
 }
 
+// Group commands
 fn run_group(args []string) ! {
     if args.len == 0 {
         return error('Usage: datacore group <list|describe> [options]')
