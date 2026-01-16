@@ -37,25 +37,6 @@ pub fn build_flexible_response(correlation_id i32, body []u8) []u8 {
     return writer.bytes()
 }
 
-// Response body sum type
-pub type ResponseBody = ApiVersionsResponse
-    | MetadataResponse
-    | ProduceResponse
-    | FetchResponse
-    | FindCoordinatorResponse
-    | JoinGroupResponse
-    | SyncGroupResponse
-    | HeartbeatResponse
-    | LeaveGroupResponse
-    | OffsetCommitResponse
-    | OffsetFetchResponse
-    | ListOffsetsResponse
-    | CreateTopicsResponse
-    | DeleteTopicsResponse
-    | ListGroupsResponse
-    | DescribeGroupsResponse
-    | InitProducerIdResponse
-
 // ApiVersions Response
 pub struct ApiVersionsResponse {
 pub:

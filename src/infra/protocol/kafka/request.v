@@ -112,53 +112,6 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
         else { false }
     }
 }
-
-// Parse request by API key
-pub fn parse_request_body(api_key ApiKey, version i16, body []u8) !RequestBody {
-    mut reader := new_reader(body)
-    is_flexible := is_flexible_version(api_key, version)
-    
-    return match api_key {
-        .api_versions { RequestBody(parse_api_versions_request(mut reader, version, is_flexible)!) }
-        .metadata { RequestBody(parse_metadata_request(mut reader, version, is_flexible)!) }
-        .produce { RequestBody(parse_produce_request(mut reader, version, is_flexible)!) }
-        .fetch { RequestBody(parse_fetch_request(mut reader, version, is_flexible)!) }
-        .find_coordinator { RequestBody(parse_find_coordinator_request(mut reader, version, is_flexible)!) }
-        .join_group { RequestBody(parse_join_group_request(mut reader, version, is_flexible)!) }
-        .sync_group { RequestBody(parse_sync_group_request(mut reader, version, is_flexible)!) }
-        .heartbeat { RequestBody(parse_heartbeat_request(mut reader, version, is_flexible)!) }
-        .leave_group { RequestBody(parse_leave_group_request(mut reader, version, is_flexible)!) }
-        .offset_commit { RequestBody(parse_offset_commit_request(mut reader, version, is_flexible)!) }
-        .offset_fetch { RequestBody(parse_offset_fetch_request(mut reader, version, is_flexible)!) }
-        .list_offsets { RequestBody(parse_list_offsets_request(mut reader, version, is_flexible)!) }
-        .create_topics { RequestBody(parse_create_topics_request(mut reader, version, is_flexible)!) }
-        .delete_topics { RequestBody(parse_delete_topics_request(mut reader, version, is_flexible)!) }
-        .list_groups { RequestBody(parse_list_groups_request(mut reader, version, is_flexible)!) }
-        .describe_groups { RequestBody(parse_describe_groups_request(mut reader, version, is_flexible)!) }
-        .init_producer_id { RequestBody(parse_init_producer_id_request(mut reader, version, is_flexible)!) }
-        else { return error('unsupported API key: ${int(api_key)}') }
-    }
-}
-
-// Request body sum type
-pub type RequestBody = ApiVersionsRequest
-    | MetadataRequest
-    | ProduceRequest
-    | FetchRequest
-    | FindCoordinatorRequest
-    | JoinGroupRequest
-    | SyncGroupRequest
-    | HeartbeatRequest
-    | LeaveGroupRequest
-    | OffsetCommitRequest
-    | OffsetFetchRequest
-    | ListOffsetsRequest
-    | CreateTopicsRequest
-    | DeleteTopicsRequest
-    | ListGroupsRequest
-    | DescribeGroupsRequest
-    | InitProducerIdRequest
-
 // ApiVersions Request
 pub struct ApiVersionsRequest {
 pub:
