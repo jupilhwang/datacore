@@ -13,6 +13,7 @@ pub enum MetricType {
 }
 
 // Metric represents a single metric
+@[heap]
 pub struct Metric {
 pub:
     name        string
@@ -41,11 +42,6 @@ mut:
     lock    sync.RwMutex
 }
 
-// Global metrics registry
-__global metrics_registry = &MetricsRegistry{
-    metrics: map[string]&Metric{}
-}
-
 // new_registry creates a new metrics registry
 pub fn new_registry() &MetricsRegistry {
     return &MetricsRegistry{
@@ -53,9 +49,27 @@ pub fn new_registry() &MetricsRegistry {
     }
 }
 
+// Singleton registry holder
+struct RegistryHolder {
+mut:
+    registry &MetricsRegistry = unsafe { nil }
+    lock     sync.Mutex
+}
+
+fn get_registry_holder() &RegistryHolder {
+    return &RegistryHolder{}
+}
+
 // get_registry returns the global metrics registry
 pub fn get_registry() &MetricsRegistry {
-    return metrics_registry
+    mut holder := get_registry_holder()
+    holder.lock.@lock()
+    defer { holder.lock.unlock() }
+    
+    if holder.registry == unsafe { nil } {
+        holder.registry = new_registry()
+    }
+    return holder.registry
 }
 
 // register registers a new metric
@@ -100,7 +114,7 @@ pub fn (mut r MetricsRegistry) register(name string, help string, metric_type Me
 pub fn (mut r MetricsRegistry) get(name string) ?&Metric {
     r.lock.rlock()
     defer { r.lock.runlock() }
-    return r.metrics[name]
+    return r.metrics[name] or { return none }
 }
 
 // Counter functions
@@ -232,7 +246,7 @@ pub struct Timer {
 pub fn (m &Metric) start_timer() Timer {
     return Timer{
         start_time: time.now()
-        metric: m
+        metric: unsafe { m }
     }
 }
 
