@@ -29,7 +29,7 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
     }
 }
 
-// Handle incoming request and return response bytes
+// Handle incoming request and return response bytes (legacy method)
 pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
     // Parse request
     req := parse_request(data)!
@@ -77,6 +77,284 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
         return build_flexible_response(correlation_id, response_body)
     }
     return build_response(correlation_id, response_body)
+}
+
+// Handle incoming Frame and return response Frame (tansu style)
+// This is the recommended way to process requests
+pub fn (mut h Handler) handle_frame(frame Frame) !Frame {
+    // Extract request header info
+    req_header := match frame.header {
+        FrameRequestHeader { frame.header as FrameRequestHeader }
+        else { return error('expected request header') }
+    }
+    
+    api_key := req_header.api_key
+    version := req_header.api_version
+    correlation_id := req_header.correlation_id
+    
+    // Process body based on type and return response body
+    response_body := h.process_body(frame.body, api_key, version)!
+    
+    // Build response frame
+    return frame_response(correlation_id, api_key, version, response_body)
+}
+
+// Process body and return response body (tansu style dispatch)
+fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
+    return match body {
+        ApiVersionsRequest {
+            Body(new_api_versions_response())
+        }
+        MetadataRequest {
+            Body(h.process_metadata(body, version)!)
+        }
+        ProduceRequest {
+            Body(h.process_produce(body, version)!)
+        }
+        FetchRequest {
+            Body(h.process_fetch(body, version)!)
+        }
+        FindCoordinatorRequest {
+            Body(h.process_find_coordinator(body, version)!)
+        }
+        JoinGroupRequest {
+            Body(h.process_join_group(body, version)!)
+        }
+        SyncGroupRequest {
+            Body(h.process_sync_group(body, version)!)
+        }
+        HeartbeatRequest {
+            Body(h.process_heartbeat(body, version)!)
+        }
+        LeaveGroupRequest {
+            Body(h.process_leave_group(body, version)!)
+        }
+        OffsetCommitRequest {
+            Body(h.process_offset_commit(body, version)!)
+        }
+        OffsetFetchRequest {
+            Body(h.process_offset_fetch(body, version)!)
+        }
+        ListOffsetsRequest {
+            Body(h.process_list_offsets(body, version)!)
+        }
+        CreateTopicsRequest {
+            Body(h.process_create_topics(body, version)!)
+        }
+        DeleteTopicsRequest {
+            Body(h.process_delete_topics(body, version)!)
+        }
+        ListGroupsRequest {
+            Body(h.process_list_groups(body, version)!)
+        }
+        DescribeGroupsRequest {
+            Body(h.process_describe_groups(body, version)!)
+        }
+        InitProducerIdRequest {
+            Body(h.process_init_producer_id(body, version)!)
+        }
+        else {
+            return error('unsupported request type')
+        }
+    }
+}
+
+// Process Metadata request (tansu style)
+fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
+    mut resp_topics := []MetadataResponseTopic{}
+    topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
+    
+    for topic in topic_list {
+        mut partitions := []MetadataResponsePartition{}
+        for p in 0 .. topic.partition_count {
+            partitions << MetadataResponsePartition{
+                error_code: 0
+                partition_index: i32(p)
+                leader_id: h.broker_id
+                leader_epoch: 0
+                replica_nodes: [h.broker_id]
+                isr_nodes: [h.broker_id]
+                offline_replicas: []
+            }
+        }
+        resp_topics << MetadataResponseTopic{
+            error_code: 0
+            name: topic.name
+            topic_id: []u8{len: 16}  // Empty UUID for now
+            is_internal: false
+            partitions: partitions
+        }
+    }
+    
+    return MetadataResponse{
+        throttle_time_ms: 0
+        brokers: [
+            MetadataResponseBroker{
+                node_id: h.broker_id
+                host: h.host
+                port: h.broker_port
+                rack: ''
+            },
+        ]
+        cluster_id: h.cluster_id
+        controller_id: h.broker_id
+        topics: resp_topics
+    }
+}
+
+// Process InitProducerId request (tansu style)
+fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i16) !InitProducerIdResponse {
+    mut producer_id := req.producer_id
+    mut producer_epoch := req.producer_epoch
+    
+    // For new producers (producer_id == -1), generate a new producer ID
+    if producer_id == -1 {
+        producer_id = rand.i64()
+        if producer_id < 0 {
+            producer_id = -producer_id
+        }
+        producer_epoch = 0
+    } else {
+        producer_epoch += 1
+    }
+    
+    return InitProducerIdResponse{
+        throttle_time_ms: 0
+        error_code: 0
+        producer_id: producer_id
+        producer_epoch: producer_epoch
+    }
+}
+
+// Stub implementations for other process_* functions
+fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResponse {
+    // Delegate to existing implementation via byte handling
+    mut reader := new_reader([]u8{})
+    is_flexible := is_flexible_version(.produce, version)
+    _ = is_flexible
+    _ = reader
+    // For now, return empty response - full implementation in handle_produce
+    return ProduceResponse{
+        topics: []
+        throttle_time_ms: 0
+    }
+}
+
+fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
+    return FetchResponse{
+        throttle_time_ms: 0
+        error_code: 0
+        session_id: 0
+        topics: []
+    }
+}
+
+fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version i16) !FindCoordinatorResponse {
+    return FindCoordinatorResponse{
+        throttle_time_ms: 0
+        error_code: 0
+        node_id: h.broker_id
+        host: h.host
+        port: h.broker_port
+    }
+}
+
+fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGroupResponse {
+    return JoinGroupResponse{
+        throttle_time_ms: 0
+        error_code: 0
+        generation_id: 1
+        protocol_type: ''
+        protocol_name: ''
+        leader: req.member_id
+        member_id: req.member_id
+        members: []
+    }
+}
+
+fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGroupResponse {
+    return SyncGroupResponse{
+        throttle_time_ms: 0
+        error_code: 0
+        assignment: []u8{}
+    }
+}
+
+fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !HeartbeatResponse {
+    return HeartbeatResponse{
+        throttle_time_ms: 0
+        error_code: 0
+    }
+}
+
+fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !LeaveGroupResponse {
+    return LeaveGroupResponse{
+        throttle_time_ms: 0
+        error_code: 0
+    }
+}
+
+fn (mut h Handler) process_offset_commit(req OffsetCommitRequest, version i16) !OffsetCommitResponse {
+    return OffsetCommitResponse{
+        throttle_time_ms: 0
+        topics: []
+    }
+}
+
+fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !OffsetFetchResponse {
+    return OffsetFetchResponse{
+        throttle_time_ms: 0
+        topics: []
+        error_code: 0
+    }
+}
+
+fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !ListOffsetsResponse {
+    return ListOffsetsResponse{
+        throttle_time_ms: 0
+        topics: []
+    }
+}
+
+fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !CreateTopicsResponse {
+    mut topics := []CreateTopicsResponseTopic{}
+    for topic in req.topics {
+        topic_id := generate_uuid()
+        topics << CreateTopicsResponseTopic{
+            name: topic.name
+            topic_id: topic_id
+            error_code: 0
+            error_message: ''
+            num_partitions: topic.num_partitions
+            replication_factor: topic.replication_factor
+        }
+    }
+    return CreateTopicsResponse{
+        throttle_time_ms: 0
+        topics: topics
+    }
+}
+
+fn (mut h Handler) process_delete_topics(req DeleteTopicsRequest, version i16) !DeleteTopicsResponse {
+    return DeleteTopicsResponse{
+        throttle_time_ms: 0
+        topics: []
+    }
+}
+
+fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !ListGroupsResponse {
+    return ListGroupsResponse{
+        throttle_time_ms: 0
+        error_code: 0
+        groups: []
+    }
+}
+
+fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i16) !DescribeGroupsResponse {
+    return DescribeGroupsResponse{
+        throttle_time_ms: 0
+        groups: []
+    }
 }
 
 // ApiVersions handler
