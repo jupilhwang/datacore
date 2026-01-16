@@ -985,3 +985,97 @@ fn parse_init_producer_id_request(mut reader BinaryReader, version i16, is_flexi
         producer_epoch: producer_epoch
     }
 }
+
+// ConsumerGroupHeartbeat Request (API Key 68) - KIP-848
+// Used for the new Consumer Rebalance Protocol
+pub struct ConsumerGroupHeartbeatRequest {
+pub:
+    group_id                 string
+    member_id                string
+    member_epoch             i32
+    instance_id              ?string   // Static membership (group.instance.id)
+    rack_id                  ?string
+    rebalance_timeout_ms     i32
+    subscribed_topic_names   []string
+    server_assignor          ?string
+    topic_partitions         []ConsumerGroupHeartbeatTopicPartition  // Current assignment
+}
+
+pub struct ConsumerGroupHeartbeatTopicPartition {
+pub:
+    topic_id     []u8   // UUID (16 bytes)
+    partitions   []i32
+}
+
+fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !ConsumerGroupHeartbeatRequest {
+    // ConsumerGroupHeartbeat is always flexible (v0+)
+    
+    // group_id: COMPACT_STRING
+    group_id := reader.read_compact_string()!
+    
+    // member_id: COMPACT_STRING
+    member_id := reader.read_compact_string()!
+    
+    // member_epoch: INT32
+    member_epoch := reader.read_i32()!
+    
+    // instance_id: COMPACT_NULLABLE_STRING
+    raw_instance_id := reader.read_compact_nullable_string()!
+    instance_id := if raw_instance_id.len > 0 { ?string(raw_instance_id) } else { ?string(none) }
+    
+    // rack_id: COMPACT_NULLABLE_STRING
+    raw_rack_id := reader.read_compact_nullable_string()!
+    rack_id := if raw_rack_id.len > 0 { ?string(raw_rack_id) } else { ?string(none) }
+    
+    // rebalance_timeout_ms: INT32
+    rebalance_timeout_ms := reader.read_i32()!
+    
+    // subscribed_topic_names: COMPACT_ARRAY[COMPACT_STRING]
+    topic_count := reader.read_compact_array_len()!
+    mut subscribed_topic_names := []string{}
+    for _ in 0 .. topic_count {
+        subscribed_topic_names << reader.read_compact_string()!
+    }
+    
+    // server_assignor: COMPACT_NULLABLE_STRING
+    raw_server_assignor := reader.read_compact_nullable_string()!
+    server_assignor := if raw_server_assignor.len > 0 { ?string(raw_server_assignor) } else { ?string(none) }
+    
+    // topic_partitions: COMPACT_ARRAY[TopicPartition]
+    tp_count := reader.read_compact_array_len()!
+    mut topic_partitions := []ConsumerGroupHeartbeatTopicPartition{}
+    for _ in 0 .. tp_count {
+        // topic_id: UUID (16 bytes)
+        topic_id := reader.read_uuid()!
+        
+        // partitions: COMPACT_ARRAY[INT32]
+        part_count := reader.read_compact_array_len()!
+        mut partitions := []i32{}
+        for _ in 0 .. part_count {
+            partitions << reader.read_i32()!
+        }
+        
+        topic_partitions << ConsumerGroupHeartbeatTopicPartition{
+            topic_id: topic_id
+            partitions: partitions
+        }
+        
+        // Skip tagged fields for each topic partition
+        reader.skip_tagged_fields()!
+    }
+    
+    // Skip tagged fields at the end
+    reader.skip_tagged_fields()!
+    
+    return ConsumerGroupHeartbeatRequest{
+        group_id: group_id
+        member_id: member_id
+        member_epoch: member_epoch
+        instance_id: instance_id
+        rack_id: rack_id
+        rebalance_timeout_ms: rebalance_timeout_ms
+        subscribed_topic_names: subscribed_topic_names
+        server_assignor: server_assignor
+        topic_partitions: topic_partitions
+    }
+}

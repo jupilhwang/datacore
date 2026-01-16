@@ -64,6 +64,8 @@ pub type Body = ApiVersionsRequest
     | DescribeGroupsResponse
     | InitProducerIdRequest
     | InitProducerIdResponse
+    | ConsumerGroupHeartbeatRequest
+    | ConsumerGroupHeartbeatResponse
 
 // ApiKey trait - each request type knows its API key
 pub interface ApiKeyProvider {
@@ -137,6 +139,7 @@ fn parse_body(api_key ApiKey, version i16, data []u8) !Body {
         .list_groups { Body(parse_list_groups_request(mut reader, version, is_flexible)!) }
         .describe_groups { Body(parse_describe_groups_request(mut reader, version, is_flexible)!) }
         .init_producer_id { Body(parse_init_producer_id_request(mut reader, version, is_flexible)!) }
+        .consumer_group_heartbeat { Body(parse_consumer_group_heartbeat_request(mut reader, version, is_flexible)!) }
         else { return error('unsupported API key: ${int(api_key)}') }
     }
 }
@@ -194,6 +197,7 @@ fn encode_body(body Body, version i16) []u8 {
         ListGroupsResponse { body.encode(version) }
         DescribeGroupsResponse { body.encode(version) }
         InitProducerIdResponse { body.encode(version) }
+        ConsumerGroupHeartbeatResponse { body.encode(version) }
         else { []u8{} }  // Request types don't need encoding for response
     }
 }

@@ -1181,3 +1181,82 @@ pub fn (r InitProducerIdResponse) encode(version i16) []u8 {
     
     return writer.bytes()
 }
+
+// ConsumerGroupHeartbeat Response (API Key 68) - KIP-848
+// Response for the new Consumer Rebalance Protocol
+pub struct ConsumerGroupHeartbeatResponse {
+pub:
+    throttle_time_ms       i32
+    error_code             i16
+    error_message          ?string
+    member_id              ?string
+    member_epoch           i32
+    heartbeat_interval_ms  i32
+    assignment             ?ConsumerGroupHeartbeatAssignment
+}
+
+pub struct ConsumerGroupHeartbeatAssignment {
+pub:
+    topic_partitions  []ConsumerGroupHeartbeatResponseTopicPartition
+}
+
+pub struct ConsumerGroupHeartbeatResponseTopicPartition {
+pub:
+    topic_id     []u8   // UUID (16 bytes)
+    partitions   []i32
+}
+
+pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
+    // ConsumerGroupHeartbeat is always flexible (v0+)
+    mut writer := new_writer()
+    
+    // throttle_time_ms: INT32
+    writer.write_i32(r.throttle_time_ms)
+    
+    // error_code: INT16
+    writer.write_i16(r.error_code)
+    
+    // error_message: COMPACT_NULLABLE_STRING
+    writer.write_compact_nullable_string(r.error_message)
+    
+    // member_id: COMPACT_NULLABLE_STRING
+    writer.write_compact_nullable_string(r.member_id)
+    
+    // member_epoch: INT32
+    writer.write_i32(r.member_epoch)
+    
+    // heartbeat_interval_ms: INT32
+    writer.write_i32(r.heartbeat_interval_ms)
+    
+    // assignment: Assignment (nullable)
+    if assignment := r.assignment {
+        // Write topic_partitions array
+        writer.write_compact_array_len(assignment.topic_partitions.len)
+        
+        for tp in assignment.topic_partitions {
+            // topic_id: UUID (16 bytes)
+            writer.write_uuid(tp.topic_id)
+            
+            // partitions: COMPACT_ARRAY[INT32]
+            writer.write_compact_array_len(tp.partitions.len)
+            for p in tp.partitions {
+                writer.write_i32(p)
+            }
+            
+            // Tagged fields for each topic partition
+            writer.write_tagged_fields()
+        }
+        
+        // Tagged fields for assignment
+        writer.write_tagged_fields()
+    } else {
+        // Write -1 to indicate null assignment
+        // For compact nullable structs, we use 0 to indicate null (length = 0 - 1 = -1)
+        writer.write_uvarint(0)
+    }
+    
+    // Tagged fields at the end
+    writer.write_tagged_fields()
+    
+    return writer.bytes()
+}

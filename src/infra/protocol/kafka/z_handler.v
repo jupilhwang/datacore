@@ -59,6 +59,7 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
         .create_topics { h.handle_create_topics(req.body, version)! }
         .delete_topics { h.handle_delete_topics(req.body, version)! }
         .init_producer_id { h.handle_init_producer_id(req.body, version)! }
+        .consumer_group_heartbeat { h.handle_consumer_group_heartbeat(req.body, version)! }
         else {
             // h.logger.warn('Unsupported API key: ${int(api_key)}')
             return error('unsupported API key: ${int(api_key)}')
@@ -152,6 +153,9 @@ fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
         }
         InitProducerIdRequest {
             Body(h.process_init_producer_id(body, version)!)
+        }
+        ConsumerGroupHeartbeatRequest {
+            Body(h.process_consumer_group_heartbeat(body, version)!)
         }
         else {
             return error('unsupported request type')
@@ -1019,4 +1023,103 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
     }
     
     return resp.encode(version)
+}
+
+// Handle ConsumerGroupHeartbeat (API Key 68) - KIP-848
+// This is the new Consumer Rebalance Protocol
+fn (mut h Handler) handle_consumer_group_heartbeat(body []u8, version i16) ![]u8 {
+    mut reader := new_reader(body)
+    req := parse_consumer_group_heartbeat_request(mut reader, version, true)!  // Always flexible
+    
+    resp := h.process_consumer_group_heartbeat(req, version)!
+    return resp.encode(version)
+}
+
+// Process ConsumerGroupHeartbeat request (Frame-based)
+fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRequest, version i16) !ConsumerGroupHeartbeatResponse {
+    // KIP-848 ConsumerGroupHeartbeat Protocol:
+    // - member_epoch == 0 with empty member_id: New member joining
+    // - member_epoch == -1: Member leaving the group
+    // - member_epoch > 0: Regular heartbeat
+    
+    mut error_code := i16(0)
+    mut error_message := ?string(none)
+    mut member_id := req.member_id
+    mut member_epoch := req.member_epoch
+    mut heartbeat_interval_ms := i32(3000)  // Default 3 seconds
+    mut assignment := ?ConsumerGroupHeartbeatAssignment(none)
+    
+    // Validate group_id
+    if req.group_id.len == 0 {
+        return ConsumerGroupHeartbeatResponse{
+            throttle_time_ms: 0
+            error_code: i16(ErrorCode.invalid_group_id)
+            error_message: 'Group ID cannot be empty'
+            member_id: none
+            member_epoch: -1
+            heartbeat_interval_ms: 0
+            assignment: none
+        }
+    }
+    
+    // Handle different member_epoch scenarios
+    if req.member_epoch == 0 && req.member_id.len == 0 {
+        // New member joining - generate member_id and assign epoch 1
+        member_id = 'member-${h.broker_id}-${rand.i64()}'
+        member_epoch = 1
+        
+        // Create initial assignment based on subscribed topics
+        // For simplicity, we'll create an empty assignment for now
+        // In a full implementation, this would involve the group coordinator
+        // and assignor logic
+        mut topic_partitions := []ConsumerGroupHeartbeatResponseTopicPartition{}
+        
+        for topic_name in req.subscribed_topic_names {
+            // Look up topic and assign partitions
+            topic_meta := h.storage.get_topic(topic_name) or { continue }
+            mut partitions := []i32{}
+            // Assign all partitions to this member (simplified single-consumer case)
+            for p in 0 .. topic_meta.partition_count {
+                partitions << i32(p)
+            }
+            
+            topic_partitions << ConsumerGroupHeartbeatResponseTopicPartition{
+                topic_id: topic_meta.topic_id.clone()
+                partitions: partitions
+            }
+        }
+        
+        if topic_partitions.len > 0 {
+            assignment = ConsumerGroupHeartbeatAssignment{
+                topic_partitions: topic_partitions
+            }
+        }
+    } else if req.member_epoch == -1 {
+        // Member leaving the group
+        member_epoch = -1
+        // Clear assignment
+        assignment = none
+    } else if req.member_epoch > 0 {
+        // Regular heartbeat - keep the same epoch
+        // In a full implementation, we would check if there's a new assignment
+        
+        // For now, return the same epoch indicating no changes
+        // A real implementation would track group state and potentially
+        // return a new epoch with new assignments if rebalancing
+    } else {
+        // Invalid epoch - member_epoch < -1 is invalid
+        error_code = i16(ErrorCode.unknown_member_id)
+        error_message = 'Invalid member epoch'
+        member_epoch = -1
+    }
+    
+    return ConsumerGroupHeartbeatResponse{
+        throttle_time_ms: 0
+        error_code: error_code
+        error_message: error_message
+        member_id: if member_id.len > 0 { member_id } else { none }
+        member_epoch: member_epoch
+        heartbeat_interval_ms: heartbeat_interval_ms
+        assignment: assignment
+    }
 }
