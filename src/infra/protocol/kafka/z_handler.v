@@ -468,25 +468,50 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
                 continue
             }
             
-            // Store records in storage
-            result := h.storage.append(t.name, int(p.index), parsed.records) or {
-                // Determine error code based on error
-                error_code := if err.str().contains('not found') {
-                    i16(ErrorCode.unknown_topic_or_partition)
-                } else if err.str().contains('out of range') {
-                    i16(ErrorCode.unknown_topic_or_partition)
+            // Store records in storage (with auto-create topic if not exists)
+            mut result := h.storage.append(t.name, int(p.index), parsed.records) or {
+                // If topic not found, auto-create it
+                if err.str().contains('not found') {
+                    // Auto-create topic with default config (1 partition or requested partition + 1)
+                    num_partitions := if int(p.index) >= 1 { int(p.index) + 1 } else { 1 }
+                    h.storage.create_topic(t.name, num_partitions, domain.TopicConfig{}) or {
+                        partitions << ProduceResponsePartition{
+                            index: p.index
+                            error_code: i16(ErrorCode.unknown_server_error)
+                            base_offset: -1
+                            log_append_time: -1
+                            log_start_offset: -1
+                        }
+                        continue
+                    }
+                    // Retry append after topic creation
+                    h.storage.append(t.name, int(p.index), parsed.records) or {
+                        partitions << ProduceResponsePartition{
+                            index: p.index
+                            error_code: i16(ErrorCode.unknown_server_error)
+                            base_offset: -1
+                            log_append_time: -1
+                            log_start_offset: -1
+                        }
+                        continue
+                    }
                 } else {
-                    i16(ErrorCode.unknown_server_error)
+                    // Other errors
+                    error_code := if err.str().contains('out of range') {
+                        i16(ErrorCode.unknown_topic_or_partition)
+                    } else {
+                        i16(ErrorCode.unknown_server_error)
+                    }
+                    
+                    partitions << ProduceResponsePartition{
+                        index: p.index
+                        error_code: error_code
+                        base_offset: -1
+                        log_append_time: -1
+                        log_start_offset: -1
+                    }
+                    continue
                 }
-                
-                partitions << ProduceResponsePartition{
-                    index: p.index
-                    error_code: error_code
-                    base_offset: -1
-                    log_append_time: -1
-                    log_start_offset: -1
-                }
-                continue
             }
             
             // Success
