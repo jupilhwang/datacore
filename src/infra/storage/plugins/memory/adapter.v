@@ -514,3 +514,78 @@ pub fn (mut a MemoryStorageAdapter) clear() {
     a.groups.clear()
     a.offsets.clear()
 }
+
+// ============================================================
+// SharedAdapter - Thread-safe wrapper for concurrent tests
+// V language requires 'shared' keyword for cross-thread access
+// ============================================================
+
+// SharedAdapter wraps MemoryStorageAdapter for concurrent access in V
+// Usage: shared adapter := SharedAdapter{ inner: new_memory_adapter() }
+pub struct SharedAdapter {
+pub mut:
+    inner &MemoryStorageAdapter
+}
+
+// new_shared_adapter creates a new SharedAdapter
+pub fn new_shared_adapter() SharedAdapter {
+    return SharedAdapter{
+        inner: new_memory_adapter()
+    }
+}
+
+// new_shared_adapter_with_config creates SharedAdapter with custom config
+pub fn new_shared_adapter_with_config(config MemoryConfig) SharedAdapter {
+    return SharedAdapter{
+        inner: new_memory_adapter_with_config(config)
+    }
+}
+
+// Thread-safe create_topic with shared receiver
+pub fn (shared a SharedAdapter) create_topic_safe(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+    lock a {
+        return a.inner.create_topic(name, partitions, config)
+    }
+}
+
+// Thread-safe append with shared receiver
+pub fn (shared a SharedAdapter) append_safe(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
+    lock a {
+        return a.inner.append(topic_name, partition, records)
+    }
+}
+
+// Thread-safe fetch with shared receiver
+pub fn (shared a SharedAdapter) fetch_safe(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+    lock a {
+        return a.inner.fetch(topic_name, partition, offset, max_bytes)
+    }
+}
+
+// Thread-safe get_partition_info with shared receiver
+pub fn (shared a SharedAdapter) get_partition_info_safe(topic_name string, partition int) !domain.PartitionInfo {
+    lock a {
+        return a.inner.get_partition_info(topic_name, partition)
+    }
+}
+
+// Thread-safe commit_offsets with shared receiver
+pub fn (shared a SharedAdapter) commit_offsets_safe(group_id string, offsets []domain.PartitionOffset) ! {
+    lock a {
+        return a.inner.commit_offsets(group_id, offsets)
+    }
+}
+
+// Thread-safe fetch_offsets with shared receiver
+pub fn (shared a SharedAdapter) fetch_offsets_safe(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+    lock a {
+        return a.inner.fetch_offsets(group_id, partitions)
+    }
+}
+
+// Thread-safe get_stats with shared receiver
+pub fn (shared a SharedAdapter) get_stats_safe() StorageStats {
+    lock a {
+        return a.inner.get_stats()
+    }
+}
