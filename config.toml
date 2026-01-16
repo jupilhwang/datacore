@@ -1,0 +1,53 @@
+# DataCore Configuration
+# See docs/TRD.md for full configuration reference
+
+[broker]
+id = 1
+listener = "0.0.0.0:9092"
+advertised_listener = "localhost:9092"
+max_connections = 10000
+max_connections_per_ip = 100
+idle_timeout_ms = 600000
+request_timeout_ms = 30000
+max_request_size = 104857600
+
+[storage]
+plugin = "memory"
+
+[storage.memory]
+max_partition_size = "1GB"
+flush_interval_ms = 1000
+
+[schema_registry]
+enabled = true
+compatibility_level = "BACKWARD"
+
+[schema_registry.rest]
+enabled = true
+port = 8081
+
+[group]
+supported_protocols = ["classic", "consumer", "share"]
+default_assignor = "uniform"
+share_record_lock_duration_ms = 30000
+share_max_in_flight_records = 5000
+
+[observability]
+service_name = "datacore"
+service_version = "0.1.0"
+
+[observability.metrics]
+enabled = true
+exporter = "prometheus"
+prometheus_port = 9090
+
+[observability.tracing]
+enabled = false
+exporter = "otlp"
+sampling_ratio = 1.0
+
+[observability.logging]
+enabled = true
+level = "info"
+format = "json"
+exporter = "stdout"
