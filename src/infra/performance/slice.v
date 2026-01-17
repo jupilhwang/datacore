@@ -171,7 +171,7 @@ pub fn (r RecordView) value_bytes() []u8 {
 
 // SliceReader - Efficient sequential reader for parsing byte streams
 pub struct SliceReader {
-mut:
+pub mut:
 	slice    ByteSlice
 	position int
 }
