@@ -2,10 +2,12 @@
 module group
 
 import domain
+import rand
 import service.port
 
 // GroupCoordinator handles consumer group coordination
 pub struct GroupCoordinator {
+mut:
     storage port.StoragePort
 }
 
@@ -47,7 +49,7 @@ pub:
 }
 
 // JoinGroup processes a join group request
-pub fn (c &GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupResponse {
+pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupResponse {
     // Validate group ID
     if req.group_id.len == 0 {
         return JoinGroupResponse{
@@ -84,25 +86,22 @@ pub fn (c &GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupResponse 
     }
     
     mut member_exists := false
-    for i, m in group.members {
+    mut updated_members := group.members.clone()
+    for i, m in updated_members {
         if m.member_id == member_id {
-            group.members[i] = member
+            updated_members[i] = member
             member_exists = true
             break
         }
     }
     
     if !member_exists {
-        group = domain.ConsumerGroup{
-            ...group
-            members: group.members.clone()
-        }
-        mut members := group.members.clone()
-        members << member
-        group = domain.ConsumerGroup{
-            ...group
-            members: members
-        }
+        updated_members << member
+    }
+    
+    group = domain.ConsumerGroup{
+        ...group
+        members: updated_members
     }
     
     // Increment generation and set leader
@@ -160,7 +159,7 @@ pub:
 }
 
 // SyncGroup processes a sync group request
-pub fn (c &GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupResponse {
+pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupResponse {
     group := c.storage.load_group(req.group_id) or {
         return SyncGroupResponse{
             error_code: i16(domain.ErrorCode.group_id_not_found)
@@ -214,7 +213,7 @@ pub:
 }
 
 // Heartbeat processes a heartbeat request
-pub fn (c &GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatResponse {
+pub fn (mut c GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatResponse {
     group := c.storage.load_group(req.group_id) or {
         return HeartbeatResponse{
             error_code: i16(domain.ErrorCode.group_id_not_found)
@@ -243,7 +242,7 @@ pub fn (c &GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatResponse {
 }
 
 // LeaveGroup processes a leave group request
-pub fn (c &GroupCoordinator) leave_group(group_id string, member_id string) i16 {
+pub fn (mut c GroupCoordinator) leave_group(group_id string, member_id string) i16 {
     group := c.storage.load_group(group_id) or {
         return i16(domain.ErrorCode.group_id_not_found)
     }
@@ -270,16 +269,16 @@ pub fn (c &GroupCoordinator) leave_group(group_id string, member_id string) i16 
 }
 
 // ListGroups lists all consumer groups
-pub fn (c &GroupCoordinator) list_groups() ![]domain.GroupInfo {
+pub fn (mut c GroupCoordinator) list_groups() ![]domain.GroupInfo {
     return c.storage.list_groups()
 }
 
 // DescribeGroup describes a consumer group
-pub fn (c &GroupCoordinator) describe_group(group_id string) !domain.ConsumerGroup {
+pub fn (mut c GroupCoordinator) describe_group(group_id string) !domain.ConsumerGroup {
     return c.storage.load_group(group_id)
 }
 
 // Helper function to generate unique ID
 fn generate_id() string {
-    return '${@VEXE.hash()}-${@TIME.unix()}'
+    return 'member-${rand.i64()}'
 }
