@@ -75,12 +75,12 @@ pub fn (r &RequestBuffer) data() []u8 {
 
 // resize resizes the buffer if needed
 pub fn (mut r RequestBuffer) resize(new_size int) {
-    if new_size > r.buffer.capacity {
+    if new_size > r.buffer.cap {
         // Return old buffer and get a new larger one
         r.manager.put_buffer(r.buffer)
         r.buffer = r.manager.get_buffer(new_size)
     }
-    r.buffer.length = new_size
+    r.buffer.len = new_size
 }
 
 // release returns the buffer to the pool
@@ -110,7 +110,7 @@ pub fn new_response_buffer(estimated_size int) &ResponseBuffer {
 // write appends data to the response buffer
 pub fn (mut r ResponseBuffer) write(data []u8) {
     needed := r.offset + data.len
-    if needed > r.buffer.capacity {
+    if needed > r.buffer.cap {
         // Need larger buffer - get new one and copy
         mut new_buf := r.manager.get_buffer(needed * 2)
         for i in 0 .. r.offset {
@@ -124,7 +124,7 @@ pub fn (mut r ResponseBuffer) write(data []u8) {
         r.buffer.data[r.offset + i] = b
     }
     r.offset += data.len
-    r.buffer.length = r.offset
+    r.buffer.len = r.offset
 }
 
 // write_i32_be writes a big-endian i32
@@ -177,7 +177,7 @@ pub fn new_connection_buffers(read_size int, write_size int) &ConnectionBuffers 
 
 // get_read_slice returns a slice for reading
 pub fn (c &ConnectionBuffers) get_read_slice(size int) []u8 {
-    if size <= c.read_buffer.capacity {
+    if size <= c.read_buffer.cap {
         return c.read_buffer.data[..size]
     }
     return []u8{len: size}
@@ -185,7 +185,7 @@ pub fn (c &ConnectionBuffers) get_read_slice(size int) []u8 {
 
 // get_write_slice returns a slice for writing
 pub fn (c &ConnectionBuffers) get_write_slice(size int) []u8 {
-    if size <= c.write_buffer.capacity {
+    if size <= c.write_buffer.cap {
         return c.write_buffer.data[..size]
     }
     return []u8{len: size}

@@ -123,7 +123,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
     mut result := s.calculate_result('BufferPool Hit Rate Test', times)
     result = BenchmarkResult{
         ...result
-        memory_saved: i64(stats.total_reuses * 1024)  // Estimated bytes saved
+        memory_saved: i64(stats.bytes_reused)  // Bytes saved through reuse
     }
     
     return result
@@ -342,7 +342,7 @@ pub fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
 }
 
 // print_results prints benchmark results in a formatted table
-pub fn (s &BenchmarkSuite) print_results() {
+pub fn (mut s BenchmarkSuite) print_results() {
     println('')
     println('┌────────────────────────────────┬────────────┬────────────┬────────────┬──────────────┐')
     println('│ Benchmark                      │ Iterations │ Avg (ns)   │ Min (ns)   │ Ops/sec      │')
@@ -360,9 +360,9 @@ pub fn (s &BenchmarkSuite) print_results() {
     println('')
     println('Pool Statistics:')
     println('  Buffer Pool:')
-    println('    - Hits: ${stats.buffer_pool_stats.hits}, Misses: ${stats.buffer_pool_stats.misses}')
-    println('    - Hit Rate: ${stats.buffer_pool_stats.hit_rate():.2f}%')
-    println('    - Total Reuses: ${stats.buffer_pool_stats.total_reuses}')
+    println('    - Hits: ${stats.buffer_pool_stats.total_hits()}, Misses: ${stats.buffer_pool_stats.total_misses()}')
+    println('    - Hit Rate: ${stats.buffer_pool_stats.hit_rate() * 100.0:.2f}%')
+    println('    - Bytes Reused: ${stats.buffer_pool_stats.bytes_reused}')
     println('  Record Pool:')
     println('    - Hits: ${stats.record_pool_stats.hits}, Misses: ${stats.record_pool_stats.misses}')
     println('  Batch Pool:')
