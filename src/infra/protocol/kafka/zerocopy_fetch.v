@@ -283,11 +283,11 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
     writer.write_i32(i32(records.len - 1))
     
     // First timestamp (use first record)
-    first_timestamp := if records.len > 0 { records[0].timestamp } else { i64(0) }
+    first_timestamp := if records.len > 0 { records[0].timestamp.unix_milli() } else { i64(0) }
     writer.write_i64(first_timestamp)
     
     // Max timestamp (use last record)
-    max_timestamp := if records.len > 0 { records[records.len - 1].timestamp } else { first_timestamp }
+    max_timestamp := if records.len > 0 { records[records.len - 1].timestamp.unix_milli() } else { first_timestamp }
     writer.write_i64(max_timestamp)
     
     // Producer ID (-1 for non-idempotent)
@@ -305,7 +305,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
     // Encode records
     for i, record in records {
         offset_delta := i32(i)
-        timestamp_delta := record.timestamp - first_timestamp
+        timestamp_delta := record.timestamp.unix_milli() - first_timestamp
         
         // Calculate record size first
         mut record_writer := new_writer()
@@ -372,7 +372,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
     }
     
     // Get final data
-    batch_data := writer.bytes()
+    mut batch_data := writer.bytes()
     
     // Calculate and fill batch length (total - base_offset - batch_length_field)
     batch_length := batch_data.len - 12
