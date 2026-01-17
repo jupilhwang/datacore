@@ -261,10 +261,19 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
             }
             
             // Process request
-        response := s.handler.handle_request(request_buf) or {
-                pipeline.complete_with_error(correlation_id, err.str()) or {}
+        mut response := s.handler.handle_request(request_buf) or {
                 eprintln('[Connection] Error handling request from ${client_addr}: ${err}')
-                continue
+                // Build minimal error response to prevent client timeout
+                mut error_resp := []u8{len: 8}
+                error_resp[0] = 0
+                error_resp[1] = 0
+                error_resp[2] = 0
+                error_resp[3] = 4  // size = 4 (just correlation_id)
+                error_resp[4] = u8(correlation_id >> 24)
+                error_resp[5] = u8(correlation_id >> 16)
+                error_resp[6] = u8(correlation_id >> 8)
+                error_resp[7] = u8(correlation_id)
+                error_resp
             }
             
             println('[Response] api_key=${api_key}, response_size=${response.len}')
@@ -276,15 +285,19 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
             ready := pipeline.get_ready_responses()
             for req in ready {
                 if req.error_msg.len > 0 {
-                    // Skip responses with errors (connection will be closed)
                     eprintln('[Response] Error for correlation_id=${req.correlation_id}: ${req.error_msg}')
-            continue
-        }
+                    // Still send response even with errors to prevent client timeout
+                }
         
+                // Debug: log Fetch responses
+                if api_key == 1 && req.response_data.len < 200 {
+                    eprintln('[Response] Fetch hex (${req.response_data.len} bytes): ${req.response_data.hex()}')
+                }
+                
                 conn.write(req.response_data) or {
                     eprintln('[Connection] Error sending response to ${client_addr}: ${err}')
-            break
-        }
+                    break
+                }
         
                 println('[Response] Sent ${req.response_data.len} bytes')
                 client.bytes_sent += u64(req.response_data.len)

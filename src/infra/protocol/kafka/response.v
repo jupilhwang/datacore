@@ -169,7 +169,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
         writer.write_i32(b.port)
         if version >= 1 {
             if is_flexible {
-                writer.write_compact_string(b.rack or { '' })
+                writer.write_compact_nullable_string(b.rack)
             } else {
                 writer.write_nullable_string(b.rack)
             }
@@ -182,7 +182,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
     // Cluster ID
     if version >= 2 {
         if is_flexible {
-            writer.write_compact_string(r.cluster_id or { '' })
+            writer.write_compact_nullable_string(r.cluster_id)
         } else {
             writer.write_nullable_string(r.cluster_id)
         }
@@ -447,21 +447,30 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
             if version >= 5 {
                 writer.write_i64(p.log_start_offset)
             }
-            // v11+: preferred_read_replica
-            if version >= 11 {
-                writer.write_i32(-1)  // No preferred replica
-            }
-            // Aborted transactions (skip for now)
+            // v12+: diverging_epoch, current_leader, snapshot_id are optional tagged fields
+            // When None, they are omitted entirely. We don't support them yet, so skip.
+            // Aborted transactions (v4+) - empty array or null
             if version >= 4 {
                 if is_flexible {
-                    writer.write_compact_array_len(0)
+                    // COMPACT_NULLABLE_ARRAY: 0 = null, 1 = empty array (len 0)
+                    writer.write_uvarint(1)  // empty array (length 0 + 1)
                 } else {
                     writer.write_array_len(0)
                 }
             }
-            // Records
+            // v11+: preferred_read_replica
+            if version >= 11 {
+                writer.write_i32(-1)  // No preferred replica
+            }
+            // Records - COMPACT_NULLABLE_BYTES for flexible
             if is_flexible {
-                writer.write_compact_bytes(p.records)
+                // COMPACT_NULLABLE_BYTES: 0 = null, N+1 = N bytes
+                if p.records.len == 0 {
+                    writer.write_uvarint(0)  // null (no records)
+                } else {
+                    writer.write_uvarint(u64(p.records.len) + 1)
+                    writer.write_raw(p.records)
+                }
             } else {
                 writer.write_bytes(p.records)
             }
@@ -485,11 +494,24 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 pub struct FindCoordinatorResponse {
 pub:
     throttle_time_ms i32
+    // v0-v3: top-level error and single coordinator
     error_code      i16
     error_message   ?string
     node_id         i32
     host            string
     port            i32
+    // v4+: coordinators array
+    coordinators    []FindCoordinatorResponseNode
+}
+
+pub struct FindCoordinatorResponseNode {
+pub:
+    key           string
+    node_id       i32
+    host          string
+    port          i32
+    error_code    i16
+    error_message ?string
 }
 
 pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
@@ -499,21 +521,60 @@ pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
     if version >= 1 {
         writer.write_i32(r.throttle_time_ms)
     }
-    writer.write_i16(r.error_code)
-    if version >= 1 {
+
+    if version <= 3 {
+        writer.write_i16(r.error_code)
+        if version >= 1 {
+            if is_flexible {
+                writer.write_compact_nullable_string(r.error_message)
+            } else {
+                writer.write_nullable_string(r.error_message)
+            }
+        }
+
+        // v0-v3: single coordinator fields
+        writer.write_i32(r.node_id)
         if is_flexible {
-            writer.write_compact_string(r.error_message or { '' })
+            writer.write_compact_string(r.host)
         } else {
-            writer.write_nullable_string(r.error_message)
+            writer.write_string(r.host)
+        }
+        writer.write_i32(r.port)
+    } else {
+        // v4+: coordinators array
+        if is_flexible {
+            writer.write_compact_array_len(r.coordinators.len)
+        } else {
+            writer.write_array_len(r.coordinators.len)
+        }
+        for node in r.coordinators {
+            if is_flexible {
+                writer.write_compact_string(node.key)
+            } else {
+                writer.write_string(node.key)
+            }
+            writer.write_i32(node.node_id)
+            if is_flexible {
+                writer.write_compact_string(node.host)
+            } else {
+                writer.write_string(node.host)
+            }
+            writer.write_i32(node.port)
+            writer.write_i16(node.error_code)
+            if is_flexible {
+                writer.write_compact_nullable_string(node.error_message)
+            } else {
+                writer.write_nullable_string(node.error_message)
+            }
+            if is_flexible {
+                writer.write_tagged_fields()
+            }
         }
     }
-    writer.write_i32(r.node_id)
+
     if is_flexible {
-        writer.write_compact_string(r.host)
-    } else {
-        writer.write_string(r.host)
+        writer.write_tagged_fields()
     }
-    writer.write_i32(r.port)
     
     if is_flexible {
         writer.write_tagged_fields()
@@ -531,6 +592,7 @@ pub:
     protocol_type   ?string
     protocol_name   ?string
     leader          string
+    skip_assignment bool
     member_id       string
     members         []JoinGroupResponseMember
 }
@@ -554,8 +616,8 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
     
     if version >= 7 {
         if is_flexible {
-            writer.write_compact_string(r.protocol_type or { '' })
-            writer.write_compact_string(r.protocol_name or { '' })
+            writer.write_compact_nullable_string(r.protocol_type)
+            writer.write_compact_nullable_string(r.protocol_name)
         } else {
             writer.write_nullable_string(r.protocol_type)
             writer.write_nullable_string(r.protocol_name)
@@ -570,10 +632,16 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
     
     if is_flexible {
         writer.write_compact_string(r.leader)
+        if version >= 9 {
+            writer.write_i8(if r.skip_assignment { i8(1) } else { i8(0) })
+        }
         writer.write_compact_string(r.member_id)
         writer.write_compact_array_len(r.members.len)
     } else {
         writer.write_string(r.leader)
+        if version >= 9 {
+            writer.write_i8(if r.skip_assignment { i8(1) } else { i8(0) })
+        }
         writer.write_string(r.member_id)
         writer.write_array_len(r.members.len)
     }
@@ -609,6 +677,8 @@ pub struct SyncGroupResponse {
 pub:
     throttle_time_ms i32
     error_code      i16
+    protocol_type   ?string
+    protocol_name   ?string
     assignment      []u8
 }
 
@@ -620,6 +690,17 @@ pub fn (r SyncGroupResponse) encode(version i16) []u8 {
         writer.write_i32(r.throttle_time_ms)
     }
     writer.write_i16(r.error_code)
+
+    if version >= 5 {
+        if is_flexible {
+            writer.write_compact_nullable_string(r.protocol_type)
+            writer.write_compact_nullable_string(r.protocol_name)
+        } else {
+            writer.write_nullable_string(r.protocol_type)
+            writer.write_nullable_string(r.protocol_name)
+        }
+    }
+
     if is_flexible {
         writer.write_compact_bytes(r.assignment)
         writer.write_tagged_fields()
@@ -657,6 +738,14 @@ pub struct LeaveGroupResponse {
 pub:
     throttle_time_ms i32
     error_code      i16
+    members         []LeaveGroupResponseMember
+}
+
+pub struct LeaveGroupResponseMember {
+pub:
+    member_id         string
+    group_instance_id ?string
+    error_code        i16
 }
 
 pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
@@ -667,6 +756,28 @@ pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
         writer.write_i32(r.throttle_time_ms)
     }
     writer.write_i16(r.error_code)
+
+    if version >= 3 {
+        if is_flexible {
+            writer.write_compact_array_len(r.members.len)
+        } else {
+            writer.write_array_len(r.members.len)
+        }
+        for m in r.members {
+            if is_flexible {
+                writer.write_compact_string(m.member_id)
+                writer.write_compact_nullable_string(m.group_instance_id)
+            } else {
+                writer.write_string(m.member_id)
+                writer.write_nullable_string(m.group_instance_id)
+            }
+            writer.write_i16(m.error_code)
+            if is_flexible {
+                writer.write_tagged_fields()
+            }
+        }
+    }
+
     if is_flexible {
         writer.write_tagged_fields()
     }
@@ -740,6 +851,7 @@ pub:
     throttle_time_ms i32
     topics          []OffsetFetchResponseTopic
     error_code      i16
+    groups          []OffsetFetchResponseGroup
 }
 
 pub struct OffsetFetchResponseTopic {
@@ -752,8 +864,22 @@ pub struct OffsetFetchResponsePartition {
 pub:
     partition_index     i32
     committed_offset    i64
+    committed_leader_epoch i32
     committed_metadata  ?string
     error_code          i16
+}
+
+pub struct OffsetFetchResponseGroup {
+pub:
+    group_id    string
+    topics      []OffsetFetchResponseGroupTopic
+    error_code  i16
+}
+
+pub struct OffsetFetchResponseGroupTopic {
+pub:
+    name        string
+    partitions  []OffsetFetchResponsePartition
 }
 
 pub fn (r OffsetFetchResponse) encode(version i16) []u8 {
@@ -764,40 +890,88 @@ pub fn (r OffsetFetchResponse) encode(version i16) []u8 {
         writer.write_i32(r.throttle_time_ms)
     }
     
-    if is_flexible {
-        writer.write_compact_array_len(r.topics.len)
-    } else {
-        writer.write_array_len(r.topics.len)
-    }
-    
-    for t in r.topics {
+    if version >= 8 {
         if is_flexible {
-            writer.write_compact_string(t.name)
-            writer.write_compact_array_len(t.partitions.len)
+            writer.write_compact_array_len(r.groups.len)
         } else {
-            writer.write_string(t.name)
-            writer.write_array_len(t.partitions.len)
+            writer.write_array_len(r.groups.len)
         }
-        for p in t.partitions {
-            writer.write_i32(p.partition_index)
-            writer.write_i64(p.committed_offset)
+        for g in r.groups {
             if is_flexible {
-                writer.write_compact_string(p.committed_metadata or { '' })
+                writer.write_compact_string(g.group_id)
+                writer.write_compact_array_len(g.topics.len)
             } else {
-                writer.write_nullable_string(p.committed_metadata)
+                writer.write_string(g.group_id)
+                writer.write_array_len(g.topics.len)
             }
-            writer.write_i16(p.error_code)
+            for t in g.topics {
+                if is_flexible {
+                    writer.write_compact_string(t.name)
+                    writer.write_compact_array_len(t.partitions.len)
+                } else {
+                    writer.write_string(t.name)
+                    writer.write_array_len(t.partitions.len)
+                }
+                for p in t.partitions {
+                    writer.write_i32(p.partition_index)
+                    writer.write_i64(p.committed_offset)
+                    writer.write_i32(p.committed_leader_epoch)
+                    if is_flexible {
+                        writer.write_compact_nullable_string(p.committed_metadata)
+                    } else {
+                        writer.write_nullable_string(p.committed_metadata)
+                    }
+                    writer.write_i16(p.error_code)
+                    if is_flexible {
+                        writer.write_tagged_fields()
+                    }
+                }
+                if is_flexible {
+                    writer.write_tagged_fields()
+                }
+            }
+            writer.write_i16(g.error_code)
             if is_flexible {
                 writer.write_tagged_fields()
             }
         }
+    } else {
         if is_flexible {
-            writer.write_tagged_fields()
+            writer.write_compact_array_len(r.topics.len)
+        } else {
+            writer.write_array_len(r.topics.len)
         }
-    }
-    
-    if version >= 2 {
-        writer.write_i16(r.error_code)
+        for t in r.topics {
+            if is_flexible {
+                writer.write_compact_string(t.name)
+                writer.write_compact_array_len(t.partitions.len)
+            } else {
+                writer.write_string(t.name)
+                writer.write_array_len(t.partitions.len)
+            }
+            for p in t.partitions {
+                writer.write_i32(p.partition_index)
+                writer.write_i64(p.committed_offset)
+                if version >= 5 {
+                    writer.write_i32(p.committed_leader_epoch)
+                }
+                if is_flexible {
+                    writer.write_compact_nullable_string(p.committed_metadata)
+                } else {
+                    writer.write_nullable_string(p.committed_metadata)
+                }
+                writer.write_i16(p.error_code)
+                if is_flexible {
+                    writer.write_tagged_fields()
+                }
+            }
+            if is_flexible {
+                writer.write_tagged_fields()
+            }
+        }
+        if version >= 2 {
+            writer.write_i16(r.error_code)
+        }
     }
     
     if is_flexible {
@@ -924,7 +1098,7 @@ pub fn (r CreateTopicsResponse) encode(version i16) []u8 {
         writer.write_i16(t.error_code)
         if version >= 1 {
             if is_flexible {
-                writer.write_compact_string(t.error_message or { '' })
+                writer.write_compact_nullable_string(t.error_message)
             } else {
                 writer.write_nullable_string(t.error_message)
             }
@@ -1257,6 +1431,80 @@ pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
     
     // Tagged fields at the end
     writer.write_tagged_fields()
+    
+    return writer.bytes()
+}
+
+// ============================================================================
+// SaslHandshake Response (API Key 17)
+// ============================================================================
+// Returns the list of SASL mechanisms supported by the broker
+
+pub struct SaslHandshakeResponse {
+pub:
+    error_code  i16       // Error code (0 = no error, 33 = unsupported mechanism)
+    mechanisms  []string  // List of SASL mechanisms enabled by the broker
+}
+
+pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
+    // SaslHandshake is never flexible (v0-v1 only)
+    mut writer := new_writer()
+    
+    // error_code: INT16
+    writer.write_i16(r.error_code)
+    
+    // mechanisms: ARRAY[STRING]
+    writer.write_array_len(r.mechanisms.len)
+    for m in r.mechanisms {
+        writer.write_string(m)
+    }
+    
+    return writer.bytes()
+}
+
+// ============================================================================
+// SaslAuthenticate Response (API Key 36)
+// ============================================================================
+// Returns the result of SASL authentication
+
+pub struct SaslAuthenticateResponse {
+pub:
+    error_code        i16      // Error code (0 = success, 58 = SASL_AUTHENTICATION_FAILED)
+    error_message     ?string  // Error message if authentication failed
+    auth_bytes        []u8     // SASL authentication bytes from server (for multi-step)
+    session_lifetime_ms i64    // v1+: Session lifetime in milliseconds (0 = no lifetime)
+}
+
+pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
+    is_flexible := version >= 2
+    mut writer := new_writer()
+    
+    // error_code: INT16
+    writer.write_i16(r.error_code)
+    
+    // error_message: NULLABLE_STRING / COMPACT_NULLABLE_STRING
+    if is_flexible {
+        writer.write_compact_nullable_string(r.error_message)
+    } else {
+        writer.write_nullable_string(r.error_message)
+    }
+    
+    // auth_bytes: BYTES / COMPACT_BYTES
+    if is_flexible {
+        writer.write_compact_bytes(r.auth_bytes)
+    } else {
+        writer.write_bytes(r.auth_bytes)
+    }
+    
+    // session_lifetime_ms: INT64 (v1+)
+    if version >= 1 {
+        writer.write_i64(r.session_lifetime_ms)
+    }
+    
+    // Tagged fields for flexible versions
+    if is_flexible {
+        writer.write_tagged_fields()
+    }
     
     return writer.bytes()
 }

@@ -368,7 +368,7 @@ fn encode_varint(val int) []u8 {
 
 fn encode_signed_varint(val i64) []u8 {
     // ZigZag encoding
-    zigzag := u64((val << 1) ^ (val >> 63))
+    zigzag := (u64(val) << 1) ^ u64(val >> 63)
     mut result := []u8{}
     mut v := zigzag
     for v >= 0x80 {

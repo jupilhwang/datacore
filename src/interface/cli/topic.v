@@ -263,8 +263,8 @@ fn read_kafka_response(mut conn net.TcpConn) ![]u8 {
         return error('Failed to read response size: ${err}')
     }
     
-    size := (i32(size_buf[0]) << 24) | (i32(size_buf[1]) << 16) |
-            (i32(size_buf[2]) << 8) | i32(size_buf[3])
+    size := i32(u32(size_buf[0]) << 24 | u32(size_buf[1]) << 16 |
+            u32(size_buf[2]) << 8 | u32(size_buf[3]))
     
     if size <= 0 || size > 104857600 {
         return error('Invalid response size: ${size}')

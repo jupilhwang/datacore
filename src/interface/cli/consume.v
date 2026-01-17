@@ -420,10 +420,10 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
     pos := start
     
     // Base offset (8 bytes)
-    base_offset := (i64(data[pos]) << 56) | (i64(data[pos+1]) << 48) |
-                   (i64(data[pos+2]) << 40) | (i64(data[pos+3]) << 32) |
-                   (i64(data[pos+4]) << 24) | (i64(data[pos+5]) << 16) |
-                   (i64(data[pos+6]) << 8) | i64(data[pos+7])
+    base_offset := i64(u64(data[pos]) << 56 | u64(data[pos+1]) << 48 |
+                   u64(data[pos+2]) << 40 | u64(data[pos+3]) << 32 |
+                   u64(data[pos+4]) << 24 | u64(data[pos+5]) << 16 |
+                   u64(data[pos+6]) << 8 | u64(data[pos+7]))
     
     // Skip batch_length (4) + partition_leader_epoch (4) + magic (1) + crc (4) + attributes (2)
     // + last_offset_delta (4) + first_timestamp (8) + max_timestamp (8)

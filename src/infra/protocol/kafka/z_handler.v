@@ -14,6 +14,7 @@ pub struct Handler {
     cluster_id      string
 mut:
     storage         port.StoragePort
+    auth_manager    ?port.AuthManager  // Optional: SASL authentication manager
     logger          log.Log
 }
 
@@ -25,8 +26,34 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
         broker_port: broker_port
         cluster_id: cluster_id
         storage: storage
+        auth_manager: none
         logger: log.Log{}
     }
+}
+
+// new_handler_with_auth creates a new Kafka protocol handler with storage and authentication
+pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager) Handler {
+    return Handler{
+        broker_id: broker_id
+        host: host
+        broker_port: broker_port
+        cluster_id: cluster_id
+        storage: storage
+        auth_manager: auth_manager
+        logger: log.Log{}
+    }
+}
+
+// Build a minimal (empty) consumer group assignment payload
+fn empty_consumer_assignment() []u8 {
+    mut writer := new_writer()
+    // Consumer protocol version
+    writer.write_i16(0)
+    // assignment array length (0 topics)
+    writer.write_i32(0)
+    // user data length (0)
+    writer.write_i32(0)
+    return writer.bytes()
 }
 
 // Handle incoming request and return response bytes (legacy method)
@@ -60,6 +87,8 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
         .delete_topics { h.handle_delete_topics(req.body, version)! }
         .init_producer_id { h.handle_init_producer_id(req.body, version)! }
         .consumer_group_heartbeat { h.handle_consumer_group_heartbeat(req.body, version)! }
+        .sasl_handshake { h.handle_sasl_handshake(req.body, version)! }
+        .sasl_authenticate { h.handle_sasl_authenticate(req.body, version)! }
         else {
             // h.logger.warn('Unsupported API key: ${int(api_key)}')
             return error('unsupported API key: ${int(api_key)}')
@@ -166,27 +195,75 @@ fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
 // Process Metadata request
 fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
     mut resp_topics := []MetadataResponseTopic{}
-    topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
     
-    for topic in topic_list {
-        mut partitions := []MetadataResponsePartition{}
-        for p in 0 .. topic.partition_count {
-            partitions << MetadataResponsePartition{
+    // If client requested specific topics, return only those
+    // If no topics specified (null or empty), return all topics
+    if req.topics.len > 0 {
+        // Client requested specific topics
+        for req_topic in req.topics {
+            topic_name := req_topic.name or { '' }
+            if topic_name.len == 0 {
+                continue
+            }
+            
+            // Try to get the topic from storage
+            topic := h.storage.get_topic(topic_name) or {
+                // Topic not found - return error response for this topic
+                resp_topics << MetadataResponseTopic{
+                    error_code: i16(ErrorCode.unknown_topic_or_partition)
+                    name: topic_name
+                    topic_id: []u8{len: 16}
+                    is_internal: false
+                    partitions: []
+                }
+                continue
+            }
+            
+            // Topic found - build partition list
+            mut partitions := []MetadataResponsePartition{}
+            for p in 0 .. topic.partition_count {
+                partitions << MetadataResponsePartition{
+                    error_code: 0
+                    partition_index: i32(p)
+                    leader_id: h.broker_id
+                    leader_epoch: 0
+                    replica_nodes: [h.broker_id]
+                    isr_nodes: [h.broker_id]
+                    offline_replicas: []
+                }
+            }
+            resp_topics << MetadataResponseTopic{
                 error_code: 0
-                partition_index: i32(p)
-                leader_id: h.broker_id
-                leader_epoch: 0
-                replica_nodes: [h.broker_id]
-                isr_nodes: [h.broker_id]
-                offline_replicas: []
+                name: topic.name
+                topic_id: topic.topic_id
+                is_internal: topic.is_internal
+                partitions: partitions
             }
         }
-        resp_topics << MetadataResponseTopic{
-            error_code: 0
-            name: topic.name
-            topic_id: []u8{len: 16}  // Empty UUID for now
-            is_internal: false
-            partitions: partitions
+    } else {
+        // No specific topics requested - return all topics
+        topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
+        
+        for topic in topic_list {
+            mut partitions := []MetadataResponsePartition{}
+            for p in 0 .. topic.partition_count {
+                partitions << MetadataResponsePartition{
+                    error_code: 0
+                    partition_index: i32(p)
+                    leader_id: h.broker_id
+                    leader_epoch: 0
+                    replica_nodes: [h.broker_id]
+                    isr_nodes: [h.broker_id]
+                    offline_replicas: []
+                }
+            }
+            resp_topics << MetadataResponseTopic{
+                error_code: 0
+                name: topic.name
+                topic_id: topic.topic_id
+                is_internal: topic.is_internal
+                partitions: partitions
+            }
         }
     }
     
@@ -255,33 +332,95 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 }
 
 fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version i16) !FindCoordinatorResponse {
+    if version >= 4 {
+        // v4+: return coordinators array
+        mut keys := req.coordinator_keys.clone()
+        if keys.len == 0 && req.key.len > 0 {
+            keys << req.key
+        }
+
+        mut coordinators := []FindCoordinatorResponseNode{}
+        for key in keys {
+            coordinators << FindCoordinatorResponseNode{
+                key: key
+                node_id: h.broker_id
+                host: h.host
+                port: h.broker_port
+                error_code: 0
+                error_message: none
+            }
+        }
+
+        return FindCoordinatorResponse{
+            throttle_time_ms: 0
+            coordinators: coordinators
+        }
+    }
+
+    // v0-v3: single coordinator fields
     return FindCoordinatorResponse{
         throttle_time_ms: 0
         error_code: 0
+        error_message: none
         node_id: h.broker_id
         host: h.host
         port: h.broker_port
+        coordinators: []FindCoordinatorResponseNode{}
     }
 }
 
 fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGroupResponse {
+    if req.member_id.len == 0 && req.group_instance_id == none {
+        return JoinGroupResponse{
+            throttle_time_ms: 0
+            error_code: i16(ErrorCode.member_id_required)
+            generation_id: -1
+            protocol_type: req.protocol_type
+            protocol_name: ''
+            leader: ''
+            skip_assignment: false
+            member_id: 'member-${h.broker_id}-1'
+            members: []
+        }
+    }
+
     return JoinGroupResponse{
         throttle_time_ms: 0
         error_code: 0
         generation_id: 1
-        protocol_type: ''
-        protocol_name: ''
+        protocol_type: req.protocol_type
+        protocol_name: if req.protocols.len > 0 { req.protocols[0].name } else { '' }
         leader: req.member_id
+        skip_assignment: false
         member_id: req.member_id
-        members: []
+        members: if req.member_id.len > 0 && req.protocols.len > 0 {
+            [
+                JoinGroupResponseMember{
+                    member_id: req.member_id
+                    group_instance_id: req.group_instance_id
+                    metadata: req.protocols[0].metadata
+                },
+            ]
+        } else {
+            []
+        }
     }
 }
 
 fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGroupResponse {
+    mut assignment := empty_consumer_assignment()
+    for a in req.assignments {
+        if a.member_id == req.member_id {
+            assignment = a.assignment.clone()
+            break
+        }
+    }
     return SyncGroupResponse{
         throttle_time_ms: 0
         error_code: 0
-        assignment: []u8{}
+        protocol_type: req.protocol_type
+        protocol_name: req.protocol_name
+        assignment: assignment
     }
 }
 
@@ -296,6 +435,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
     return LeaveGroupResponse{
         throttle_time_ms: 0
         error_code: 0
+        members: []LeaveGroupResponseMember{}
     }
 }
 
@@ -307,10 +447,19 @@ fn (mut h Handler) process_offset_commit(req OffsetCommitRequest, version i16) !
 }
 
 fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !OffsetFetchResponse {
+    if version >= 8 {
+        return OffsetFetchResponse{
+            throttle_time_ms: 0
+            topics: []
+            error_code: 0
+            groups: []
+        }
+    }
     return OffsetFetchResponse{
         throttle_time_ms: 0
         topics: []
         error_code: 0
+        groups: []
     }
 }
 
@@ -371,33 +520,107 @@ fn (h Handler) handle_api_versions(version i16) []u8 {
 // Metadata handler
 fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
-    _ := parse_metadata_request(mut reader, version, is_flexible_version(.metadata, version))!
+    req := parse_metadata_request(mut reader, version, is_flexible_version(.metadata, version))!
     
-    // Get topics from storage
     mut resp_topics := []MetadataResponseTopic{}
-    topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
     
-    for topic in topic_list {
-        mut partitions := []MetadataResponsePartition{}
-        for p in 0 .. topic.partition_count {
-            partitions << MetadataResponsePartition{
-                error_code: 0
-                partition_index: p
-                leader_id: h.broker_id
-                leader_epoch: 0
-                replica_nodes: [h.broker_id]
-                isr_nodes: [h.broker_id]
-                offline_replicas: []
+    // If specific topics requested, return only those
+    if req.topics.len > 0 {
+        for req_topic in req.topics {
+            // Extract topic name - skip if not provided
+            if topic_name := req_topic.name {
+                // Try to get topic from storage
+                mut topic := h.storage.get_topic(topic_name) or {
+                    // Topic not found - check if auto-create is enabled
+                    if req.allow_auto_topic_creation {
+                        // Auto-create topic with default config (1 partition)
+                        h.storage.create_topic(topic_name, 1, domain.TopicConfig{}) or {
+                            // Failed to create - return error response
+                            resp_topics << MetadataResponseTopic{
+                                error_code: 3  // UNKNOWN_TOPIC_OR_PARTITION
+                                name: topic_name
+                                topic_id: []u8{len: 16}
+                                is_internal: false
+                                partitions: []
+                                topic_authorized_ops: -2147483648
+                            }
+                            continue
+                        }
+                        // Get the newly created topic
+                        h.storage.get_topic(topic_name) or {
+                            resp_topics << MetadataResponseTopic{
+                                error_code: 3
+                                name: topic_name
+                                topic_id: []u8{len: 16}
+                                is_internal: false
+                                partitions: []
+                                topic_authorized_ops: -2147483648
+                            }
+                            continue
+                        }
+                    } else {
+                        // Auto-create disabled - return error response
+                        resp_topics << MetadataResponseTopic{
+                            error_code: 3  // UNKNOWN_TOPIC_OR_PARTITION
+                            name: topic_name
+                            topic_id: []u8{len: 16}
+                            is_internal: false
+                            partitions: []
+                            topic_authorized_ops: -2147483648
+                        }
+                        continue
+                    }
+                    }
+                
+                mut partitions := []MetadataResponsePartition{}
+                for p in 0 .. topic.partition_count {
+                    partitions << MetadataResponsePartition{
+                        error_code: 0
+                        partition_index: p
+                        leader_id: h.broker_id
+                        leader_epoch: 0
+                        replica_nodes: [h.broker_id]
+                        isr_nodes: [h.broker_id]
+                        offline_replicas: []
+                    }
+                }
+                
+                resp_topics << MetadataResponseTopic{
+                    error_code: 0
+                    name: topic.name
+                    topic_id: topic.topic_id
+                    is_internal: topic.is_internal
+                    partitions: partitions
+                    topic_authorized_ops: -2147483648
+                }
             }
         }
+    } else {
+        // No specific topics requested - return all topics
+        topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
         
-        resp_topics << MetadataResponseTopic{
-            error_code: 0
-            name: topic.name
-            topic_id: topic.topic_id
-            is_internal: topic.is_internal
-            partitions: partitions
-            topic_authorized_ops: -2147483648  // Unknown
+        for topic in topic_list {
+            mut partitions := []MetadataResponsePartition{}
+            for p in 0 .. topic.partition_count {
+                partitions << MetadataResponsePartition{
+                    error_code: 0
+                    partition_index: p
+                    leader_id: h.broker_id
+                    leader_epoch: 0
+                    replica_nodes: [h.broker_id]
+                    isr_nodes: [h.broker_id]
+                    offline_replicas: []
+                }
+            }
+            
+            resp_topics << MetadataResponseTopic{
+                error_code: 0
+                name: topic.name
+                topic_id: topic.topic_id
+                is_internal: topic.is_internal
+                partitions: partitions
+                topic_authorized_ops: -2147483648
+            }
         }
     }
     
@@ -424,17 +647,43 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 // FindCoordinator handler
 fn (h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
-    _ := parse_find_coordinator_request(mut reader, version, is_flexible_version(.find_coordinator, version))!
-    
-    resp := FindCoordinatorResponse{
-        throttle_time_ms: 0
-        error_code: 0
-        error_message: none
-        node_id: h.broker_id
-        host: h.host
-        port: h.broker_port
+    req := parse_find_coordinator_request(mut reader, version, is_flexible_version(.find_coordinator, version))!
+
+    mut resp := FindCoordinatorResponse{}
+    if version >= 4 {
+        mut keys := req.coordinator_keys.clone()
+        if keys.len == 0 && req.key.len > 0 {
+            keys << req.key
+        }
+
+        mut coordinators := []FindCoordinatorResponseNode{}
+        for key in keys {
+            coordinators << FindCoordinatorResponseNode{
+                key: key
+                node_id: h.broker_id
+                host: h.host
+                port: h.broker_port
+                error_code: 0
+                error_message: none
+            }
+        }
+
+        resp = FindCoordinatorResponse{
+            throttle_time_ms: 0
+            coordinators: coordinators
+        }
+    } else {
+        resp = FindCoordinatorResponse{
+            throttle_time_ms: 0
+            error_code: 0
+            error_message: none
+            node_id: h.broker_id
+            host: h.host
+            port: h.broker_port
+            coordinators: []FindCoordinatorResponseNode{}
+        }
     }
-    
+
     return resp.encode(version)
 }
 
@@ -473,7 +722,7 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
             }
             
             // Store records in storage (with auto-create topic if not exists)
-            mut result := h.storage.append(t.name, int(p.index), parsed.records) or {
+            result := h.storage.append(t.name, int(p.index), parsed.records) or {
                 // If topic not found, auto-create it
                 if err.str().contains('not found') {
                     // Auto-create topic with default config (1 partition or requested partition + 1)
@@ -488,8 +737,8 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
                         }
                         continue
                     }
-                    // Retry append after topic creation
-                    h.storage.append(t.name, int(p.index), parsed.records) or {
+                    // Retry append after topic creation and return result
+                    retry_result := h.storage.append(t.name, int(p.index), parsed.records) or {
                         partitions << ProduceResponsePartition{
                             index: p.index
                             error_code: i16(ErrorCode.unknown_server_error)
@@ -499,6 +748,7 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
                         }
                         continue
                     }
+                    retry_result
                 } else {
                     // Other errors
                     error_code := if err.str().contains('out of range') {
@@ -541,10 +791,11 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
     return resp.encode(version)
 }
 
-// Fetch handler - retrieves records from storage
 fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
     req := parse_fetch_request(mut reader, version, is_flexible_version(.fetch, version))!
+    
+    eprintln('[Fetch] Request: version=${version}, topics=${req.topics.len}')
     
     // For v13+, topic_id is used instead of topic name
     // Note: Currently we don't persistently store topic_id mapping
@@ -586,12 +837,9 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
                 continue
             }
             
-            // Encode records as RecordBatch
-            records_data := if result.records.len > 0 {
-                encode_record_batch(result.records, p.fetch_offset)
-            } else {
-                []u8{}
-            }
+            // Encode records as RecordBatch (Kafka message format v2)
+            records_data := encode_record_batch(result.records, p.fetch_offset)
+            eprintln('[Fetch] Topic=${topic_name} partition=${p.partition} has ${result.records.len} records - returning ${records_data.len} bytes')
             
             partitions << FetchResponsePartition{
                 partition_index: p.partition
@@ -616,7 +864,13 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
         topics: topics
     }
     
-    return resp.encode(version)
+    encoded := resp.encode(version)
+    eprintln('[Fetch] Response version=${version}, size=${encoded.len} bytes')
+    if encoded.len > 0 && encoded.len < 200 {
+        eprintln('[Fetch] First 100 bytes: ${encoded[..if encoded.len > 100 { 100 } else { encoded.len }].hex()}')
+    }
+    
+    return encoded
 }
 
 // ListOffsets handler - retrieves partition offset info from storage
@@ -671,16 +925,53 @@ fn (mut h Handler) handle_list_offsets(body []u8, version i16) ![]u8 {
     return resp.encode(version)
 }
 
-// OffsetCommit handler (placeholder)
-fn (h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
+// OffsetCommit handler - persists consumer group offsets
+fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
     req := parse_offset_commit_request(mut reader, version, is_flexible_version(.offset_commit, version))!
     
+    // Collect all offsets to commit
+    mut all_offsets := []domain.PartitionOffset{}
+    for t in req.topics {
+        for p in t.partitions {
+            all_offsets << domain.PartitionOffset{
+                topic: t.name
+                partition: int(p.partition_index)
+                offset: p.committed_offset
+                leader_epoch: -1
+                metadata: p.committed_metadata
+            }
+        }
+    }
+    
+    // Commit offsets to storage
+    h.storage.commit_offsets(req.group_id, all_offsets) or {
+        // If commit fails, return error for all partitions
+        mut topics := []OffsetCommitResponseTopic{}
+        for t in req.topics {
+            mut partitions := []OffsetCommitResponsePartition{}
+            for p in t.partitions {
+                partitions << OffsetCommitResponsePartition{
+                    partition_index: p.partition_index
+                    error_code: i16(ErrorCode.unknown_server_error)
+                }
+            }
+            topics << OffsetCommitResponseTopic{
+                name: t.name
+                partitions: partitions
+            }
+        }
+        return OffsetCommitResponse{
+            throttle_time_ms: 0
+            topics: topics
+        }.encode(version)
+    }
+    
+    // Success - return 0 error for all partitions
     mut topics := []OffsetCommitResponseTopic{}
     for t in req.topics {
         mut partitions := []OffsetCommitResponsePartition{}
         for p in t.partitions {
-            // TODO: Store offset
             partitions << OffsetCommitResponsePartition{
                 partition_index: p.partition_index
                 error_code: 0
@@ -700,35 +991,140 @@ fn (h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
     return resp.encode(version)
 }
 
-// OffsetFetch handler (placeholder)
-fn (h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
+// OffsetFetch handler - retrieves consumer group offsets
+fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
     req := parse_offset_fetch_request(mut reader, version, is_flexible_version(.offset_fetch, version))!
-    
-    mut topics := []OffsetFetchResponseTopic{}
-    for t in req.topics {
-        mut partitions := []OffsetFetchResponsePartition{}
-        for p in t.partitions {
-            // TODO: Get offset from storage
-            partitions << OffsetFetchResponsePartition{
-                partition_index: p
-                committed_offset: -1
-                committed_metadata: none
+
+    if version >= 8 {
+        mut groups := []OffsetFetchResponseGroup{}
+
+        mut req_groups := req.groups.clone()
+        if req_groups.len == 0 && req.group_id.len > 0 {
+            // Bridge v0-7 style into v8 response
+            mut gtopics := []OffsetFetchRequestGroupTopic{}
+            for t in req.topics {
+                gtopics << OffsetFetchRequestGroupTopic{
+                    name: t.name
+                    partitions: t.partitions
+                }
+            }
+            req_groups << OffsetFetchRequestGroup{
+                group_id: req.group_id
+                member_id: none
+                member_epoch: -1
+                topics: gtopics
+            }
+        }
+
+        for g in req_groups {
+            // Collect all topic-partitions to query
+            mut partitions_to_fetch := []domain.TopicPartition{}
+            for t in g.topics {
+                for p in t.partitions {
+                    partitions_to_fetch << domain.TopicPartition{
+                        topic: t.name
+                        partition: int(p)
+                    }
+                }
+            }
+
+            fetched_offsets := h.storage.fetch_offsets(g.group_id, partitions_to_fetch) or {
+                groups << OffsetFetchResponseGroup{
+                    group_id: g.group_id
+                    topics: []
+                    error_code: i16(ErrorCode.unknown_server_error)
+                }
+                continue
+            }
+
+            mut topics_map := map[string][]OffsetFetchResponsePartition{}
+            for result in fetched_offsets {
+                if result.topic !in topics_map {
+                    topics_map[result.topic] = []
+                }
+                topics_map[result.topic] << OffsetFetchResponsePartition{
+                    partition_index: i32(result.partition)
+                    committed_offset: result.offset
+                    committed_leader_epoch: -1
+                    committed_metadata: if result.metadata.len > 0 { result.metadata } else { none }
+                    error_code: result.error_code
+                }
+            }
+
+            mut topics := []OffsetFetchResponseGroupTopic{}
+            for name, partitions in topics_map {
+                topics << OffsetFetchResponseGroupTopic{
+                    name: name
+                    partitions: partitions
+                }
+            }
+
+            groups << OffsetFetchResponseGroup{
+                group_id: g.group_id
+                topics: topics
                 error_code: 0
             }
         }
+
+        resp := OffsetFetchResponse{
+            throttle_time_ms: 0
+            topics: []
+            error_code: 0
+            groups: groups
+        }
+        return resp.encode(version)
+    }
+
+    // v0-7 behavior
+    mut partitions_to_fetch := []domain.TopicPartition{}
+    for t in req.topics {
+        for p in t.partitions {
+            partitions_to_fetch << domain.TopicPartition{
+                topic: t.name
+                partition: int(p)
+            }
+        }
+    }
+
+    fetched_offsets := h.storage.fetch_offsets(req.group_id, partitions_to_fetch) or {
+        return OffsetFetchResponse{
+            throttle_time_ms: 0
+            topics: []
+            error_code: i16(ErrorCode.unknown_server_error)
+            groups: []
+        }.encode(version)
+    }
+
+    mut topics_map := map[string][]OffsetFetchResponsePartition{}
+    for result in fetched_offsets {
+        if result.topic !in topics_map {
+            topics_map[result.topic] = []
+        }
+        topics_map[result.topic] << OffsetFetchResponsePartition{
+            partition_index: i32(result.partition)
+            committed_offset: result.offset
+            committed_leader_epoch: -1
+            committed_metadata: if result.metadata.len > 0 { result.metadata } else { none }
+            error_code: result.error_code
+        }
+    }
+
+    mut topics := []OffsetFetchResponseTopic{}
+    for name, partitions in topics_map {
         topics << OffsetFetchResponseTopic{
-            name: t.name
+            name: name
             partitions: partitions
         }
     }
-    
+
     resp := OffsetFetchResponse{
         throttle_time_ms: 0
         topics: topics
         error_code: 0
+        groups: []
     }
-    
+
     return resp.encode(version)
 }
 
@@ -740,6 +1136,21 @@ fn (h Handler) handle_join_group(body []u8, version i16) ![]u8 {
     // TODO: Implement group coordination
     protocol_name := if req.protocols.len > 0 { req.protocols[0].name } else { '' }
     member_id := if req.member_id.len > 0 { req.member_id } else { 'member-${h.broker_id}-1' }
+
+    if req.member_id.len == 0 && req.group_instance_id == none {
+        resp := JoinGroupResponse{
+            throttle_time_ms: 0
+            error_code: i16(ErrorCode.member_id_required)
+            generation_id: -1
+            protocol_type: req.protocol_type
+            protocol_name: ''
+            leader: ''
+            skip_assignment: false
+            member_id: member_id
+            members: []
+        }
+        return resp.encode(version)
+    }
     
     resp := JoinGroupResponse{
         throttle_time_ms: 0
@@ -748,8 +1159,19 @@ fn (h Handler) handle_join_group(body []u8, version i16) ![]u8 {
         protocol_type: req.protocol_type
         protocol_name: protocol_name
         leader: member_id
+        skip_assignment: false
         member_id: member_id
-        members: []
+        members: if member_id.len > 0 && req.protocols.len > 0 {
+            [
+                JoinGroupResponseMember{
+                    member_id: member_id
+                    group_instance_id: req.group_instance_id
+                    metadata: req.protocols[0].metadata
+                },
+            ]
+        } else {
+            []
+        }
     }
     
     return resp.encode(version)
@@ -758,12 +1180,22 @@ fn (h Handler) handle_join_group(body []u8, version i16) ![]u8 {
 // SyncGroup handler (placeholder)
 fn (h Handler) handle_sync_group(body []u8, version i16) ![]u8 {
     mut reader := new_reader(body)
-    _ := parse_sync_group_request(mut reader, version, is_flexible_version(.sync_group, version))!
+    req := parse_sync_group_request(mut reader, version, is_flexible_version(.sync_group, version))!
     
+    mut assignment := empty_consumer_assignment()
+    for a in req.assignments {
+        if a.member_id == req.member_id {
+            assignment = a.assignment.clone()
+            break
+        }
+    }
+
     resp := SyncGroupResponse{
         throttle_time_ms: 0
         error_code: 0
-        assignment: []u8{}
+        protocol_type: req.protocol_type
+        protocol_name: req.protocol_name
+        assignment: assignment
     }
     
     return resp.encode(version)
@@ -790,6 +1222,7 @@ fn (h Handler) handle_leave_group(body []u8, version i16) ![]u8 {
     resp := LeaveGroupResponse{
         throttle_time_ms: 0
         error_code: 0
+        members: []LeaveGroupResponseMember{}
     }
     
     return resp.encode(version)
@@ -1121,5 +1554,103 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
         member_epoch: member_epoch
         heartbeat_interval_ms: heartbeat_interval_ms
         assignment: assignment
+    }
+}
+
+// ============================================================================
+// SaslHandshake Handler (API Key 17)
+// ============================================================================
+// Handles SASL mechanism negotiation
+
+fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
+    mut reader := new_reader(body)
+    is_flexible := is_flexible_version(.sasl_handshake, version)
+    
+    req := parse_sasl_handshake_request(mut reader, version, is_flexible)!
+    
+    // Get supported mechanisms from auth manager
+    mut supported_mechanisms := []string{}
+    mut error_code := i16(0)
+    
+    if auth_mgr := h.auth_manager {
+        // Convert SaslMechanism enum to strings
+        for m in auth_mgr.supported_mechanisms() {
+            supported_mechanisms << m.str()
+        }
+        
+        // Check if the requested mechanism is supported
+        if !auth_mgr.is_mechanism_supported(req.mechanism) {
+            error_code = i16(ErrorCode.unsupported_sasl_mechanism)
+        }
+    } else {
+        // No auth manager configured - return PLAIN as default supported mechanism
+        // This is for backward compatibility when auth is not enabled
+        supported_mechanisms = ['PLAIN']
+        if req.mechanism.to_upper() != 'PLAIN' {
+            error_code = i16(ErrorCode.unsupported_sasl_mechanism)
+        }
+    }
+    
+    response := SaslHandshakeResponse{
+        error_code: error_code
+        mechanisms: supported_mechanisms
+    }
+    
+    return response.encode(version)
+}
+
+// ============================================================================
+// SaslAuthenticate Handler (API Key 36)
+// ============================================================================
+// Handles SASL authentication
+
+fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
+    mut reader := new_reader(body)
+    is_flexible := is_flexible_version(.sasl_authenticate, version)
+    
+    req := parse_sasl_authenticate_request(mut reader, version, is_flexible)!
+    
+    // Perform authentication
+    if auth_mgr := h.auth_manager {
+        result := auth_mgr.authenticate(.plain, req.auth_bytes) or {
+            // Authentication error
+            response := SaslAuthenticateResponse{
+                error_code: i16(ErrorCode.sasl_authentication_failed)
+                error_message: 'Authentication failed: ${err.msg()}'
+                auth_bytes: []u8{}
+                session_lifetime_ms: 0
+            }
+            return response.encode(version)
+        }
+        
+        if result.error_code == .none {
+            // Authentication successful
+            response := SaslAuthenticateResponse{
+                error_code: 0
+                error_message: none
+                auth_bytes: result.challenge  // For SCRAM, this would be the server's challenge
+                session_lifetime_ms: 0  // No session lifetime limit
+            }
+            return response.encode(version)
+        } else {
+            // Authentication failed
+            response := SaslAuthenticateResponse{
+                error_code: i16(result.error_code)
+                error_message: result.error_message
+                auth_bytes: []u8{}
+                session_lifetime_ms: 0
+            }
+            return response.encode(version)
+        }
+    } else {
+        // No auth manager - authentication not configured
+        // Return error to indicate auth is required but not available
+        response := SaslAuthenticateResponse{
+            error_code: i16(ErrorCode.illegal_sasl_state)
+            error_message: 'SASL authentication not configured'
+            auth_bytes: []u8{}
+            session_lifetime_ms: 0
+        }
+        return response.encode(version)
     }
 }

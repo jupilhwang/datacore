@@ -2,6 +2,7 @@
 // Thread-safe connection management with metrics
 module server
 
+import domain
 import net
 import sync
 import time
@@ -20,6 +21,10 @@ pub mut:
     api_version     i16      // Client's preferred API version
     client_sw_name  string   // Client software name
     client_sw_ver   string   // Client software version
+    // Authentication state
+    auth_state      domain.AuthState    // Current authentication state
+    principal       ?domain.Principal   // Authenticated principal (if any)
+    sasl_mechanism  ?string             // SASL mechanism being used
 }
 
 // ConnectionMetrics tracks connection statistics
@@ -229,4 +234,46 @@ fn extract_ip(addr string) string {
         return parts[0]
     }
     return addr
+}
+
+// ============================================================================
+// Authentication Helper Methods
+// ============================================================================
+
+// is_authenticated checks if the connection is authenticated
+pub fn (c &ClientConnection) is_authenticated() bool {
+    return c.auth_state == .authenticated
+}
+
+// set_authenticated sets the connection as authenticated with the given principal
+pub fn (mut c ClientConnection) set_authenticated(principal domain.Principal) {
+    c.auth_state = .authenticated
+    c.principal = principal
+}
+
+// set_handshake_complete marks that SASL handshake is complete
+pub fn (mut c ClientConnection) set_handshake_complete(mechanism string) {
+    c.auth_state = .handshake_complete
+    c.sasl_mechanism = mechanism
+}
+
+// reset_auth resets the authentication state
+pub fn (mut c ClientConnection) reset_auth() {
+    c.auth_state = .initial
+    c.principal = none
+    c.sasl_mechanism = none
+}
+
+// get_principal returns the authenticated principal
+pub fn (c &ClientConnection) get_principal() ?domain.Principal {
+    return c.principal
+}
+
+// requires_auth checks if the connection needs authentication
+// This can be used to determine if SASL is required before processing requests
+pub fn (c &ClientConnection) requires_auth(auth_required bool) bool {
+    if !auth_required {
+        return false
+    }
+    return c.auth_state != .authenticated
 }

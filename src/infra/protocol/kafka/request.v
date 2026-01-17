@@ -52,8 +52,8 @@ pub fn parse_request(data []u8) !Request {
     api_key_enum := unsafe { ApiKey(api_key) }
     is_flexible := api_key_enum != .api_versions && is_flexible_version(api_key_enum, api_version)
     
-    // In Request Header v2 (flexible), client_id is still NULLABLE_STRING (NOT compact!)
-    // Only the tagged_fields at the end are compact-encoded
+    // In Request Header v2 (flexible), client_id is still a regular NULLABLE_STRING (2-byte length prefix)
+    // NOT a compact string! Only the tag_buffer at the end is compact-encoded
     client_id := reader.read_nullable_string()!
     
     if is_flexible {
@@ -93,6 +93,7 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
         .sync_group { version >= 4 }
         .describe_groups { version >= 5 }
         .list_groups { version >= 3 }
+        .sasl_handshake { false }  // v0-v1 are never flexible
         .api_versions { version >= 3 }
         .create_topics { version >= 5 }
         .delete_topics { version >= 4 }
@@ -101,6 +102,7 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
         .describe_configs { version >= 4 }
         .alter_configs { version >= 2 }
         .create_partitions { version >= 2 }
+        .sasl_authenticate { version >= 2 }  // v2+ is flexible
         .delete_groups { version >= 2 }
         .describe_cluster { version >= 0 }
         .consumer_group_heartbeat { version >= 0 }
@@ -180,7 +182,7 @@ fn parse_metadata_request(mut reader BinaryReader, version i16, is_flexible bool
                 }
             }
             
-            if is_flexible {
+            if is_flexible && reader.remaining() > 0 {
                 reader.skip_tagged_fields()!
             }
             
@@ -203,10 +205,6 @@ fn parse_metadata_request(mut reader BinaryReader, version i16, is_flexible bool
     } else if version >= 11 {
         // Only include_topic_authorized_operations remains
         include_topic_authorized_ops = reader.read_i8()! != 0
-    }
-    
-    if is_flexible {
-        reader.skip_tagged_fields()!
     }
     
     return MetadataRequest{
@@ -302,10 +300,6 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
         }
     }
     
-    if is_flexible {
-        reader.skip_tagged_fields()!
-    }
-    
     return ProduceRequest{
         transactional_id: transactional_id
         acks: acks
@@ -340,13 +334,11 @@ pub:
 }
 
 fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequest {
-    // v12+: cluster_id (COMPACT_NULLABLE_STRING)
-    if version >= 12 {
-        _ = reader.read_compact_nullable_string()!
+    // replica_id: removed in v15+ (KIP-595)
+    mut replica_id := i32(-1)  // Default: consumer
+    if version < 15 {
+        replica_id = reader.read_i32()!
     }
-    
-    // replica_id: removed in v15, but still present in v13
-    replica_id := reader.read_i32()!
     max_wait_ms := reader.read_i32()!
     min_bytes := reader.read_i32()!
     
@@ -478,10 +470,6 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
         }
     }
     
-    if is_flexible {
-        reader.skip_tagged_fields()!
-    }
-    
     return FetchRequest{
         replica_id: replica_id
         max_wait_ms: max_wait_ms
@@ -495,29 +483,55 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 // FindCoordinator Request
 pub struct FindCoordinatorRequest {
 pub:
-    key         string
-    key_type    i8
+    key               string
+    key_type          i8
+    coordinator_keys  []string
 }
 
 fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexible bool) !FindCoordinatorRequest {
-    key := if is_flexible {
-        reader.read_compact_string()!
-    } else {
-        reader.read_string()!
-    }
-    
+    mut key := ''
+    mut coordinator_keys := []string{}
+
     mut key_type := i8(0)  // 0 = GROUP, 1 = TRANSACTION
-    if version >= 1 {
-        key_type = reader.read_i8()!
+
+    if version >= 4 {
+        // v4+: KeyType first, then CoordinatorKeys array
+        if version >= 1 {
+            key_type = reader.read_i8()!
+        }
+        keys_len := if is_flexible {
+            reader.read_compact_array_len()!
+        } else {
+            reader.read_array_len()!
+        }
+        if keys_len > 0 {
+            for _ in 0 .. keys_len {
+                coordinator_keys << if is_flexible {
+                    reader.read_compact_string()!
+                } else {
+                    reader.read_string()!
+                }
+            }
+        }
+    } else {
+        key = if is_flexible {
+            reader.read_compact_string()!
+        } else {
+            reader.read_string()!
+        }
+        if version >= 1 {
+            key_type = reader.read_i8()!
+        }
     }
-    
+
     if is_flexible {
         reader.skip_tagged_fields()!
     }
-    
+
     return FindCoordinatorRequest{
         key: key
         key_type: key_type
+        coordinator_keys: coordinator_keys
     }
 }
 
@@ -605,10 +619,6 @@ fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bo
         }
     }
     
-    if is_flexible {
-        reader.skip_tagged_fields()!
-    }
-    
     return JoinGroupRequest{
         group_id: group_id
         session_timeout_ms: session_timeout_ms
@@ -626,6 +636,9 @@ pub:
     group_id        string
     generation_id   i32
     member_id       string
+    group_instance_id ?string
+    protocol_type     ?string
+    protocol_name     ?string
     assignments     []SyncGroupRequestAssignment
 }
 
@@ -639,14 +652,32 @@ fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bo
     group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
     generation_id := reader.read_i32()!
     member_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-    
-    if version >= 3 && is_flexible {
-        _ = reader.read_compact_string()!  // group_instance_id
+
+    mut group_instance_id := ?string(none)
+    if version >= 3 {
+        if is_flexible {
+            str := reader.read_compact_string()!
+            group_instance_id = if str.len > 0 { str } else { none }
+        } else {
+            str := reader.read_nullable_string()!
+            group_instance_id = if str.len > 0 { str } else { none }
+        }
     }
-    
+
+    mut protocol_type := ?string(none)
+    mut protocol_name := ?string(none)
     if version >= 5 {
-        _ = reader.read_compact_string()!  // protocol_type
-        _ = reader.read_compact_string()!  // protocol_name
+        if is_flexible {
+            pt := reader.read_compact_string()!
+            pn := reader.read_compact_string()!
+            protocol_type = if pt.len > 0 { pt } else { none }
+            protocol_name = if pn.len > 0 { pn } else { none }
+        } else {
+            pt := reader.read_nullable_string()!
+            pn := reader.read_nullable_string()!
+            protocol_type = if pt.len > 0 { pt } else { none }
+            protocol_name = if pn.len > 0 { pn } else { none }
+        }
     }
     
     count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
@@ -658,8 +689,15 @@ fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bo
         if is_flexible { reader.skip_tagged_fields()! }
     }
     
-    if is_flexible { reader.skip_tagged_fields()! }
-    return SyncGroupRequest{ group_id: group_id, generation_id: generation_id, member_id: member_id, assignments: assignments }
+    return SyncGroupRequest{
+        group_id: group_id
+        generation_id: generation_id
+        member_id: member_id
+        group_instance_id: group_instance_id
+        protocol_type: protocol_type
+        protocol_name: protocol_name
+        assignments: assignments
+    }
 }
 
 pub struct HeartbeatRequest {
@@ -673,7 +711,6 @@ fn parse_heartbeat_request(mut reader BinaryReader, version i16, is_flexible boo
     group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
     generation_id := reader.read_i32()!
     member_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-    if is_flexible { reader.skip_tagged_fields()! }
     return HeartbeatRequest{ group_id: group_id, generation_id: generation_id, member_id: member_id }
 }
 
@@ -686,7 +723,6 @@ pub:
 fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible bool) !LeaveGroupRequest {
     group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
     member_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-    if is_flexible { reader.skip_tagged_fields()! }
     return LeaveGroupRequest{ group_id: group_id, member_id: member_id }
 }
 
@@ -740,7 +776,6 @@ fn parse_offset_commit_request(mut reader BinaryReader, version i16, is_flexible
         topics << OffsetCommitRequestTopic{ name: name, partitions: partitions }
         if is_flexible { reader.skip_tagged_fields()! }
     }
-    if is_flexible { reader.skip_tagged_fields()! }
     return OffsetCommitRequest{ group_id: group_id, topics: topics }
 }
 
@@ -748,6 +783,8 @@ pub struct OffsetFetchRequest {
 pub:
     group_id    string
     topics      []OffsetFetchRequestTopic
+    groups      []OffsetFetchRequestGroup
+    require_stable bool
 }
 
 pub struct OffsetFetchRequestTopic {
@@ -756,24 +793,93 @@ pub:
     partitions  []i32
 }
 
+pub struct OffsetFetchRequestGroup {
+pub:
+    group_id      string
+    member_id     ?string
+    member_epoch  i32
+    topics        []OffsetFetchRequestGroupTopic
+}
+
+pub struct OffsetFetchRequestGroupTopic {
+pub:
+    name        string
+    partitions  []i32
+}
+
 fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !OffsetFetchRequest {
-    group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-    count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+    mut group_id := ''
     mut topics := []OffsetFetchRequestTopic{}
-    if count >= 0 {
-        for _ in 0 .. count {
-            name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-            pcount := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
-            mut partitions := []i32{}
-            for _ in 0 .. pcount {
-                partitions << reader.read_i32()!
+    mut groups := []OffsetFetchRequestGroup{}
+    mut require_stable := false
+
+    if version <= 7 {
+        group_id = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+        count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+        if count >= 0 {
+            for _ in 0 .. count {
+                name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+                pcount := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+                mut partitions := []i32{}
+                for _ in 0 .. pcount {
+                    partitions << reader.read_i32()!
+                }
+                topics << OffsetFetchRequestTopic{ name: name, partitions: partitions }
+                if is_flexible { reader.skip_tagged_fields()! }
             }
-            topics << OffsetFetchRequestTopic{ name: name, partitions: partitions }
-            if is_flexible { reader.skip_tagged_fields()! }
+        }
+    } else {
+        gcount := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+        if gcount >= 0 {
+            for _ in 0 .. gcount {
+                gid := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+                mut member_id := ?string(none)
+                mut member_epoch := i32(-1)
+                if version >= 9 {
+                    if is_flexible {
+                        mid := reader.read_compact_nullable_string()!
+                        member_id = if mid.len > 0 { mid } else { none }
+                    } else {
+                        mid := reader.read_nullable_string()!
+                        member_id = if mid.len > 0 { mid } else { none }
+                    }
+                    member_epoch = reader.read_i32()!
+                }
+                tcount := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+                mut gtopics := []OffsetFetchRequestGroupTopic{}
+                if tcount >= 0 {
+                    for _ in 0 .. tcount {
+                        name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+                        pcount := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+                        mut partitions := []i32{}
+                        for _ in 0 .. pcount {
+                            partitions << reader.read_i32()!
+                        }
+                        gtopics << OffsetFetchRequestGroupTopic{ name: name, partitions: partitions }
+                        if is_flexible { reader.skip_tagged_fields()! }
+                    }
+                }
+                groups << OffsetFetchRequestGroup{
+                    group_id: gid
+                    member_id: member_id
+                    member_epoch: member_epoch
+                    topics: gtopics
+                }
+                if is_flexible { reader.skip_tagged_fields()! }
+            }
         }
     }
-    if is_flexible { reader.skip_tagged_fields()! }
-    return OffsetFetchRequest{ group_id: group_id, topics: topics }
+
+    if version >= 7 {
+        require_stable = reader.read_i8()! != 0
+    }
+
+    return OffsetFetchRequest{
+        group_id: group_id
+        topics: topics
+        groups: groups
+        require_stable: require_stable
+    }
 }
 
 pub struct ListOffsetsRequest {
@@ -816,7 +922,6 @@ fn parse_list_offsets_request(mut reader BinaryReader, version i16, is_flexible 
         topics << ListOffsetsRequestTopic{ name: name, partitions: partitions }
         if is_flexible { reader.skip_tagged_fields()! }
     }
-    if is_flexible { reader.skip_tagged_fields()! }
     return ListOffsetsRequest{ replica_id: replica_id, isolation_level: isolation_level, topics: topics }
 }
 
@@ -868,7 +973,6 @@ fn parse_create_topics_request(mut reader BinaryReader, version i16, is_flexible
     timeout_ms := reader.read_i32()!
     // v4+: validate_only field
     validate_only := if version >= 4 { reader.read_i8()! != 0 } else { false }
-    if is_flexible { reader.skip_tagged_fields()! }
     return CreateTopicsRequest{ topics: topics, timeout_ms: timeout_ms, validate_only: validate_only }
 }
 
@@ -904,7 +1008,6 @@ fn parse_delete_topics_request(mut reader BinaryReader, version i16, is_flexible
         if is_flexible { reader.skip_tagged_fields()! }
     }
     timeout_ms := reader.read_i32()!
-    if is_flexible { reader.skip_tagged_fields()! }
     return DeleteTopicsRequest{ topics: topics, timeout_ms: timeout_ms }
 }
 
@@ -921,7 +1024,6 @@ fn parse_list_groups_request(mut reader BinaryReader, version i16, is_flexible b
             states_filter << if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
         }
     }
-    if is_flexible { reader.skip_tagged_fields()! }
     return ListGroupsRequest{ states_filter: states_filter }
 }
 
@@ -939,7 +1041,6 @@ fn parse_describe_groups_request(mut reader BinaryReader, version i16, is_flexib
     }
     mut include_authorized_operations := false
     if version >= 3 { include_authorized_operations = reader.read_i8()! != 0 }
-    if is_flexible { reader.skip_tagged_fields()! }
     return DescribeGroupsRequest{ groups: groups, include_authorized_operations: include_authorized_operations }
 }
 
@@ -972,10 +1073,6 @@ fn parse_init_producer_id_request(mut reader BinaryReader, version i16, is_flexi
     if version >= 3 {
         producer_id = reader.read_i64()!
         producer_epoch = reader.read_i16()!
-    }
-    
-    if is_flexible {
-        reader.skip_tagged_fields()!
     }
     
     return InitProducerIdRequest{
@@ -1064,9 +1161,6 @@ fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, 
         reader.skip_tagged_fields()!
     }
     
-    // Skip tagged fields at the end
-    reader.skip_tagged_fields()!
-    
     return ConsumerGroupHeartbeatRequest{
         group_id: group_id
         member_id: member_id
@@ -1077,5 +1171,55 @@ fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, 
         subscribed_topic_names: subscribed_topic_names
         server_assignor: server_assignor
         topic_partitions: topic_partitions
+    }
+}
+
+// ============================================================================
+// SaslHandshake Request (API Key 17)
+// ============================================================================
+// Used to negotiate SASL mechanism between client and broker
+// v0: Basic mechanism negotiation
+// v1: Adds mechanism enable/disable flags
+
+pub struct SaslHandshakeRequest {
+pub:
+    mechanism string  // The SASL mechanism chosen by the client
+}
+
+fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslHandshakeRequest {
+    // SaslHandshake is never flexible (v0-v1 only)
+    mechanism := reader.read_string()!
+    
+    return SaslHandshakeRequest{
+        mechanism: mechanism
+    }
+}
+
+// ============================================================================
+// SaslAuthenticate Request (API Key 36)
+// ============================================================================
+// Used to perform SASL authentication after mechanism handshake
+// v0: Basic authentication
+// v1: Adds session lifetime
+// v2: Flexible versions
+
+pub struct SaslAuthenticateRequest {
+pub:
+    auth_bytes []u8  // The SASL authentication bytes from the client
+}
+
+fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslAuthenticateRequest {
+    auth_bytes := if is_flexible {
+        reader.read_compact_bytes()!
+    } else {
+        reader.read_bytes()!
+    }
+    
+    if is_flexible {
+        reader.skip_tagged_fields()!
+    }
+    
+    return SaslAuthenticateRequest{
+        auth_bytes: auth_bytes
     }
 }

@@ -54,6 +54,7 @@ pub enum ErrorCode {
     invalid_config                      = 40
     not_controller                      = 41
     invalid_request                     = 42
+    sasl_authentication_failed          = 58
     group_id_not_found                  = 69
     unknown_topic_id                    = 100
 }

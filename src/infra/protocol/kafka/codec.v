@@ -259,6 +259,13 @@ pub fn (mut w BinaryWriter) write_i32(val i32) {
     w.data << u8(val)
 }
 
+pub fn (mut w BinaryWriter) write_u32(val u32) {
+    w.data << u8(val >> 24)
+    w.data << u8(val >> 16)
+    w.data << u8(val >> 8)
+    w.data << u8(val)
+}
+
 pub fn (mut w BinaryWriter) write_i64(val i64) {
     w.data << u8(val >> 56)
     w.data << u8(val >> 48)
@@ -381,9 +388,8 @@ pub:
 // parse_record_batch parses a Kafka RecordBatch (v2 format, magic=2)
 // Returns parsed records or empty array if parsing fails
 pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
-    if data.len < 61 {
-        // Minimum RecordBatch size: 8+4+4+1+4+2+4+8+8+8+2+4+4 = 61 bytes header
-        return error('record batch too small')
+    if data.len < 12 {
+        return error('data too small')
     }
     
     mut reader := new_reader(data)
@@ -400,13 +406,10 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
     magic := reader.read_i8()!
     
     if magic != 2 {
-        // Only support v2 format (magic=2)
-        // For older formats, return empty records
-        return ParsedRecordBatch{
-            base_offset: base_offset
-            magic: magic
-            records: []
-        }
+        // Support MessageSet v0, v1 (magic 0, 1)
+        // Parse as legacy MessageSet format
+        reader.pos = 0  // Reset to beginning
+        return parse_message_set(data)!
     }
     
     _ = reader.read_i32()!  // crc (skip validation for now)
@@ -438,6 +441,64 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
         producer_id: producer_id
         producer_epoch: producer_epoch
         base_sequence: base_sequence
+        records: records
+    }
+}
+
+// parse_message_set parses legacy MessageSet format (v0, v1 - magic 0, 1)
+fn parse_message_set(data []u8) !ParsedRecordBatch {
+    mut reader := new_reader(data)
+    mut records := []domain.Record{}
+    
+    // MessageSet is array of [offset, size, message]
+    for reader.remaining() > 12 {
+        _ := reader.read_i64() or { break }  // offset (unused in MessageSet parsing)
+        message_size := reader.read_i32() or { break }
+        
+        if reader.remaining() < int(message_size) {
+            break
+        }
+        
+        // Parse Message: [crc, magic, attributes, key, value]
+        start_pos := reader.pos
+        _ = reader.read_i32() or { break }  // crc
+        magic := reader.read_i8() or { break }
+        _ = reader.read_i8() or { break }  // attributes
+        
+        // v1 adds timestamp
+        mut timestamp := time.now()
+        if magic >= 1 {
+            ts_millis := reader.read_i64() or { break }
+            timestamp = time.unix(ts_millis / 1000)
+        }
+        
+        // Key
+        key := reader.read_bytes() or { break }
+        // Value
+        value := reader.read_bytes() or { break }
+        
+        records << domain.Record{
+            key: key
+            value: value
+            headers: map[string][]u8{}
+            timestamp: timestamp
+        }
+        
+        // Ensure we consumed exactly message_size bytes
+        reader.pos = start_pos + int(message_size)
+    }
+    
+    return ParsedRecordBatch{
+        base_offset: 0
+        partition_leader_epoch: -1
+        magic: 0
+        attributes: 0
+        last_offset_delta: i32(records.len - 1)
+        first_timestamp: 0
+        max_timestamp: 0
+        producer_id: -1
+        producer_epoch: -1
+        base_sequence: -1
         records: records
     }
 }
@@ -517,6 +578,22 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 // RecordBatch Encoding (for Fetch responses)
 // ============================================================
 
+// crc32c computes CRC-32C (Castagnoli) checksum
+fn crc32c(data []u8) u32 {
+    mut crc := u32(0xffffffff)
+    for b in data {
+        crc ^= u32(b)
+        for _ in 0 .. 8 {
+            if (crc & 1) == 1 {
+                crc = (crc >> 1) ^ 0x82f63b78
+            } else {
+                crc >>= 1
+            }
+        }
+    }
+    return ~crc
+}
+
 // encode_record_batch encodes records into Kafka RecordBatch v2 format
 pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
     if records.len == 0 {
@@ -525,9 +602,22 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
     
     mut writer := new_writer()
     
-    // Calculate timestamps
-    now := time.now()
-    first_timestamp := now.unix() * 1000
+    // Calculate timestamps from records
+    // Use first record's timestamp as base (or current time if no timestamp)
+    first_timestamp := if records[0].timestamp.unix() > 0 {
+        records[0].timestamp.unix() * 1000
+    } else {
+        time.now().unix() * 1000
+    }
+    
+    // Find max timestamp
+    mut max_timestamp := first_timestamp
+    for record in records {
+        ts := record.timestamp.unix() * 1000
+        if ts > max_timestamp {
+            max_timestamp = ts
+        }
+    }
     
     // Encode records first to calculate batch size
     mut records_data := new_writer()
@@ -537,24 +627,32 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
     
     records_bytes := records_data.bytes()
     
+    // Build data for CRC calculation (attributes to end)
+    mut crc_data := new_writer()
+    crc_data.write_i16(0)                            // attributes
+    crc_data.write_i32(i32(records.len - 1))         // lastOffsetDelta
+    crc_data.write_i64(first_timestamp)              // baseTimestamp
+    crc_data.write_i64(max_timestamp)                // maxTimestamp
+    crc_data.write_i64(-1)                           // producerId
+    crc_data.write_i16(-1)                           // producerEpoch
+    crc_data.write_i32(-1)                           // baseSequence
+    crc_data.write_i32(i32(records.len))             // recordCount
+    crc_data.write_raw(records_bytes)                // records
+    
+    crc_bytes := crc_data.bytes()
+    // CRC-32C (Castagnoli) over crc_data
+    crc := crc32c(crc_bytes)
+    
     // RecordBatch header fields
-    // Batch length = header (49 bytes) + records
-    batch_length := 49 + records_bytes.len
+    // batchLength = from partitionLeaderEpoch to end
+    batch_length := 4 + 1 + 4 + crc_bytes.len  // epoch + magic + crc + crc_data
     
     writer.write_i64(base_offset)                    // baseOffset
     writer.write_i32(i32(batch_length))              // batchLength
     writer.write_i32(0)                              // partitionLeaderEpoch
     writer.write_i8(2)                               // magic (v2)
-    writer.write_i32(0)                              // crc (TODO: calculate)
-    writer.write_i16(0)                              // attributes
-    writer.write_i32(i32(records.len - 1))           // lastOffsetDelta
-    writer.write_i64(first_timestamp)                // firstTimestamp
-    writer.write_i64(first_timestamp)                // maxTimestamp
-    writer.write_i64(-1)                             // producerId
-    writer.write_i16(-1)                             // producerEpoch
-    writer.write_i32(-1)                             // baseSequence
-    writer.write_i32(i32(records.len))               // recordCount
-    writer.write_raw(records_bytes)                  // records
+    writer.write_u32(crc)                            // crc (CRC-32C)
+    writer.write_raw(crc_bytes)                      // attributes to records
     
     return writer.bytes()
 }

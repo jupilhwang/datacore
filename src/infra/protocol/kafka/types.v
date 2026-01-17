@@ -206,20 +206,21 @@ pub:
 // Get supported API versions
 pub fn get_supported_api_versions() []ApiVersionRange {
     return [
-        ApiVersionRange{.produce, 0, 9},
-        ApiVersionRange{.fetch, 0, 13},
-        ApiVersionRange{.list_offsets, 0, 7},
-        ApiVersionRange{.metadata, 0, 12},
-        ApiVersionRange{.offset_commit, 0, 8},
-        ApiVersionRange{.offset_fetch, 0, 8},
-        ApiVersionRange{.find_coordinator, 0, 4},
-        ApiVersionRange{.join_group, 0, 9},
-        ApiVersionRange{.heartbeat, 0, 4},
-        ApiVersionRange{.leave_group, 0, 5},
-        ApiVersionRange{.sync_group, 0, 5},
-        ApiVersionRange{.describe_groups, 0, 5},
-        ApiVersionRange{.list_groups, 0, 4},
-        ApiVersionRange{.api_versions, 0, 4},
+        ApiVersionRange{.produce, 0, 10},  // v9+ flexible versions
+        ApiVersionRange{.fetch, 0, 16},  // v12+ flexible, v13+ uses topic_id (UUID), v15+ removes replica_id
+        ApiVersionRange{.list_offsets, 0, 8},  // v6+ flexible, v7-8 identical structure
+        ApiVersionRange{.metadata, 0, 12},  // v9+ flexible, v10+ topic_id, v12 name is nullable
+        ApiVersionRange{.offset_commit, 0, 9},  // v8+ flexible
+        ApiVersionRange{.offset_fetch, 0, 10},  // v6+ flexible, v8+ groups format, v9+ member_id/epoch
+        ApiVersionRange{.find_coordinator, 0, 5},  // v3+ flexible, v4+ coordinator_keys batch
+        ApiVersionRange{.join_group, 0, 9},  // v6+ flexible
+        ApiVersionRange{.heartbeat, 0, 4},  // v4+ flexible
+        ApiVersionRange{.leave_group, 0, 5},  // v4+ flexible
+        ApiVersionRange{.sync_group, 0, 5},  // v4+ flexible
+        ApiVersionRange{.describe_groups, 0, 5},  // v5+ flexible
+        ApiVersionRange{.list_groups, 0, 5},  // v3+ flexible, v4+ states_filter, v5+ types_filter
+        ApiVersionRange{.sasl_handshake, 0, 1},  // SASL mechanism negotiation
+        ApiVersionRange{.api_versions, 0, 3},  // v3+ flexible with client info
         ApiVersionRange{.create_topics, 0, 7},
         ApiVersionRange{.delete_topics, 0, 6},
         ApiVersionRange{.delete_records, 0, 2},
@@ -227,6 +228,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
         ApiVersionRange{.describe_configs, 0, 4},
         ApiVersionRange{.alter_configs, 0, 2},
         ApiVersionRange{.create_partitions, 0, 3},
+        ApiVersionRange{.sasl_authenticate, 0, 2},  // SASL authentication (v2+ flexible)
         ApiVersionRange{.delete_groups, 0, 2},
         ApiVersionRange{.describe_cluster, 0, 1},
         ApiVersionRange{.consumer_group_heartbeat, 0, 0},
