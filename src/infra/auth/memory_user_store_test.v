@@ -4,7 +4,7 @@ module auth
 import domain
 
 fn test_memory_user_store_create_user() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     
     user := store.create_user('alice', 'secret123', .plain) or {
         panic(err)
@@ -18,7 +18,7 @@ fn test_memory_user_store_create_user() {
 }
 
 fn test_memory_user_store_get_user() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     store.create_user('alice', 'secret123', .plain) or { panic(err) }
     
     user := store.get_user('alice') or { panic(err) }
@@ -28,7 +28,7 @@ fn test_memory_user_store_get_user() {
 }
 
 fn test_memory_user_store_get_user_not_found() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     
     store.get_user('nonexistent') or {
         assert err.msg().contains('not found')
@@ -38,7 +38,7 @@ fn test_memory_user_store_get_user_not_found() {
 }
 
 fn test_memory_user_store_create_duplicate_user() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     store.create_user('alice', 'secret123', .plain) or { panic(err) }
     
     // Try to create the same user again
@@ -50,7 +50,7 @@ fn test_memory_user_store_create_duplicate_user() {
 }
 
 fn test_memory_user_store_update_password() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     store.create_user('alice', 'oldpass', .plain) or { panic(err) }
     
     store.update_password('alice', 'newpass') or { panic(err) }
@@ -61,7 +61,7 @@ fn test_memory_user_store_update_password() {
 }
 
 fn test_memory_user_store_update_password_not_found() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     
     store.update_password('nonexistent', 'newpass') or {
         assert err.msg().contains('not found')
@@ -71,7 +71,7 @@ fn test_memory_user_store_update_password_not_found() {
 }
 
 fn test_memory_user_store_delete_user() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     store.create_user('alice', 'secret123', .plain) or { panic(err) }
     
     store.delete_user('alice') or { panic(err) }
@@ -85,7 +85,7 @@ fn test_memory_user_store_delete_user() {
 }
 
 fn test_memory_user_store_delete_user_not_found() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     
     store.delete_user('nonexistent') or {
         assert err.msg().contains('not found')
@@ -95,7 +95,7 @@ fn test_memory_user_store_delete_user_not_found() {
 }
 
 fn test_memory_user_store_list_users() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     store.create_user('alice', 'pass1', .plain) or { panic(err) }
     store.create_user('bob', 'pass2', .plain) or { panic(err) }
     store.create_user('charlie', 'pass3', .plain) or { panic(err) }
@@ -114,7 +114,7 @@ fn test_memory_user_store_list_users() {
 }
 
 fn test_memory_user_store_list_users_empty() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     
     users := store.list_users() or { panic(err) }
     
@@ -122,7 +122,7 @@ fn test_memory_user_store_list_users_empty() {
 }
 
 fn test_memory_user_store_validate_password_success() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     store.create_user('alice', 'secret123', .plain) or { panic(err) }
     
     valid := store.validate_password('alice', 'secret123') or { panic(err) }
@@ -131,7 +131,7 @@ fn test_memory_user_store_validate_password_success() {
 }
 
 fn test_memory_user_store_validate_password_wrong() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     store.create_user('alice', 'secret123', .plain) or { panic(err) }
     
     valid := store.validate_password('alice', 'wrongpassword') or { panic(err) }
@@ -140,7 +140,7 @@ fn test_memory_user_store_validate_password_wrong() {
 }
 
 fn test_memory_user_store_validate_password_user_not_found() {
-    store := new_memory_user_store()
+    mut store := new_memory_user_store()
     
     store.validate_password('nonexistent', 'anypass') or {
         assert err.msg().contains('not found')
@@ -167,7 +167,7 @@ fn test_memory_user_store_with_preloaded_users() {
         },
     ]
     
-    store := new_memory_user_store_with_users(users)
+    mut store := new_memory_user_store_with_users(users)
     
     admin := store.get_user('admin') or { panic(err) }
     assert admin.username == 'admin'

@@ -1611,7 +1611,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
     req := parse_sasl_authenticate_request(mut reader, version, is_flexible)!
     
     // Perform authentication
-    if auth_mgr := h.auth_manager {
+    if mut auth_mgr := h.auth_manager {
         result := auth_mgr.authenticate(.plain, req.auth_bytes) or {
             // Authentication error
             response := SaslAuthenticateResponse{

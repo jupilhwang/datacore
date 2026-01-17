@@ -1,53 +1,165 @@
+# =============================================================================
 # DataCore Configuration
-# See docs/TRD.md for full configuration reference
+# =============================================================================
+# Kafka-compatible stateless message broker configuration
+# See docs/TRD.md for full architecture reference
+# =============================================================================
 
+# -----------------------------------------------------------------------------
+# [broker] - Kafka 호환 브로커 설정
+# -----------------------------------------------------------------------------
 [broker]
-id = 1
-listener = "0.0.0.0:9092"
-advertised_listener = "localhost:9092"
+
+# 브로커 고유 식별자 (Kafka broker.id와 동일)
+# 범위: 1-65535 (권장: 1부터 순차적으로 할당)
+broker_id = 1
+
+# 클러스터 식별자 (모든 브로커가 동일한 값 사용)
+cluster_id = "datacore-cluster"
+
+# 클라이언트 연결을 수신할 호스트
+# "0.0.0.0" = 모든 네트워크 인터페이스
+# "127.0.0.1" = 로컬 연결만 허용
+host = "0.0.0.0"
+
+# Kafka 프로토콜 포트 (기본: 9092)
+port = 9092
+
+# 최대 동시 연결 수
+# 권장값: 메모리 4GB당 10000
 max_connections = 10000
-max_connections_per_ip = 100
-idle_timeout_ms = 600000
-request_timeout_ms = 30000
+
+# 클라이언트당 최대 요청 크기 (바이트)
+# 기본값: 100MB (104857600)
+# 대용량 메시지 배치 전송 시 증가 필요
 max_request_size = 104857600
 
+# 요청 처리 타임아웃 (밀리초)
+# 기본값: 30초 (30000)
+request_timeout_ms = 30000
+
+# 유휴 연결 타임아웃 (밀리초)
+# 기본값: 10분 (600000)
+# 이 시간 동안 활동 없으면 연결 종료
+idle_timeout_ms = 600000
+
+# -----------------------------------------------------------------------------
+# [storage] - 스토리지 엔진 설정
+# -----------------------------------------------------------------------------
 [storage]
-plugin = "memory"
 
+# 사용할 스토리지 엔진
+# 지원값: "memory", "s3", "sqlite", "postgres" (P2)
+# 현재 구현됨: "memory"
+engine = "memory"
+
+# -----------------------------------------------------------------------------
+# [storage.memory] - 인메모리 스토리지 설정 (기본값)
+# -----------------------------------------------------------------------------
 [storage.memory]
-max_partition_size = "1GB"
-flush_interval_ms = 1000
 
+# 최대 메모리 사용량 (MB)
+# 권장: 시스템 메모리의 50-75%
+max_memory_mb = 20240
+
+# 세그먼트 파일 크기 (바이트)
+# 기본값: 1GB (1073741824)
+segment_size_bytes = 1073741824
+
+# -----------------------------------------------------------------------------
+# [storage.s3] - S3 스토리지 설정 (P1 - 미구현)
+# -----------------------------------------------------------------------------
+[storage.s3]
+
+# S3 호환 엔드포인트 URL
+# AWS S3: 비워두면 AWS 기본 엔드포인트 사용
+# MinIO: "http://localhost:9000"
+# endpoint = ""
+
+# S3 버킷 이름
+bucket = ""
+
+# AWS 리전
+region = "us-east-1"
+
+# 객체 키 프리픽스 (선택사항)
+# 여러 클러스터가 같은 버킷 공유 시 사용
+# prefix = "datacore/"
+
+# 인증 정보 (환경변수 DATACORE_S3_ACCESS_KEY, DATACORE_S3_SECRET_KEY 권장)
+# access_key = ""
+# secret_key = ""
+
+# -----------------------------------------------------------------------------
+# [storage.sqlite] - SQLite 스토리지 설정 (P2 - 미구현)
+# -----------------------------------------------------------------------------
+[storage.sqlite]
+
+# 데이터베이스 파일 경로
+path = "datacore.db"
+
+# 저널 모드
+# 지원값: "WAL" (권장), "DELETE", "TRUNCATE", "PERSIST", "MEMORY"
+journal_mode = "WAL"
+
+# -----------------------------------------------------------------------------
+# [storage.postgres] - PostgreSQL 스토리지 설정 (P2 - 미구현)
+# -----------------------------------------------------------------------------
+[storage.postgres]
+
+# 데이터베이스 연결 정보
+host = "localhost"
+port = 5432
+database = "datacore"
+# user = ""
+# password = ""
+
+# 연결 풀 크기
+pool_size = 10
+
+# -----------------------------------------------------------------------------
+# [schema_registry] - 내장 Schema Registry 설정
+# -----------------------------------------------------------------------------
 [schema_registry]
+
+# Schema Registry 활성화 여부
 enabled = true
-compatibility_level = "BACKWARD"
 
-[schema_registry.rest]
-enabled = true
-port = 8081
+# 스키마 저장용 내부 토픽 이름
+topic = "__schemas"
 
-[group]
-supported_protocols = ["classic", "consumer", "share"]
-default_assignor = "uniform"
-share_record_lock_duration_ms = 30000
-share_max_in_flight_records = 5000
+# 기본 호환성 레벨 (P1 - 미구현)
+# 지원값: "NONE", "BACKWARD", "FORWARD", "FULL", 
+#         "BACKWARD_TRANSITIVE", "FORWARD_TRANSITIVE", "FULL_TRANSITIVE"
+# compatibility_level = "BACKWARD"
 
-[observability]
-service_name = "datacore"
-service_version = "0.1.0"
+# -----------------------------------------------------------------------------
+# [observability] - 관측성 설정 (OpenTelemetry 호환)
+# -----------------------------------------------------------------------------
 
+# [observability.metrics] - Prometheus 메트릭 설정
 [observability.metrics]
+
+# 메트릭 수집 활성화
 enabled = true
-exporter = "prometheus"
-prometheus_port = 9090
 
-[observability.tracing]
-enabled = false
-exporter = "otlp"
-sampling_ratio = 1.0
+# Prometheus 메트릭 엔드포인트 경로
+endpoint = "/metrics"
 
+# Prometheus 메트릭 HTTP 서버 포트
+# Grafana/Prometheus에서 이 포트로 스크래핑
+port = 9093
+
+# [observability.logging] - 구조화 로깅 설정
 [observability.logging]
+
+# 로깅 활성화
 enabled = true
+
+# 로그 레벨
+# 지원값: "trace", "debug", "info", "warn", "error"
 level = "info"
+
+# 로그 출력 형식
+# 지원값: "json" (권장, 구조화), "text" (사람이 읽기 쉬움)
 format = "json"
-exporter = "stdout"

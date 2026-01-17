@@ -53,7 +53,7 @@ pub interface AuthManager {
     
     // Check if a mechanism is supported
     is_mechanism_supported(mechanism string) bool
-    
+mut:
     // Get authenticator for a specific mechanism
     get_authenticator(mechanism domain.SaslMechanism) !SaslAuthenticator
     
