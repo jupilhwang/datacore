@@ -16,16 +16,11 @@ cd "$PROJECT_ROOT"
 
 # Build with optimizations
 echo "▶ Building with optimizations..."
-v -prod -o bin/benchmark src/infra/performance/benchmark_runner.v 2>/dev/null || {
-    echo "  Creating benchmark runner..."
-    cat > src/infra/performance/benchmark_runner.v << 'EOF'
-import infra.performance
 
-fn main() {
-    performance.run_quick_benchmark()
-}
-EOF
-    v -prod -o bin/benchmark src/infra/performance/benchmark_runner.v
+mkdir -p bin
+v -prod -o bin/benchmark cmd/benchmark/ 2>&1 || {
+    echo "Build with -prod failed. Trying without..."
+    v -o bin/benchmark cmd/benchmark/
 }
 
 echo ""
@@ -33,9 +28,6 @@ echo "▶ Running benchmarks..."
 echo ""
 
 ./bin/benchmark
-
-# Cleanup
-rm -f src/infra/performance/benchmark_runner.v
 
 echo ""
 echo "▶ Benchmark complete!"

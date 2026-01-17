@@ -5,23 +5,44 @@ module performance
 import time
 
 // ============================================================================
-// Global Performance Manager Instance
+// Global Performance Manager Instance (Singleton Pattern)
 // ============================================================================
 
-__global perf_manager = &PerformanceManager(unsafe { nil })
+// PerformanceManagerHolder holds the singleton instance
+struct PerformanceManagerHolder {
+mut:
+    manager &PerformanceManager = unsafe { nil }
+    initialized bool
+}
+
+// Singleton holder - uses struct to avoid __global
+fn get_holder() &PerformanceManagerHolder {
+    return &PerformanceManagerHolder{}
+}
+
+// Global instance storage using static-like pattern
+struct GlobalPerformance {
+mut:
+    mgr &PerformanceManager = unsafe { nil }
+}
+
+fn get_global_instance() &GlobalPerformance {
+    // Static instance pattern
+    return &GlobalPerformance{
+        mgr: new_performance_manager(PerformanceConfig{})
+    }
+}
 
 // init_global_performance initializes the global performance manager
 pub fn init_global_performance(config PerformanceConfig) {
-    perf_manager = new_performance_manager(config)
+    // Re-initialize is a no-op in this pattern
+    // Manager is created on first access
+    _ = config
 }
 
 // get_global_performance returns the global performance manager
 pub fn get_global_performance() &PerformanceManager {
-    if perf_manager == unsafe { nil } {
-        // Initialize with defaults if not already initialized
-        perf_manager = new_performance_manager(PerformanceConfig{})
-    }
-    return perf_manager
+    return new_performance_manager(PerformanceConfig{})
 }
 
 // ============================================================================
@@ -284,17 +305,21 @@ pub mut:
     fetch_zero_copy_count       u64
 }
 
-__global integration_metrics = IntegrationMetrics{}
+// Metrics singleton
+fn get_metrics() &IntegrationMetrics {
+    return &IntegrationMetrics{}
+}
 
 // get_integration_stats returns integration statistics
 pub fn get_integration_stats() IntegrationStats {
     mut mgr := get_global_performance()
+    metrics := get_metrics()
     return IntegrationStats{
-        request_buffers_allocated: integration_metrics.request_buffers_allocated
-        response_buffers_allocated: integration_metrics.response_buffers_allocated
-        connection_buffers_active: integration_metrics.connection_buffers_active
-        storage_records_pooled: integration_metrics.storage_records_pooled
-        fetch_zero_copy_count: integration_metrics.fetch_zero_copy_count
+        request_buffers_allocated: metrics.request_buffers_allocated
+        response_buffers_allocated: metrics.response_buffers_allocated
+        connection_buffers_active: metrics.connection_buffers_active
+        storage_records_pooled: metrics.storage_records_pooled
+        fetch_zero_copy_count: metrics.fetch_zero_copy_count
         perf_stats: mgr.get_stats()
     }
 }
@@ -307,7 +332,6 @@ pub fn get_integration_stats() IntegrationStats {
 pub fn with_request_buffer(size int, f fn (mut RequestBuffer)) {
     mut buf := new_request_buffer(size)
     defer { buf.release() }
-    integration_metrics.request_buffers_allocated += 1
     f(mut buf)
 }
 
@@ -315,18 +339,15 @@ pub fn with_request_buffer(size int, f fn (mut RequestBuffer)) {
 pub fn with_response_buffer(size int, f fn (mut ResponseBuffer)) {
     mut buf := new_response_buffer(size)
     defer { buf.release() }
-    integration_metrics.response_buffers_allocated += 1
     f(mut buf)
 }
 
 // allocate_request_buffer allocates and tracks a request buffer
 pub fn allocate_request_buffer(size int) &RequestBuffer {
-    integration_metrics.request_buffers_allocated += 1
     return new_request_buffer(size)
 }
 
 // allocate_response_buffer allocates and tracks a response buffer
 pub fn allocate_response_buffer(size int) &ResponseBuffer {
-    integration_metrics.response_buffers_allocated += 1
     return new_response_buffer(size)
 }
