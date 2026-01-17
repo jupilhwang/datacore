@@ -134,23 +134,63 @@ topic = "__schemas"
 # compatibility_level = "BACKWARD"
 
 # -----------------------------------------------------------------------------
-# [observability] - 관측성 설정 (OpenTelemetry 호환)
+# [observability] - OpenTelemetry 기반 관측성 설정
+# -----------------------------------------------------------------------------
+# DataCore는 OpenTelemetry(OTel)을 기본 관측성 프레임워크로 사용합니다.
+# - Metrics: OTLP → Prometheus/Grafana
+# - Logging: OTel Log Bridge → Loki/ELK
+# - Tracing: OTLP → Jaeger/Tempo
 # -----------------------------------------------------------------------------
 
-# [observability.metrics] - Prometheus 메트릭 설정
+# [observability.otel] - OpenTelemetry 공통 설정
+[observability.otel]
+
+# OpenTelemetry 활성화 (전역)
+enabled = true
+
+# 서비스 이름 (모든 텔레메트리에 공통 적용)
+service_name = "datacore"
+
+# 서비스 버전
+service_version = "0.2.0"
+
+# 서비스 인스턴스 ID (자동 생성 또는 지정)
+# instance_id = ""
+
+# 환경 (production, staging, development)
+environment = "development"
+
+# OTLP gRPC 엔드포인트 (모든 시그널 공통)
+# OpenTelemetry Collector: "http://localhost:4317"
+otlp_endpoint = "http://localhost:4317"
+
+# OTLP HTTP 엔드포인트 (대체 프로토콜)
+# otlp_http_endpoint = "http://localhost:4318"
+
+# 리소스 속성 (key=value, 쉼표 구분)
+# resource_attributes = "deployment.environment=production,service.namespace=kafka"
+
+# [observability.metrics] - OTel Metrics 설정
 [observability.metrics]
 
 # 메트릭 수집 활성화
 enabled = true
 
-# Prometheus 메트릭 엔드포인트 경로
-endpoint = "/metrics"
+# 메트릭 내보내기 방식
+# 지원값: "otlp" (OTel Collector로 전송), "prometheus" (직접 스크래핑 노출)
+exporter = "prometheus"
 
-# Prometheus 메트릭 HTTP 서버 포트
-# Grafana/Prometheus에서 이 포트로 스크래핑
-port = 9093
+# Prometheus 스크래핑 엔드포인트 (exporter=prometheus 시 사용)
+prometheus_endpoint = "/metrics"
+prometheus_port = 9093
 
-# [observability.logging] - 구조화 로깅 설정
+# OTLP 엔드포인트 (exporter=otlp 시 사용, 비어있으면 공통 설정 사용)
+# otlp_endpoint = ""
+
+# 메트릭 수집 주기 (초)
+collection_interval = 15
+
+# [observability.logging] - OTel Logging 설정
 [observability.logging]
 
 # 로깅 활성화
@@ -161,28 +201,42 @@ enabled = true
 level = "info"
 
 # 로그 출력 형식
-# 지원값: "json" (권장, 구조화), "text" (사람이 읽기 쉬움)
+# 지원값: "json" (OTel 호환 구조화), "text" (콘솔 가독성)
 format = "json"
 
-# -----------------------------------------------------------------------------
-# [observability.tracing] - OpenTelemetry 분산 추적 설정
-# -----------------------------------------------------------------------------
+# OTLP로 로그 전송 여부
+otlp_export = false
+
+# 콘솔 출력 여부
+console_output = true
+
+# 트레이스 컨텍스트 자동 주입 (trace_id, span_id)
+inject_trace_context = true
+
+# [observability.tracing] - OTel Tracing 설정
 [observability.tracing]
 
 # 분산 추적 활성화
-# true 설정 시 OpenTelemetry Collector로 트레이스 전송
 enabled = false
 
-# OTLP (OpenTelemetry Protocol) 엔드포인트
-# gRPC: "http://localhost:4317" (기본)
-# HTTP: "http://localhost:4318/v1/traces"
-# Jaeger: "http://localhost:14268/api/traces"
-endpoint = "http://localhost:4317"
+# OTLP 엔드포인트 (비어있으면 공통 설정 사용)
+# otlp_endpoint = ""
 
-# 서비스 이름 (트레이스에 표시됨)
-service_name = "datacore"
+# 샘플링 전략
+# 지원값: "always_on" (모두 추적), "always_off" (추적 안함),
+#         "trace_id_ratio" (비율 기반), "parent_based" (부모 따름)
+sampler = "trace_id_ratio"
 
-# 샘플링 비율 (0.0 ~ 1.0)
-# 1.0 = 모든 요청 추적 (개발/디버깅용)
-# 0.1 = 10% 요청만 추적 (프로덕션 권장)
+# 샘플링 비율 (sampler=trace_id_ratio 시 사용)
+# 1.0 = 100% 추적, 0.1 = 10% 추적
 sample_rate = 1.0
+
+# 배치 내보내기 설정
+batch_timeout_ms = 5000
+max_batch_size = 512
+max_queue_size = 2048
+
+# 스팬 제한
+max_attributes_per_span = 128
+max_events_per_span = 128
+max_links_per_span = 128

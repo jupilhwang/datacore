@@ -73,31 +73,57 @@ pub:
 
 pub struct ObservabilityConfig {
 pub:
+    otel        OtelConfig
     metrics     MetricsConfig
     logging     LoggingConfig
     tracing     TracingConfig
 }
 
+// OtelConfig - OpenTelemetry 공통 설정
+pub struct OtelConfig {
+pub:
+    enabled             bool   = true
+    service_name        string = 'datacore'
+    service_version     string = '0.2.0'
+    instance_id         string
+    environment         string = 'development'
+    otlp_endpoint       string = 'http://localhost:4317'
+    otlp_http_endpoint  string
+    resource_attributes string
+}
+
 pub struct MetricsConfig {
 pub:
-    enabled     bool   = true
-    endpoint    string = '/metrics'
-    port        int    = 9093
+    enabled             bool   = true
+    exporter            string = 'prometheus'
+    prometheus_endpoint string = '/metrics'
+    prometheus_port     int    = 9093
+    otlp_endpoint       string
+    collection_interval int    = 15
 }
 
 pub struct LoggingConfig {
 pub:
-    enabled     bool   = true
-    level       string = 'info'
-    format      string = 'json'
+    enabled              bool   = true
+    level                string = 'info'
+    format               string = 'json'
+    otlp_export          bool   = false
+    console_output       bool   = true
+    inject_trace_context bool   = true
 }
 
 pub struct TracingConfig {
 pub:
-    enabled         bool   = false
-    endpoint        string = 'http://localhost:4317'
-    service_name    string = 'datacore'
-    sample_rate     f64    = 1.0
+    enabled                  bool   = false
+    otlp_endpoint            string
+    sampler                  string = 'trace_id_ratio'
+    sample_rate              f64    = 1.0
+    batch_timeout_ms         int    = 5000
+    max_batch_size           int    = 512
+    max_queue_size           int    = 2048
+    max_attributes_per_span  int    = 128
+    max_events_per_span      int    = 128
+    max_links_per_span       int    = 128
 }
 
 // Load configuration from TOML file
