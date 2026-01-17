@@ -152,7 +152,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
     // 3. Start metrics server if enabled
     if conf.observability.metrics.enabled {
         cli.print_progress('Starting metrics server')
-        metrics_server := observability.new_metrics_server(conf.broker.host, conf.observability.metrics.port)
+        metrics_server := observability.new_metrics_server(conf.broker.host, conf.observability.metrics.prometheus_port)
         metrics_server.start_background()
         cli.print_done()
     }

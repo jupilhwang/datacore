@@ -185,14 +185,14 @@ pub fn load_config(path string) !Config {
     
     // Parse observability config
     metrics_enabled := get_bool(doc, 'observability.metrics.enabled', true)
-    metrics_port := get_int(doc, 'observability.metrics.port', 9093)
+    metrics_port := get_int(doc, 'observability.metrics.prometheus_port', 9093)
     logging_level := get_string(doc, 'observability.logging.level', 'info')
     logging_format := get_string(doc, 'observability.logging.format', 'json')
     
     observability := ObservabilityConfig{
         metrics: MetricsConfig{
             enabled: metrics_enabled
-            port: metrics_port
+            prometheus_port: metrics_port
         }
         logging: LoggingConfig{
             level: logging_level
@@ -254,7 +254,7 @@ pub fn (c Config) save(path string) ! {
     
     content += '[observability.metrics]\n'
     content += 'enabled = ${c.observability.metrics.enabled}\n'
-    content += 'port = ${c.observability.metrics.port}\n'
+    content += 'prometheus_port = ${c.observability.metrics.prometheus_port}\n'
     content += '\n'
     
     content += '[observability.logging]\n'
