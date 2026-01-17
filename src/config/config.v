@@ -75,6 +75,7 @@ pub struct ObservabilityConfig {
 pub:
     metrics     MetricsConfig
     logging     LoggingConfig
+    tracing     TracingConfig
 }
 
 pub struct MetricsConfig {
@@ -86,8 +87,17 @@ pub:
 
 pub struct LoggingConfig {
 pub:
+    enabled     bool   = true
     level       string = 'info'
     format      string = 'json'
+}
+
+pub struct TracingConfig {
+pub:
+    enabled         bool   = false
+    endpoint        string = 'http://localhost:4317'
+    service_name    string = 'datacore'
+    sample_rate     f64    = 1.0
 }
 
 // Load configuration from TOML file

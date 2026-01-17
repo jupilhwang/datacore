@@ -163,3 +163,26 @@ level = "info"
 # 로그 출력 형식
 # 지원값: "json" (권장, 구조화), "text" (사람이 읽기 쉬움)
 format = "json"
+
+# -----------------------------------------------------------------------------
+# [observability.tracing] - OpenTelemetry 분산 추적 설정
+# -----------------------------------------------------------------------------
+[observability.tracing]
+
+# 분산 추적 활성화
+# true 설정 시 OpenTelemetry Collector로 트레이스 전송
+enabled = false
+
+# OTLP (OpenTelemetry Protocol) 엔드포인트
+# gRPC: "http://localhost:4317" (기본)
+# HTTP: "http://localhost:4318/v1/traces"
+# Jaeger: "http://localhost:14268/api/traces"
+endpoint = "http://localhost:4317"
+
+# 서비스 이름 (트레이스에 표시됨)
+service_name = "datacore"
+
+# 샘플링 비율 (0.0 ~ 1.0)
+# 1.0 = 모든 요청 추적 (개발/디버깅용)
+# 0.1 = 10% 요청만 추적 (프로덕션 권장)
+sample_rate = 1.0
