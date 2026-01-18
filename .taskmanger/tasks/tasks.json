@@ -1,0 +1,41 @@
+[
+  {
+    "id": "storage-plugin-refactor",
+    "title": "Storage Engine 플러그인 구조 리팩토링",
+    "due": "2026-01-18",
+    "status": "in-progress",
+    "description": "MemoryStorage를 기본 엔진으로, S3/DB/KVStore를 플러그인으로 선택 가능하도록 구조 리팩토링. config에서 엔진 지정. ZeroCopy/performance 코드는 옵션화 또는 제거.",
+    "files": [
+      "src/infra/storage/interface.v",
+      "src/infra/storage/plugins/memory/adapter.v",
+      "src/infra/storage/plugins/s3/adapter.v",
+      "config.toml",
+      "docs/PRD.md",
+      "docs/TRD.md"
+    ]
+  },
+  {
+    "id": "zerocopy-remove",
+    "title": "ZeroCopy/Performance 코드 제거 및 단순화",
+    "due": "2026-01-18",
+    "status": "in-progress",
+    "description": "zerocopy_codec.v 등 zero-copy/performance 관련 코드 제거 또는 SimpleReader 기반으로 단순화. Kafka 프로토콜 파싱 경로 일원화.",
+    "files": [
+      "src/infra/protocol/kafka/zerocopy_codec.v",
+      "src/infra/performance/",
+      "tests/"
+    ]
+  },
+  {
+    "id": "docs-update",
+    "title": "문서 및 개발 가이드 업데이트",
+    "due": "2026-01-18",
+    "status": "todo",
+    "description": "PRD, TRD, CONTRIBUTING.md에 Storage Engine 플러그인 구조 및 ZeroCopy 단순화 정책 반영.",
+    "files": [
+      "docs/PRD.md",
+      "docs/TRD.md",
+      "docs/CONTRIBUTING.md"
+    ]
+  }
+]

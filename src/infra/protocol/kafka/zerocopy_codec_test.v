@@ -1,94 +1,65 @@
-// Zero-Copy Protocol Integration Tests
+// Simple Protocol Integration Tests (zero-copy/performance 제거)
 module kafka
-
-import infra.performance
 
 // ============================================================================
 // Zero-Copy Reader Tests
 // ============================================================================
 
-fn test_zerocopy_reader_basic() {
+fn test_simple_reader_basic() {
     data := [u8(0x00), 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04]
-    mut reader := new_zerocopy_reader(data)
-    
-    // Read i16
+    mut reader := new_simple_reader(data)
     val16 := reader.read_i16()!
     assert val16 == 1
-    
-    // Read another i16
     val16_2 := reader.read_i16()!
     assert val16_2 == 2
-    
-    // Read i32
     val32 := reader.read_i32()!
     assert val32 == 4
-    
-    // Should have no remaining
     assert reader.remaining() == 0
 }
 
-fn test_zerocopy_reader_i64() {
-    data := [u8(0x00), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64]  // 100 in big-endian
-    mut reader := new_zerocopy_reader(data)
-    
+fn test_simple_reader_i64() {
+    data := [u8(0x00), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64]
+    mut reader := new_simple_reader(data)
     val := reader.read_i64()!
     assert val == 100
 }
 
-fn test_zerocopy_reader_varint() {
-    // Test unsigned varint
-    data := [u8(0x96), 0x01]  // 150 in unsigned varint
-    mut reader := new_zerocopy_reader(data)
-    
+fn test_simple_reader_varint() {
+    data := [u8(0x96), 0x01]
+    mut reader := new_simple_reader(data)
     uval := reader.read_uvarint()!
     assert uval == 150
-    
-    // Test signed varint (zigzag)
-    data2 := [u8(0x02)]  // 1 in zigzag (2 >> 1 = 1)
-    mut reader2 := new_zerocopy_reader(data2)
-    
+    data2 := [u8(0x02)]
+    mut reader2 := new_simple_reader(data2)
     sval := reader2.read_varint()!
     assert sval == 1
-    
-    // Negative zigzag
-    data3 := [u8(0x01)]  // -1 in zigzag
-    mut reader3 := new_zerocopy_reader(data3)
-    
+    data3 := [u8(0x01)]
+    mut reader3 := new_simple_reader(data3)
     neg_val := reader3.read_varint()!
     assert neg_val == -1
 }
 
-fn test_zerocopy_reader_string() {
-    // "test" with i16 length prefix
-    data := [u8(0x00), 0x04, 0x74, 0x65, 0x73, 0x74]  // len=4, "test"
-    mut reader := new_zerocopy_reader(data)
-    
+fn test_simple_reader_string() {
+    data := [u8(0x00), 0x04, 0x74, 0x65, 0x73, 0x74]
+    mut reader := new_simple_reader(data)
     s := reader.read_string()!
     assert s == 'test'
 }
 
-fn test_zerocopy_reader_nullable_string() {
-    // Null string (-1) returns empty
+fn test_simple_reader_nullable_string() {
     data := [u8(0xFF), 0xFF]
-    mut reader := new_zerocopy_reader(data)
-    
+    mut reader := new_simple_reader(data)
     s := reader.read_nullable_string()!
     assert s == ''
-    
-    // Non-null string
-    data2 := [u8(0x00), 0x03, 0x61, 0x62, 0x63]  // len=3, "abc"
-    mut reader2 := new_zerocopy_reader(data2)
-    
+    data2 := [u8(0x00), 0x03, 0x61, 0x62, 0x63]
+    mut reader2 := new_simple_reader(data2)
     s2 := reader2.read_nullable_string()!
     assert s2 == 'abc'
 }
 
-fn test_zerocopy_reader_compact_string() {
-    // Compact string: length = varint(actual_len + 1)
-    // "test" (4 bytes) -> length = 5 in varint = 0x05
+fn test_simple_reader_compact_string() {
     data := [u8(0x05), 0x74, 0x65, 0x73, 0x74]
-    mut reader := new_zerocopy_reader(data)
-    
+    mut reader := new_simple_reader(data)
     s := reader.read_compact_string()!
     assert s == 'test'
 }

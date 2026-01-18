@@ -51,7 +51,7 @@ idle_timeout_ms = 600000
 # 사용할 스토리지 엔진
 # 지원값: "memory", "s3", "sqlite", "postgres" (P2)
 # 현재 구현됨: "memory"
-engine = "memory"
+engine = "s3"
 
 # -----------------------------------------------------------------------------
 # [storage.memory] - 인메모리 스토리지 설정 (기본값)
@@ -74,17 +74,17 @@ segment_size_bytes = 1073741824
 # S3 호환 엔드포인트 URL
 # AWS S3: 비워두면 AWS 기본 엔드포인트 사용
 # MinIO: "http://localhost:9000"
-# endpoint = ""
+endpoint = "https://s3.ap-northeast-2.amazonaws.com"
 
 # S3 버킷 이름
-bucket = ""
+bucket = "jhwang-s3"
 
 # AWS 리전
-region = "us-east-1"
+region = "ap-northeast-2"
 
 # 객체 키 프리픽스 (선택사항)
 # 여러 클러스터가 같은 버킷 공유 시 사용
-# prefix = "datacore/"
+prefix = "datacore/"
 
 # 인증 정보 (환경변수 DATACORE_S3_ACCESS_KEY, DATACORE_S3_SECRET_KEY 권장)
 # access_key = ""

@@ -1,20 +1,13 @@
-// Zero-Copy Fetch Handler Integration
-// High-performance fetch response with minimal data copying
 module kafka
 
-import infra.performance
 import domain
 
 // ============================================================================
 // Zero-Copy Fetch Request Parser
 // ============================================================================
 
-// ZeroCopyFetchRequest holds parsed fetch request with zero-copy body references
-// NOTE: DataCore Stateless Architecture
-// - session_id/session_epoch: parsed for compatibility but ignored
-// - forgotten_topics: parsed for compatibility but ignored (no session state)
-// - All fetch requests are treated as independent (session_id=0 in response)
-pub struct ZeroCopyFetchRequest {
+// SimpleFetchRequest: zero-copy/performance 의존성 제거, 일반 버퍼 기반
+pub struct SimpleFetchRequest {
 pub:
     replica_id       i32
     max_wait_ms      i32
@@ -29,7 +22,7 @@ pub:
 }
 
 // ZeroCopyFetchTopic holds topic data from fetch request
-pub struct ZeroCopyFetchTopic {
+pub struct SimpleFetchTopic {
 pub:
     topic_id   []u8
     name       string
@@ -37,7 +30,7 @@ pub:
 }
 
 // ZeroCopyFetchPartition holds partition data from fetch request
-pub struct ZeroCopyFetchPartition {
+pub struct SimpleFetchPartition {
 pub:
     partition           i32
     current_leader_epoch i32
@@ -55,13 +48,13 @@ pub:
     partitions  []i32
 }
 
-// parse_fetch_request_zerocopy parses fetch request with zero-copy
-pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !ZeroCopyFetchRequest {
+// parse_fetch_request_simple: 단순 버퍼 기반 파싱
+pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !SimpleFetchRequest {
     first_bytes := if data.len >= 40 { data[..40].hex() } else { data.hex() }
     eprintln('[DEBUG] parse_fetch_request_zerocopy: version=${version} flexible=${flexible} data.len=${data.len}')
     eprintln('[DEBUG] first 40 bytes: ${first_bytes}')
     
-    mut reader := new_zerocopy_reader(data)
+    mut reader := new_simple_reader(data)
     
     // In v15+, replica_id was removed from main body and replaced with replica_state tagged field
     // For v0-14: replica_id (INT32) is first field
@@ -89,7 +82,7 @@ pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !Zero
     eprintln('[DEBUG] Fetch: after header, pos=${reader.position()}, remaining=${reader.remaining()}')
     
     // Parse topics
-    mut topics := []ZeroCopyFetchTopic{}
+    mut topics := []SimpleFetchTopic{}
     eprintln('[DEBUG] Fetch: before reading topic_count, pos=${reader.position()}, remaining=${reader.remaining()}')
     topic_count := if flexible { reader.read_compact_array_length()! } else { reader.read_array_length()! }
     
@@ -110,7 +103,7 @@ pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !Zero
         }
         
         // Parse partitions
-        mut partitions := []ZeroCopyFetchPartition{}
+        mut partitions := []SimpleFetchPartition{}
         partition_count := if flexible { reader.read_compact_array_length()! } else { reader.read_array_length()! }
         
         for _ in 0 .. partition_count {
@@ -133,7 +126,7 @@ pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !Zero
                 reader.skip_tagged_fields()!
             }
             
-            partitions << ZeroCopyFetchPartition{
+            partitions << SimpleFetchPartition{
                 partition: partition
                 current_leader_epoch: current_leader_epoch
                 fetch_offset: fetch_offset
@@ -147,7 +140,7 @@ pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !Zero
             reader.skip_tagged_fields()!
         }
         
-        topics << ZeroCopyFetchTopic{
+        topics << SimpleFetchTopic{
             topic_id: topic_id
             name: topic_name
             partitions: partitions
@@ -200,7 +193,7 @@ pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !Zero
         reader.skip_tagged_fields()!
     }
     
-    return ZeroCopyFetchRequest{
+    return SimpleFetchRequest{
         replica_id: replica_id
         max_wait_ms: max_wait_ms
         min_bytes: min_bytes
@@ -214,54 +207,27 @@ pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !Zero
     }
 }
 
-// ============================================================================
-// Zero-Copy Fetch Response Building
-// ============================================================================
-
-// ZeroCopyResponseBuilder builds fetch response with minimal copying
-pub struct ZeroCopyResponseBuilder {
+// SimpleResponseBuilder: 일반 []u8 조합으로 단순화 (zero-copy 제거)
+pub struct SimpleResponseBuilder {
 mut:
-    parts []performance.ByteSlice  // Zero-copy parts
-    owned [][]u8                    // Owned data (headers, lengths)
+    parts [][]u8
 }
 
-// new_zerocopy_response_builder creates a new builder
-pub fn new_zerocopy_response_builder() &ZeroCopyResponseBuilder {
-    return &ZeroCopyResponseBuilder{
-        parts: []performance.ByteSlice{}
-        owned: [][]u8{}
+pub fn new_simple_response_builder() &SimpleResponseBuilder {
+    return &SimpleResponseBuilder{
+        parts: [][]u8{}
     }
 }
 
-// add_owned adds owned bytes (copied)
-pub fn (mut b ZeroCopyResponseBuilder) add_owned(data []u8) {
-    b.owned << data.clone()
-    b.parts << performance.ByteSlice.new(b.owned[b.owned.len - 1])
+pub fn (mut b SimpleResponseBuilder) add_part(data []u8) {
+    b.parts << data.clone()
 }
 
-// add_slice adds zero-copy slice reference
-pub fn (mut b ZeroCopyResponseBuilder) add_slice(slice performance.ByteSlice) {
-    b.parts << slice
-}
-
-// total_size returns total size of all parts
-pub fn (b &ZeroCopyResponseBuilder) total_size() int {
-    mut size := 0
+pub fn (b &SimpleResponseBuilder) build() []u8 {
+    mut result := []u8{}
     for part in b.parts {
-        size += part.len()
+        result << part
     }
-    return size
-}
-
-// build assembles all parts into final response
-pub fn (b &ZeroCopyResponseBuilder) build() []u8 {
-    total := b.total_size()
-    mut result := []u8{cap: total}
-    
-    for part in b.parts {
-        result << part.to_owned()
-    }
-    
     return result
 }
 

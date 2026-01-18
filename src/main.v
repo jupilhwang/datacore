@@ -135,7 +135,30 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
     
     // 1. Create Infra Layer components
     cli.print_progress('Initializing storage engine')
-    mut storage := memory.new_memory_adapter()
+    mut storage := match conf.storage.engine.to_lower() {
+        'memory' { memory.new_memory_adapter() }
+        's3' {
+            // S3 config 파싱 및 어댑터 생성 (미구현 시 fallback)
+            #[cfg(feature: "s3")]
+            {
+                import infra.storage.plugins.s3
+                s3.new_s3_adapter(conf.storage.s3) or {
+                    cli.print_failed('Failed to init S3 storage, fallback to memory: ${err}')
+                    memory.new_memory_adapter()
+                }
+            }
+            #[cfg(not(feature: "s3"))]
+            {
+                cli.print_failed('S3 storage not supported in this build, fallback to memory')
+                memory.new_memory_adapter()
+            }
+        }
+        // TODO: sqlite, postgres, kvstore 등 추가 구현
+        else {
+            cli.print_failed('Unknown storage engine: ${conf.storage.engine}, fallback to memory')
+            memory.new_memory_adapter()
+        }
+    }
     cli.print_done()
     
     // 2. Create Protocol Handler with storage injection
