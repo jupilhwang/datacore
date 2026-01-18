@@ -1,4 +1,4 @@
-module performance
+module io
 
 // Tests for slice.v - Zero-Copy Slice Operations
 

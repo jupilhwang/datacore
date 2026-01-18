@@ -1,6 +1,6 @@
 // Infra Layer - Object Pool
 // High-performance object pooling for Kafka records and requests
-module performance
+module core
 
 import sync
 

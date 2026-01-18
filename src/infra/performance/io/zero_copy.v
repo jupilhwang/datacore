@@ -1,8 +1,9 @@
 // Infra Layer - Zero-Copy I/O
 // High-performance I/O operations using system sendfile
-module performance
+module io
 
 import os
+import infra.performance.core
 
 // ============================================================================
 // Zero-Copy Transfer Result
@@ -121,7 +122,7 @@ pub:
 }
 
 // scatter_read reads into multiple buffers
-pub fn scatter_read(mut file os.File, buffers []&Buffer) TransferResult {
+pub fn scatter_read(mut file os.File, buffers []&core.Buffer) TransferResult {
     mut total := i64(0)
     
     for buf in buffers {
@@ -152,7 +153,7 @@ pub fn scatter_read(mut file os.File, buffers []&Buffer) TransferResult {
 }
 
 // gather_write writes from multiple buffers
-pub fn gather_write(mut file os.File, buffers []&Buffer) TransferResult {
+pub fn gather_write(mut file os.File, buffers []&core.Buffer) TransferResult {
     mut total := i64(0)
     
     for buf in buffers {
@@ -211,7 +212,7 @@ const page_size = 4096
 // allocate_page_aligned allocates a page-aligned buffer
 pub fn allocate_page_aligned(size int) []u8 {
     // Round up to page boundary
-    aligned_size := ((size + performance.page_size - 1) / performance.page_size) * performance.page_size
+    aligned_size := ((size + page_size - 1) / page_size) * page_size
     return []u8{len: aligned_size, cap: aligned_size}
 }
 

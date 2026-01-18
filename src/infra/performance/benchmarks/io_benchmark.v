@@ -1,4 +1,4 @@
-module performance
+module benchmarks
 
 // Comprehensive I/O Benchmark Suite
 // Compares performance of different I/O strategies:

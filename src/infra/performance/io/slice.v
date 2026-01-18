@@ -1,4 +1,4 @@
-module performance
+module io
 
 // Zero-Copy Slice Operations for High-Performance Data Processing
 // Provides efficient byte slice views without memory copying

@@ -1,5 +1,5 @@
 // Infra Layer - Performance Tests
-module performance
+module benchmarks
 
 fn test_buffer_write_and_read() {
     mut buf := Buffer{

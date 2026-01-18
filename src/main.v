@@ -13,7 +13,9 @@ import interface.server
 import interface.cli
 import infra.protocol.kafka
 import infra.storage.plugins.memory
+import infra.storage.plugins.s3
 import infra.observability
+import service.port
 
 fn main() {
     args := os.args[1..]
@@ -131,33 +133,66 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
         service: 'datacore-broker'
     })
     
+    // Log configuration summary
+    logger.info('Broker configuration summary',
+        observability.field_string('host', conf.broker.host),
+        observability.field_int('port', conf.broker.port),
+        observability.field_int('broker_id', conf.broker.broker_id),
+        observability.field_string('cluster_id', conf.broker.cluster_id),
+        observability.field_int('max_conn', conf.broker.max_connections),
+        observability.field_int('max_req_size', conf.broker.max_request_size)
+    )
+
+    logger.info('Observability summary',
+        observability.field_bool('metrics_enabled', conf.observability.metrics.enabled),
+        observability.field_int('metrics_port', conf.observability.metrics.prometheus_port),
+        observability.field_bool('tracing_enabled', conf.observability.tracing.enabled),
+        observability.field_string('log_level', conf.observability.logging.level)
+    )
+    
     // === Clean Architecture: Dependency Injection ===
     
     // 1. Create Infra Layer components
-    cli.print_progress('Initializing storage engine')
-    mut storage := match conf.storage.engine.to_lower() {
-        'memory' { memory.new_memory_adapter() }
-        's3' {
-            // S3 config 파싱 및 어댑터 생성 (미구현 시 fallback)
-            #[cfg(feature: "s3")]
-            {
-                import infra.storage.plugins.s3
-                s3.new_s3_adapter(conf.storage.s3) or {
-                    cli.print_failed('Failed to init S3 storage, fallback to memory: ${err}')
-                    memory.new_memory_adapter()
-                }
-            }
-            #[cfg(not(feature: "s3"))]
-            {
-                cli.print_failed('S3 storage not supported in this build, fallback to memory')
-                memory.new_memory_adapter()
-            }
+    cli.print_progress('Initializing storage engine (${conf.storage.engine})')
+    mut storage := port.StoragePort(unsafe { nil })
+    
+    engine := conf.storage.engine.to_lower()
+    if engine == 'memory' {
+        logger.info('Initializing Memory storage',
+            observability.field_int('max_memory_mb', conf.storage.memory.max_memory_mb),
+            observability.field_int('segment_size', conf.storage.memory.segment_size_bytes)
+        )
+        storage = memory.new_memory_adapter()
+    } else if engine == 's3' {
+        // Map config to S3Config
+        s_config := s3.S3Config{
+            bucket_name: conf.storage.s3.bucket
+            region: conf.storage.s3.region
+            endpoint: conf.storage.s3.endpoint
+            access_key: conf.storage.s3.access_key
+            secret_key: conf.storage.s3.secret_key
+            prefix: conf.storage.s3.prefix
         }
-        // TODO: sqlite, postgres, kvstore 등 추가 구현
-        else {
-            cli.print_failed('Unknown storage engine: ${conf.storage.engine}, fallback to memory')
-            memory.new_memory_adapter()
+
+        masked_key := if s_config.access_key.len > 4 { s_config.access_key[0..4] + '****' } else { '****' }
+        logger.info('Initializing S3 storage',
+            observability.field_string('bucket', s_config.bucket_name),
+            observability.field_string('region', s_config.region),
+            observability.field_string('endpoint', s_config.endpoint),
+            observability.field_string('access_key', masked_key)
+        )
+        
+        if s3_adapter := s3.new_s3_adapter(s_config) {
+            storage = s3_adapter
+        } else {
+            cli.print_failed('Failed to init S3 storage: ${err}')
+            cli.print_failed('Falling back to memory storage')
+            storage = memory.new_memory_adapter()
         }
+    } else {
+        cli.print_failed('Unknown storage engine: ${engine}')
+        cli.print_failed('Falling back to memory storage')
+        storage = memory.new_memory_adapter()
     }
     cli.print_done()
     
@@ -171,6 +206,12 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
         storage
     )
     cli.print_done()
+
+    if conf.schema_registry.enabled {
+        logger.info('Schema Registry initialized',
+            observability.field_string('topic', conf.schema_registry.topic)
+        )
+    }
     
     // 3. Start metrics server if enabled
     if conf.observability.metrics.enabled {

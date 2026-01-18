@@ -1,4 +1,4 @@
-module performance
+module io
 
 // DMA and Scatter-Gather I/O Implementation
 // Platform-specific optimizations using actual system calls
@@ -333,7 +333,7 @@ fn sendfile_fallback(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 // splice_native moves data between file descriptors without copying (Linux only)
 pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult {
 	$if linux {
-		flags := performance.splice_f_move | performance.splice_f_more
+		flags := splice_f_move | splice_f_more
 
 		if use_pipe {
 			// Direct splice between fd_in and fd_out

@@ -960,7 +960,7 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
 fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
     // Use zero-copy fetch parser for minimal copying of request body
     flexible := is_flexible_version(.fetch, version)
-    req := parse_fetch_request_zerocopy(body, version, flexible)!
+    req := parse_fetch_request_simple(body, version, flexible)!
 
     eprintln('[Fetch] Request: version=${version}, topics=${req.topics.len}')
     

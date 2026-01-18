@@ -1,4 +1,4 @@
-module performance
+module io
 
 // Tests for dma.v - DMA and Scatter-Gather I/O
 

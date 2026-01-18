@@ -1,6 +1,6 @@
 // Infra Layer - Performance Utilities
 // Hash functions, CRC32, varint encoding, and other utilities
-module performance
+module core
 
 // ============================================================================
 // MurmurHash3 - Kafka-compatible partitioning hash
@@ -23,9 +23,9 @@ pub fn murmur3_32(data []u8, seed u32) u32 {
                  (u32(data[idx + 2]) << 16) |
                  (u32(data[idx + 3]) << 24)
         
-        k *= performance.c1
+        k *= c1
         k = rotl32(k, 15)
-        k *= performance.c2
+        k *= c2
         
         h ^= k
         h = rotl32(h, 13)
@@ -45,9 +45,9 @@ pub fn murmur3_32(data []u8, seed u32) u32 {
     }
     if remaining >= 1 {
         k1 ^= u32(data[tail_idx])
-        k1 *= performance.c1
+        k1 *= c1
         k1 = rotl32(k1, 15)
-        k1 *= performance.c2
+        k1 *= c2
         h ^= k1
     }
     
@@ -110,7 +110,7 @@ pub fn crc32_ieee(data []u8) u32 {
     mut crc := u32(0xffffffff)
     for b in data {
         idx := int((crc ^ u32(b)) & 0xff)
-        crc = (crc >> 8) ^ performance.crc32_table[idx]
+        crc = (crc >> 8) ^ crc32_table[idx]
     }
     return crc ^ 0xffffffff
 }
@@ -120,7 +120,7 @@ pub fn crc32_update(crc u32, data []u8) u32 {
     mut result := crc ^ 0xffffffff
     for b in data {
         idx := int((result ^ u32(b)) & 0xff)
-        result = (result >> 8) ^ performance.crc32_table[idx]
+        result = (result >> 8) ^ crc32_table[idx]
     }
     return result ^ 0xffffffff
 }

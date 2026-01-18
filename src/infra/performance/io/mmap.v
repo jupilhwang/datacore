@@ -1,4 +1,4 @@
-module performance
+module io
 
 // Memory-Mapped File I/O for High-Performance Storage
 // Provides efficient file access using OS-level memory mapping

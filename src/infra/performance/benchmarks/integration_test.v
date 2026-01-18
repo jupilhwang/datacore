@@ -1,5 +1,5 @@
 // Integration Tests for Performance Module
-module performance
+module benchmarks
 
 // ============================================================================
 // Integration Tests

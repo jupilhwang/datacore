@@ -1,4 +1,4 @@
-module performance
+module benchmarks
 
 // I/O Benchmark Tests
 // Tests for the comprehensive I/O benchmark suite

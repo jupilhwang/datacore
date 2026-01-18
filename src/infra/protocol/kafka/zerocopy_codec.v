@@ -1,15 +1,15 @@
 module kafka
 
-import infra.performance
+import infra.performance.io
 
 pub struct ZeroCopyReader {
 mut:
-    reader performance.SliceReader
+    reader io.SliceReader
 }
 
 pub fn new_zerocopy_reader(data []u8) ZeroCopyReader {
     return ZeroCopyReader{
-        reader: performance.SliceReader.new(data)
+        reader: io.SliceReader.new(data)
     }
 }
 
@@ -70,7 +70,7 @@ pub fn (mut r SimpleReader) read_i32() !i32 {
 
 pub fn (mut r SimpleReader) read_i64() !i64 {
     if r.pos+8 > r.data.len { return error('eof') }
-    val := (i64(r.data[r.pos]) << 56) | (i64(r.data[r.pos+1]) << 48) | (i64(r.data[r.pos+2]) << 40) | (i64(r.data[r.pos+3]) << 32)
+    mut val := (i64(r.data[r.pos]) << 56) | (i64(r.data[r.pos+1]) << 48) | (i64(r.data[r.pos+2]) << 40) | (i64(r.data[r.pos+3]) << 32)
     val |= (i64(r.data[r.pos+4]) << 24) | (i64(r.data[r.pos+5]) << 16) | (i64(r.data[r.pos+6]) << 8) | i64(r.data[r.pos+7])
     r.pos += 8
     return val

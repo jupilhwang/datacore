@@ -1,6 +1,6 @@
 // Infra Layer - Buffer Pool
 // High-performance reusable buffer pool to reduce GC pressure
-module performance
+module core
 
 import sync
 

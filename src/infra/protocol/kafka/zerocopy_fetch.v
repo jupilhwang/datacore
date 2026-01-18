@@ -16,20 +16,20 @@ pub:
     isolation_level  i8
     session_id       i32   // Stateless: ignored, always respond with 0
     session_epoch    i32   // Stateless: ignored
-    topics           []ZeroCopyFetchTopic
+    topics           []SimpleFetchTopic
     forgotten_topics []ForgottenTopic  // Stateless: ignored
     rack_id          string
 }
 
-// ZeroCopyFetchTopic holds topic data from fetch request
+// SimpleFetchTopic holds topic data from fetch request
 pub struct SimpleFetchTopic {
 pub:
     topic_id   []u8
     name       string
-    partitions []ZeroCopyFetchPartition
+    partitions []SimpleFetchPartition
 }
 
-// ZeroCopyFetchPartition holds partition data from fetch request
+// SimpleFetchPartition holds partition data from fetch request
 pub struct SimpleFetchPartition {
 pub:
     partition           i32

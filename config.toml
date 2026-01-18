@@ -51,7 +51,8 @@ idle_timeout_ms = 600000
 # 사용할 스토리지 엔진
 # 지원값: "memory", "s3", "sqlite", "postgres" (P2)
 # 현재 구현됨: "memory"
-engine = "s3"
+#engine = "s3"
+engine = "memory"
 
 # -----------------------------------------------------------------------------
 # [storage.memory] - 인메모리 스토리지 설정 (기본값)

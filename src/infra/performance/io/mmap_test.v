@@ -1,4 +1,4 @@
-module performance
+module io
 
 // Tests for mmap.v - Memory-Mapped File I/O
 

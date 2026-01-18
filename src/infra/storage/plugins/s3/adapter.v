@@ -8,6 +8,8 @@ import service.port
 import time
 import json
 import crypto.md5
+import crypto.sha256
+import crypto.hmac
 import net.http
 import sync
 
@@ -792,34 +794,60 @@ fn (a &S3StorageAdapter) get_endpoint() string {
 }
 
 fn (a &S3StorageAdapter) sign_request(method string, key string, body []u8) http.Header {
-	// AWS Signature V4 signing (simplified)
 	mut h := http.Header{}
-	now := time.now()
+	now := time.now().as_utc()
 	
-	date_str := now.strftime('%Y%m%dT%H%M%SZ')
+	date_str := now.custom_format('YYYYMMDDTHHmmssZ')
+	date_day := now.custom_format('YYYYMMDD')
+	
 	h.add_custom('x-amz-date', date_str) or {}
-	h.add_custom('Host', a.get_host()) or {}
+	host := a.get_host()
+	h.add_custom('Host', host) or {}
+	
+	payload_hash := sha256.sum(body).hex()
+	h.add_custom('x-amz-content-sha256', payload_hash) or {}
 	
 	if body.len > 0 {
-		content_hash := md5.sum(body).hex()
-		h.add_custom('x-amz-content-sha256', content_hash) or {}
 		h.add_custom('Content-Length', body.len.str()) or {}
 	}
 	
-	// In production, implement full AWS Signature V4
-	// For now, this is a placeholder
-	if a.config.access_key.len > 0 {
-		// Add Authorization header with signature
-		auth := 'AWS4-HMAC-SHA256 Credential=${a.config.access_key}/${now.strftime("%Y%m%d")}/${a.config.region}/s3/aws4_request, SignedHeaders=host;x-amz-date, Signature=placeholder'
-		h.add_custom('Authorization', auth) or {}
+	if a.config.access_key.len == 0 || a.config.secret_key.len == 0 {
+		return h
 	}
+	
+	// Canonical Request
+	canonical_uri := if key.starts_with('/') { key } else { '/' + key }
+	canonical_querystring := '' // Simplified: datacore doesn't use query params for S3 yet
+	
+	canonical_headers := 'host:${host}\nx-amz-content-sha256:${payload_hash}\nx-amz-date:${date_str}\n'
+	signed_headers := 'host;x-amz-content-sha256;x-amz-date'
+	
+	canonical_request := '${method}\n${canonical_uri}\n${canonical_querystring}\n${canonical_headers}\n${signed_headers}\n${payload_hash}'
+	
+	// String to Sign
+	algorithm := 'AWS4-HMAC-SHA256'
+	credential_scope := '${date_day}/${a.config.region}/s3/aws4_request'
+	canonical_request_hash := sha256.sum(canonical_request.bytes()).hex()
+	
+	string_to_sign := '${algorithm}\n${date_str}\n${credential_scope}\n${canonical_request_hash}'
+	
+	// Signing Key
+	k_date := hmac.new(('AWS4' + a.config.secret_key).bytes(), date_day.bytes(), sha256.sum, 64)
+	k_region := hmac.new(k_date, a.config.region.bytes(), sha256.sum, 64)
+	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, 64)
+	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, 64)
+	
+	// Signature
+	signature := hmac.new(k_signing, string_to_sign.bytes(), sha256.sum, 64).hex()
+	
+	auth_header := '${algorithm} Credential=${a.config.access_key}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}'
+	h.add_custom('Authorization', auth_header) or {}
 	
 	return h
 }
 
 fn (a &S3StorageAdapter) get_host() string {
 	if a.config.endpoint.len > 0 {
-		// Extract host from endpoint
 		return a.config.endpoint.replace('http://', '').replace('https://', '').split('/')[0]
 	}
 	return 's3.${a.config.region}.amazonaws.com'

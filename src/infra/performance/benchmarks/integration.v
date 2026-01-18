@@ -1,48 +1,23 @@
 // Infra Layer - Performance Integration Module
 // Integrates Buffer Pool, Object Pool, and Zero-Copy into core components
-module performance
+module benchmarks
 
 import time
+import infra.performance.core
+import infra.performance
 
 // ============================================================================
-// Global Performance Manager Instance (Singleton Pattern)
+// Global Performance Manager Proxy
 // ============================================================================
 
-// PerformanceManagerHolder holds the singleton instance
-struct PerformanceManagerHolder {
-mut:
-    manager &PerformanceManager = unsafe { nil }
-    initialized bool
-}
-
-// Singleton holder - uses struct to avoid __global
-fn get_holder() &PerformanceManagerHolder {
-    return &PerformanceManagerHolder{}
-}
-
-// Global instance storage using static-like pattern
-struct GlobalPerformance {
-mut:
-    mgr &PerformanceManager = unsafe { nil }
-}
-
-fn get_global_instance() &GlobalPerformance {
-    // Static instance pattern
-    return &GlobalPerformance{
-        mgr: new_performance_manager(PerformanceConfig{})
-    }
+// get_global_performance returns the global performance manager from the root module
+pub fn get_global_performance() &performance.PerformanceManager {
+    return performance.get_global_performance()
 }
 
 // init_global_performance initializes the global performance manager
-pub fn init_global_performance(config PerformanceConfig) {
-    // Re-initialize is a no-op in this pattern
-    // Manager is created on first access
-    _ = config
-}
-
-// get_global_performance returns the global performance manager
-pub fn get_global_performance() &PerformanceManager {
-    return new_performance_manager(PerformanceConfig{})
+pub fn init_global_performance(config performance.PerformanceConfig) {
+    performance.init_global_performance(config)
 }
 
 // ============================================================================
@@ -53,8 +28,8 @@ pub fn get_global_performance() &PerformanceManager {
 @[heap]
 pub struct RequestBuffer {
 pub mut:
-    buffer      &Buffer
-    manager     &PerformanceManager
+    buffer      &core.Buffer
+    manager     &performance.PerformanceManager
     created_at  time.Time
 }
 
@@ -92,8 +67,8 @@ pub fn (mut r RequestBuffer) release() {
 @[heap]
 pub struct ResponseBuffer {
 pub mut:
-    buffer      &Buffer
-    manager     &PerformanceManager
+    buffer      &core.Buffer
+    manager     &performance.PerformanceManager
     offset      int  // Current write position
 }
 
@@ -160,9 +135,9 @@ pub fn (mut r ResponseBuffer) release() {
 @[heap]
 pub struct ConnectionBuffers {
 pub mut:
-    read_buffer     &Buffer
-    write_buffer    &Buffer
-    manager         &PerformanceManager
+    read_buffer     &core.Buffer
+    write_buffer    &core.Buffer
+    manager         &performance.PerformanceManager
 }
 
 // new_connection_buffers creates connection buffers
@@ -205,7 +180,7 @@ pub fn (mut c ConnectionBuffers) release() {
 @[heap]
 pub struct StorageRecordPool {
 mut:
-    manager     &PerformanceManager
+    manager     &performance.PerformanceManager
 }
 
 // new_storage_record_pool creates a storage record pool
@@ -216,22 +191,22 @@ pub fn new_storage_record_pool() &StorageRecordPool {
 }
 
 // get_record gets a pooled record
-pub fn (mut p StorageRecordPool) get_record() &PooledRecord {
+pub fn (mut p StorageRecordPool) get_record() &core.PooledRecord {
     return p.manager.get_record()
 }
 
 // put_record returns a record to the pool
-pub fn (mut p StorageRecordPool) put_record(r &PooledRecord) {
+pub fn (mut p StorageRecordPool) put_record(r &core.PooledRecord) {
     p.manager.put_record(r)
 }
 
 // get_batch gets a pooled batch
-pub fn (mut p StorageRecordPool) get_batch() &PooledRecordBatch {
+pub fn (mut p StorageRecordPool) get_batch() &core.PooledRecordBatch {
     return p.manager.get_batch()
 }
 
 // put_batch returns a batch to the pool
-pub fn (mut p StorageRecordPool) put_batch(b &PooledRecordBatch) {
+pub fn (mut p StorageRecordPool) put_batch(b &core.PooledRecordBatch) {
     p.manager.put_batch(b)
 }
 
@@ -243,8 +218,8 @@ pub fn (mut p StorageRecordPool) put_batch(b &PooledRecordBatch) {
 @[heap]
 pub struct FetchBuffer {
 pub mut:
-    buffer          &Buffer
-    manager         &PerformanceManager
+    buffer          &core.Buffer
+    manager         &performance.PerformanceManager
     zero_copy_fd    int    // File descriptor for zero-copy (-1 if not used)
     zero_copy_off   i64    // Offset for zero-copy
     zero_copy_len   int    // Length for zero-copy
@@ -291,7 +266,7 @@ pub:
     connection_buffers_active   int
     storage_records_pooled      u64
     fetch_zero_copy_count       u64
-    perf_stats                  PerformanceStats
+    perf_stats                  performance.PerformanceStats
 }
 
 // IntegrationMetrics tracks integration usage

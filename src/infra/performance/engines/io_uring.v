@@ -1,4 +1,4 @@
-module performance
+module engines
 
 // io_uring - Linux 5.1+ Async I/O Interface
 // Provides high-performance asynchronous I/O using kernel submission/completion queues
@@ -198,7 +198,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 		}
 
 		// Call io_uring_setup syscall
-		fd := C.syscall(performance.sys_io_uring_setup, config.queue_depth, &params)
+		fd := C.syscall(sys_io_uring_setup, config.queue_depth, &params)
 		if fd < 0 {
 			return error('io_uring_setup failed')
 		}
@@ -316,8 +316,8 @@ pub fn (mut r IoUring) submit(wait_nr u32) !int {
 			return 0
 		}
 
-		flags := if wait_nr > 0 { performance.ioring_enter_getevents } else { u32(0) }
-		ret := C.syscall(performance.sys_io_uring_enter, r.ring_fd, to_submit, wait_nr,
+		flags := if wait_nr > 0 { ioring_enter_getevents } else { u32(0) }
+		ret := C.syscall(sys_io_uring_enter, r.ring_fd, to_submit, wait_nr,
 			flags, voidptr(0))
 
 		if ret < 0 {
@@ -418,7 +418,7 @@ pub fn (mut r IoUring) prep_read(fd int, buf []u8, offset i64, user_data u64) bo
 	$if linux {
 		sqe := r.get_sqe() or { return false }
 
-		sqe.opcode = performance.ioring_op_read
+		sqe.opcode = ioring_op_read
 		sqe.fd = i32(fd)
 		sqe.off = u64(offset)
 		sqe.addr = u64(usize(buf.data))
@@ -437,7 +437,7 @@ pub fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) b
 	$if linux {
 		sqe := r.get_sqe() or { return false }
 
-		sqe.opcode = performance.ioring_op_write
+		sqe.opcode = ioring_op_write
 		sqe.fd = i32(fd)
 		sqe.off = u64(offset)
 		sqe.addr = u64(usize(buf.data))
@@ -456,7 +456,7 @@ pub fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
 	$if linux {
 		sqe := r.get_sqe() or { return false }
 
-		sqe.opcode = performance.ioring_op_fsync
+		sqe.opcode = ioring_op_fsync
 		sqe.fd = i32(fd)
 		sqe.user_data = user_data
 
@@ -472,7 +472,7 @@ pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 	$if linux {
 		sqe := r.get_sqe() or { return false }
 
-		sqe.opcode = performance.ioring_op_nop
+		sqe.opcode = ioring_op_nop
 		sqe.user_data = user_data
 
 		r.submit_sqe()

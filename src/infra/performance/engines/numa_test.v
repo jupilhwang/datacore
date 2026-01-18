@@ -1,4 +1,4 @@
-module performance
+module engines
 
 // NUMA Module Tests
 // Tests for NUMA-aware memory allocation and topology detection
