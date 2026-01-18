@@ -36,28 +36,34 @@ pub:
 }
 
 // Get Request Header version for a given API
-// Returns: 0 = old (ApiVersions), 1 = non-flexible, 2 = flexible (with tag_buffer)
+// Returns: 0 = v0 (legacy), 1 = v1 (non-flexible), 2 = v2 (flexible with tag_buffer)
+// Note: ApiVersions Request follows NORMAL rules (v3+ uses Header v2)
+//       Only ApiVersions RESPONSE is special (always Header v0, KIP-511)
 pub fn get_request_header_version(api_key ApiKey, api_version i16) i16 {
-    // ApiVersions is ALWAYS non-flexible header (v0) - client doesn't know server capabilities yet
-    if api_key == .api_versions {
-        return 0
-    }
-    // SaslHandshake always uses header v1
+    // SaslHandshake always uses header v1 (never flexible)
     if api_key == .sasl_handshake {
         return 1
     }
-    // Flexible APIs use header v2, non-flexible use v1
+    // All APIs (including ApiVersions) follow normal rules:
+    // - Flexible API versions use Header v2
+    // - Non-flexible API versions use Header v1
+    // ApiVersions v0-v2: Header v1 (non-flexible body)
+    // ApiVersions v3+: Header v2 (flexible body)
     return if is_flexible_version(api_key, api_version) { i16(2) } else { i16(1) }
 }
 
 // Get Response Header version for a given API
-// Returns: 0 = non-flexible (no tag_buffer), 1 = flexible (with tag_buffer)
+// Returns: 0 = v0 (no tag_buffer), 1 = v1 (with tag_buffer)
+// CRITICAL: ApiVersions Response is ALWAYS Header v0! (KIP-511 special rule)
+// This ensures clients can always parse ApiVersions response even before
+// knowing the server's capabilities
 pub fn get_response_header_version(api_key ApiKey, api_version i16) i16 {
-    // ApiVersions is ALWAYS non-flexible header (v0) - special case!
+    // ApiVersions Response ALWAYS uses Header v0 (KIP-511)
+    // This is the ONLY API with this special rule
     if api_key == .api_versions {
         return 0
     }
-    // Flexible APIs use response header v1 (with tag_buffer), non-flexible use v0
+    // All other APIs: flexible versions use Header v1, non-flexible use Header v0
     return if is_flexible_version(api_key, api_version) { i16(1) } else { i16(0) }
 }
 
