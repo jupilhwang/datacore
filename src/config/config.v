@@ -40,7 +40,7 @@ pub:
 }
 
 pub struct S3StorageConfig {
-pub:
+pub mut:
     endpoint        string
     bucket          string
     access_key      string
@@ -163,15 +163,58 @@ pub fn load_config(path string) !Config {
         idle_timeout_ms: idle_timeout_ms
     }
     
+
     // Parse storage config
     storage_engine := get_string(doc, 'storage.engine', 'memory')
     max_memory_mb := get_int(doc, 'storage.memory.max_memory_mb', 1024)
-    
+
+
+    // Parse S3 config (nested table, robust)
+    mut s3 := S3StorageConfig{}
+    storage_val := doc.value('storage')
+    if storage_val.type_name() == 'toml.Any' {
+        s3_val := storage_val.value('s3')
+        if s3_val.type_name() == 'toml.Any' {
+            s3_map := s3_val.as_map()
+            if 'endpoint' in s3_map.keys() {
+                s3.endpoint = s3_val.value('endpoint').string()
+            } else {
+                s3.endpoint = ''
+            }
+            if 'bucket' in s3_map.keys() {
+                s3.bucket = s3_val.value('bucket').string()
+            } else {
+                s3.bucket = ''
+            }
+            if 'access_key' in s3_map.keys() {
+                s3.access_key = s3_val.value('access_key').string()
+            } else {
+                s3.access_key = ''
+            }
+            if 'secret_key' in s3_map.keys() {
+                s3.secret_key = s3_val.value('secret_key').string()
+            } else {
+                s3.secret_key = ''
+            }
+            if 'region' in s3_map.keys() {
+                s3.region = s3_val.value('region').string()
+            } else {
+                s3.region = ''
+            }
+            if 'prefix' in s3_map.keys() {
+                s3.prefix = s3_val.value('prefix').string()
+            } else {
+                s3.prefix = ''
+            }
+        }
+    }
+
     storage := StorageConfig{
         engine: storage_engine
         memory: MemoryStorageConfig{
             max_memory_mb: max_memory_mb
         }
+        s3: s3
     }
     
     // Parse schema registry config

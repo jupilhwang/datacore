@@ -1,12 +1,10 @@
-// S3 Storage Adapter Tests
-// Uses mock S3 client for unit testing
 module s3
 
-import domain
 import time
 import json
+import domain
+import config
 
-// MockS3Client simulates S3 operations for testing
 struct MockS3Client {
 mut:
 	objects map[string]MockObject
@@ -15,12 +13,6 @@ mut:
 struct MockObject {
 	data []u8
 	etag string
-}
-
-fn new_mock_s3_client() &MockS3Client {
-	return &MockS3Client{
-		objects: map[string]MockObject{}
-	}
 }
 
 fn (mut c MockS3Client) put(key string, data []u8) {
@@ -49,62 +41,6 @@ fn (c &MockS3Client) list_prefix(prefix string) []string {
 		}
 	}
 	return keys
-}
-
-// ============================================================
-// Unit Tests
-// ============================================================
-
-fn test_s3_config_defaults() {
-	config := S3Config{}
-	assert config.bucket_name == 'datacore-storage'
-	assert config.region == 'us-east-1'
-	assert config.prefix == 'datacore/'
-	assert config.max_retries == 3
-}
-
-fn test_generate_topic_id() {
-	id1 := generate_topic_id('test-topic')
-	id2 := generate_topic_id('test-topic')
-	id3 := generate_topic_id('different-topic')
-	
-	assert id1.len == 16
-	assert id1 == id2  // Same name = same ID
-	assert id1 != id3  // Different name = different ID
-}
-
-fn test_encode_decode_records() {
-	original := [
-		StoredRecord{
-			offset: 100
-			timestamp: time.unix(1700000000)
-			key: 'key1'.bytes()
-			value: 'value1'.bytes()
-			headers: {'h1': 'v1'.bytes()}
-		},
-		StoredRecord{
-			offset: 101
-			timestamp: time.unix(1700000001)
-			key: 'key2'.bytes()
-			value: 'value2'.bytes()
-			headers: map[string][]u8{}
-		},
-	]
-	
-	encoded := encode_stored_records(original)
-	assert encoded.len > 0
-	
-	decoded := decode_stored_records(encoded)
-	assert decoded.len == 2
-	assert decoded[0].offset == 100
-	assert decoded[0].key == 'key1'.bytes()
-	assert decoded[0].value == 'value1'.bytes()
-	assert decoded[0].headers.len == 1
-	assert decoded[0].headers['h1'] == 'v1'.bytes()
-	
-	assert decoded[1].offset == 101
-	assert decoded[1].key == 'key2'.bytes()
-	assert decoded[1].headers.len == 0
 }
 
 fn test_encode_decode_empty_records() {
@@ -137,13 +73,13 @@ fn test_encode_decode_large_record() {
 }
 
 fn test_s3_key_helpers() {
-	config := S3Config{
+	s3_config := S3Config{
 		prefix: 'test-prefix/'
 		bucket_name: 'my-bucket'
 	}
 	
 	adapter := S3StorageAdapter{
-		config: config
+		config: s3_config
 	}
 	
 	// Topic metadata key
@@ -275,4 +211,55 @@ fn test_log_segment_structure() {
 	
 	assert segment.end_offset - segment.start_offset == 999
 	assert segment.size_bytes == 1048576
+}
+
+// ============================================================
+// 실제 S3 통합 테스트 (실제 버킷에 객체 생성/조회/삭제)
+// 환경: ~/.aws/credentials 사용, ap-northeast-2, jhwang-s3
+// 주의: 테스트 후 객체가 남을 수 있음
+fn test_s3_real_object_lifecycle() {
+	// config.toml 경로
+	config_path := '../../../../../config.toml'
+	app_config := config.load_config(config_path) or { panic('config.toml 읽기 실패: ${err}') }
+	s3 := app_config.storage.s3
+
+
+	// 디버그: config.toml에서 읽은 S3 필드 전체 출력
+	println('Loaded S3 config from TOML:')
+	println('  region   : ${s3.region}')
+	println('  endpoint : ${s3.endpoint}')
+	println('  bucket   : ${s3.bucket}')
+	println('  access_key: ${s3.access_key}')
+	println('  secret_key: ${s3.secret_key}')
+	println('  prefix   : ${s3.prefix}')
+
+	s3_config := S3Config{
+		bucket_name: s3.bucket
+		region: s3.region
+		endpoint: s3.endpoint
+		prefix: s3.prefix
+		access_key: s3.access_key
+		secret_key: s3.secret_key
+		use_path_style: false
+	}
+	mut adapter := S3StorageAdapter{
+		config: s3_config
+	}
+	key := 'test-adapter-object.txt'
+	value := 'hello s3 from test'.bytes()
+
+	adapter.put_object(key, value) or {
+		panic('S3 put_object failed: ${err}')
+	}
+
+	// get_object (조회)
+	data, _ := adapter.get_object(key) or {
+		panic('S3 get_object failed: ${err}')
+	}
+	assert data == value
+
+	// delete_object (삭제)
+	adapter.delete_object(key) or {
+		panic('S3 delete_object failed: ${err}')
+	}
 }

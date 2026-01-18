@@ -653,10 +653,14 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 // S3 HTTP operations using signature v4
 fn (mut a S3StorageAdapter) get_object(key string) !([]u8, string) {
 	endpoint := a.get_endpoint()
-	url := '${endpoint}/${a.config.bucket_name}/${key}'
-	
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
+	} else {
+		'${endpoint}/${key}'
+	}
+
 	headers := a.sign_request('GET', key, []u8{})
-	
+
 	resp := http.fetch(http.FetchConfig{
 		url: url
 		method: .get
@@ -678,10 +682,14 @@ fn (mut a S3StorageAdapter) get_object(key string) !([]u8, string) {
 
 fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 	endpoint := a.get_endpoint()
-	url := '${endpoint}/${a.config.bucket_name}/${key}'
-	
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
+	} else {
+		'${endpoint}/${key}'
+	}
+
 	headers := a.sign_request('PUT', key, data)
-	
+
 	resp := http.fetch(http.FetchConfig{
 		url: url
 		method: .put
@@ -698,11 +706,15 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 
 fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 	endpoint := a.get_endpoint()
-	url := '${endpoint}/${a.config.bucket_name}/${key}'
-	
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
+	} else {
+		'${endpoint}/${key}'
+	}
+
 	mut headers := a.sign_request('PUT', key, data)
 	headers.add_custom('If-None-Match', '*') or {}
-	
+
 	resp := http.fetch(http.FetchConfig{
 		url: url
 		method: .put
@@ -772,7 +784,11 @@ fn (a &S3StorageAdapter) get_endpoint() string {
 	if a.config.endpoint.len > 0 {
 		return a.config.endpoint
 	}
-	return 'https://s3.${a.config.region}.amazonaws.com'
+	if a.config.use_path_style {
+		return 'https://s3.${a.config.region}.amazonaws.com'
+	} else {
+		return 'https://${a.config.bucket_name}.s3.${a.config.region}.amazonaws.com'
+	}
 }
 
 fn (a &S3StorageAdapter) sign_request(method string, key string, body []u8) http.Header {
