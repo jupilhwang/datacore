@@ -659,15 +659,17 @@ mut:
 }
 
 // AvroSchema represents a parsed Avro schema
-struct AvroSchema {
-mut:
-    schema_type  string            // record, enum, array, map, union, primitive
+pub struct AvroSchema {
+pub mut:
+    schema_type  string            // record, enum, array, map, union, fixed, primitive
     name         string            // schema name (for record/enum)
     namespace    string
     fields       []AvroField       // for record type
     symbols      []string          // for enum type
     items_type   string            // for array type
     values_type  string            // for map type
+    union_types  []string          // for union type
+    fixed_size   int               // for fixed type
 }
 
 fn check_avro_backward_compatible(old_schema string, new_schema string) bool {
