@@ -627,7 +627,9 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
     
     records_bytes := records_data.bytes()
     
-    // Build data for CRC calculation (attributes to end)
+    // Build data for CRC calculation
+    // IMPORTANT: CRC-32C covers from attributes to end of batch (NOT from partitionLeaderEpoch!)
+    // Per Kafka spec: CRC = crc32c(attributes...end_of_batch)
     mut crc_data := new_writer()
     crc_data.write_i16(0)                            // attributes
     crc_data.write_i32(i32(records.len - 1))         // lastOffsetDelta
@@ -637,6 +639,9 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
     crc_data.write_i16(-1)                           // producerEpoch
     crc_data.write_i32(-1)                           // baseSequence
     crc_data.write_i32(i32(records.len))             // recordCount
+    // Note: If delete_horizon_ms is supported (attributes bit 5 for control batch),
+    // it should be inserted here after baseSequence, before recordCount.
+    // Currently we don't support delete_horizon_ms.
     crc_data.write_raw(records_bytes)                // records
     
     crc_bytes := crc_data.bytes()
@@ -687,11 +692,16 @@ fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int
         body.write_varint(-1)  // null value
     }
     
-    // headers
+    // Record headers (key-value pairs)
+    // Note: Both header key and value are treated as raw bytes with VARINT length prefix
+    // Header key format: VARINT(key_length) + BYTES(key)
+    // Header value format: VARINT(value_length) + BYTES(value)
     body.write_varint(i64(record.headers.len))
     for key, value in record.headers {
+        // Header key as bytes (NOT a STRING type - no null marker)
         body.write_varint(i64(key.len))
         body.write_raw(key.bytes())
+        // Header value as bytes
         body.write_varint(i64(value.len))
         body.write_raw(value)
     }

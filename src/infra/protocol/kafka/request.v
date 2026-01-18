@@ -2,6 +2,7 @@
 module kafka
 
 // Request Header v0 (used for most requests)
+// Note: v0 uses STRING (non-null) for client_id, v1+ uses NULLABLE_STRING
 pub struct RequestHeader {
 pub:
     api_key         i16
@@ -11,6 +12,7 @@ pub:
 }
 
 // Request Header v2 (flexible versions, Kafka 2.4+)
+// Note: client_id is still NULLABLE_STRING, NOT compact! Only tag_buffer is compact.
 pub struct RequestHeaderV2 {
 pub:
     api_key         i16
@@ -33,6 +35,38 @@ pub:
     body    []u8
 }
 
+// Get Request Header version for a given API
+// Returns: 0 = v0 (legacy), 1 = v1 (non-flexible), 2 = v2 (flexible with tag_buffer)
+// Note: ApiVersions Request follows NORMAL rules (v3+ uses Header v2)
+//       Only ApiVersions RESPONSE is special (always Header v0, KIP-511)
+pub fn get_request_header_version(api_key ApiKey, api_version i16) i16 {
+    // SaslHandshake always uses header v1 (never flexible)
+    if api_key == .sasl_handshake {
+        return 1
+    }
+    // All APIs (including ApiVersions) follow normal rules:
+    // - Flexible API versions use Header v2
+    // - Non-flexible API versions use Header v1
+    // ApiVersions v0-v2: Header v1 (non-flexible body)
+    // ApiVersions v3+: Header v2 (flexible body)
+    return if is_flexible_version(api_key, api_version) { i16(2) } else { i16(1) }
+}
+
+// Get Response Header version for a given API
+// Returns: 0 = v0 (no tag_buffer), 1 = v1 (with tag_buffer)
+// CRITICAL: ApiVersions Response is ALWAYS Header v0! (KIP-511 special rule)
+// This ensures clients can always parse ApiVersions response even before
+// knowing the server's capabilities
+pub fn get_response_header_version(api_key ApiKey, api_version i16) i16 {
+    // ApiVersions Response ALWAYS uses Header v0 (KIP-511)
+    // This is the ONLY API with this special rule
+    if api_key == .api_versions {
+        return 0
+    }
+    // All other APIs: flexible versions use Header v1, non-flexible use Header v0
+    return if is_flexible_version(api_key, api_version) { i16(1) } else { i16(0) }
+}
+
 // Parse request from raw bytes
 // Format: [size: 4 bytes][header][body]
 pub fn parse_request(data []u8) !Request {
@@ -50,14 +84,15 @@ pub fn parse_request(data []u8) !Request {
     // Check if this is a flexible version (v2 header)
     // Note: ApiVersions is ALWAYS non-flexible in header (client doesn't know server version yet)
     api_key_enum := unsafe { ApiKey(api_key) }
-    is_flexible := api_key_enum != .api_versions && is_flexible_version(api_key_enum, api_version)
+    header_version := get_request_header_version(api_key_enum, api_version)
+    is_flexible_header := header_version >= 2
     
     // In Request Header v2 (flexible), client_id is still a regular NULLABLE_STRING (2-byte length prefix)
     // NOT a compact string! Only the tag_buffer at the end is compact-encoded
     client_id := reader.read_nullable_string()!
     
-    if is_flexible {
-        // Skip tagged fields in header
+    if is_flexible_header {
+        // Skip tagged fields (tag_buffer) in header
         reader.skip_tagged_fields()!
     }
     
@@ -68,7 +103,7 @@ pub fn parse_request(data []u8) !Request {
     if api_key_enum == .fetch {
         eprintln('[DEBUG] parse_request FETCH: total_len=${data.len} header_end_pos=${reader.pos} body.len=${body.len}')
         eprintln('[DEBUG] parse_request FETCH: api_key=${api_key} api_version=${api_version} correlation_id=${correlation_id}')
-        eprintln('[DEBUG] parse_request FETCH: client_id=${client_id} is_flexible=${is_flexible}')
+        eprintln('[DEBUG] parse_request FETCH: client_id=${client_id} is_flexible=${is_flexible_header}')
         if data.len >= 40 {
             eprintln('[DEBUG] parse_request FETCH: first 40 bytes of full data: ${data[..40].hex()}')
         }
@@ -347,12 +382,19 @@ pub:
 }
 
 fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequest {
-    // replica_id: removed in v15+ (KIP-595)
+    // Kafka 공식 스키마 (FetchRequest.json) 기준:
+    // - v0-v14: ReplicaId가 첫 번째 필드
+    // - v15+ (KIP-903): ReplicaId 제거, ReplicaState가 tagged field(tag=1)로 이동
+    //                   Body가 MaxWaitMs로 시작!
+    
     mut replica_id := i32(-1)  // Default: consumer
     if version < 15 {
+        // v0-v14: replica_id는 첫 번째 필드
         replica_id = reader.read_i32()!
     }
-    max_wait_ms := reader.read_i32()!
+    // v15+: replica_id는 tagged field에서 읽음 (파싱 끝에서 처리)
+    
+    max_wait_ms := reader.read_i32()!  // v15+에서 첫 번째 필드!
     min_bytes := reader.read_i32()!
     
     mut max_bytes := i32(0x7fffffff)
@@ -481,6 +523,28 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
         } else {
             _ = reader.read_string()!
         }
+    }
+    
+    // v15+ (KIP-903): ReplicaState in tagged field (tag=1)
+    // Parse tagged fields to extract replica_id if present
+    if version >= 15 && is_flexible {
+        num_tags := reader.read_uvarint() or { 0 }
+        for _ in 0 .. num_tags {
+            tag := reader.read_uvarint() or { break }
+            size := reader.read_uvarint() or { break }
+            if tag == 1 {
+                // ReplicaState: { ReplicaId: INT32, ReplicaEpoch: INT64 }
+                replica_id = reader.read_i32() or { -1 }
+                _ = reader.read_i64() or { -1 }  // replica_epoch (unused for now)
+            } else {
+                // Skip unknown tags
+                if reader.remaining() >= int(size) {
+                    reader.pos += int(size)
+                }
+            }
+        }
+    } else if is_flexible {
+        reader.skip_tagged_fields() or {}
     }
     
     return FetchRequest{

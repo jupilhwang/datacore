@@ -1,0 +1,23 @@
+total payload bytes: 54
+raw_payload_hex: 000000320000000100000000020000000108302e302e302e300000238400001164617461636f72652d636c7573746572000000010100
+offset 0:  00000000 -> frame_size (int32) = 50
+offset 4:  00000004 -> correlation_id (int32) = 1
+
+-- body parsing (offsets are absolute from payload start) --
+offset 008: 00000000 -> throttle_time_ms = 0
+offset 012: 02 -> brokers_compact_array_len(uvarint) = 2 -> count=1
+
+-- broker 0 --
+offset 013: 00000001 -> broker.node_id = 1
+offset 017: 08 -> host_compact_string_len(uvarint)=8 -> len=7
+offset 018: 302e302e302e30 -> host bytes = 0.0.0.0
+offset 025: 00002384 -> broker.port = 9092
+offset 029: 00 -> rack_compact_nullable_string uvarint = 0
+offset 030: 00 -> broker.tagged_fields count (uvarint) = 0
+
+offset 031: 11 -> cluster_id_compact_nullable uvarint=17
+offset 032: 64617461636f72652d636c7573746572 -> cluster_id = datacore-cluster
+offset 048: 00000001 -> controller_id = 1
+offset 052: 01 -> topics_compact_array_len(uvarint)=1 -> count=0
+
+offset 053: 00 -> root.tagged_fields_count(uvarint)=0

@@ -1,13 +1,25 @@
 // Adapter Layer - Kafka Response Building
 module kafka
 
-// Response Header
+// Response Header v0 (non-flexible)
+// Used for: ApiVersions (always), non-flexible APIs
 pub struct ResponseHeader {
 pub:
     correlation_id  i32
 }
 
-// Build response with header
+// Response Header v1 (flexible)
+// Used for: flexible APIs
+// Includes tag_buffer after correlation_id
+pub struct ResponseHeaderV1 {
+pub:
+    correlation_id  i32
+    // tag_buffer is written separately (min 1 byte: 0x00 for empty)
+}
+
+// Build response with header (non-flexible, Response Header v0)
+// Used for: ApiVersions (ALWAYS), SaslHandshake, and non-flexible API versions
+// Note: NO tag_buffer in header!
 pub fn build_response(correlation_id i32, body []u8) []u8 {
     mut writer := new_writer_with_capacity(4 + 4 + body.len)
     
@@ -15,34 +27,56 @@ pub fn build_response(correlation_id i32, body []u8) []u8 {
     writer.write_i32(i32(4 + body.len))
     // Correlation ID
     writer.write_i32(correlation_id)
+    // NO tag_buffer for non-flexible response header!
     // Body
     writer.write_raw(body)
     
     return writer.bytes()
 }
 
-// Build flexible response (with tagged fields)
+// Build flexible response (Response Header v1, with tag_buffer)
+// Used for: flexible API versions (except ApiVersions which is always non-flexible)
+// Important: tag_buffer is minimum 1 byte (0x00 for empty tags)
 pub fn build_flexible_response(correlation_id i32, body []u8) []u8 {
-    // Flexible response header (v9+):
-    // [size:int32][correlation_id:int32][tagged_fields:uvarint][body...]
-    // Size = 4 (corr id) + 1 (tagged fields) + body.len
-    mut out := new_writer_with_capacity(4 + 4 + 1 + body.len)
-    out.write_i32(i32(4 + 1 + body.len))  // size includes corr_id + tagged_fields + body
-    out.write_i32(correlation_id)
-    out.write_tagged_fields()  // Response header tagged fields (empty for now)
-    out.write_raw(body)
-    resp := out.bytes()
-    // Debug log first bytes for troubleshooting
-    eprintln('[DEBUG] build_flexible_response first16: ${resp[..if resp.len > 16 { 16 } else { resp.len }].hex()}')
-    return resp
+    mut writer := new_writer_with_capacity(4 + 4 + 1 + body.len)
+    
+    // Size (total length excluding size field itself)
+    // = correlation_id(4) + tag_buffer(1, minimum) + body
+    writer.write_i32(i32(4 + 1 + body.len))
+    // Correlation ID
+    writer.write_i32(correlation_id)
+    // Tag buffer (empty = 0x00, which means num_tags=0)
+    writer.write_uvarint(0)
+    // Body
+    writer.write_raw(body)
+    
+    return writer.bytes()
+}
+
+// Build response with appropriate header based on API key and version
+// This is the recommended function to use for building responses
+pub fn build_response_auto(api_key ApiKey, api_version i16, correlation_id i32, body []u8) []u8 {
+    response_header_version := get_response_header_version(api_key, api_version)
+    if response_header_version >= 1 {
+        return build_flexible_response(correlation_id, body)
+    }
+    return build_response(correlation_id, body)
 }
 
 // ApiVersions Response
+// Note: ApiVersions ALWAYS uses non-flexible response header (v0), even for v3+ body!
+// ⚠️ v3+ 응답에는 supported_features, finalized_features 등 추가 필드가 필요합니다.
+// 이를 누락하면 클라이언트가 뒤에 더 읽을 바이트가 있다고 가정하여 파싱이 깨질 수 있습니다.
 pub struct ApiVersionsResponse {
 pub:
-    error_code      i16
-    api_versions    []ApiVersionsResponseKey
-    throttle_time_ms i32
+    error_code              i16
+    api_versions            []ApiVersionsResponseKey
+    throttle_time_ms        i32
+    // v3+ fields (KRaft features)
+    supported_features      []ApiVersionsSupportedFeature       // v3+
+    finalized_features_epoch i64                                // v3+, -1 if not initialized
+    finalized_features      []ApiVersionsFinalizedFeature       // v3+
+    zk_migration_ready      bool                                // v3.4+ (optional)
 }
 
 pub struct ApiVersionsResponseKey {
@@ -50,6 +84,20 @@ pub:
     api_key     i16
     min_version i16
     max_version i16
+}
+
+pub struct ApiVersionsSupportedFeature {
+pub:
+    name        string
+    min_version i16
+    max_version i16
+}
+
+pub struct ApiVersionsFinalizedFeature {
+pub:
+    name              string
+    max_version_level i16
+    min_version_level i16
 }
 
 pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
@@ -77,7 +125,31 @@ pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
         writer.write_i32(r.throttle_time_ms)
     }
     
+    // v3+ KRaft feature fields - MUST be included to avoid parsing errors!
     if is_flexible {
+        // supported_features (COMPACT_ARRAY)
+        writer.write_compact_array_len(r.supported_features.len)
+        for f in r.supported_features {
+            writer.write_compact_string(f.name)
+            writer.write_i16(f.min_version)
+            writer.write_i16(f.max_version)
+            writer.write_tagged_fields()
+        }
+        
+        // finalized_features_epoch (INT64)
+        writer.write_i64(r.finalized_features_epoch)
+        
+        // finalized_features (COMPACT_ARRAY)
+        writer.write_compact_array_len(r.finalized_features.len)
+        for f in r.finalized_features {
+            writer.write_compact_string(f.name)
+            writer.write_i16(f.max_version_level)
+            writer.write_i16(f.min_version_level)
+            writer.write_tagged_fields()
+        }
+        
+        // zk_migration_ready is a tagged field in some versions, omit for simplicity
+        // Final tag_buffer
         writer.write_tagged_fields()
     }
     
@@ -85,6 +157,7 @@ pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
 }
 
 // Create default ApiVersions response
+// v3+에서는 feature 필드들을 빈 배열/기본값으로 설정 (KRaft 미지원 시)
 pub fn new_api_versions_response() ApiVersionsResponse {
     supported := get_supported_api_versions()
     mut api_versions := []ApiVersionsResponseKey{}
@@ -101,6 +174,11 @@ pub fn new_api_versions_response() ApiVersionsResponse {
         error_code: 0
         api_versions: api_versions
         throttle_time_ms: 0
+        // v3+ fields: empty arrays and default values
+        supported_features: []            // No KRaft features supported yet
+        finalized_features_epoch: -1      // Not initialized (-1 means not finalized)
+        finalized_features: []            // No finalized features
+        zk_migration_ready: false         // Not in ZK migration mode
     }
 }
 
@@ -473,17 +551,16 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
             if version >= 11 {
                 writer.write_i32(-1)  // No preferred replica
             }
-            // Records - COMPACT_NULLABLE_BYTES for flexible
-            if is_flexible {
-                // COMPACT_NULLABLE_BYTES: 0 = null, N+1 = N bytes
-                if p.records.len == 0 {
-                    writer.write_uvarint(0)  // null (no records)
-                } else {
-                    writer.write_uvarint(u64(p.records.len) + 1)
-                    writer.write_raw(p.records)
-                }
+            // Records - RECORDS type (not COMPACT_BYTES!)
+            // RECORDS type uses i32 length prefix even in flexible versions
+            // -1 = null (no records), 0 = empty records, N = N bytes of record data
+            if p.records.len == 0 {
+                // Write length = 0 for empty records (not -1 for null)
+                // Null (-1) can cause client parsing issues
+                writer.write_i32(0)
             } else {
-                writer.write_bytes(p.records)
+                writer.write_i32(i32(p.records.len))
+                writer.write_raw(p.records)
             }
             if is_flexible {
                 writer.write_tagged_fields()
