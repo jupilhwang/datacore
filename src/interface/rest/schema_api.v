@@ -312,16 +312,32 @@ fn (mut api SchemaAPI) get_raw_schema_by_id(schema_id int) (int, string) {
 }
 
 fn (mut api SchemaAPI) get_global_config() (int, string) {
-    // Return default compatibility for now
+    // Return global compatibility setting
+    config := api.registry.get_global_config()
     resp := CompatibilityResponse{
-        compatibility_level: domain.default_compatibility.str()
+        compatibility_level: config.compatibility.str()
     }
     return 200, json.encode(resp)
 }
 
 fn (mut api SchemaAPI) set_global_config(body string) (int, string) {
-    // TODO: Implement global config setting
-    return api.get_global_config()
+    req := json.decode(CompatibilityRequest, body) or {
+        return api.error_response(400, 40001, 'Invalid request: ${err}')
+    }
+    
+    level := domain.compatibility_from_str(req.compatibility) or {
+        return api.error_response(400, 40001, 'Invalid compatibility level: ${req.compatibility}')
+    }
+    
+    // Update global config
+    api.registry.set_global_config(domain.SubjectConfig{
+        compatibility: level
+    })
+    
+    resp := CompatibilityResponse{
+        compatibility_level: level.str()
+    }
+    return 200, json.encode(resp)
 }
 
 fn (mut api SchemaAPI) get_subject_config(subject string) (int, string) {

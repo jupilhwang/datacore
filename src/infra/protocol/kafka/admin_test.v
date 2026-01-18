@@ -19,7 +19,7 @@ fn new_mock_storage() &MockStorage {
     }
 }
 
-fn (mut s MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) ! {
+fn (mut s MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
     s.call_count += 1
     if s.fail_create {
         return error('mock create error')
@@ -27,12 +27,14 @@ fn (mut s MockStorage) create_topic(name string, partitions int, config domain.T
     if name in s.topics {
         return error('topic already exists')
     }
-    s.topics[name] = domain.TopicMetadata{
+    meta := domain.TopicMetadata{
         name: name
         partition_count: partitions
         config: map[string]string{}
         is_internal: false
     }
+    s.topics[name] = meta
+    return meta
 }
 
 fn (mut s MockStorage) delete_topic(name string) ! {
@@ -59,6 +61,10 @@ fn (mut s MockStorage) list_topics() ![]domain.TopicMetadata {
 
 fn (mut s MockStorage) get_topic(name string) !domain.TopicMetadata {
     return s.topics[name] or { return error('topic not found') }
+}
+
+fn (mut s MockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+    return error('topic not found')
 }
 
 fn (mut s MockStorage) add_partitions(name string, new_count int) ! {
@@ -163,8 +169,8 @@ fn test_parse_delete_topics_request() {
     }
     
     assert req.topics.len == 2
-    assert req.topics[0] == 'topic-1'
-    assert req.topics[1] == 'topic-2'
+    assert req.topics[0].name == 'topic-1'
+    assert req.topics[1].name == 'topic-2'
     assert req.timeout_ms == 15000
 }
 

@@ -18,14 +18,16 @@ fn new_mock_storage() &MockStorage {
     }
 }
 
-fn (mut s MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) ! {
+fn (mut s MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
     if name in s.topics {
         return error('topic already exists')
     }
-    s.topics[name] = domain.TopicMetadata{
+    meta := domain.TopicMetadata{
         name: name
         partition_count: partitions
     }
+    s.topics[name] = meta
+    return meta
 }
 
 fn (mut s MockStorage) delete_topic(name string) ! {
@@ -45,6 +47,11 @@ fn (mut s MockStorage) list_topics() ![]domain.TopicMetadata {
 
 fn (mut s MockStorage) get_topic(name string) !domain.TopicMetadata {
     return s.topics[name] or { return error('topic not found') }
+}
+
+fn (mut s MockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+    // Mock implementation - search by topic ID (UUID)
+    return error('topic not found')
 }
 
 fn (mut s MockStorage) add_partitions(name string, new_count int) ! {}
@@ -428,14 +435,253 @@ fn test_test_compatibility() {
     config := RegistryConfig{ default_compatibility: .backward }
     mut registry := new_registry(storage, config)
     
-    // Register first schema
-    registry.register('compat-test', '{"type":"string"}', .avro) or {}
+    // Register first schema (record type)
+    registry.register('compat-test', '{"type":"record","name":"Test","fields":[{"name":"id","type":"int"}]}', .avro) or {}
     
-    // Test compatibility of new schema
-    is_compat := registry.test_compatibility('compat-test', '{"type":"int"}', .avro) or {
-        false
+    // Test compatibility of new schema with added nullable field (backward compatible)
+    is_compat := registry.test_compatibility('compat-test', 
+        '{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"]}]}', 
+        .avro) or { false }
+    
+    assert is_compat == true, 'Adding nullable field should be backward compatible'
+}
+// ============================================================================
+// Avro Compatibility Tests
+// ============================================================================
+
+// Test Avro backward compatibility - adding field with default
+fn test_avro_backward_compat_add_field_with_default() {
+    old_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}'
+    new_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"},{"name":"name","type":"string","default":"unknown"}]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    assert result == true, 'Adding field with default should be backward compatible'
+}
+
+// Test Avro backward compatibility - adding field without default (nullable)
+fn test_avro_backward_compat_add_nullable_field() {
+    old_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}'
+    new_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"},{"name":"email","type":["null","string"]}]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    assert result == true, 'Adding nullable field should be backward compatible'
+}
+
+// Test Avro backward compatibility - removing field
+fn test_avro_backward_compat_remove_field() {
+    old_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"}]}'
+    new_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    // Removing a field IS backward compatible (new reader ignores old field)
+    assert result == true, 'Removing field should be backward compatible (reader ignores unknown fields)'
+}
+
+// Test Avro backward compatibility - adding required field without default
+fn test_avro_backward_compat_add_required_field() {
+    old_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}'
+    new_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"}]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    // Adding required field without default is NOT backward compatible
+    assert result == false, 'Adding required field without default should NOT be backward compatible'
+}
+
+// Test Avro forward compatibility - removing field with default
+fn test_avro_forward_compat_remove_field_with_default() {
+    old_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"},{"name":"name","type":"string","default":""}]}'
+    new_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}'
+    
+    result := check_forward_compatible(old_schema, new_schema, .avro)
+    assert result == true, 'Removing field with default should be forward compatible'
+}
+
+// Test Avro forward compatibility - removing required field
+fn test_avro_forward_compat_remove_required_field() {
+    old_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"}]}'
+    new_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}'
+    
+    result := check_forward_compatible(old_schema, new_schema, .avro)
+    // Removing required field without default is NOT forward compatible
+    assert result == false, 'Removing required field without default should NOT be forward compatible'
+}
+
+// Test Avro type promotion - int to long
+fn test_avro_type_promotion_int_to_long() {
+    old_schema := '{"type":"record","name":"Data","fields":[{"name":"value","type":"int"}]}'
+    new_schema := '{"type":"record","name":"Data","fields":[{"name":"value","type":"long"}]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    assert result == true, 'int to long promotion should be compatible'
+}
+
+// Test Avro type promotion - string to bytes
+fn test_avro_type_promotion_string_to_bytes() {
+    old_schema := '{"type":"record","name":"Data","fields":[{"name":"value","type":"string"}]}'
+    new_schema := '{"type":"record","name":"Data","fields":[{"name":"value","type":"bytes"}]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    assert result == true, 'string to bytes should be compatible'
+}
+
+// Test Avro enum backward compatibility - adding symbol
+fn test_avro_enum_backward_add_symbol() {
+    old_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE"]}'
+    new_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE","DELETED"]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    assert result == true, 'Adding enum symbol should be backward compatible'
+}
+
+// Test Avro enum backward compatibility - removing symbol
+fn test_avro_enum_backward_remove_symbol() {
+    old_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE","DELETED"]}'
+    new_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE"]}'
+    
+    result := check_backward_compatible(old_schema, new_schema, .avro)
+    assert result == false, 'Removing enum symbol should NOT be backward compatible'
+}
+
+// Test Avro enum forward compatibility - adding symbol
+fn test_avro_enum_forward_add_symbol() {
+    old_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE"]}'
+    new_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE","DELETED"]}'
+    
+    result := check_forward_compatible(old_schema, new_schema, .avro)
+    assert result == false, 'Adding enum symbol should NOT be forward compatible'
+}
+
+// Test Avro enum forward compatibility - removing symbol
+fn test_avro_enum_forward_remove_symbol() {
+    old_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE","DELETED"]}'
+    new_schema := '{"type":"enum","name":"Status","symbols":["PENDING","ACTIVE"]}'
+    
+    result := check_forward_compatible(old_schema, new_schema, .avro)
+    assert result == true, 'Removing enum symbol should be forward compatible'
+}
+
+// Test Avro schema parsing
+fn test_parse_avro_schema_record() {
+    schema_str := '{"type":"record","name":"User","namespace":"com.example","fields":[{"name":"id","type":"int"},{"name":"name","type":"string","default":""}]}'
+    
+    schema := parse_avro_schema(schema_str) or {
+        assert false, 'parsing failed: ${err}'
+        return
     }
     
-    // Simplified compatibility always returns true for P0
-    assert is_compat == true
+    assert schema.schema_type == 'record'
+    assert schema.name == 'User'
+    assert schema.namespace == 'com.example'
+    assert schema.fields.len == 2
+    
+    // Check first field
+    assert schema.fields[0].name == 'id'
+    assert schema.fields[0].field_type == 'int'
+    assert schema.fields[0].has_default == false
+    
+    // Check second field
+    assert schema.fields[1].name == 'name'
+    assert schema.fields[1].field_type == 'string'
+    assert schema.fields[1].has_default == true
+}
+
+// Test Avro schema parsing - nullable union
+fn test_parse_avro_schema_nullable_field() {
+    schema_str := '{"type":"record","name":"Data","fields":[{"name":"value","type":["null","string"]}]}'
+    
+    schema := parse_avro_schema(schema_str) or {
+        assert false, 'parsing failed'
+        return
+    }
+    
+    assert schema.fields.len == 1
+    assert schema.fields[0].is_nullable == true
+    assert schema.fields[0].is_union == true
+    assert 'null' in schema.fields[0].union_types
+    assert 'string' in schema.fields[0].union_types
+}
+
+// ============================================================================
+// Global Config Tests
+// ============================================================================
+
+fn test_global_config_get_set() {
+    storage := new_mock_storage()
+    config := RegistryConfig{ default_compatibility: .backward }
+    mut registry := new_registry(storage, config)
+    
+    // Get default
+    global := registry.get_global_config()
+    assert global.compatibility == .backward
+    
+    // Set to FULL
+    registry.set_global_config(domain.SubjectConfig{
+        compatibility: .full
+    })
+    
+    new_global := registry.get_global_config()
+    assert new_global.compatibility == .full
+}
+
+// ============================================================================
+// Boot Recovery Tests
+// ============================================================================
+
+fn test_load_from_storage_empty() {
+    storage := new_mock_storage()
+    mut registry := new_registry(storage, RegistryConfig{})
+    
+    // First call should work
+    registry.load_from_storage() or {
+        assert false, 'load_from_storage failed: ${err}'
+        return
+    }
+    
+    // Registry should be empty but recovered
+    stats := registry.get_stats()
+    assert stats.total_schemas == 0
+    assert stats.total_subjects == 0
+}
+
+fn test_extract_json_int() {
+    json_str := '{"id":42,"name":"test"}'
+    
+    id := extract_json_int(json_str, 'id') or {
+        assert false, 'extract_json_int failed'
+        return
+    }
+    
+    assert id == 42
+}
+
+fn test_extract_json_string() {
+    json_str := '{"id":42,"name":"test"}'
+    
+    name := extract_json_string(json_str, 'name') or {
+        assert false, 'extract_json_string failed'
+        return
+    }
+    
+    assert name == 'test'
+}
+
+// ============================================================================
+// Full Compatibility (Backward + Forward)
+// ============================================================================
+
+fn test_full_compatibility() {
+    // Full compatibility requires both backward AND forward compatibility
+    // This means:
+    // - Cannot add required fields without defaults
+    // - Cannot remove required fields without defaults
+    // - Only adding optional/nullable fields is allowed
+    
+    old_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"}]}'
+    new_schema := '{"type":"record","name":"User","fields":[{"name":"id","type":"int"},{"name":"name","type":"string","default":""}]}'
+    
+    backward := check_backward_compatible(old_schema, new_schema, .avro)
+    forward := check_forward_compatible(old_schema, new_schema, .avro)
+    
+    assert backward == true, 'Should be backward compatible (new field has default)'
+    assert forward == true, 'Should be forward compatible (old reader ignores new field)'
 }
