@@ -93,14 +93,44 @@ fn (mut s MockStorage) get_partition_info(topic string, partition int) !domain.P
 
 fn (mut s MockStorage) save_group(group domain.ConsumerGroup) ! {}
 
-fn (mut s MockStorage) load_group(group_id string) !domain.ConsumerGroup {
-    return error('not found')
-}
-
 fn (mut s MockStorage) delete_group(group_id string) ! {}
 
 fn (mut s MockStorage) list_groups() ![]domain.GroupInfo {
-    return []domain.GroupInfo{}
+    return [
+        domain.GroupInfo{
+            group_id: 'test-group-1'
+            protocol_type: 'consumer'
+            state: 'Stable'
+        },
+        domain.GroupInfo{
+            group_id: 'test-group-2'
+            protocol_type: 'consumer'
+            state: 'Empty'
+        },
+    ]
+}
+
+fn (mut s MockStorage) load_group(group_id string) !domain.ConsumerGroup {
+    if group_id == 'test-group-1' {
+        return domain.ConsumerGroup{
+            group_id: group_id
+            generation_id: 5
+            protocol_type: 'consumer'
+            protocol: 'range'
+            state: .stable
+            leader: 'member-1'
+            members: [
+                domain.GroupMember{
+                    member_id: 'member-1'
+                    client_id: 'client-1'
+                    client_host: '/127.0.0.1'
+                    metadata: []u8{}
+                    assignment: []u8{}
+                },
+            ]
+        }
+    }
+    return error('group not found')
 }
 
 fn (mut s MockStorage) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {}
@@ -396,4 +426,165 @@ fn test_parse_config_int() {
     assert parse_config_int(configs, 'min.insync.replicas', 1) == 2
     assert parse_config_int(configs, 'max.message.bytes', 0) == 1048576
     assert parse_config_int(configs, 'nonexistent', 42) == 42
+}
+
+// Test ListGroups Request Parsing
+fn test_parse_list_groups_request() {
+    // Build a minimal ListGroups request (v0)
+    mut writer := new_writer()
+    // v0 has no fields
+    
+    mut reader := new_reader(writer.bytes())
+    req := parse_list_groups_request(mut reader, 0, false) or {
+        assert false, 'parse failed: ${err}'
+        return
+    }
+    
+    assert req.states_filter.len == 0
+}
+
+// Test ListGroups Handler
+fn test_handler_list_groups() {
+    mut storage := new_mock_storage()
+    mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+    
+    // Build request (v0 has no body)
+    mut writer := new_writer()
+    
+    result := handler.handle_list_groups(writer.bytes(), 0) or {
+        assert false, 'handler failed: ${err}'
+        return
+    }
+    
+    assert result.len > 0
+    
+    // Parse response
+    mut reader := new_reader(result)
+    error_code := reader.read_i16() or { -999 }
+    assert error_code == 0
+    
+    groups_len := reader.read_i32() or { 0 }
+    assert groups_len == 2
+}
+
+// Test DescribeGroups Request Parsing
+fn test_parse_describe_groups_request() {
+    // Build a DescribeGroups request (v0)
+    mut writer := new_writer()
+    
+    // Array length: 2
+    writer.write_i32(2)
+    
+    // Group IDs
+    writer.write_string('group-1')
+    writer.write_string('group-2')
+    
+    mut reader := new_reader(writer.bytes())
+    req := parse_describe_groups_request(mut reader, 0, false) or {
+        assert false, 'parse failed: ${err}'
+        return
+    }
+    
+    assert req.groups.len == 2
+    assert req.groups[0] == 'group-1'
+    assert req.groups[1] == 'group-2'
+}
+
+// Test DescribeGroups Handler - Group Found
+fn test_handler_describe_groups_found() {
+    mut storage := new_mock_storage()
+    mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+    
+    // Build request for existing group
+    mut writer := new_writer()
+    writer.write_i32(1)  // 1 group
+    writer.write_string('test-group-1')
+    
+    result := handler.handle_describe_groups(writer.bytes(), 0) or {
+        assert false, 'handler failed: ${err}'
+        return
+    }
+    
+    assert result.len > 0
+    
+    // Parse response
+    mut reader := new_reader(result)
+    groups_len := reader.read_i32() or { 0 }
+    assert groups_len == 1
+    
+    error_code := reader.read_i16() or { -999 }
+    assert error_code == 0
+    
+    group_id := reader.read_string() or { '' }
+    assert group_id == 'test-group-1'
+    
+    group_state := reader.read_string() or { '' }
+    assert group_state == 'Stable'
+}
+
+// Test DescribeGroups Handler - Group Not Found
+fn test_handler_describe_groups_not_found() {
+    mut storage := new_mock_storage()
+    mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+    
+    // Build request for non-existent group
+    mut writer := new_writer()
+    writer.write_i32(1)
+    writer.write_string('nonexistent-group')
+    
+    result := handler.handle_describe_groups(writer.bytes(), 0) or {
+        assert false, 'handler failed: ${err}'
+        return
+    }
+    
+    // Parse response
+    mut reader := new_reader(result)
+    groups_len := reader.read_i32() or { 0 }
+    assert groups_len == 1
+    
+    error_code := reader.read_i16() or { -999 }
+    assert error_code == i16(ErrorCode.group_id_not_found)
+}
+
+// Test ListGroupsResponse Encoding
+fn test_list_groups_response_encoding() {
+    resp := ListGroupsResponse{
+        throttle_time_ms: 0
+        error_code: 0
+        groups: [
+            ListGroupsResponseGroup{
+                group_id: 'group-1'
+                protocol_type: 'consumer'
+                group_state: 'Stable'
+            },
+        ]
+    }
+    
+    encoded := resp.encode(0)
+    assert encoded.len > 0
+    
+    // Verify basic structure
+    mut reader := new_reader(encoded)
+    error_code := reader.read_i16() or { -999 }
+    assert error_code == 0
+}
+
+// Test DescribeGroupsResponse Encoding
+fn test_describe_groups_response_encoding() {
+    resp := DescribeGroupsResponse{
+        throttle_time_ms: 0
+        groups: [
+            DescribeGroupsResponseGroup{
+                error_code: 0
+                group_id: 'test-group'
+                group_state: 'Stable'
+                protocol_type: 'consumer'
+                protocol_data: 'range'
+                members: []
+            },
+        ]
+    }
+    
+    encoded := resp.encode(0)
+    assert encoded.len > 0
 }

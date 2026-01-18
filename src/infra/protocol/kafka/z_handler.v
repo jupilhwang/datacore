@@ -473,17 +473,54 @@ fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !Li
 
 fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !CreateTopicsResponse {
     mut topics := []CreateTopicsResponseTopic{}
-    for topic in req.topics {
-        topic_id := generate_uuid()
+    
+    for t in req.topics {
+        // Convert config map to domain.TopicConfig
+        topic_config := domain.TopicConfig{
+            retention_ms: parse_config_i64(t.configs, 'retention.ms', 604800000)
+            retention_bytes: parse_config_i64(t.configs, 'retention.bytes', -1)
+            segment_bytes: parse_config_i64(t.configs, 'segment.bytes', 1073741824)
+            cleanup_policy: t.configs['cleanup.policy'] or { 'delete' }
+            min_insync_replicas: parse_config_int(t.configs, 'min.insync.replicas', 1)
+            max_message_bytes: parse_config_int(t.configs, 'max.message.bytes', 1048576)
+        }
+        
+        // Determine partition count
+        partitions := if t.num_partitions <= 0 { 1 } else { int(t.num_partitions) }
+        
+        // Try to create topic in storage
+        created_meta := h.storage.create_topic(t.name, partitions, topic_config) or {
+            // Determine error code based on error message
+            error_code := if err.str().contains('already exists') {
+                i16(ErrorCode.topic_already_exists)
+            } else if err.str().contains('invalid') {
+                i16(ErrorCode.invalid_topic_exception)
+            } else {
+                i16(ErrorCode.unknown_server_error)
+            }
+            
+            topics << CreateTopicsResponseTopic{
+                name: t.name
+                topic_id: generate_uuid()
+                error_code: error_code
+                error_message: err.str()
+                num_partitions: t.num_partitions
+                replication_factor: t.replication_factor
+            }
+            continue
+        }
+        
+        // Success - use topic_id from created metadata
         topics << CreateTopicsResponseTopic{
-            name: topic.name
-            topic_id: topic_id
+            name: t.name
+            topic_id: created_meta.topic_id
             error_code: 0
-            error_message: ''
-            num_partitions: topic.num_partitions
-            replication_factor: topic.replication_factor
+            error_message: none
+            num_partitions: i32(partitions)
+            replication_factor: t.replication_factor
         }
     }
+    
     return CreateTopicsResponse{
         throttle_time_ms: 0
         topics: topics
@@ -491,24 +528,144 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 }
 
 fn (mut h Handler) process_delete_topics(req DeleteTopicsRequest, version i16) !DeleteTopicsResponse {
+    mut topics := []DeleteTopicsResponseTopic{}
+    
+    for t in req.topics {
+        // For v6+, we may need to find topic name from topic_id
+        mut topic_name := t.name
+        mut topic_id := t.topic_id.clone()
+        
+        if version >= 6 && t.name.len == 0 && t.topic_id.len == 16 {
+            // Look up topic by ID
+            if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
+                topic_name = topic_meta.name
+                topic_id = topic_meta.topic_id.clone()
+            } else {
+                topics << DeleteTopicsResponseTopic{
+                    name: ''
+                    topic_id: t.topic_id
+                    error_code: i16(ErrorCode.unknown_topic_or_partition)
+                }
+                continue
+            }
+        }
+        
+        // Try to delete topic from storage
+        h.storage.delete_topic(topic_name) or {
+            // Determine error code based on error message
+            error_code := if err.str().contains('not found') {
+                i16(ErrorCode.unknown_topic_or_partition)
+            } else if err.str().contains('internal') {
+                i16(ErrorCode.invalid_topic_exception)
+            } else {
+                i16(ErrorCode.unknown_server_error)
+            }
+            
+            topics << DeleteTopicsResponseTopic{
+                name: topic_name
+                topic_id: topic_id
+                error_code: error_code
+            }
+            continue
+        }
+        
+        // Success
+        topics << DeleteTopicsResponseTopic{
+            name: topic_name
+            topic_id: topic_id
+            error_code: 0
+        }
+    }
+    
     return DeleteTopicsResponse{
         throttle_time_ms: 0
-        topics: []
+        topics: topics
     }
 }
 
 fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !ListGroupsResponse {
+    // Get groups from storage
+    groups_info := h.storage.list_groups() or {
+        return ListGroupsResponse{
+            throttle_time_ms: 0
+            error_code: i16(ErrorCode.unknown_server_error)
+            groups: []
+        }
+    }
+    
+    mut groups := []ListGroupsResponseGroup{}
+    for g in groups_info {
+        // Apply state filter if provided (v4+)
+        if req.states_filter.len > 0 {
+            if g.state !in req.states_filter {
+                continue
+            }
+        }
+        
+        groups << ListGroupsResponseGroup{
+            group_id: g.group_id
+            protocol_type: g.protocol_type
+            group_state: g.state
+        }
+    }
+    
     return ListGroupsResponse{
         throttle_time_ms: 0
         error_code: 0
-        groups: []
+        groups: groups
     }
 }
 
 fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i16) !DescribeGroupsResponse {
+    mut groups := []DescribeGroupsResponseGroup{}
+    
+    for group_id in req.groups {
+        group := h.storage.load_group(group_id) or {
+            // Group not found
+            groups << DescribeGroupsResponseGroup{
+                error_code: i16(ErrorCode.group_id_not_found)
+                group_id: group_id
+                group_state: ''
+                protocol_type: ''
+                protocol_data: ''
+                members: []
+            }
+            continue
+        }
+        
+        // Convert members to response format
+        mut response_members := []DescribeGroupsResponseMember{}
+        for m in group.members {
+            response_members << DescribeGroupsResponseMember{
+                member_id: m.member_id
+                client_id: m.client_id
+                client_host: m.client_host
+                member_metadata: m.metadata
+                member_assignment: m.assignment
+            }
+        }
+        
+        state_str := match group.state {
+            .empty { 'Empty' }
+            .stable { 'Stable' }
+            .preparing_rebalance { 'PreparingRebalance' }
+            .completing_rebalance { 'CompletingRebalance' }
+            .dead { 'Dead' }
+        }
+        
+        groups << DescribeGroupsResponseGroup{
+            error_code: 0
+            group_id: group_id
+            group_state: state_str
+            protocol_type: group.protocol_type
+            protocol_data: group.protocol
+            members: response_members
+        }
+    }
+    
     return DescribeGroupsResponse{
         throttle_time_ms: 0
-        groups: []
+        groups: groups
     }
 }
 
