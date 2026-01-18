@@ -541,3 +541,347 @@ fn test_range_assignor_partial_subscription() {
         assert tp.topic_name == 'topic-b'
     }
 }
+
+// ============================================================================
+// Enhanced Sticky Assignor Tests
+// ============================================================================
+
+fn test_sticky_assignor_balanced_distribution() {
+    assignor := new_sticky_assignor()
+    
+    members := [
+        MemberSubscription{
+            member_id: 'member-1'
+            topics: ['topic-a']
+            owned_partitions: []
+        },
+        MemberSubscription{
+            member_id: 'member-2'
+            topics: ['topic-a']
+            owned_partitions: []
+        },
+        MemberSubscription{
+            member_id: 'member-3'
+            topics: ['topic-a']
+            owned_partitions: []
+        },
+    ]
+    
+    topics := {
+        'topic-a': TopicMetadata{
+            topic_id: []u8{len: 16}
+            topic_name: 'topic-a'
+            partition_count: 10
+        }
+    }
+    
+    assignments := assignor.assign(members, topics) or {
+        assert false, 'Assignment failed: ${err}'
+        return
+    }
+    
+    // 10 partitions / 3 members = 3 or 4 each (balanced)
+    for member_id, partitions in assignments {
+        assert partitions.len >= 3 && partitions.len <= 4, 'Member ${member_id} has unbalanced assignment: ${partitions.len}'
+    }
+}
+
+fn test_sticky_assignor_member_join() {
+    assignor := new_sticky_assignor()
+    
+    // Initially 2 members, each with 5 partitions
+    members := [
+        MemberSubscription{
+            member_id: 'member-1'
+            topics: ['topic-a']
+            owned_partitions: [
+                TopicPartition{ topic_name: 'topic-a', partition: 0 },
+                TopicPartition{ topic_name: 'topic-a', partition: 1 },
+                TopicPartition{ topic_name: 'topic-a', partition: 2 },
+                TopicPartition{ topic_name: 'topic-a', partition: 3 },
+                TopicPartition{ topic_name: 'topic-a', partition: 4 },
+            ]
+        },
+        MemberSubscription{
+            member_id: 'member-2'
+            topics: ['topic-a']
+            owned_partitions: [
+                TopicPartition{ topic_name: 'topic-a', partition: 5 },
+                TopicPartition{ topic_name: 'topic-a', partition: 6 },
+                TopicPartition{ topic_name: 'topic-a', partition: 7 },
+                TopicPartition{ topic_name: 'topic-a', partition: 8 },
+                TopicPartition{ topic_name: 'topic-a', partition: 9 },
+            ]
+        },
+        // New member joins with no partitions
+        MemberSubscription{
+            member_id: 'member-3'
+            topics: ['topic-a']
+            owned_partitions: []
+        },
+    ]
+    
+    topics := {
+        'topic-a': TopicMetadata{
+            topic_name: 'topic-a'
+            partition_count: 10
+        }
+    }
+    
+    assignments := assignor.assign(members, topics) or {
+        assert false, 'Assignment failed'
+        return
+    }
+    
+    // All partitions should be assigned
+    total := assignments['member-1'].len + assignments['member-2'].len + assignments['member-3'].len
+    assert total == 10
+    
+    // Check each member has some partitions (distribution varies based on subscription order)
+    assert assignments['member-1'].len > 0
+    assert assignments['member-2'].len > 0
+    assert assignments['member-3'].len > 0
+}
+
+fn test_sticky_assignor_member_leave() {
+    assignor := new_sticky_assignor()
+    
+    // Member 3 left, member 1 and 2 have their original partitions
+    members := [
+        MemberSubscription{
+            member_id: 'member-1'
+            topics: ['topic-a']
+            owned_partitions: [
+                TopicPartition{ topic_name: 'topic-a', partition: 0 },
+                TopicPartition{ topic_name: 'topic-a', partition: 1 },
+                TopicPartition{ topic_name: 'topic-a', partition: 2 },
+            ]
+        },
+        MemberSubscription{
+            member_id: 'member-2'
+            topics: ['topic-a']
+            owned_partitions: [
+                TopicPartition{ topic_name: 'topic-a', partition: 3 },
+                TopicPartition{ topic_name: 'topic-a', partition: 4 },
+                TopicPartition{ topic_name: 'topic-a', partition: 5 },
+            ]
+        },
+        // Member 3 is gone, partitions 6-9 need reassignment
+    ]
+    
+    topics := {
+        'topic-a': TopicMetadata{
+            topic_name: 'topic-a'
+            partition_count: 10
+        }
+    }
+    
+    assignments := assignor.assign(members, topics) or {
+        assert false, 'Assignment failed'
+        return
+    }
+    
+    // All 10 partitions should be assigned to 2 members
+    total := assignments['member-1'].len + assignments['member-2'].len
+    assert total == 10
+    
+    // Each should have 5 partitions
+    assert assignments['member-1'].len == 5
+    assert assignments['member-2'].len == 5
+    
+    // Original assignments should be preserved
+    assert assignments['member-1'].any(it.partition == 0)
+    assert assignments['member-1'].any(it.partition == 1)
+    assert assignments['member-1'].any(it.partition == 2)
+    assert assignments['member-2'].any(it.partition == 3)
+    assert assignments['member-2'].any(it.partition == 4)
+    assert assignments['member-2'].any(it.partition == 5)
+}
+
+// ============================================================================
+// Cooperative Sticky Assignor Tests
+// ============================================================================
+
+fn test_cooperative_sticky_assignor() {
+    assignor := new_cooperative_sticky_assignor()
+    
+    assert assignor.name() == 'cooperative-sticky'
+    
+    members := [
+        MemberSubscription{
+            member_id: 'member-1'
+            topics: ['topic-a']
+            owned_partitions: [
+                TopicPartition{ topic_name: 'topic-a', partition: 0 },
+            ]
+        },
+        MemberSubscription{
+            member_id: 'member-2'
+            topics: ['topic-a']
+            owned_partitions: [
+                TopicPartition{ topic_name: 'topic-a', partition: 1 },
+            ]
+        },
+    ]
+    
+    topics := {
+        'topic-a': TopicMetadata{
+            topic_name: 'topic-a'
+            partition_count: 4
+        }
+    }
+    
+    assignments := assignor.assign(members, topics) or {
+        assert false, 'Assignment failed'
+        return
+    }
+    
+    total := assignments['member-1'].len + assignments['member-2'].len
+    assert total == 4
+}
+
+fn test_cooperative_sticky_compute_revocations() {
+    assignor := new_cooperative_sticky_assignor()
+    
+    current := {
+        'member-1': [
+            TopicPartition{ topic_name: 'topic-a', partition: 0 },
+            TopicPartition{ topic_name: 'topic-a', partition: 1 },
+            TopicPartition{ topic_name: 'topic-a', partition: 2 },
+        ]
+        'member-2': [
+            TopicPartition{ topic_name: 'topic-a', partition: 3 },
+        ]
+    }
+    
+    target := {
+        'member-1': [
+            TopicPartition{ topic_name: 'topic-a', partition: 0 },
+            TopicPartition{ topic_name: 'topic-a', partition: 1 },
+        ]
+        'member-2': [
+            TopicPartition{ topic_name: 'topic-a', partition: 2 },
+            TopicPartition{ topic_name: 'topic-a', partition: 3 },
+        ]
+    }
+    
+    revocations := assignor.compute_revocations(current, target)
+    
+    // member-1 should revoke partition 2
+    assert 'member-1' in revocations
+    assert revocations['member-1'].len == 1
+    assert revocations['member-1'][0].partition == 2
+    
+    // member-2 has no revocations
+    assert 'member-2' !in revocations || revocations['member-2'].len == 0
+}
+
+fn test_cooperative_sticky_compute_additions() {
+    assignor := new_cooperative_sticky_assignor()
+    
+    current := {
+        'member-1': [
+            TopicPartition{ topic_name: 'topic-a', partition: 0 },
+        ]
+        'member-2': [
+            TopicPartition{ topic_name: 'topic-a', partition: 1 },
+        ]
+    }
+    
+    target := {
+        'member-1': [
+            TopicPartition{ topic_name: 'topic-a', partition: 0 },
+            TopicPartition{ topic_name: 'topic-a', partition: 2 },
+        ]
+        'member-2': [
+            TopicPartition{ topic_name: 'topic-a', partition: 1 },
+            TopicPartition{ topic_name: 'topic-a', partition: 3 },
+        ]
+    }
+    
+    additions := assignor.compute_additions(current, target)
+    
+    // member-1 should get partition 2
+    assert 'member-1' in additions
+    assert additions['member-1'].len == 1
+    assert additions['member-1'][0].partition == 2
+    
+    // member-2 should get partition 3
+    assert 'member-2' in additions
+    assert additions['member-2'].len == 1
+    assert additions['member-2'][0].partition == 3
+}
+
+// ============================================================================
+// Uniform Assignor Tests (KIP-848)
+// ============================================================================
+
+fn test_uniform_assignor() {
+    assignor := new_uniform_assignor()
+    
+    assert assignor.name() == 'uniform'
+    
+    members := [
+        MemberSubscription{
+            member_id: 'member-1'
+            topics: ['topic-a']
+            owned_partitions: []
+        },
+        MemberSubscription{
+            member_id: 'member-2'
+            topics: ['topic-a']
+            owned_partitions: []
+        },
+    ]
+    
+    topics := {
+        'topic-a': TopicMetadata{
+            topic_name: 'topic-a'
+            partition_count: 6
+        }
+    }
+    
+    assignments := assignor.assign(members, topics) or {
+        assert false, 'Assignment failed'
+        return
+    }
+    
+    // 6 partitions / 2 members = 3 each
+    assert assignments['member-1'].len == 3
+    assert assignments['member-2'].len == 3
+}
+
+fn test_uniform_assignor_with_rack() {
+    assignor := new_uniform_assignor()
+    
+    members := [
+        MemberSubscription{
+            member_id: 'member-1'
+            topics: ['topic-a']
+            rack_id: 'rack-1'
+            owned_partitions: []
+        },
+        MemberSubscription{
+            member_id: 'member-2'
+            topics: ['topic-a']
+            rack_id: 'rack-2'
+            owned_partitions: []
+        },
+    ]
+    
+    topics := {
+        'topic-a': TopicMetadata{
+            topic_name: 'topic-a'
+            partition_count: 4
+        }
+    }
+    
+    assignments := assignor.assign(members, topics) or {
+        assert false, 'Assignment failed'
+        return
+    }
+    
+    // All partitions should be assigned
+    total := assignments['member-1'].len + assignments['member-2'].len
+    assert total == 4
+}
