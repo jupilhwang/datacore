@@ -264,16 +264,67 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
         mut response := s.handler.handle_request(request_buf) or {
                 eprintln('[Connection] Error handling request from ${client_addr}: ${err}')
                 // Build minimal error response to prevent client timeout
-                mut error_resp := []u8{len: 8}
-                error_resp[0] = 0
-                error_resp[1] = 0
-                error_resp[2] = 0
-                error_resp[3] = 4  // size = 4 (just correlation_id)
-                error_resp[4] = u8(correlation_id >> 24)
-                error_resp[5] = u8(correlation_id >> 16)
-                error_resp[6] = u8(correlation_id >> 8)
-                error_resp[7] = u8(correlation_id)
-                error_resp
+                // Check if this should be a flexible response (v12+ for Fetch, v9+ for Metadata, etc.)
+                is_flexible := (api_key == 1 && api_version >= 12) ||  // Fetch
+                               (api_key == 0 && api_version >= 9) ||   // Produce
+                               (api_key == 3 && api_version >= 9) ||   // Metadata
+                               (api_key == 10 && api_version >= 6)     // FindCoordinator
+                
+                if api_key == 1 && is_flexible {
+                    // Fetch v12+ error response needs proper body structure
+                    // Body: throttle_time_ms(4) + error_code(2) + session_id(4) + topics(1 for empty compact array) + tagged_fields(1)
+                    // Total body: 12 bytes
+                    // Response: size(4) + correlation_id(4) + header_tagged_fields(1) + body(12) = 21 bytes
+                    mut error_resp := []u8{len: 21}
+                    error_resp[0] = 0
+                    error_resp[1] = 0
+                    error_resp[2] = 0
+                    error_resp[3] = 17  // size = 17 (correlation_id(4) + header_tagged(1) + body(12))
+                    error_resp[4] = u8(correlation_id >> 24)
+                    error_resp[5] = u8(correlation_id >> 16)
+                    error_resp[6] = u8(correlation_id >> 8)
+                    error_resp[7] = u8(correlation_id)
+                    error_resp[8] = 0   // header tagged_fields = 0
+                    // Body starts at index 9
+                    error_resp[9] = 0   // throttle_time_ms byte 0
+                    error_resp[10] = 0  // throttle_time_ms byte 1
+                    error_resp[11] = 0  // throttle_time_ms byte 2
+                    error_resp[12] = 0  // throttle_time_ms byte 3
+                    error_resp[13] = 0  // error_code byte 0 (NONE = 0)
+                    error_resp[14] = 0  // error_code byte 1
+                    error_resp[15] = 0  // session_id byte 0
+                    error_resp[16] = 0  // session_id byte 1
+                    error_resp[17] = 0  // session_id byte 2
+                    error_resp[18] = 0  // session_id byte 3
+                    error_resp[19] = 1  // topics compact array length = 0 (encoded as 1)
+                    error_resp[20] = 0  // body tagged_fields = 0
+                    error_resp
+                } else if is_flexible {
+                    // Other flexible response: size(4) + correlation_id(4) + tagged_fields(1)
+                    mut error_resp := []u8{len: 9}
+                    error_resp[0] = 0
+                    error_resp[1] = 0
+                    error_resp[2] = 0
+                    error_resp[3] = 5  // size = 5 (correlation_id + tagged_fields)
+                    error_resp[4] = u8(correlation_id >> 24)
+                    error_resp[5] = u8(correlation_id >> 16)
+                    error_resp[6] = u8(correlation_id >> 8)
+                    error_resp[7] = u8(correlation_id)
+                    error_resp[8] = 0  // tagged_fields = 0 (no tags)
+                    error_resp
+                } else {
+                    // Non-flexible response: size(4) + correlation_id(4)
+                    mut error_resp := []u8{len: 8}
+                    error_resp[0] = 0
+                    error_resp[1] = 0
+                    error_resp[2] = 0
+                    error_resp[3] = 4  // size = 4 (just correlation_id)
+                    error_resp[4] = u8(correlation_id >> 24)
+                    error_resp[5] = u8(correlation_id >> 16)
+                    error_resp[6] = u8(correlation_id >> 8)
+                    error_resp[7] = u8(correlation_id)
+                    error_resp
+                }
             }
             
             println('[Response] api_key=${api_key}, response_size=${response.len}')

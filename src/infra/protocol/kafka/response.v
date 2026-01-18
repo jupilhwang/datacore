@@ -23,18 +23,18 @@ pub fn build_response(correlation_id i32, body []u8) []u8 {
 
 // Build flexible response (with tagged fields)
 pub fn build_flexible_response(correlation_id i32, body []u8) []u8 {
-    mut writer := new_writer_with_capacity(4 + 4 + 1 + body.len)
-    
-    // Size (total length excluding size field itself)
-    writer.write_i32(i32(4 + 1 + body.len))
-    // Correlation ID
-    writer.write_i32(correlation_id)
-    // Tagged fields (empty)
-    writer.write_uvarint(0)
-    // Body
-    writer.write_raw(body)
-    
-    return writer.bytes()
+    // Flexible response header (v9+):
+    // [size:int32][correlation_id:int32][tagged_fields:uvarint][body...]
+    // Size = 4 (corr id) + 1 (tagged fields) + body.len
+    mut out := new_writer_with_capacity(4 + 4 + 1 + body.len)
+    out.write_i32(i32(4 + 1 + body.len))  // size includes corr_id + tagged_fields + body
+    out.write_i32(correlation_id)
+    out.write_tagged_fields()  // Response header tagged fields (empty for now)
+    out.write_raw(body)
+    resp := out.bytes()
+    // Debug log first bytes for troubleshooting
+    eprintln('[DEBUG] build_flexible_response first16: ${resp[..if resp.len > 16 { 16 } else { resp.len }].hex()}')
+    return resp
 }
 
 // ApiVersions Response
@@ -150,23 +150,29 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
     
     if version >= 3 {
         writer.write_i32(r.throttle_time_ms)
+        eprintln('[DEBUG] MetadataResponse.encode: after throttle_time_ms, len=${writer.data.len} hex=${writer.data.hex()}')
     }
     
     // Brokers
     if is_flexible {
         writer.write_compact_array_len(r.brokers.len)
+        eprintln('[DEBUG] MetadataResponse.encode: after brokers compact_array_len(${r.brokers.len}), len=${writer.data.len} hex=${writer.data.hex()}')
     } else {
         writer.write_array_len(r.brokers.len)
     }
     
     for b in r.brokers {
+        eprintln('[DEBUG] MetadataResponse.encode: encoding broker node_id=${b.node_id} host="${b.host}" port=${b.port}')
         writer.write_i32(b.node_id)
+        eprintln('[DEBUG] MetadataResponse.encode: after write_i32(node_id), len=${writer.data.len} hex=${writer.data[writer.data.len-4..].hex()}')
         if is_flexible {
             writer.write_compact_string(b.host)
+            eprintln('[DEBUG] MetadataResponse.encode: after write_compact_string("${b.host}"), len=${writer.data.len}')
         } else {
             writer.write_string(b.host)
         }
         writer.write_i32(b.port)
+        eprintln('[DEBUG] MetadataResponse.encode: after write_i32(port), len=${writer.data.len}')
         if version >= 1 {
             if is_flexible {
                 writer.write_compact_nullable_string(b.rack)
@@ -175,6 +181,8 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
             }
         }
         if is_flexible {
+            // Debug: log per-broker encoding details to help trace wire format
+            eprintln('[DEBUG] MetadataResponse: encoded broker node_id=${b.node_id} host_len=${b.host.len} port=${b.port}')
             writer.write_tagged_fields()
         }
     }
@@ -286,8 +294,11 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
     if is_flexible {
         writer.write_tagged_fields()
     }
-    
-    return writer.bytes()
+    // Debug: print encoded metadata body to help diagnose client parsing errors
+    resp_bytes := writer.bytes()
+    // Print full body hex for deep debugging
+    eprintln('[DEBUG] MetadataResponse.encode version=${version} flexible=${is_flexible} len=${resp_bytes.len} body_hex=${resp_bytes.hex()}')
+    return resp_bytes
 }
 
 // Produce Response

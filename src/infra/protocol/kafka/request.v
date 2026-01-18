@@ -64,6 +64,19 @@ pub fn parse_request(data []u8) !Request {
     // Remaining data is the request body
     body := data[reader.pos..].clone()
     
+    // Debug: print header parsing position for FETCH requests
+    if api_key_enum == .fetch {
+        eprintln('[DEBUG] parse_request FETCH: total_len=${data.len} header_end_pos=${reader.pos} body.len=${body.len}')
+        eprintln('[DEBUG] parse_request FETCH: api_key=${api_key} api_version=${api_version} correlation_id=${correlation_id}')
+        eprintln('[DEBUG] parse_request FETCH: client_id=${client_id} is_flexible=${is_flexible}')
+        if data.len >= 40 {
+            eprintln('[DEBUG] parse_request FETCH: first 40 bytes of full data: ${data[..40].hex()}')
+        }
+        if body.len >= 40 {
+            eprintln('[DEBUG] parse_request FETCH: first 40 bytes of BODY: ${body[..40].hex()}')
+        }
+    }
+    
     return Request{
         header: RequestHeader{
             api_key: api_key
@@ -491,14 +504,21 @@ pub:
 fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexible bool) !FindCoordinatorRequest {
     mut key := ''
     mut coordinator_keys := []string{}
-
     mut key_type := i8(0)  // 0 = GROUP, 1 = TRANSACTION
 
+    // In all versions, 'key' comes first for backward compatibility
+    key = if is_flexible {
+        reader.read_compact_string()!
+    } else {
+        reader.read_string()!
+    }
+
+    if version >= 1 {
+        key_type = reader.read_i8()!
+    }
+
     if version >= 4 {
-        // v4+: KeyType first, then CoordinatorKeys array
-        if version >= 1 {
-            key_type = reader.read_i8()!
-        }
+        // v4+: CoordinatorKeys array (optional)
         keys_len := if is_flexible {
             reader.read_compact_array_len()!
         } else {
@@ -506,21 +526,16 @@ fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexi
         }
         if keys_len > 0 {
             for _ in 0 .. keys_len {
-                coordinator_keys << if is_flexible {
+                k := if is_flexible {
                     reader.read_compact_string()!
                 } else {
                     reader.read_string()!
                 }
+                if is_flexible {
+                    reader.skip_tagged_fields()!  // per-key tagged fields
+                }
+                coordinator_keys << k
             }
-        }
-    } else {
-        key = if is_flexible {
-            reader.read_compact_string()!
-        } else {
-            reader.read_string()!
-        }
-        if version >= 1 {
-            key_type = reader.read_i8()!
         }
     }
 

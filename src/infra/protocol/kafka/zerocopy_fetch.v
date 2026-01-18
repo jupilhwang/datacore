@@ -53,9 +53,20 @@ pub:
 
 // parse_fetch_request_zerocopy parses fetch request with zero-copy
 pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !ZeroCopyFetchRequest {
+    first_bytes := if data.len >= 40 { data[..40].hex() } else { data.hex() }
+    eprintln('[DEBUG] parse_fetch_request_zerocopy: version=${version} flexible=${flexible} data.len=${data.len}')
+    eprintln('[DEBUG] first 40 bytes: ${first_bytes}')
+    
     mut reader := new_zerocopy_reader(data)
     
-    replica_id := reader.read_i32()!
+    // In v15+, replica_id was removed from main body and replaced with replica_state tagged field
+    // For v0-14: replica_id (INT32) is first field
+    // For v15+: replica_id is NOT in the body (it's in tagged fields as replica_state)
+    mut replica_id := i32(-1)  // Default for consumers
+    if version < 15 {
+        replica_id = reader.read_i32()!
+    }
+    
     max_wait_ms := reader.read_i32()!
     min_bytes := reader.read_i32()!
     
@@ -69,20 +80,29 @@ pub fn parse_fetch_request_zerocopy(data []u8, version i16, flexible bool) !Zero
     session_id := if version >= 7 { reader.read_i32()! } else { i32(0) }
     session_epoch := if version >= 7 { reader.read_i32()! } else { i32(-1) }
     
+    eprintln('[DEBUG] Fetch v${version}: parsed fields - replica_id=${replica_id}, max_wait_ms=${max_wait_ms}, min_bytes=${min_bytes}, max_bytes=${max_bytes}')
+    eprintln('[DEBUG] Fetch: isolation_level=${isolation_level}, session_id=${session_id}, session_epoch=${session_epoch}')
+    eprintln('[DEBUG] Fetch: after header, pos=${reader.position()}, remaining=${reader.remaining()}')
+    
     // Parse topics
     mut topics := []ZeroCopyFetchTopic{}
+    eprintln('[DEBUG] Fetch: before reading topic_count, pos=${reader.position()}, remaining=${reader.remaining()}')
     topic_count := if flexible { reader.read_compact_array_length()! } else { reader.read_array_length()! }
     
-    for _ in 0 .. topic_count {
+    eprintln('[DEBUG] Fetch: topic_count=${topic_count}, pos=${reader.position()}')
+    
+    for ti in 0 .. topic_count {
         // v13+ uses topic_id
         mut topic_id := []u8{}
         mut topic_name := ''
         
         if version >= 13 {
             topic_id = reader.read_uuid()!
+            eprintln('[DEBUG] Fetch: topic ${ti} - read topic_id=${topic_id.hex()}')
         }
         if version < 13 || !flexible {
             topic_name = if flexible { reader.read_compact_string()! } else { reader.read_string()! }
+            eprintln('[DEBUG] Fetch: topic ${ti} - read topic_name=${topic_name}')
         }
         
         // Parse partitions

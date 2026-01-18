@@ -18,14 +18,19 @@ fn new_mock_storage() &MockStorage {
     }
 }
 
-fn (mut s MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) ! {
+fn (mut s MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
     if name in s.topics {
         return error('topic already exists')
     }
-    s.topics[name] = domain.TopicMetadata{
+    meta := domain.TopicMetadata{
         name: name
+        topic_id: []u8{len: 16}
         partition_count: partitions
+        config: map[string]string{}
+        is_internal: false
     }
+    s.topics[name] = meta
+    return meta
 }
 
 fn (mut s MockStorage) delete_topic(name string) ! {
@@ -45,6 +50,15 @@ fn (mut s MockStorage) list_topics() ![]domain.TopicMetadata {
 
 fn (mut s MockStorage) get_topic(name string) !domain.TopicMetadata {
     return s.topics[name] or { return error('topic not found') }
+}
+
+fn (mut s MockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+    for _, t in s.topics {
+        if t.topic_id.len == topic_id.len && t.topic_id == topic_id {
+            return t
+        }
+    }
+    return error('topic not found')
 }
 
 fn (mut s MockStorage) add_partitions(name string, new_count int) ! {}

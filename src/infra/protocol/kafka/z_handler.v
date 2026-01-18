@@ -20,6 +20,7 @@ mut:
 
 // new_handler creates a new Kafka protocol handler with storage
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
+    eprintln('[DEBUG] new_handler: broker_id=${broker_id} host="${host}" (len=${host.len}) broker_port=${broker_port} cluster_id="${cluster_id}"')
     return Handler{
         broker_id: broker_id
         host: host
@@ -641,6 +642,7 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
         cluster_authorized_ops: -2147483648  // Unknown
     }
     
+    eprintln('[DEBUG] handle_metadata: Building response with broker node_id=${h.broker_id} host="${h.host}" (len=${h.host.len}) port=${h.broker_port}')
     return resp.encode(version)
 }
 
