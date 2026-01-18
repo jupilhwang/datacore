@@ -2,6 +2,7 @@
 module kafka
 
 // Request Header v0 (used for most requests)
+// Note: v0 uses STRING (non-null) for client_id, v1+ uses NULLABLE_STRING
 pub struct RequestHeader {
 pub:
     api_key         i16
@@ -11,6 +12,7 @@ pub:
 }
 
 // Request Header v2 (flexible versions, Kafka 2.4+)
+// Note: client_id is still NULLABLE_STRING, NOT compact! Only tag_buffer is compact.
 pub struct RequestHeaderV2 {
 pub:
     api_key         i16
@@ -33,6 +35,32 @@ pub:
     body    []u8
 }
 
+// Get Request Header version for a given API
+// Returns: 0 = old (ApiVersions), 1 = non-flexible, 2 = flexible (with tag_buffer)
+pub fn get_request_header_version(api_key ApiKey, api_version i16) i16 {
+    // ApiVersions is ALWAYS non-flexible header (v0) - client doesn't know server capabilities yet
+    if api_key == .api_versions {
+        return 0
+    }
+    // SaslHandshake always uses header v1
+    if api_key == .sasl_handshake {
+        return 1
+    }
+    // Flexible APIs use header v2, non-flexible use v1
+    return if is_flexible_version(api_key, api_version) { i16(2) } else { i16(1) }
+}
+
+// Get Response Header version for a given API
+// Returns: 0 = non-flexible (no tag_buffer), 1 = flexible (with tag_buffer)
+pub fn get_response_header_version(api_key ApiKey, api_version i16) i16 {
+    // ApiVersions is ALWAYS non-flexible header (v0) - special case!
+    if api_key == .api_versions {
+        return 0
+    }
+    // Flexible APIs use response header v1 (with tag_buffer), non-flexible use v0
+    return if is_flexible_version(api_key, api_version) { i16(1) } else { i16(0) }
+}
+
 // Parse request from raw bytes
 // Format: [size: 4 bytes][header][body]
 pub fn parse_request(data []u8) !Request {
@@ -50,14 +78,15 @@ pub fn parse_request(data []u8) !Request {
     // Check if this is a flexible version (v2 header)
     // Note: ApiVersions is ALWAYS non-flexible in header (client doesn't know server version yet)
     api_key_enum := unsafe { ApiKey(api_key) }
-    is_flexible := api_key_enum != .api_versions && is_flexible_version(api_key_enum, api_version)
+    header_version := get_request_header_version(api_key_enum, api_version)
+    is_flexible_header := header_version >= 2
     
     // In Request Header v2 (flexible), client_id is still a regular NULLABLE_STRING (2-byte length prefix)
     // NOT a compact string! Only the tag_buffer at the end is compact-encoded
     client_id := reader.read_nullable_string()!
     
-    if is_flexible {
-        // Skip tagged fields in header
+    if is_flexible_header {
+        // Skip tagged fields (tag_buffer) in header
         reader.skip_tagged_fields()!
     }
     
