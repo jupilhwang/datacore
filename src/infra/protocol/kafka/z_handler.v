@@ -194,6 +194,10 @@ fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
 }
 
 // Process Metadata request
+// NOTE: DataCore Stateless Architecture
+// - leader_id: always this broker (all brokers are equivalent)
+// - leader_epoch: always 0 (no leader election)
+// - replica_nodes/isr_nodes: always [broker_id] (no replication, shared storage)
 fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
     mut resp_topics := []MetadataResponseTopic{}
     
@@ -324,10 +328,13 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 }
 
 fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
+    // NOTE: DataCore Stateless Architecture
+    // - session_id is always 0 (no session state maintained)
+    // - All brokers can serve all partitions via shared storage
     return FetchResponse{
         throttle_time_ms: 0
         error_code: 0
-        session_id: 0
+        session_id: 0  // Stateless: always new session
         topics: []
     }
 }
@@ -1017,10 +1024,14 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
         }
     }
     
+    // NOTE: DataCore Stateless Architecture
+    // - session_id is always 0 (no session state, every fetch is independent)
+    // - forgotten_topics is parsed but ignored (no session to forget from)
+    // - All brokers access shared storage, no broker-partition affinity
     resp := FetchResponse{
         throttle_time_ms: 0
         error_code: 0
-        session_id: 0
+        session_id: 0  // Stateless: always new session
         topics: topics
     }
     

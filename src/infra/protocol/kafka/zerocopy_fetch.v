@@ -10,6 +10,10 @@ import domain
 // ============================================================================
 
 // ZeroCopyFetchRequest holds parsed fetch request with zero-copy body references
+// NOTE: DataCore Stateless Architecture
+// - session_id/session_epoch: parsed for compatibility but ignored
+// - forgotten_topics: parsed for compatibility but ignored (no session state)
+// - All fetch requests are treated as independent (session_id=0 in response)
 pub struct ZeroCopyFetchRequest {
 pub:
     replica_id       i32
@@ -17,10 +21,10 @@ pub:
     min_bytes        i32
     max_bytes        i32
     isolation_level  i8
-    session_id       i32
-    session_epoch    i32
+    session_id       i32   // Stateless: ignored, always respond with 0
+    session_epoch    i32   // Stateless: ignored
     topics           []ZeroCopyFetchTopic
-    forgotten_topics []ForgottenTopic
+    forgotten_topics []ForgottenTopic  // Stateless: ignored
     rack_id          string
 }
 

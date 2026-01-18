@@ -1,5 +1,20 @@
 // KIP-848 New Consumer Protocol - Group Coordinator Extension
 // Server-side partition assignment with incremental rebalancing
+//
+// ============================================================================
+// DataCore Stateless Architecture Note
+// ============================================================================
+// DataCore uses a stateless broker architecture where all brokers access
+// shared storage (S3, PostgreSQL, etc.). This simplifies partition assignment:
+//
+// - No broker-partition affinity: Any broker can serve any partition
+// - No rebalancing cost: Changing assignment doesn't move data
+// - Simple assignors: Sticky/Cooperative algorithms provide no benefit
+//
+// The assignors below maintain Kafka protocol compatibility but internally
+// use simple round-robin distribution. Complex sticky logic is intentionally
+// omitted as it provides no benefit in stateless architecture.
+// ============================================================================
 module group
 
 import service.port
