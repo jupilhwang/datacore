@@ -363,16 +363,19 @@ pub:
 }
 
 fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequest {
-    // ⚠️ v15+ 지원 전 Kafka 공식 스키마(FetchRequest.json) 검증 필요!
-    // replica_id가 v15에서 tagged field로 이동했는지 여부는 스펙 확인 필요
-    // DataCore는 현재 v12~v14까지만 안전하게 지원
-    if version >= 15 {
-        return error('FetchRequest v15+ not supported yet - Kafka schema verification required for replica_id field')
-    }
+    // Kafka 공식 스키마 (FetchRequest.json) 기준:
+    // - v0-v14: ReplicaId가 첫 번째 필드
+    // - v15+ (KIP-903): ReplicaId 제거, ReplicaState가 tagged field(tag=1)로 이동
+    //                   Body가 MaxWaitMs로 시작!
     
-    // v0-v14: replica_id는 항상 첫 번째 필드 (consumer: -1)
-    replica_id := reader.read_i32()!
-    max_wait_ms := reader.read_i32()!
+    mut replica_id := i32(-1)  // Default: consumer
+    if version < 15 {
+        // v0-v14: replica_id는 첫 번째 필드
+        replica_id = reader.read_i32()!
+    }
+    // v15+: replica_id는 tagged field에서 읽음 (파싱 끝에서 처리)
+    
+    max_wait_ms := reader.read_i32()!  // v15+에서 첫 번째 필드!
     min_bytes := reader.read_i32()!
     
     mut max_bytes := i32(0x7fffffff)
@@ -501,6 +504,28 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
         } else {
             _ = reader.read_string()!
         }
+    }
+    
+    // v15+ (KIP-903): ReplicaState in tagged field (tag=1)
+    // Parse tagged fields to extract replica_id if present
+    if version >= 15 && is_flexible {
+        num_tags := reader.read_uvarint() or { 0 }
+        for _ in 0 .. num_tags {
+            tag := reader.read_uvarint() or { break }
+            size := reader.read_uvarint() or { break }
+            if tag == 1 {
+                // ReplicaState: { ReplicaId: INT32, ReplicaEpoch: INT64 }
+                replica_id = reader.read_i32() or { -1 }
+                _ = reader.read_i64() or { -1 }  // replica_epoch (unused for now)
+            } else {
+                // Skip unknown tags
+                if reader.remaining() >= int(size) {
+                    reader.pos += int(size)
+                }
+            }
+        }
+    } else if is_flexible {
+        reader.skip_tagged_fields() or {}
     }
     
     return FetchRequest{

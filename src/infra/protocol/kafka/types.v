@@ -207,7 +207,7 @@ pub:
 pub fn get_supported_api_versions() []ApiVersionRange {
     return [
         ApiVersionRange{.produce, 0, 10},  // v9+ flexible versions
-        ApiVersionRange{.fetch, 0, 16},  // v12+ flexible, v13+ uses topic_id (UUID), v15+ removes replica_id
+        ApiVersionRange{.fetch, 0, 18},  // v12+ flexible, v13+ topic_id, v15+ replica_id tagged (KIP-903)
         ApiVersionRange{.list_offsets, 0, 8},  // v6+ flexible, v7-8 identical structure
         ApiVersionRange{.metadata, 0, 12},  // v9+ flexible, v10+ topic_id, v12 name is nullable
         ApiVersionRange{.offset_commit, 0, 9},  // v8+ flexible
@@ -220,7 +220,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
         ApiVersionRange{.describe_groups, 0, 5},  // v5+ flexible
         ApiVersionRange{.list_groups, 0, 5},  // v3+ flexible, v4+ states_filter, v5+ types_filter
         ApiVersionRange{.sasl_handshake, 0, 1},  // SASL mechanism negotiation
-        ApiVersionRange{.api_versions, 0, 3},  // v3+ flexible with client info
+        ApiVersionRange{.api_versions, 0, 4},  // v3+ flexible with client info, v4 SupportedFeatures.MinVersion=0 fix
         ApiVersionRange{.create_topics, 0, 7},
         ApiVersionRange{.delete_topics, 0, 6},
         ApiVersionRange{.delete_records, 0, 2},
