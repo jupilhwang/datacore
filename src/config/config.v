@@ -107,14 +107,14 @@ pub:
     enabled              bool   = true
     level                string = 'info'
     format               string = 'json'
-    otlp_export          bool   = false
+    otlp_export          bool
     console_output       bool   = true
     inject_trace_context bool   = true
 }
 
 pub struct TracingConfig {
 pub:
-    enabled                  bool   = false
+    enabled                  bool
     otlp_endpoint            string
     sampler                  string = 'trace_id_ratio'
     sample_rate              f64    = 1.0
