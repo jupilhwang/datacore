@@ -248,192 +248,93 @@ pub fn (a &RoundRobinAssignor) assign(members []MemberSubscription, topics map[s
 }
 
 // ============================================================================
-// Sticky Assignor
-// Implements Apache Kafka's StickyAssignor algorithm
-// Goals: 1) Balanced assignment 2) Minimize partition movements
+// Sticky Assignor (Simplified for Stateless Architecture)
+// ============================================================================
+// NOTE: DataCore uses a stateless architecture where all brokers can access
+// all partitions. Complex sticky/cooperative algorithms provide no benefit
+// because there's no broker-partition affinity to preserve.
+// This is a simple round-robin implementation aliased as 'sticky' for
+// Kafka client compatibility.
 // ============================================================================
 
-pub struct StickyAssignor {
-    // Configuration
-    allow_overlap bool  // Whether to allow unbalanced assignments temporarily
-}
+pub struct StickyAssignor {}
 
 pub fn new_sticky_assignor() &StickyAssignor {
-    return &StickyAssignor{
-        allow_overlap: false
-    }
+    return &StickyAssignor{}
 }
 
 pub fn (a &StickyAssignor) name() string {
     return 'sticky'
 }
 
+// assign uses simple round-robin distribution
+// In DataCore's stateless architecture, sticky assignment provides no benefit
 pub fn (a &StickyAssignor) assign(members []MemberSubscription, topics map[string]TopicMetadata) !map[string][]TopicPartition {
     if members.len == 0 {
         return map[string][]TopicPartition{}
     }
     
-    // Step 1: Build partition to member mapping from current assignments
-    mut current_partition_owners := map[string]string{}  // partition_key -> member_id
-    mut member_assignments := map[string][]TopicPartition{}
-    
+    mut assignments := map[string][]TopicPartition{}
     for m in members {
-        member_assignments[m.member_id] = []TopicPartition{}
-        for tp in m.owned_partitions {
-            key := '${tp.topic_name}:${tp.partition}'
-            current_partition_owners[key] = m.member_id
-        }
+        assignments[m.member_id] = []TopicPartition{}
     }
     
-    // Step 2: Calculate total partitions and target assignment size
-    mut total_partitions := 0
-    for _, meta in topics {
-        total_partitions += meta.partition_count
-    }
-    
-    min_partitions := total_partitions / members.len
-    max_partitions := min_partitions + if total_partitions % members.len > 0 { 1 } else { 0 }
-    
-    // Step 3: Build subscription map (topic -> subscribed members)
-    mut topic_subscribers := map[string][]string{}
-    for topic_name, _ in topics {
-        topic_subscribers[topic_name] = []string{}
-        for m in members {
-            if topic_name in m.topics {
-                topic_subscribers[topic_name] << m.member_id
-            }
-        }
-    }
-    
-    // Step 4: Keep valid current assignments (sticky part)
-    mut assigned_partitions := map[string]bool{}
-    
-    for m in members {
-        for tp in m.owned_partitions {
-            key := '${tp.topic_name}:${tp.partition}'
-            
-            // Keep if: topic still exists, partition valid, member still subscribed
-            if meta := topics[tp.topic_name] {
-                if tp.partition < meta.partition_count && tp.topic_name in m.topics {
-                    // Check if keeping this would exceed max_partitions
-                    if member_assignments[m.member_id].len < max_partitions {
-                        member_assignments[m.member_id] << tp
-                        assigned_partitions[key] = true
-                    }
-                }
-            }
-        }
-    }
-    
-    // Step 5: Collect unassigned partitions
-    mut unassigned := []TopicPartition{}
+    // Collect all partitions
+    mut all_partitions := []TopicPartition{}
     for topic_name, meta in topics {
         for p in 0 .. meta.partition_count {
-            key := '${topic_name}:${p}'
-            if key !in assigned_partitions {
-                unassigned << TopicPartition{
-                    topic_id: meta.topic_id
-                    topic_name: topic_name
-                    partition: p
+            all_partitions << TopicPartition{
+                topic_id: meta.topic_id
+                topic_name: topic_name
+                partition: p
+            }
+        }
+    }
+    
+    // Sort for deterministic assignment
+    all_partitions.sort(a.partition < b.partition)
+    
+    // Get sorted member list
+    mut member_list := []string{}
+    for m in members {
+        member_list << m.member_id
+    }
+    member_list.sort()
+    
+    // Simple round-robin assignment
+    for i, tp in all_partitions {
+        // Find subscribed member using round-robin
+        for j in 0 .. member_list.len {
+            member_idx := (i + j) % member_list.len
+            member_id := member_list[member_idx]
+            
+            // Check subscription
+            for m in members {
+                if m.member_id == member_id && tp.topic_name in m.topics {
+                    assignments[member_id] << tp
+                    break
                 }
             }
-        }
-    }
-    
-    // Step 6: Sort unassigned partitions for deterministic assignment
-    unassigned.sort(a.partition < b.partition)
-    
-    // Step 7: Assign unassigned partitions to least-loaded eligible members
-    for tp in unassigned {
-        subscribers := topic_subscribers[tp.topic_name]
-        if subscribers.len == 0 {
-            continue
-        }
-        
-        // Find member with minimum assignment count
-        mut best_member := ''
-        mut min_count := -1
-        
-        for member_id in subscribers {
-            count := member_assignments[member_id].len
-            if min_count < 0 || count < min_count {
-                min_count = count
-                best_member = member_id
-            }
-        }
-        
-        if best_member.len > 0 {
-            member_assignments[best_member] << tp
-        }
-    }
-    
-    // Step 8: Rebalance if needed (move partitions from overloaded members)
-    a.rebalance(mut member_assignments, topic_subscribers, min_partitions, max_partitions)
-    
-    return member_assignments
-}
-
-// rebalance moves partitions from overloaded members to underloaded ones
-fn (a &StickyAssignor) rebalance(mut assignments map[string][]TopicPartition, topic_subscribers map[string][]string, min_partitions int, max_partitions int) {
-    // Find overloaded and underloaded members
-    mut overloaded := []string{}
-    mut underloaded := []string{}
-    
-    for member_id, partitions in assignments {
-        if partitions.len > max_partitions {
-            overloaded << member_id
-        } else if partitions.len < min_partitions {
-            underloaded << member_id
-        }
-    }
-    
-    // Move partitions from overloaded to underloaded
-    for src_member in overloaded {
-        for assignments[src_member].len > max_partitions && underloaded.len > 0 {
-            // Find a partition that can be moved
-            mut moved := false
-            
-            for i := assignments[src_member].len - 1; i >= 0 && !moved; i-- {
-                tp := assignments[src_member][i]
-                subscribers := topic_subscribers[tp.topic_name]
-                
-                // Find an underloaded member subscribed to this topic
-                for j, dst_member in underloaded {
-                    if dst_member in subscribers && assignments[dst_member].len < min_partitions {
-                        // Move partition
-                        assignments[dst_member] << tp
-                        assignments[src_member].delete(i)
-                        moved = true
-                        
-                        // Check if dst_member is still underloaded
-                        if assignments[dst_member].len >= min_partitions {
-                            underloaded.delete(j)
-                        }
-                        break
-                    }
-                }
-            }
-            
-            if !moved {
-                break  // Can't move any more partitions
+            if assignments[member_id].len > i / member_list.len {
+                break
             }
         }
     }
+    
+    return assignments
 }
 
 // ============================================================================
-// Cooperative Sticky Assignor
-// Implements incremental rebalancing (COOPERATIVE protocol)
-// Only revokes partitions that need to move, not all partitions
+// Cooperative Sticky Assignor (Alias for compatibility)
 // ============================================================================
 
 pub struct CooperativeStickyAssignor {
-    sticky &StickyAssignor
+    inner &StickyAssignor
 }
 
 pub fn new_cooperative_sticky_assignor() &CooperativeStickyAssignor {
     return &CooperativeStickyAssignor{
-        sticky: new_sticky_assignor()
+        inner: new_sticky_assignor()
     }
 }
 
@@ -442,73 +343,11 @@ pub fn (a &CooperativeStickyAssignor) name() string {
 }
 
 pub fn (a &CooperativeStickyAssignor) assign(members []MemberSubscription, topics map[string]TopicMetadata) !map[string][]TopicPartition {
-    // Cooperative sticky uses the same algorithm as sticky
-    // The difference is in the rebalancing protocol (handled by coordinator)
-    return a.sticky.assign(members, topics)
-}
-
-// compute_revocations determines which partitions need to be revoked
-// This is used for incremental rebalancing
-pub fn (a &CooperativeStickyAssignor) compute_revocations(current map[string][]TopicPartition, target map[string][]TopicPartition) map[string][]TopicPartition {
-    mut revocations := map[string][]TopicPartition{}
-    
-    for member_id, current_partitions in current {
-        target_partitions := target[member_id] or { []TopicPartition{} }
-        
-        // Build set of target partition keys
-        mut target_keys := map[string]bool{}
-        for tp in target_partitions {
-            key := '${tp.topic_name}:${tp.partition}'
-            target_keys[key] = true
-        }
-        
-        // Find partitions to revoke
-        for tp in current_partitions {
-            key := '${tp.topic_name}:${tp.partition}'
-            if key !in target_keys {
-                if member_id !in revocations {
-                    revocations[member_id] = []TopicPartition{}
-                }
-                revocations[member_id] << tp
-            }
-        }
-    }
-    
-    return revocations
-}
-
-// compute_additions determines which partitions need to be added
-pub fn (a &CooperativeStickyAssignor) compute_additions(current map[string][]TopicPartition, target map[string][]TopicPartition) map[string][]TopicPartition {
-    mut additions := map[string][]TopicPartition{}
-    
-    for member_id, target_partitions in target {
-        current_partitions := current[member_id] or { []TopicPartition{} }
-        
-        // Build set of current partition keys
-        mut current_keys := map[string]bool{}
-        for tp in current_partitions {
-            key := '${tp.topic_name}:${tp.partition}'
-            current_keys[key] = true
-        }
-        
-        // Find partitions to add
-        for tp in target_partitions {
-            key := '${tp.topic_name}:${tp.partition}'
-            if key !in current_keys {
-                if member_id !in additions {
-                    additions[member_id] = []TopicPartition{}
-                }
-                additions[member_id] << tp
-            }
-        }
-    }
-    
-    return additions
+    return a.inner.assign(members, topics)
 }
 
 // ============================================================================
-// Uniform Assignor (KIP-848)
-// Server-side assignor for the new consumer protocol
+// Uniform Assignor (KIP-848) - Alias for round-robin
 // ============================================================================
 
 pub struct UniformAssignor {}
@@ -531,25 +370,6 @@ pub fn (a &UniformAssignor) assign(members []MemberSubscription, topics map[stri
         assignments[m.member_id] = []TopicPartition{}
     }
     
-    // Calculate target assignment sizes
-    for _, meta in topics {
-    }
-    
-    // Build rack-aware assignment if rack info available
-    mut rack_members := map[string][]string{}  // rack_id -> member_ids
-    mut no_rack_members := []string{}
-    
-    for m in members {
-        if rack := m.rack_id {
-            if rack !in rack_members {
-                rack_members[rack] = []string{}
-            }
-            rack_members[rack] << m.member_id
-        } else {
-            no_rack_members << m.member_id
-        }
-    }
-    
     // Collect all partitions
     mut all_partitions := []TopicPartition{}
     for topic_name, meta in topics {
@@ -565,13 +385,14 @@ pub fn (a &UniformAssignor) assign(members []MemberSubscription, topics map[stri
     // Sort for deterministic assignment
     all_partitions.sort(a.partition < b.partition)
     
-    // Uniform assignment: distribute partitions evenly
+    // Get sorted member list
     mut member_list := []string{}
     for m in members {
         member_list << m.member_id
     }
     member_list.sort()
     
+    // Uniform round-robin assignment
     for i, tp in all_partitions {
         member_idx := i % member_list.len
         member_id := member_list[member_idx]
