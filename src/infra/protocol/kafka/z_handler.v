@@ -792,9 +792,10 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
 }
 
 fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
-    mut reader := new_reader(body)
-    req := parse_fetch_request(mut reader, version, is_flexible_version(.fetch, version))!
-    
+    // Use zero-copy fetch parser for minimal copying of request body
+    flexible := is_flexible_version(.fetch, version)
+    req := parse_fetch_request_zerocopy(body, version, flexible)!
+
     eprintln('[Fetch] Request: version=${version}, topics=${req.topics.len}')
     
     // For v13+, topic_id is used instead of topic name
@@ -837,8 +838,8 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
                 continue
             }
             
-            // Encode records as RecordBatch (Kafka message format v2)
-            records_data := encode_record_batch(result.records, p.fetch_offset)
+            // Encode records as RecordBatch using zero-copy encoder
+            records_data := encode_record_batch_zerocopy(result.records, p.fetch_offset)
             eprintln('[Fetch] Topic=${topic_name} partition=${p.partition} has ${result.records.len} records - returning ${records_data.len} bytes')
             
             partitions << FetchResponsePartition{
