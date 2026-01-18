@@ -363,11 +363,15 @@ pub:
 }
 
 fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequest {
-    // replica_id: removed in v15+ (KIP-595)
-    mut replica_id := i32(-1)  // Default: consumer
-    if version < 15 {
-        replica_id = reader.read_i32()!
+    // ⚠️ v15+ 지원 전 Kafka 공식 스키마(FetchRequest.json) 검증 필요!
+    // replica_id가 v15에서 tagged field로 이동했는지 여부는 스펙 확인 필요
+    // DataCore는 현재 v12~v14까지만 안전하게 지원
+    if version >= 15 {
+        return error('FetchRequest v15+ not supported yet - Kafka schema verification required for replica_id field')
     }
+    
+    // v0-v14: replica_id는 항상 첫 번째 필드 (consumer: -1)
+    replica_id := reader.read_i32()!
     max_wait_ms := reader.read_i32()!
     min_bytes := reader.read_i32()!
     

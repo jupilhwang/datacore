@@ -65,11 +65,18 @@ pub fn build_response_auto(api_key ApiKey, api_version i16, correlation_id i32, 
 
 // ApiVersions Response
 // Note: ApiVersions ALWAYS uses non-flexible response header (v0), even for v3+ body!
+// ⚠️ v3+ 응답에는 supported_features, finalized_features 등 추가 필드가 필요합니다.
+// 이를 누락하면 클라이언트가 뒤에 더 읽을 바이트가 있다고 가정하여 파싱이 깨질 수 있습니다.
 pub struct ApiVersionsResponse {
 pub:
-    error_code      i16
-    api_versions    []ApiVersionsResponseKey
-    throttle_time_ms i32
+    error_code              i16
+    api_versions            []ApiVersionsResponseKey
+    throttle_time_ms        i32
+    // v3+ fields (KRaft features)
+    supported_features      []ApiVersionsSupportedFeature       // v3+
+    finalized_features_epoch i64                                // v3+, -1 if not initialized
+    finalized_features      []ApiVersionsFinalizedFeature       // v3+
+    zk_migration_ready      bool                                // v3.4+ (optional)
 }
 
 pub struct ApiVersionsResponseKey {
@@ -77,6 +84,20 @@ pub:
     api_key     i16
     min_version i16
     max_version i16
+}
+
+pub struct ApiVersionsSupportedFeature {
+pub:
+    name        string
+    min_version i16
+    max_version i16
+}
+
+pub struct ApiVersionsFinalizedFeature {
+pub:
+    name              string
+    max_version_level i16
+    min_version_level i16
 }
 
 pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
@@ -104,7 +125,31 @@ pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
         writer.write_i32(r.throttle_time_ms)
     }
     
+    // v3+ KRaft feature fields - MUST be included to avoid parsing errors!
     if is_flexible {
+        // supported_features (COMPACT_ARRAY)
+        writer.write_compact_array_len(r.supported_features.len)
+        for f in r.supported_features {
+            writer.write_compact_string(f.name)
+            writer.write_i16(f.min_version)
+            writer.write_i16(f.max_version)
+            writer.write_tagged_fields()
+        }
+        
+        // finalized_features_epoch (INT64)
+        writer.write_i64(r.finalized_features_epoch)
+        
+        // finalized_features (COMPACT_ARRAY)
+        writer.write_compact_array_len(r.finalized_features.len)
+        for f in r.finalized_features {
+            writer.write_compact_string(f.name)
+            writer.write_i16(f.max_version_level)
+            writer.write_i16(f.min_version_level)
+            writer.write_tagged_fields()
+        }
+        
+        // zk_migration_ready is a tagged field in some versions, omit for simplicity
+        // Final tag_buffer
         writer.write_tagged_fields()
     }
     
@@ -112,6 +157,7 @@ pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
 }
 
 // Create default ApiVersions response
+// v3+에서는 feature 필드들을 빈 배열/기본값으로 설정 (KRaft 미지원 시)
 pub fn new_api_versions_response() ApiVersionsResponse {
     supported := get_supported_api_versions()
     mut api_versions := []ApiVersionsResponseKey{}
@@ -128,6 +174,11 @@ pub fn new_api_versions_response() ApiVersionsResponse {
         error_code: 0
         api_versions: api_versions
         throttle_time_ms: 0
+        // v3+ fields: empty arrays and default values
+        supported_features: []            // No KRaft features supported yet
+        finalized_features_epoch: -1      // Not initialized (-1 means not finalized)
+        finalized_features: []            // No finalized features
+        zk_migration_ready: false         // Not in ZK migration mode
     }
 }
 
