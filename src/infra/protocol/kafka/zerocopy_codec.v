@@ -56,24 +56,24 @@ pub fn (mut r SimpleReader) read_i8() !i8 {
 
 pub fn (mut r SimpleReader) read_i16() !i16 {
     if r.pos+2 > r.data.len { return error('eof') }
-    val := (i16(r.data[r.pos]) << 8) | i16(r.data[r.pos+1])
+    val := (u16(r.data[r.pos]) << 8) | u16(r.data[r.pos+1])
     r.pos += 2
-    return val
+    return i16(val)
 }
 
 pub fn (mut r SimpleReader) read_i32() !i32 {
     if r.pos+4 > r.data.len { return error('eof') }
-    val := (i32(r.data[r.pos]) << 24) | (i32(r.data[r.pos+1]) << 16) | (i32(r.data[r.pos+2]) << 8) | i32(r.data[r.pos+3])
+    val := (u32(r.data[r.pos]) << 24) | (u32(r.data[r.pos+1]) << 16) | (u32(r.data[r.pos+2]) << 8) | u32(r.data[r.pos+3])
     r.pos += 4
-    return val
+    return i32(val)
 }
 
 pub fn (mut r SimpleReader) read_i64() !i64 {
     if r.pos+8 > r.data.len { return error('eof') }
-    mut val := (i64(r.data[r.pos]) << 56) | (i64(r.data[r.pos+1]) << 48) | (i64(r.data[r.pos+2]) << 40) | (i64(r.data[r.pos+3]) << 32)
-    val |= (i64(r.data[r.pos+4]) << 24) | (i64(r.data[r.pos+5]) << 16) | (i64(r.data[r.pos+6]) << 8) | i64(r.data[r.pos+7])
+    mut val := (u64(r.data[r.pos]) << 56) | (u64(r.data[r.pos+1]) << 48) | (u64(r.data[r.pos+2]) << 40) | (u64(r.data[r.pos+3]) << 32)
+    val |= (u64(r.data[r.pos+4]) << 24) | (u64(r.data[r.pos+5]) << 16) | (u64(r.data[r.pos+6]) << 8) | u64(r.data[r.pos+7])
     r.pos += 8
-    return val
+    return i64(val)
 }
 
 pub fn (mut r SimpleReader) read_bool() !bool {

@@ -226,7 +226,6 @@ fn scatter_read_fallback(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 
 	for mut buf in buffers {
 		// Use os module for reading
-		mut temp := []u8{len: buf.data.len}
 		// Note: This is a simplified fallback - in real implementation,
 		// would need proper file descriptor handling
 		buf.len = 0

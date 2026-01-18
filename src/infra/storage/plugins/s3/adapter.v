@@ -953,14 +953,14 @@ fn decode_stored_records(data []u8) []StoredRecord {
 		// Offset
 		mut offset := i64(0)
 		for i := 0; i < 8; i++ {
-			offset = (offset << 8) | i64(data[pos + i])
+			offset = i64((u64(offset) << 8) | u64(data[pos + i]))
 		}
 		pos += 8
 		
 		// Timestamp
 		mut ts := i64(0)
 		for i := 0; i < 8; i++ {
-			ts = (ts << 8) | i64(data[pos + i])
+			ts = i64((u64(ts) << 8) | u64(data[pos + i]))
 		}
 		pos += 8
 		

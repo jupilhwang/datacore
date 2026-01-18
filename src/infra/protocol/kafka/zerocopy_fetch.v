@@ -243,8 +243,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
     
     // Use optimized encoding path
     // For now, delegate to existing encoder but with pre-allocated buffer
-    estimated_size := estimate_batch_size(records)
-    mut result := []u8{cap: estimated_size}
+    _ = estimate_batch_size(records)
     
     // RecordBatch header
     mut writer := new_writer()
@@ -253,7 +252,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
     writer.write_i64(base_offset)
     
     // Placeholder for batch length (4 bytes) - will be filled later
-    length_pos := writer.data.len
+    _ = writer.data.len
     writer.write_i32(0)
     
     // Partition leader epoch (4 bytes)

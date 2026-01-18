@@ -154,15 +154,16 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
     
     // 1. Create Infra Layer components
     cli.print_progress('Initializing storage engine (${conf.storage.engine})')
-    mut storage := port.StoragePort(unsafe { nil })
     
     engine := conf.storage.engine.to_lower()
+    mut storage_opt := ?port.StoragePort(none)
+
     if engine == 'memory' {
         logger.info('Initializing Memory storage',
             observability.field_int('max_memory_mb', conf.storage.memory.max_memory_mb),
             observability.field_int('segment_size', conf.storage.memory.segment_size_bytes)
         )
-        storage = memory.new_memory_adapter()
+        storage_opt = port.StoragePort(memory.new_memory_adapter())
     } else if engine == 's3' {
         // Map config to S3Config
         s_config := s3.S3Config{
@@ -183,17 +184,23 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
         )
         
         if s3_adapter := s3.new_s3_adapter(s_config) {
-            storage = s3_adapter
+            storage_opt = port.StoragePort(s3_adapter)
         } else {
             cli.print_failed('Failed to init S3 storage: ${err}')
             cli.print_failed('Falling back to memory storage')
-            storage = memory.new_memory_adapter()
+            storage_opt = port.StoragePort(memory.new_memory_adapter())
         }
     } else {
         cli.print_failed('Unknown storage engine: ${engine}')
         cli.print_failed('Falling back to memory storage')
-        storage = memory.new_memory_adapter()
+        storage_opt = port.StoragePort(memory.new_memory_adapter())
     }
+
+    if storage_opt == none {
+        cli.print_failed('Failed to initialize any storage engine')
+        exit(1)
+    }
+    mut storage := storage_opt or { panic('unreachable') }
     cli.print_done()
     
     // 2. Create Protocol Handler with storage injection

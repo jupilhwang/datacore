@@ -132,7 +132,8 @@ pub fn crc32_update(crc u32, data []u8) u32 {
 // encode_varint encodes a signed integer as varint
 pub fn encode_varint(value i64) []u8 {
     // ZigZag encode: (value << 1) ^ (value >> 63)
-    zigzag := (value << 1) ^ (value >> 63)
+    shift_v := if value < 0 { u64(0xffffffffffffffff) } else { u64(0) }
+    zigzag := (u64(value) << 1) ^ shift_v
     return encode_uvarint(u64(zigzag))
 }
 
@@ -185,7 +186,8 @@ pub fn decode_uvarint(data []u8) (u64, int) {
 
 // varint_size returns the encoded size of a value
 pub fn varint_size(value i64) int {
-    zigzag := u64((value << 1) ^ (value >> 63))
+    shift_v := if value < 0 { u64(0xffffffffffffffff) } else { u64(0) }
+    zigzag := (u64(value) << 1) ^ shift_v
     return uvarint_size(zigzag)
 }
 
