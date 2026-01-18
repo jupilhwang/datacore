@@ -1,7 +1,7 @@
 Module {
     name: 'datacore'
     description: 'Kafka-compatible message broker written in V'
-    version: '0.6.0'
+    version: '0.7.0'
     license: 'Apache-2.0'
     dependencies: []
 }
