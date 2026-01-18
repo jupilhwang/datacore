@@ -201,7 +201,7 @@ pub fn parse_request_simple(data []u8) !SimpleRequest {
 // is_flexible_request 함수는 기존과 동일하게 유지
 fn is_flexible_request(api_key i16, version i16) bool {
     match unsafe { ApiKey(api_key) } {
-        .api_versions { return version >= 3 }
+        .api_versions { return false } // Header is always non-flexible
         .metadata { return version >= 9 }
         .produce { return version >= 9 }
         .fetch { return version >= 12 }
@@ -217,7 +217,7 @@ fn is_flexible_request(api_key i16, version i16) bool {
         .delete_topics { return version >= 4 }
         .init_producer_id { return version >= 4 }
         .consumer_group_heartbeat { return true }
-        .sasl_handshake { return version >= 1 }
+        .sasl_handshake { return false } // Header is always non-flexible
         .sasl_authenticate { return version >= 2 }
         else { return false }
     }

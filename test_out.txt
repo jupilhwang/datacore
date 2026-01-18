@@ -1,0 +1,682 @@
+---- Testing... ----------------------------------------------------------------
+ FAIL     0.000 ms /Users/jhwang/works/test/datacore/src/infra/protocol/kafka/zerocopy_codec_test.v
+>> compilation failed:
+src/infra/protocol/kafka/zerocopy_codec_test.v:71:20: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.read_bytes_view`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+   69 |     mut reader := new_zerocopy_reader(data)
+   70 |     
+   71 |     view := reader.read_bytes_view()!
+      |                    ~~~~~~~~~~~~~~~~~~
+   72 |     assert view.len() == 4
+   73 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:71:37: error: unexpected `!`, the function `read_bytes_view` does not return a Result
+   69 |     mut reader := new_zerocopy_reader(data)
+   70 |     
+   71 |     view := reader.read_bytes_view()!
+      |                                     ^
+   72 |     assert view.len() == 4
+   73 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:71:10: error: assignment mismatch: 1 variable but `read_bytes_view()` returns 0 values
+   69 |     mut reader := new_zerocopy_reader(data)
+   70 |     
+   71 |     view := reader.read_bytes_view()!
+      |          ~~
+   72 |     assert view.len() == 4
+   73 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:72:12: error: assert can be used only with `bool` expressions, but found `void` instead
+   70 |     
+   71 |     view := reader.read_bytes_view()!
+   72 |     assert view.len() == 4
+      |            ~~~~~~~~~~~~~~~
+   73 |     
+   74 |     // Check it's a view (zero-copy)
+src/infra/protocol/kafka/zerocopy_codec_test.v:75:22: error: unexpected `!`, the function `at` does not return a Result
+   73 |     
+   74 |     // Check it's a view (zero-copy)
+   75 |     assert view.at(0)! == 0x01
+      |                      ^
+   76 |     assert view.at(3)! == 0x04
+   77 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:75:12: error: assert can be used only with `bool` expressions, but found `void` instead
+   73 |     
+   74 |     // Check it's a view (zero-copy)
+   75 |     assert view.at(0)! == 0x01
+      |            ~~~~~~~~~~~~~~~~~~~
+   76 |     assert view.at(3)! == 0x04
+   77 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:76:22: error: unexpected `!`, the function `at` does not return a Result
+   74 |     // Check it's a view (zero-copy)
+   75 |     assert view.at(0)! == 0x01
+   76 |     assert view.at(3)! == 0x04
+      |                      ^
+   77 | }
+   78 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:76:12: error: assert can be used only with `bool` expressions, but found `void` instead
+   74 |     // Check it's a view (zero-copy)
+   75 |     assert view.at(0)! == 0x01
+   76 |     assert view.at(3)! == 0x04
+      |            ~~~~~~~~~~~~~~~~~~~
+   77 | }
+   78 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:85:21: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.read_bytes_slice`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+   83 |     
+   84 |     // Read a slice
+   85 |     slice := reader.read_bytes_slice(500)!
+      |                     ~~~~~~~~~~~~~~~~~~~~~~
+   86 |     
+   87 |     // The slice should reference the same data
+src/infra/protocol/kafka/zerocopy_codec_test.v:85:42: error: unexpected `!`, the function `read_bytes_slice` does not return a Result
+   83 |     
+   84 |     // Read a slice
+   85 |     slice := reader.read_bytes_slice(500)!
+      |                                          ^
+   86 |     
+   87 |     // The slice should reference the same data
+src/infra/protocol/kafka/zerocopy_codec_test.v:85:11: error: assignment mismatch: 1 variable but `read_bytes_slice()` returns 0 values
+   83 |     
+   84 |     // Read a slice
+   85 |     slice := reader.read_bytes_slice(500)!
+      |           ~~
+   86 |     
+   87 |     // The slice should reference the same data
+src/infra/protocol/kafka/zerocopy_codec_test.v:88:12: error: assert can be used only with `bool` expressions, but found `void` instead
+   86 |     
+   87 |     // The slice should reference the same data
+   88 |     assert slice.len() == 500
+      |            ~~~~~~~~~~~~~~~~~~
+   89 |     for i in 0 .. 500 {
+   90 |         assert slice.at(i)! == u8(i)
+src/infra/protocol/kafka/zerocopy_codec_test.v:90:27: error: unexpected `!`, the function `at` does not return a Result
+   88 |     assert slice.len() == 500
+   89 |     for i in 0 .. 500 {
+   90 |         assert slice.at(i)! == u8(i)
+      |                           ^
+   91 |     }
+   92 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:90:16: error: assert can be used only with `bool` expressions, but found `void` instead
+   88 |     assert slice.len() == 500
+   89 |     for i in 0 .. 500 {
+   90 |         assert slice.at(i)! == u8(i)
+      |                ~~~~~~~~~~~~~~~~~~~~~
+   91 |     }
+   92 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:98:19: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.read_array_length`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+   96 |     mut reader := new_zerocopy_reader(data)
+   97 |     
+   98 |     len := reader.read_array_length()!
+      |                   ~~~~~~~~~~~~~~~~~~~~
+   99 |     assert len == 3
+  100 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:98:38: error: unexpected `!`, the function `read_array_length` does not return a Result
+   96 |     mut reader := new_zerocopy_reader(data)
+   97 |     
+   98 |     len := reader.read_array_length()!
+      |                                      ^
+   99 |     assert len == 3
+  100 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:98:9: error: assignment mismatch: 1 variable but `read_array_length()` returns 0 values
+   96 |     mut reader := new_zerocopy_reader(data)
+   97 |     
+   98 |     len := reader.read_array_length()!
+      |         ~~
+   99 |     assert len == 3
+  100 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:99:12: error: assert can be used only with `bool` expressions, but found `void` instead
+   97 |     
+   98 |     len := reader.read_array_length()!
+   99 |     assert len == 3
+      |            ~~~~~~~~
+  100 | }
+  101 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:107:19: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.read_compact_array_length`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+  105 |     mut reader := new_zerocopy_reader(data)
+  106 |     
+  107 |     len := reader.read_compact_array_length()!
+      |                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  108 |     assert len == 3
+  109 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:107:46: error: unexpected `!`, the function `read_compact_array_length` does not return a Result
+  105 |     mut reader := new_zerocopy_reader(data)
+  106 |     
+  107 |     len := reader.read_compact_array_length()!
+      |                                              ^
+  108 |     assert len == 3
+  109 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:107:9: error: assignment mismatch: 1 variable but `read_compact_array_length()` returns 0 values
+  105 |     mut reader := new_zerocopy_reader(data)
+  106 |     
+  107 |     len := reader.read_compact_array_length()!
+      |         ~~
+  108 |     assert len == 3
+  109 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:108:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  106 |     
+  107 |     len := reader.read_compact_array_length()!
+  108 |     assert len == 3
+      |            ~~~~~~~~
+  109 |     
+  110 |     // Null array
+src/infra/protocol/kafka/zerocopy_codec_test.v:114:25: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.read_compact_array_length`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+  112 |     mut reader2 := new_zerocopy_reader(data2)
+  113 |     
+  114 |     null_len := reader2.read_compact_array_length()!
+      |                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  115 |     assert null_len == -1
+  116 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:114:52: error: unexpected `!`, the function `read_compact_array_length` does not return a Result
+  112 |     mut reader2 := new_zerocopy_reader(data2)
+  113 |     
+  114 |     null_len := reader2.read_compact_array_length()!
+      |                                                    ^
+  115 |     assert null_len == -1
+  116 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:114:14: error: assignment mismatch: 1 variable but `read_compact_array_length()` returns 0 values
+  112 |     mut reader2 := new_zerocopy_reader(data2)
+  113 |     
+  114 |     null_len := reader2.read_compact_array_length()!
+      |              ~~
+  115 |     assert null_len == -1
+  116 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:115:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  113 |     
+  114 |     null_len := reader2.read_compact_array_length()!
+  115 |     assert null_len == -1
+      |            ~~~~~~~~~~~~~~
+  116 | }
+  117 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:122:12: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.skip`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+  120 |     mut reader := new_zerocopy_reader(data)
+  121 |     
+  122 |     reader.skip(3)!
+      |            ~~~~~~~~
+  123 |     assert reader.remaining() == 2
+  124 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:122:19: error: unexpected `!`, the function `skip` does not return a Result
+  120 |     mut reader := new_zerocopy_reader(data)
+  121 |     
+  122 |     reader.skip(3)!
+      |                   ^
+  123 |     assert reader.remaining() == 2
+  124 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:137:12: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.skip_tagged_fields`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+  135 |     mut reader := new_zerocopy_reader(data)
+  136 |     
+  137 |     reader.skip_tagged_fields()!
+      |            ~~~~~~~~~~~~~~~~~~~~~
+  138 |     assert reader.remaining() == 0
+  139 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:137:32: error: unexpected `!`, the function `skip_tagged_fields` does not return a Result
+  135 |     mut reader := new_zerocopy_reader(data)
+  136 |     
+  137 |     reader.skip_tagged_fields()!
+      |                                ^
+  138 |     assert reader.remaining() == 0
+  139 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:145:22: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.read_uuid`.
+Did you mean `read_i8`?
+  143 |     mut reader := new_zerocopy_reader(uuid)
+  144 |     
+  145 |     result := reader.read_uuid()!
+      |                      ~~~~~~~~~~~~
+  146 |     assert result.len == 16
+  147 |     for i in 0 .. 16 {
+src/infra/protocol/kafka/zerocopy_codec_test.v:145:33: error: unexpected `!`, the function `read_uuid` does not return a Result
+  143 |     mut reader := new_zerocopy_reader(uuid)
+  144 |     
+  145 |     result := reader.read_uuid()!
+      |                                 ^
+  146 |     assert result.len == 16
+  147 |     for i in 0 .. 16 {
+src/infra/protocol/kafka/zerocopy_codec_test.v:145:12: error: assignment mismatch: 1 variable but `read_uuid()` returns 0 values
+  143 |     mut reader := new_zerocopy_reader(uuid)
+  144 |     
+  145 |     result := reader.read_uuid()!
+      |            ~~
+  146 |     assert result.len == 16
+  147 |     for i in 0 .. 16 {
+src/infra/protocol/kafka/zerocopy_codec_test.v:146:19: error: `result` does not return a value
+  144 |     
+  145 |     result := reader.read_uuid()!
+  146 |     assert result.len == 16
+      |                   ~~~
+  147 |     for i in 0 .. 16 {
+  148 |         assert result[i] == u8(i)
+src/infra/protocol/kafka/zerocopy_codec_test.v:146:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  144 |     
+  145 |     result := reader.read_uuid()!
+  146 |     assert result.len == 16
+      |            ~~~~~~~~~~~~~~~~
+  147 |     for i in 0 .. 16 {
+  148 |         assert result[i] == u8(i)
+src/infra/protocol/kafka/zerocopy_codec_test.v:148:22: error: type `void` does not support indexing
+  146 |     assert result.len == 16
+  147 |     for i in 0 .. 16 {
+  148 |         assert result[i] == u8(i)
+      |                      ~~~
+  149 |     }
+  150 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:148:16: error: assert can be used only with `bool` expressions, but found `void` instead
+  146 |     assert result.len == 16
+  147 |     for i in 0 .. 16 {
+  148 |         assert result[i] == u8(i)
+      |                ~~~~~~~~~~~~~~~~~~
+  149 |     }
+  150 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:165:12: error: unknown function: parse_request_zerocopy
+  163 |     
+  164 |     data := writer.bytes()
+  165 |     req := parse_request_zerocopy(data)!
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  166 |     
+  167 |     assert req.header.api_key == 18
+src/infra/protocol/kafka/zerocopy_codec_test.v:165:40: error: unexpected `!`, the function `parse_request_zerocopy` does not return a Result
+  163 |     
+  164 |     data := writer.bytes()
+  165 |     req := parse_request_zerocopy(data)!
+      |                                        ^
+  166 |     
+  167 |     assert req.header.api_key == 18
+src/infra/protocol/kafka/zerocopy_codec_test.v:165:9: error: assignment mismatch: 1 variable but `parse_request_zerocopy()` returns 0 values
+  163 |     
+  164 |     data := writer.bytes()
+  165 |     req := parse_request_zerocopy(data)!
+      |         ~~
+  166 |     
+  167 |     assert req.header.api_key == 18
+src/infra/protocol/kafka/zerocopy_codec_test.v:167:16: error: `req` does not return a value
+  165 |     req := parse_request_zerocopy(data)!
+  166 |     
+  167 |     assert req.header.api_key == 18
+      |                ~~~~~~
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+src/infra/protocol/kafka/zerocopy_codec_test.v:167:23: error: `req.header` does not return a value
+  165 |     req := parse_request_zerocopy(data)!
+  166 |     
+  167 |     assert req.header.api_key == 18
+      |                       ~~~~~~~
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+src/infra/protocol/kafka/zerocopy_codec_test.v:167:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  165 |     req := parse_request_zerocopy(data)!
+  166 |     
+  167 |     assert req.header.api_key == 18
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+src/infra/protocol/kafka/zerocopy_codec_test.v:168:16: error: `req` does not return a value
+  166 |     
+  167 |     assert req.header.api_key == 18
+  168 |     assert req.header.api_version == 0
+      |                ~~~~~~
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+src/infra/protocol/kafka/zerocopy_codec_test.v:168:23: error: `req.header` does not return a value
+  166 |     
+  167 |     assert req.header.api_key == 18
+  168 |     assert req.header.api_version == 0
+      |                       ~~~~~~~~~~~
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+src/infra/protocol/kafka/zerocopy_codec_test.v:168:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  166 |     
+  167 |     assert req.header.api_key == 18
+  168 |     assert req.header.api_version == 0
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+src/infra/protocol/kafka/zerocopy_codec_test.v:169:16: error: `req` does not return a value
+  167 |     assert req.header.api_key == 18
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+      |                ~~~~~~
+  170 |     assert req.header.client_id == 'test-client'
+  171 |     assert req.body.len() == 1
+src/infra/protocol/kafka/zerocopy_codec_test.v:169:23: error: `req.header` does not return a value
+  167 |     assert req.header.api_key == 18
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+      |                       ~~~~~~~~~~~~~~
+  170 |     assert req.header.client_id == 'test-client'
+  171 |     assert req.body.len() == 1
+src/infra/protocol/kafka/zerocopy_codec_test.v:169:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  167 |     assert req.header.api_key == 18
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  170 |     assert req.header.client_id == 'test-client'
+  171 |     assert req.body.len() == 1
+src/infra/protocol/kafka/zerocopy_codec_test.v:170:16: error: `req` does not return a value
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+      |                ~~~~~~
+  171 |     assert req.body.len() == 1
+  172 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:170:23: error: `req.header` does not return a value
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+      |                       ~~~~~~~~~
+  171 |     assert req.body.len() == 1
+  172 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:170:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  168 |     assert req.header.api_version == 0
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  171 |     assert req.body.len() == 1
+  172 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:171:16: error: `req` does not return a value
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+  171 |     assert req.body.len() == 1
+      |                ~~~~
+  172 | }
+  173 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:171:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  169 |     assert req.header.correlation_id == 12345
+  170 |     assert req.header.client_id == 'test-client'
+  171 |     assert req.body.len() == 1
+      |            ~~~~~~~~~~~~~~~~~~~
+  172 | }
+  173 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:187:28: error: unknown method or field: `infra.protocol.kafka.ZeroCopyReader.read_bytes_slice`.
+7 possibilities: `has_remaining`, `position`, `read_i16`, `read_i32`, `read_i64`, `read_i8`, `remaining`.
+  185 |     
+  186 |     for _ in 0 .. 100 {
+  187 |         slice := zc_reader.read_bytes_slice(10000)!
+      |                            ~~~~~~~~~~~~~~~~~~~~~~~~
+  188 |         total_zerocopy += u64(slice.len())
+  189 |     }
+src/infra/protocol/kafka/zerocopy_codec_test.v:187:51: error: unexpected `!`, the function `read_bytes_slice` does not return a Result
+  185 |     
+  186 |     for _ in 0 .. 100 {
+  187 |         slice := zc_reader.read_bytes_slice(10000)!
+      |                                                   ^
+  188 |         total_zerocopy += u64(slice.len())
+  189 |     }
+src/infra/protocol/kafka/zerocopy_codec_test.v:187:15: error: assignment mismatch: 1 variable but `read_bytes_slice()` returns 0 values
+  185 |     
+  186 |     for _ in 0 .. 100 {
+  187 |         slice := zc_reader.read_bytes_slice(10000)!
+      |               ~~
+  188 |         total_zerocopy += u64(slice.len())
+  189 |     }
+src/infra/protocol/kafka/zerocopy_codec_test.v:188:37: error: expression does not return a value so it cannot be cast
+  186 |     for _ in 0 .. 100 {
+  187 |         slice := zc_reader.read_bytes_slice(10000)!
+  188 |         total_zerocopy += u64(slice.len())
+      |                                     ~~~~~
+  189 |     }
+  190 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:211:14: error: undefined ident: `performance`
+  209 |     data := [u8(0x00), 0x00, 0x00, 0x64, 0xDE, 0xAD, 0xBE, 0xEF]
+  210 |     
+  211 |     slice := performance.ByteSlice.new(data)
+      |              ~~~~~~~~~~~
+  212 |     mut reader := performance.SliceReader.from_slice(slice)
+  213 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:211:26: error: `performance` does not return a value
+  209 |     data := [u8(0x00), 0x00, 0x00, 0x64, 0xDE, 0xAD, 0xBE, 0xEF]
+  210 |     
+  211 |     slice := performance.ByteSlice.new(data)
+      |                          ~~~~~~~~~
+  212 |     mut reader := performance.SliceReader.from_slice(slice)
+  213 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:211:11: error: assignment mismatch: 1 variable but `new()` returns 0 values
+  209 |     data := [u8(0x00), 0x00, 0x00, 0x64, 0xDE, 0xAD, 0xBE, 0xEF]
+  210 |     
+  211 |     slice := performance.ByteSlice.new(data)
+      |           ~~
+  212 |     mut reader := performance.SliceReader.from_slice(slice)
+  213 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:212:19: error: undefined ident: `performance`
+  210 |     
+  211 |     slice := performance.ByteSlice.new(data)
+  212 |     mut reader := performance.SliceReader.from_slice(slice)
+      |                   ~~~~~~~~~~~
+  213 |     
+  214 |     // Read i32
+src/infra/protocol/kafka/zerocopy_codec_test.v:212:31: error: `performance` does not return a value
+  210 |     
+  211 |     slice := performance.ByteSlice.new(data)
+  212 |     mut reader := performance.SliceReader.from_slice(slice)
+      |                               ~~~~~~~~~~~
+  213 |     
+  214 |     // Read i32
+src/infra/protocol/kafka/zerocopy_codec_test.v:212:16: error: assignment mismatch: 1 variable but `from_slice()` returns 0 values
+  210 |     
+  211 |     slice := performance.ByteSlice.new(data)
+  212 |     mut reader := performance.SliceReader.from_slice(slice)
+      |                ~~
+  213 |     
+  214 |     // Read i32
+src/infra/protocol/kafka/zerocopy_codec_test.v:215:32: error: unexpected `!`, the function `read_i32_be` does not return a Result
+  213 |     
+  214 |     // Read i32
+  215 |     val := reader.read_i32_be()!
+      |                                ^
+  216 |     assert val == 100  // 0x64 = 100
+  217 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:215:9: error: assignment mismatch: 1 variable but `read_i32_be()` returns 0 values
+  213 |     
+  214 |     // Read i32
+  215 |     val := reader.read_i32_be()!
+      |         ~~
+  216 |     assert val == 100  // 0x64 = 100
+  217 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:216:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  214 |     // Read i32
+  215 |     val := reader.read_i32_be()!
+  216 |     assert val == 100  // 0x64 = 100
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~
+  217 |     
+  218 |     // Read remaining as slice
+src/infra/protocol/kafka/zerocopy_codec_test.v:219:38: error: unexpected `!`, the function `read_slice` does not return a Result
+  217 |     
+  218 |     // Read remaining as slice
+  219 |     remaining := reader.read_slice(4)!
+      |                                      ^
+  220 |     assert remaining.at(0)! == 0xDE
+  221 |     assert remaining.at(3)! == 0xEF
+src/infra/protocol/kafka/zerocopy_codec_test.v:219:15: error: assignment mismatch: 1 variable but `read_slice()` returns 0 values
+  217 |     
+  218 |     // Read remaining as slice
+  219 |     remaining := reader.read_slice(4)!
+      |               ~~
+  220 |     assert remaining.at(0)! == 0xDE
+  221 |     assert remaining.at(3)! == 0xEF
+src/infra/protocol/kafka/zerocopy_codec_test.v:220:27: error: unexpected `!`, the function `at` does not return a Result
+  218 |     // Read remaining as slice
+  219 |     remaining := reader.read_slice(4)!
+  220 |     assert remaining.at(0)! == 0xDE
+      |                           ^
+  221 |     assert remaining.at(3)! == 0xEF
+  222 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:220:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  218 |     // Read remaining as slice
+  219 |     remaining := reader.read_slice(4)!
+  220 |     assert remaining.at(0)! == 0xDE
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~
+  221 |     assert remaining.at(3)! == 0xEF
+  222 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:221:27: error: unexpected `!`, the function `at` does not return a Result
+  219 |     remaining := reader.read_slice(4)!
+  220 |     assert remaining.at(0)! == 0xDE
+  221 |     assert remaining.at(3)! == 0xEF
+      |                           ^
+  222 | }
+  223 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:221:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  219 |     remaining := reader.read_slice(4)!
+  220 |     assert remaining.at(0)! == 0xDE
+  221 |     assert remaining.at(3)! == 0xEF
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~
+  222 | }
+  223 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:246:20: error: undefined ident: `performance`
+  244 |     data << [u8(0x76), 0x61, 0x6C, 0x75, 0x65]
+  245 |     
+  246 |     record_view := performance.RecordView.parse(data)!
+      |                    ~~~~~~~~~~~
+  247 |     
+  248 |     assert record_view.offset == 1
+src/infra/protocol/kafka/zerocopy_codec_test.v:246:32: error: `performance` does not return a value
+  244 |     data << [u8(0x76), 0x61, 0x6C, 0x75, 0x65]
+  245 |     
+  246 |     record_view := performance.RecordView.parse(data)!
+      |                                ~~~~~~~~~~
+  247 |     
+  248 |     assert record_view.offset == 1
+src/infra/protocol/kafka/zerocopy_codec_test.v:246:54: error: unexpected `!`, the function `parse` does not return a Result
+  244 |     data << [u8(0x76), 0x61, 0x6C, 0x75, 0x65]
+  245 |     
+  246 |     record_view := performance.RecordView.parse(data)!
+      |                                                      ^
+  247 |     
+  248 |     assert record_view.offset == 1
+src/infra/protocol/kafka/zerocopy_codec_test.v:246:17: error: assignment mismatch: 1 variable but `parse()` returns 0 values
+  244 |     data << [u8(0x76), 0x61, 0x6C, 0x75, 0x65]
+  245 |     
+  246 |     record_view := performance.RecordView.parse(data)!
+      |                 ~~
+  247 |     
+  248 |     assert record_view.offset == 1
+src/infra/protocol/kafka/zerocopy_codec_test.v:248:24: error: `record_view` does not return a value
+  246 |     record_view := performance.RecordView.parse(data)!
+  247 |     
+  248 |     assert record_view.offset == 1
+      |                        ~~~~~~
+  249 |     assert record_view.timestamp == 1000
+  250 |     assert record_view.key_length == 3
+src/infra/protocol/kafka/zerocopy_codec_test.v:248:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  246 |     record_view := performance.RecordView.parse(data)!
+  247 |     
+  248 |     assert record_view.offset == 1
+      |            ~~~~~~~~~~~~~~~~~~~~~~~
+  249 |     assert record_view.timestamp == 1000
+  250 |     assert record_view.key_length == 3
+src/infra/protocol/kafka/zerocopy_codec_test.v:249:24: error: `record_view` does not return a value
+  247 |     
+  248 |     assert record_view.offset == 1
+  249 |     assert record_view.timestamp == 1000
+      |                        ~~~~~~~~~
+  250 |     assert record_view.key_length == 3
+  251 |     assert record_view.value_length == 5
+src/infra/protocol/kafka/zerocopy_codec_test.v:249:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  247 |     
+  248 |     assert record_view.offset == 1
+  249 |     assert record_view.timestamp == 1000
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  250 |     assert record_view.key_length == 3
+  251 |     assert record_view.value_length == 5
+src/infra/protocol/kafka/zerocopy_codec_test.v:250:24: error: `record_view` does not return a value
+  248 |     assert record_view.offset == 1
+  249 |     assert record_view.timestamp == 1000
+  250 |     assert record_view.key_length == 3
+      |                        ~~~~~~~~~~
+  251 |     assert record_view.value_length == 5
+  252 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:250:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  248 |     assert record_view.offset == 1
+  249 |     assert record_view.timestamp == 1000
+  250 |     assert record_view.key_length == 3
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  251 |     assert record_view.value_length == 5
+  252 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:251:24: error: `record_view` does not return a value
+  249 |     assert record_view.timestamp == 1000
+  250 |     assert record_view.key_length == 3
+  251 |     assert record_view.value_length == 5
+      |                        ~~~~~~~~~~~~
+  252 |     
+  253 |     // Get key as zero-copy slice
+src/infra/protocol/kafka/zerocopy_codec_test.v:251:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  249 |     assert record_view.timestamp == 1000
+  250 |     assert record_view.key_length == 3
+  251 |     assert record_view.value_length == 5
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  252 |     
+  253 |     // Get key as zero-copy slice
+src/infra/protocol/kafka/zerocopy_codec_test.v:254:35: error: unexpected `!`, the function `key` does not return a Result
+  252 |     
+  253 |     // Get key as zero-copy slice
+  254 |     key_slice := record_view.key()!
+      |                                   ^
+  255 |     assert key_slice.len() == 3
+  256 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:254:15: error: assignment mismatch: 1 variable but `key()` returns 0 values
+  252 |     
+  253 |     // Get key as zero-copy slice
+  254 |     key_slice := record_view.key()!
+      |               ~~
+  255 |     assert key_slice.len() == 3
+  256 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:255:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  253 |     // Get key as zero-copy slice
+  254 |     key_slice := record_view.key()!
+  255 |     assert key_slice.len() == 3
+      |            ~~~~~~~~~~~~~~~~~~~~
+  256 |     
+  257 |     // Get value as zero-copy slice
+src/infra/protocol/kafka/zerocopy_codec_test.v:258:39: error: unexpected `!`, the function `value` does not return a Result
+  256 |     
+  257 |     // Get value as zero-copy slice
+  258 |     value_slice := record_view.value()!
+      |                                       ^
+  259 |     assert value_slice.len() == 5
+  260 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:258:17: error: assignment mismatch: 1 variable but `value()` returns 0 values
+  256 |     
+  257 |     // Get value as zero-copy slice
+  258 |     value_slice := record_view.value()!
+      |                 ~~
+  259 |     assert value_slice.len() == 5
+  260 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:259:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  257 |     // Get value as zero-copy slice
+  258 |     value_slice := record_view.value()!
+  259 |     assert value_slice.len() == 5
+      |            ~~~~~~~~~~~~~~~~~~~~~~
+  260 |     
+  261 |     // Get as owned bytes when needed
+src/infra/protocol/kafka/zerocopy_codec_test.v:262:15: error: assignment mismatch: 1 variable but `key_bytes()` returns 0 values
+  260 |     
+  261 |     // Get as owned bytes when needed
+  262 |     key_bytes := record_view.key_bytes()
+      |               ~~
+  263 |     assert key_bytes == [u8(0x6B), 0x65, 0x79]  // "key"
+  264 |
+src/infra/protocol/kafka/zerocopy_codec_test.v:263:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  261 |     // Get as owned bytes when needed
+  262 |     key_bytes := record_view.key_bytes()
+  263 |     assert key_bytes == [u8(0x6B), 0x65, 0x79]  // "key"
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  264 |     
+  265 |     value_bytes := record_view.value_bytes()
+src/infra/protocol/kafka/zerocopy_codec_test.v:265:17: error: assignment mismatch: 1 variable but `value_bytes()` returns 0 values
+  263 |     assert key_bytes == [u8(0x6B), 0x65, 0x79]  // "key"
+  264 |     
+  265 |     value_bytes := record_view.value_bytes()
+      |                 ~~
+  266 |     assert value_bytes == [u8(0x76), 0x61, 0x6C, 0x75, 0x65]  // "value"
+  267 | }
+src/infra/protocol/kafka/zerocopy_codec_test.v:266:12: error: assert can be used only with `bool` expressions, but found `void` instead
+  264 |     
+  265 |     value_bytes := record_view.value_bytes()
+  266 |     assert value_bytes == [u8(0x76), 0x61, 0x6C, 0x75, 0x65]  // "value"
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  267 | }
+  268 |
+If the code of your project is in a folder with multiple .v files, try `v /Users/jhwang/works/test/datacore/src/infra/protocol/kafka` instead of `v /Users/jhwang/works/test/datacore/src/infra/protocol/kafka/zerocopy_codec_test.v`
+
+--------------------------------------------------------------------------------
+To reproduce just failure 1 run:    '/opt/homebrew/Cellar/vlang/0.5/libexec/v' -d use_openssl '/Users/jhwang/works/test/datacore/src/infra/protocol/kafka/zerocopy_codec_test.v'
+Summary for all V _test.v files: 1 failed, 1 total. Elapsed time: 466 ms, on 1 job. Comptime: 395 ms. Runtime: 0 ms.

@@ -22,20 +22,20 @@ all: build
 build:
 	@echo "Building $(BINARY_NAME) v$(VERSION)..."
 	@mkdir -p $(BUILD_DIR)
-	cd $(SRC_DIR) && v $(V_FLAGS) -o ../$(BUILD_DIR)/$(BINARY_NAME) .
+	cd $(SRC_DIR) && v $(V_FLAGS) -d use_openssl -o ../$(BUILD_DIR)/$(BINARY_NAME) .
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
 
 ## Build development binary (with debug info)
 build-dev:
 	@echo "Building $(BINARY_NAME) (dev)..."
 	@mkdir -p $(BUILD_DIR)
-	cd $(SRC_DIR) && v $(V_FLAGS_DEV) -o ../$(BUILD_DIR)/$(BINARY_NAME) .
+	cd $(SRC_DIR) && v $(V_FLAGS_DEV) -d use_openssl -o ../$(BUILD_DIR)/$(BINARY_NAME) .
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
 
 ## Run unit tests
 test:
 	@echo "Running tests..."
-	cd $(SRC_DIR) && v test service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/
+	cd $(SRC_DIR) && v -d use_openssl test service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/
 
 ## Format code
 fmt:
@@ -61,10 +61,10 @@ build-all: clean
 	@mkdir -p $(BUILD_DIR)
 	
 	@echo "Building linux-amd64..."
-	cd $(SRC_DIR) && v $(V_FLAGS) -o ../$(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 .
+	cd $(SRC_DIR) && v $(V_FLAGS) -d use_openssl -o ../$(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 .
 	
 	@echo "Building darwin (current arch)..."
-	cd $(SRC_DIR) && v $(V_FLAGS) -o ../$(BUILD_DIR)/$(BINARY_NAME)-darwin .
+	cd $(SRC_DIR) && v $(V_FLAGS) -d use_openssl -o ../$(BUILD_DIR)/$(BINARY_NAME)-darwin .
 	
 	@echo "Done! Binaries in $(BUILD_DIR)/"
 
@@ -92,7 +92,7 @@ release: build
 docker:
 	@echo "Building Docker image..."
 	@mkdir -p docker-context/linux-amd64
-	cd $(SRC_DIR) && v $(V_FLAGS) -o ../docker-context/linux-amd64/$(BINARY_NAME) .
+	cd $(SRC_DIR) && v $(V_FLAGS) -d use_openssl -o ../docker-context/linux-amd64/$(BINARY_NAME) .
 	docker build -t $(BINARY_NAME):$(VERSION) -t $(BINARY_NAME):latest .
 	@echo "Built: $(BINARY_NAME):$(VERSION)"
 

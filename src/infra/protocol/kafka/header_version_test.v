@@ -8,9 +8,8 @@ module kafka
 // ============================================
 
 fn test_api_versions_request_header_version() {
-    // ApiVersions Request follows NORMAL rules (unlike Response!)
-    // v0-v2: non-flexible body → Header v1
-    // v3+: flexible body → Header v2
+    // ApiVersions Request ALWAYS uses Header v1 (KIP-511)
+    // Even if the body is flexible (v3+), the header is NOT.
     
     // v0: non-flexible → Header v1
     assert get_request_header_version(.api_versions, 0) == 1
@@ -18,9 +17,9 @@ fn test_api_versions_request_header_version() {
     assert get_request_header_version(.api_versions, 1) == 1
     // v2: non-flexible → Header v1
     assert get_request_header_version(.api_versions, 2) == 1
-    // v3+: flexible → Header v2
-    assert get_request_header_version(.api_versions, 3) == 2
-    assert get_request_header_version(.api_versions, 4) == 2
+    // v3+: even if body is flexible, Header is still v1 (KIP-511)
+    assert get_request_header_version(.api_versions, 3) == 1
+    assert get_request_header_version(.api_versions, 4) == 1
 }
 
 fn test_api_versions_response_header_version() {
@@ -136,20 +135,17 @@ fn test_is_flexible_version_sasl() {
 // Edge Cases and Regression Tests
 // ============================================
 
-fn test_header_version_asymmetry() {
-    // ApiVersions is the ONLY API where Request and Response header versions differ
-    // Request: follows normal rules (v3+ → Header v2)
-    // Response: ALWAYS Header v0 (KIP-511)
+fn test_header_version_symmetry_exception() {
+    // ApiVersions is special:
+    // Request: Header v1 (always)
+    // Response: Header v0 (always)
     
     // For v3:
     req_header := get_request_header_version(.api_versions, 3)
     resp_header := get_response_header_version(.api_versions, 3)
     
-    // Request uses Header v2 (flexible)
-    assert req_header == 2
-    // Response uses Header v0 (non-flexible, no tag_buffer)
+    assert req_header == 1
     assert resp_header == 0
-    // They must be different!
     assert req_header != resp_header
 }
 

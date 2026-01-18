@@ -40,16 +40,15 @@ pub:
 // Note: ApiVersions Request follows NORMAL rules (v3+ uses Header v2)
 //       Only ApiVersions RESPONSE is special (always Header v0, KIP-511)
 pub fn get_request_header_version(api_key ApiKey, api_version i16) i16 {
-    // SaslHandshake always uses header v1 (never flexible)
-    if api_key == .sasl_handshake {
-        return 1
-    }
-    // All APIs (including ApiVersions) follow normal rules:
-    // - Flexible API versions use Header v2
-    // - Non-flexible API versions use Header v1
-    // ApiVersions v0-v2: Header v1 (non-flexible body)
-    // ApiVersions v3+: Header v2 (flexible body)
-    return if is_flexible_version(api_key, api_version) { i16(2) } else { i16(1) }
+	// SaslHandshake and ApiVersions always use header v1 (non-flexible header)
+	// For ApiVersions, this is per KIP-511 to ensure backward compatibility.
+	if api_key == .sasl_handshake || api_key == .api_versions {
+		return 1
+	}
+	// All other APIs follow normal rules:
+	// - Flexible API versions use Header v2
+	// - Non-flexible API versions use Header v1
+	return if is_flexible_version(api_key, api_version) { i16(2) } else { i16(1) }
 }
 
 // Get Response Header version for a given API

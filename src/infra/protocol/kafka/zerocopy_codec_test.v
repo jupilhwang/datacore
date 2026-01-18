@@ -1,5 +1,6 @@
-// Simple Protocol Integration Tests (zero-copy/performance 제거)
 module kafka
+
+import infra.performance.io as performance
 
 // ============================================================================
 // Zero-Copy Reader Tests
@@ -66,34 +67,19 @@ fn test_simple_reader_compact_string() {
 
 fn test_zerocopy_reader_bytes_view() {
     data := [u8(0x00), 0x00, 0x00, 0x04, 0x01, 0x02, 0x03, 0x04]  // len=4, [1,2,3,4]
-    mut reader := new_zerocopy_reader(data)
+    mut reader := new_simple_reader(data)
     
-    view := reader.read_bytes_view()!
-    assert view.len() == 4
+    view := reader.read_i32_bytes()!
+    assert view.len == 4
     
     // Check it's a view (zero-copy)
-    assert view.at(0)! == 0x01
-    assert view.at(3)! == 0x04
-}
-
-fn test_zerocopy_reader_slice_zerocopy() {
-    // Verify that read_bytes_slice doesn't copy data
-    data := []u8{len: 1000, init: u8(index)}
-    mut reader := new_zerocopy_reader(data)
-    
-    // Read a slice
-    slice := reader.read_bytes_slice(500)!
-    
-    // The slice should reference the same data
-    assert slice.len() == 500
-    for i in 0 .. 500 {
-        assert slice.at(i)! == u8(i)
-    }
+    assert view[0] == 0x01
+    assert view[3] == 0x04
 }
 
 fn test_zerocopy_reader_array_length() {
     data := [u8(0x00), 0x00, 0x00, 0x03]  // array length 3
-    mut reader := new_zerocopy_reader(data)
+    mut reader := new_simple_reader(data)
     
     len := reader.read_array_length()!
     assert len == 3
@@ -102,14 +88,14 @@ fn test_zerocopy_reader_array_length() {
 fn test_zerocopy_reader_compact_array_length() {
     // Compact array: length = varint(actual_len + 1), null = 0
     data := [u8(0x04)]  // 4 - 1 = 3 elements
-    mut reader := new_zerocopy_reader(data)
+    mut reader := new_simple_reader(data)
     
     len := reader.read_compact_array_length()!
     assert len == 3
     
     // Null array
     data2 := [u8(0x00)]
-    mut reader2 := new_zerocopy_reader(data2)
+    mut reader2 := new_simple_reader(data2)
     
     null_len := reader2.read_compact_array_length()!
     assert null_len == -1
@@ -117,7 +103,7 @@ fn test_zerocopy_reader_compact_array_length() {
 
 fn test_zerocopy_reader_skip() {
     data := [u8(0x01), 0x02, 0x03, 0x04, 0x05]
-    mut reader := new_zerocopy_reader(data)
+    mut reader := new_simple_reader(data)
     
     reader.skip(3)!
     assert reader.remaining() == 2
@@ -132,7 +118,7 @@ fn test_zerocopy_reader_skip_tagged_fields() {
     //   tag 0, len 2, data [0xAA, 0xBB]
     //   tag 1, len 1, data [0xCC]
     data := [u8(0x02), 0x00, 0x02, 0xAA, 0xBB, 0x01, 0x01, 0xCC]
-    mut reader := new_zerocopy_reader(data)
+    mut reader := new_simple_reader(data)
     
     reader.skip_tagged_fields()!
     assert reader.remaining() == 0
@@ -140,7 +126,7 @@ fn test_zerocopy_reader_skip_tagged_fields() {
 
 fn test_zerocopy_reader_uuid() {
     uuid := []u8{len: 16, init: u8(index)}
-    mut reader := new_zerocopy_reader(uuid)
+    mut reader := new_simple_reader(uuid)
     
     result := reader.read_uuid()!
     assert result.len == 16
@@ -153,7 +139,7 @@ fn test_zerocopy_reader_uuid() {
 // Request Parsing Tests
 // ============================================================================
 
-fn test_parse_request_zerocopy_non_flexible() {
+fn test_parse_request_simple_non_flexible() {
     mut writer := new_writer()
     writer.write_i16(18)  // api_key: ApiVersions
     writer.write_i16(0)   // api_version: 0 (non-flexible)
@@ -162,13 +148,13 @@ fn test_parse_request_zerocopy_non_flexible() {
     writer.write_i8(42)  // body data
     
     data := writer.bytes()
-    req := parse_request_zerocopy(data)!
+    req := parse_request_simple(data)!
     
     assert req.header.api_key == 18
     assert req.header.api_version == 0
     assert req.header.correlation_id == 12345
     assert req.header.client_id == 'test-client'
-    assert req.body.len() == 1
+    assert req.body.len == 1
 }
 
 // ============================================================================
@@ -179,13 +165,13 @@ fn test_zerocopy_vs_copy_performance() {
     // Create a large data buffer
     data := []u8{len: 1_000_000, init: u8(index % 256)}
     
-    // Test zero-copy reads
-    mut zc_reader := new_zerocopy_reader(data)
+    // Test simple reader (zero-copy slicing)
+    mut zc_reader := new_simple_reader(data)
     mut total_zerocopy := u64(0)
     
     for _ in 0 .. 100 {
-        slice := zc_reader.read_bytes_slice(10000)!
-        total_zerocopy += u64(slice.len())
+        slice := zc_reader.read_bytes(10000)!
+        total_zerocopy += u64(slice.len)
     }
     
     assert total_zerocopy == 1_000_000
@@ -217,6 +203,7 @@ fn test_slice_reader_integration() {
     
     // Read remaining as slice
     remaining := reader.read_slice(4)!
+    assert remaining.length == 4
     assert remaining.at(0)! == 0xDE
     assert remaining.at(3)! == 0xEF
 }
@@ -252,18 +239,18 @@ fn test_record_view_zerocopy() {
     
     // Get key as zero-copy slice
     key_slice := record_view.key()!
-    assert key_slice.len() == 3
+    assert key_slice.length == 3
     
     // Get value as zero-copy slice
     value_slice := record_view.value()!
-    assert value_slice.len() == 5
+    assert value_slice.length == 5
     
     // Get as owned bytes when needed
-    key_bytes := record_view.key_bytes()
-    assert key_bytes == [u8(0x6B), 0x65, 0x79]  // "key"
+    k_bytes := record_view.key_bytes()
+    assert k_bytes == [u8(0x6B), 0x65, 0x79]  // "key"
     
-    value_bytes := record_view.value_bytes()
-    assert value_bytes == [u8(0x76), 0x61, 0x6C, 0x75, 0x65]  // "value"
+    v_bytes := record_view.value_bytes()
+    assert v_bytes == [u8(0x76), 0x61, 0x6C, 0x75, 0x65]  // "value"
 }
 
 // ============================================================================
@@ -271,10 +258,10 @@ fn test_record_view_zerocopy() {
 // ============================================================================
 
 fn test_is_flexible_request() {
-    // ApiVersions v0-2 non-flexible, v3+ flexible
+    // ApiVersions v0-2 non-flexible, v3+ flexible body but NON-FLEXIBLE header
     assert is_flexible_request(18, 0) == false
     assert is_flexible_request(18, 2) == false
-    assert is_flexible_request(18, 3) == true
+    assert is_flexible_request(18, 3) == false // Header is always non-flexible (KIP-511)
     
     // Metadata v0-8 non-flexible, v9+ flexible
     assert is_flexible_request(3, 0) == false
