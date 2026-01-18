@@ -1,0 +1,61 @@
+# V language
+*.o
+*.so
+*.a
+*.dll
+*.exe
+*.out
+/datacore
+
+# Build outputs
+/build/
+/dist/
+/target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data
+/data/
+*.db
+*.sqlite
+
+# Test coverage
+coverage/
+*.cov
+
+# Profiling
+*.prof
+profile.txt
+
+# Dependencies cache
+.vcache/
+
+# Environment
+.env
+.env.local
+*.env
+
+# Temporary
+tmp/
+temp/
+
+# Ignore docs except tracked files
+docs/*
+!docs/PRD.md
+!docs/TRD.md
+!docs/CONTRIBUTING.md
+!docs/BENCHMARK.md
+.taskmaster/*
