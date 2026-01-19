@@ -2,7 +2,6 @@ module engines
 
 // NUMA Module Tests
 // Tests for NUMA-aware memory allocation and topology detection
-
 import time
 
 // ============================================================================
@@ -72,7 +71,6 @@ fn test_numa_alloc_local() {
 		test_ptr[0] = 42
 		assert test_ptr[0] == 42
 	}
-
 	numa_free(mem)
 }
 
@@ -95,7 +93,6 @@ fn test_numa_alloc_on_node() {
 			assert byte_ptr[i] == u8(i)
 		}
 	}
-
 	numa_free(mem)
 }
 
@@ -114,7 +111,6 @@ fn test_numa_alloc_interleaved() {
 		assert byte_ptr[0] == 0xAB
 		assert byte_ptr[size - 1] == 0xAB
 	}
-
 	numa_free(mem)
 }
 
@@ -134,10 +130,10 @@ fn test_numa_alloc_fallback() {
 fn test_numa_free_null() {
 	// Should handle null pointer gracefully
 	mem := NumaMemory{
-		ptr: unsafe { nil }
-		size: 0
-		node: 0
-		policy: .default_policy
+		ptr:     unsafe { nil }
+		size:    0
+		node:    0
+		policy:  .default_policy
 		is_numa: false
 	}
 
@@ -150,9 +146,9 @@ fn test_numa_free_null() {
 
 fn test_numa_buffer_pool_creation() {
 	config := NumaBufferConfig{
-		buffer_size: 4096
+		buffer_size:      4096
 		buffers_per_node: 10
-		prefer_local: true
+		prefer_local:     true
 	}
 
 	mut pool := new_numa_buffer_pool(config)
@@ -173,7 +169,7 @@ fn test_numa_buffer_pool_creation() {
 
 fn test_numa_buffer_pool_get_put() {
 	config := NumaBufferConfig{
-		buffer_size: 1024
+		buffer_size:      1024
 		buffers_per_node: 5
 	}
 
@@ -206,7 +202,7 @@ fn test_numa_buffer_pool_get_put() {
 
 fn test_numa_buffer_pool_multiple_gets() {
 	config := NumaBufferConfig{
-		buffer_size: 512
+		buffer_size:      512
 		buffers_per_node: 3
 	}
 
@@ -236,7 +232,7 @@ fn test_numa_buffer_pool_multiple_gets() {
 
 fn test_numa_buffer_pool_stats() {
 	config := NumaBufferConfig{
-		buffer_size: 2048
+		buffer_size:      2048
 		buffers_per_node: 2
 	}
 
@@ -351,7 +347,7 @@ fn test_numa_full_workflow() {
 
 	// 2. Create buffer pool
 	mut pool := new_numa_buffer_pool(NumaBufferConfig{
-		buffer_size: 4096
+		buffer_size:      4096
 		buffers_per_node: 5
 	})
 	defer {
@@ -388,7 +384,7 @@ fn test_numa_memory_isolation() {
 	topology := get_numa_topology()
 
 	if topology.node_count < 1 {
-		return // Skip if no nodes
+		return
 	}
 
 	// Allocate on node 0
@@ -406,7 +402,6 @@ fn test_numa_memory_isolation() {
 			byte_ptr[i] = u8(i % 256)
 		}
 	}
-
 	// Verify pattern
 	unsafe {
 		byte_ptr := &u8(mem0.ptr)
@@ -446,10 +441,9 @@ fn test_numa_allocation_performance() {
 }
 
 fn test_numa_pool_vs_direct_allocation() {
-
 	iterations := 50
 	mut pool := new_numa_buffer_pool(NumaBufferConfig{
-		buffer_size: 4096
+		buffer_size:      4096
 		buffers_per_node: 100
 	})
 	defer {

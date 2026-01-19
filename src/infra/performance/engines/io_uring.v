@@ -10,7 +10,6 @@ module engines
 // - Link operations for chained requests
 //
 // Note: Only available on Linux 5.1+, other platforms use fallback
-
 import os
 
 // ============================================================================
@@ -24,9 +23,9 @@ $if linux {
 	#include <unistd.h>
 
 	// io_uring_setup flags
-	const ioring_setup_iopoll = u32(1)      // Use polling for I/O completion
-	const ioring_setup_sqpoll = u32(2)      // Use kernel thread for SQ polling
-	const ioring_setup_sq_aff = u32(4)      // SQ thread CPU affinity
+	const ioring_setup_iopoll = u32(1) // Use polling for I/O completion
+	const ioring_setup_sqpoll = u32(2) // Use kernel thread for SQ polling
+	const ioring_setup_sq_aff = u32(4) // SQ thread CPU affinity
 
 	// io_uring opcodes
 	const ioring_op_nop = u8(0)
@@ -105,11 +104,11 @@ pub mut:
 	flags       u8
 	ioprio      u16
 	fd          i32
-	off         u64  // offset or addr2
-	addr        u64  // buffer address or splice_fd_in
-	len         u32  // buffer length or poll events
-	rw_flags    u32  // op-specific flags
-	user_data   u64  // user data for completion
+	off         u64 // offset or addr2
+	addr        u64 // buffer address or splice_fd_in
+	len         u32 // buffer length or poll events
+	rw_flags    u32 // op-specific flags
+	user_data   u64 // user data for completion
 	buf_index   u16
 	personality u16
 	splice_fd   i32
@@ -140,27 +139,27 @@ pub mut:
 	sqes_size    usize
 	params       IoUringParams
 	// Ring state
-	sq_head      &u32 = unsafe { nil }
-	sq_tail      &u32 = unsafe { nil }
-	sq_mask      u32
-	sq_array     &u32 = unsafe { nil }
-	cq_head      &u32 = unsafe { nil }
-	cq_tail      &u32 = unsafe { nil }
-	cq_mask      u32
-	cqes_ptr     &IoUringCqe = unsafe { nil }
+	sq_head  &u32 = unsafe { nil }
+	sq_tail  &u32 = unsafe { nil }
+	sq_mask  u32
+	sq_array &u32 = unsafe { nil }
+	cq_head  &u32 = unsafe { nil }
+	cq_tail  &u32 = unsafe { nil }
+	cq_mask  u32
+	cqes_ptr &IoUringCqe = unsafe { nil }
 	// Stats
-	submissions  u64
-	completions  u64
-	errors       u64
+	submissions u64
+	completions u64
+	errors      u64
 }
 
 // IoUringConfig holds configuration for io_uring setup
 pub struct IoUringConfig {
 pub:
-	queue_depth    u32  = 256
-	flags          u32  = 0
-	sq_thread_cpu  u32  = 0
-	sq_thread_idle u32  = 1000
+	queue_depth    u32 = 256
+	flags          u32 = 0
+	sq_thread_cpu  u32 = 0
+	sq_thread_idle u32 = 1000
 }
 
 // ============================================================================
@@ -190,10 +189,10 @@ pub:
 pub fn new_io_uring(config IoUringConfig) !IoUring {
 	$if linux {
 		mut params := IoUringParams{
-			sq_entries: config.queue_depth
-			cq_entries: config.queue_depth * 2
-			flags: config.flags
-			sq_thread_cpu: config.sq_thread_cpu
+			sq_entries:     config.queue_depth
+			cq_entries:     config.queue_depth * 2
+			flags:          config.flags
+			sq_thread_cpu:  config.sq_thread_cpu
 			sq_thread_idle: config.sq_thread_idle
 		}
 
@@ -205,7 +204,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 
 		mut ring := IoUring{
 			ring_fd: int(fd)
-			params: params
+			params:  params
 			sq_mask: params.sq_entries - 1
 			cq_mask: params.cq_entries - 1
 		}
@@ -213,7 +212,8 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 		// Map submission queue ring
 		sq_ring_sz := usize(params.sq_off.array) + usize(params.sq_entries) * sizeof(u32)
 		ring.sq_ring_size = sq_ring_sz
-		ring.sq_ring_ptr = C.mmap(unsafe { nil }, sq_ring_sz, 0x1 | 0x2, 0x1, int(fd), 0)
+		ring.sq_ring_ptr = C.mmap(unsafe { nil }, sq_ring_sz, 0x1 | 0x2, 0x1, int(fd),
+			0)
 		if ring.sq_ring_ptr == voidptr(-1) {
 			return error('mmap sq_ring failed')
 		}
@@ -317,8 +317,7 @@ pub fn (mut r IoUring) submit(wait_nr u32) !int {
 		}
 
 		flags := if wait_nr > 0 { ioring_enter_getevents } else { u32(0) }
-		ret := C.syscall(sys_io_uring_enter, r.ring_fd, to_submit, wait_nr,
-			flags, voidptr(0))
+		ret := C.syscall(sys_io_uring_enter, r.ring_fd, to_submit, wait_nr, flags, unsafe { nil })
 
 		if ret < 0 {
 			r.errors++
@@ -365,8 +364,8 @@ pub fn (mut r IoUring) wait_cqe() !IoUringResult {
 		if cqe := r.peek_cqe() {
 			result := IoUringResult{
 				user_data: cqe.user_data
-				result: cqe.res
-				success: cqe.res >= 0
+				result:    cqe.res
+				success:   cqe.res >= 0
 			}
 			r.consume_cqe()
 			return result
@@ -378,8 +377,8 @@ pub fn (mut r IoUring) wait_cqe() !IoUringResult {
 		if cqe := r.peek_cqe() {
 			result := IoUringResult{
 				user_data: cqe.user_data
-				result: cqe.res
-				success: cqe.res >= 0
+				result:    cqe.res
+				success:   cqe.res >= 0
 			}
 			r.consume_cqe()
 			return result
@@ -401,8 +400,8 @@ pub fn (r &IoUring) get_stats() IoUringStats {
 		return IoUringStats{
 			submissions: r.submissions
 			completions: r.completions
-			errors: r.errors
-			pending: pending
+			errors:      r.errors
+			pending:     pending
 		}
 	} $else {
 		return IoUringStats{}
@@ -594,30 +593,30 @@ pub:
 pub fn get_async_io_capabilities() AsyncIoCapabilities {
 	$if linux {
 		return AsyncIoCapabilities{
-			has_io_uring: true
-			has_aio: true
-			has_iocp: false
+			has_io_uring:  true
+			has_aio:       true
+			has_iocp:      false
 			platform_name: 'Linux'
 		}
 	} $else $if macos {
 		return AsyncIoCapabilities{
-			has_io_uring: false
-			has_aio: true
-			has_iocp: false
+			has_io_uring:  false
+			has_aio:       true
+			has_iocp:      false
 			platform_name: 'macOS'
 		}
 	} $else $if windows {
 		return AsyncIoCapabilities{
-			has_io_uring: false
-			has_aio: false
-			has_iocp: true
+			has_io_uring:  false
+			has_aio:       false
+			has_iocp:      true
 			platform_name: 'Windows'
 		}
 	} $else {
 		return AsyncIoCapabilities{
-			has_io_uring: false
-			has_aio: false
-			has_iocp: false
+			has_io_uring:  false
+			has_aio:       false
+			has_iocp:      false
 			platform_name: 'Unknown'
 		}
 	}

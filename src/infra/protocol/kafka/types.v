@@ -220,7 +220,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.describe_groups, 0, 5}, // v5+ flexible
 		ApiVersionRange{.list_groups, 0, 5}, // v3+ flexible, v4+ states_filter, v5+ types_filter
 		ApiVersionRange{.sasl_handshake, 0, 1}, // SASL mechanism negotiation
-		ApiVersionRange{.api_versions, 0, 3}, // v0-v2 non-flexible. v3 uses flexible response body but non-flexible header
+		ApiVersionRange{.api_versions, 0, 3}, // v0-v2 non-flexible, v3 flexible
 		ApiVersionRange{.create_topics, 0, 7},
 		ApiVersionRange{.delete_topics, 0, 6},
 		ApiVersionRange{.delete_records, 0, 2},

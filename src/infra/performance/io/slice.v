@@ -2,7 +2,6 @@ module io
 
 // Zero-Copy Slice Operations for High-Performance Data Processing
 // Provides efficient byte slice views without memory copying
-
 import time
 
 // ByteSlice - Zero-copy view into a byte array
@@ -17,7 +16,7 @@ pub:
 // Creates a new ByteSlice from a byte array
 pub fn ByteSlice.new(data []u8) ByteSlice {
 	return ByteSlice{
-		data: data
+		data:   data
 		offset: 0
 		length: data.len
 	}
@@ -29,7 +28,7 @@ pub fn (s ByteSlice) slice(start int, end int) !ByteSlice {
 		return error('slice bounds out of range: [${start}:${end}] with length ${s.length}')
 	}
 	return ByteSlice{
-		data: s.data
+		data:   s.data
 		offset: s.offset + start
 		length: end - start
 	}
@@ -125,13 +124,13 @@ pub fn RecordView.parse(data []u8) !RecordView {
 	}
 
 	return RecordView{
-		raw_data: slice
-		key_offset: key_offset
-		key_length: actual_key_len
+		raw_data:     slice
+		key_offset:   key_offset
+		key_length:   actual_key_len
 		value_offset: value_offset
 		value_length: actual_value_len
-		timestamp: timestamp
-		offset: record_offset
+		timestamp:    timestamp
+		offset:       record_offset
 	}
 }
 
@@ -179,7 +178,7 @@ pub mut:
 // Creates a new SliceReader
 pub fn SliceReader.new(data []u8) SliceReader {
 	return SliceReader{
-		slice: ByteSlice.new(data)
+		slice:    ByteSlice.new(data)
 		position: 0
 	}
 }
@@ -187,7 +186,7 @@ pub fn SliceReader.new(data []u8) SliceReader {
 // Creates a SliceReader from an existing ByteSlice
 pub fn SliceReader.from_slice(slice ByteSlice) SliceReader {
 	return SliceReader{
-		slice: slice
+		slice:    slice
 		position: 0
 	}
 }
@@ -231,7 +230,8 @@ pub fn (mut r SliceReader) read_i32_be() !i32 {
 	}
 	bytes := r.slice.bytes()
 	pos := r.slice.offset + r.position
-	val := i32((u32(bytes[pos]) << 24) | (u32(bytes[pos + 1]) << 16) | (u32(bytes[pos + 2]) << 8) | u32(bytes[pos + 3]))
+	val := i32((u32(bytes[pos]) << 24) | (u32(bytes[pos + 1]) << 16) | (u32(bytes[pos + 2]) << 8) | u32(bytes[
+		pos + 3]))
 	r.position += 4
 	return val
 }
@@ -296,9 +296,9 @@ mut:
 // Creates a new batch iterator
 pub fn BatchSliceIterator.new(data []u8, record_count int) BatchSliceIterator {
 	return BatchSliceIterator{
-		reader: SliceReader.new(data)
+		reader:       SliceReader.new(data)
 		record_count: record_count
-		current: 0
+		current:      0
 	}
 }
 
@@ -315,19 +315,19 @@ pub fn (b BatchSliceIterator) has_next() bool {
 // SlicePool - Pool of reusable ByteSlice objects
 pub struct SlicePool {
 mut:
-	pool       []ByteSlice
-	pool_size  int
-	created    u64
-	reused     u64
+	pool      []ByteSlice
+	pool_size int
+	created   u64
+	reused    u64
 }
 
 // Creates a new SlicePool
 pub fn SlicePool.new(initial_size int) SlicePool {
 	return SlicePool{
-		pool: []ByteSlice{cap: initial_size}
+		pool:      []ByteSlice{cap: initial_size}
 		pool_size: initial_size
-		created: 0
-		reused: 0
+		created:   0
+		reused:    0
 	}
 }
 
@@ -338,7 +338,7 @@ pub fn (mut p SlicePool) acquire(data []u8) ByteSlice {
 		_ = p.pool.pop()
 		// Reinitialize with new data
 		return ByteSlice{
-			data: data
+			data:   data
 			offset: 0
 			length: data.len
 		}
@@ -362,12 +362,15 @@ pub fn (p SlicePool) stats() (u64, u64, int) {
 // Helper functions for big-endian parsing
 
 fn parse_i32_be(data []u8, offset int) int {
-	return int((u32(data[offset]) << 24) | (u32(data[offset + 1]) << 16) | (u32(data[offset + 2]) << 8) | u32(data[offset + 3]))
+	return int((u32(data[offset]) << 24) | (u32(data[offset + 1]) << 16) | (u32(data[offset + 2]) << 8) | u32(data[
+		offset + 3]))
 }
 
 fn parse_i64_be(data []u8, offset int) i64 {
-	high := u64((u32(data[offset]) << 24) | (u32(data[offset + 1]) << 16) | (u32(data[offset + 2]) << 8) | u32(data[offset + 3]))
-	low := u64((u32(data[offset + 4]) << 24) | (u32(data[offset + 5]) << 16) | (u32(data[offset + 6]) << 8) | u32(data[offset + 7]))
+	high := u64((u32(data[offset]) << 24) | (u32(data[offset + 1]) << 16) | (u32(data[offset + 2]) << 8) | u32(data[
+		offset + 3]))
+	low := u64((u32(data[offset + 4]) << 24) | (u32(data[offset + 5]) << 16) | (u32(data[offset + 6]) << 8) | u32(data[
+		offset + 7]))
 	return i64((high << 32) | low)
 }
 
@@ -382,7 +385,7 @@ mut:
 pub fn SliceBenchmark.new(iterations u64, data_size int) SliceBenchmark {
 	return SliceBenchmark{
 		iterations: iterations
-		data_size: data_size
+		data_size:  data_size
 	}
 }
 

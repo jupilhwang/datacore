@@ -2,7 +2,6 @@ module benchmarks
 
 // I/O Benchmark Tests
 // Tests for the comprehensive I/O benchmark suite
-
 import os
 
 // ============================================================================
@@ -22,10 +21,10 @@ fn test_benchmark_config_defaults() {
 
 fn test_benchmark_config_custom() {
 	config := IoBenchmarkConfig{
-		iterations: 50
-		warmup_runs: 5
-		data_size: 8192
-		verbose: true
+		iterations:    50
+		warmup_runs:   5
+		data_size:     8192
+		verbose:       true
 		output_format: .markdown
 	}
 
@@ -118,14 +117,14 @@ fn test_calculate_io_results_ops_per_sec() {
 fn test_format_text() {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{})
 	suite.results << IoBenchmarkResults{
-		test_name: 'Test 1'
-		iterations: 100
-		avg_time_ns: 1000
-		min_time_ns: 500
-		max_time_ns: 1500
+		test_name:       'Test 1'
+		iterations:      100
+		avg_time_ns:     1000
+		min_time_ns:     500
+		max_time_ns:     1500
 		throughput_mbps: 100.5
-		ops_per_sec: 1000000
-		data_size: 4096
+		ops_per_sec:     1000000
+		data_size:       4096
 	}
 
 	output := suite.format_text()
@@ -140,11 +139,11 @@ fn test_format_markdown() {
 		output_format: .markdown
 	})
 	suite.results << IoBenchmarkResults{
-		test_name: 'Test MD'
-		iterations: 50
-		avg_time_ns: 2000
+		test_name:       'Test MD'
+		iterations:      50
+		avg_time_ns:     2000
 		throughput_mbps: 50.0
-		ops_per_sec: 500000
+		ops_per_sec:     500000
 	}
 
 	output := suite.format_markdown()
@@ -159,8 +158,8 @@ fn test_format_json() {
 		output_format: .json
 	})
 	suite.results << IoBenchmarkResults{
-		test_name: 'Test JSON'
-		iterations: 25
+		test_name:   'Test JSON'
+		iterations:  25
 		avg_time_ns: 5000
 	}
 
@@ -204,9 +203,9 @@ fn test_quick_functions_exist() {
 	// Don't actually run full benchmarks in tests
 
 	config := IoBenchmarkConfig{
-		iterations: 2
-		warmup_runs: 1
-		data_size: 512
+		iterations:    2
+		warmup_runs:   1
+		data_size:     512
 		test_io_uring: false // Skip io_uring in tests for portability
 	}
 
@@ -231,15 +230,15 @@ fn test_compare_functions_params() {
 fn test_mini_benchmark_run() {
 	// Create a minimal benchmark run
 	config := IoBenchmarkConfig{
-		iterations: 3
-		warmup_runs: 1
-		data_size: 256
-		file_size: 1024
-		test_regular_io: true
-		test_mmap: true
-		test_dma: false       // Skip for portability
-		test_io_uring: false  // Skip for portability
-		test_numa: false      // Skip for portability
+		iterations:        3
+		warmup_runs:       1
+		data_size:         256
+		file_size:         1024
+		test_regular_io:   true
+		test_mmap:         true
+		test_dma:          false // Skip for portability
+		test_io_uring:     false // Skip for portability
+		test_numa:         false // Skip for portability
 		test_buffer_pools: false
 	}
 
@@ -262,23 +261,29 @@ fn test_all_output_formats() {
 	// Create suite with test data
 	mut suite := new_io_benchmark_suite(config)
 	suite.results << IoBenchmarkResults{
-		test_name: 'Format Test'
-		iterations: 10
+		test_name:   'Format Test'
+		iterations:  10
 		avg_time_ns: 1000
 	}
 
 	// Test text format
-	suite.config = IoBenchmarkConfig{output_format: .text}
+	suite.config = IoBenchmarkConfig{
+		output_format: .text
+	}
 	text_out := suite.format_results()
 	assert text_out.contains('Format Test')
 
 	// Test markdown format
-	suite.config = IoBenchmarkConfig{output_format: .markdown}
+	suite.config = IoBenchmarkConfig{
+		output_format: .markdown
+	}
 	md_out := suite.format_results()
 	assert md_out.contains('# ')
 
 	// Test JSON format
-	suite.config = IoBenchmarkConfig{output_format: .json}
+	suite.config = IoBenchmarkConfig{
+		output_format: .json
+	}
 	json_out := suite.format_results()
 	assert json_out.contains('{')
 	assert json_out.contains('}')

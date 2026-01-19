@@ -45,96 +45,96 @@ fn (c &MockS3Client) list_prefix(prefix string) []string {
 
 fn test_encode_decode_empty_records() {
 	original := []StoredRecord{}
-	
+
 	encoded := encode_stored_records(original)
 	decoded := decode_stored_records(encoded)
-	
+
 	assert decoded.len == 0
 }
 
 fn test_encode_decode_large_record() {
 	large_value := []u8{len: 1000000, init: u8(65)} // 1MB of 'A'
-	
+
 	original := [
 		StoredRecord{
-			offset: 0
+			offset:    0
 			timestamp: time.now()
-			key: 'large-key'.bytes()
-			value: large_value
-			headers: map[string][]u8{}
+			key:       'large-key'.bytes()
+			value:     large_value
+			headers:   map[string][]u8{}
 		},
 	]
-	
+
 	encoded := encode_stored_records(original)
 	decoded := decode_stored_records(encoded)
-	
+
 	assert decoded.len == 1
 	assert decoded[0].value.len == 1000000
 }
 
 fn test_s3_key_helpers() {
 	s3_config := S3Config{
-		prefix: 'test-prefix/'
+		prefix:      'test-prefix/'
 		bucket_name: 'my-bucket'
 	}
-	
+
 	adapter := S3StorageAdapter{
 		config: s3_config
 	}
-	
+
 	// Topic metadata key
 	assert adapter.topic_metadata_key('my-topic') == 'test-prefix/topics/my-topic/metadata.json'
-	
+
 	// Partition index key
 	assert adapter.partition_index_key('my-topic', 0) == 'test-prefix/topics/my-topic/partitions/0/index.json'
-	
+
 	// Log segment key
 	segment_key := adapter.log_segment_key('my-topic', 0, 100, 199)
 	assert segment_key.contains('my-topic')
 	assert segment_key.contains('partitions/0')
 	assert segment_key.ends_with('.bin')
-	
+
 	// Group key
 	assert adapter.group_key('my-group') == 'test-prefix/groups/my-group/state.json'
-	
+
 	// Offset key
 	assert adapter.offset_key('my-group', 'my-topic', 0) == 'test-prefix/offsets/my-group/my-topic:0.json'
 }
 
 fn test_partition_index_serialization() {
 	index := PartitionIndex{
-		topic: 'test-topic'
-		partition: 0
+		topic:           'test-topic'
+		partition:       0
 		earliest_offset: 0
-		high_watermark: 100
-		log_segments: [
+		high_watermark:  100
+		log_segments:    [
 			LogSegment{
 				start_offset: 0
-				end_offset: 49
-				key: 'segment-0-49.bin'
-				size_bytes: 1024
-				created_at: time.now()
+				end_offset:   49
+				key:          'segment-0-49.bin'
+				size_bytes:   1024
+				created_at:   time.now()
 			},
 			LogSegment{
 				start_offset: 50
-				end_offset: 99
-				key: 'segment-50-99.bin'
-				size_bytes: 2048
-				created_at: time.now()
+				end_offset:   99
+				key:          'segment-50-99.bin'
+				size_bytes:   2048
+				created_at:   time.now()
 			},
 		]
 	}
-	
+
 	// Serialize
 	data := json.encode(index)
 	assert data.len > 0
-	
+
 	// Deserialize
 	decoded := json.decode(PartitionIndex, data) or {
 		assert false, 'Failed to decode partition index'
 		return
 	}
-	
+
 	assert decoded.topic == 'test-topic'
 	assert decoded.partition == 0
 	assert decoded.high_watermark == 100
@@ -150,7 +150,7 @@ fn test_s3_endpoint_generation() {
 		config: config1
 	}
 	assert adapter1.get_endpoint() == 'https://s3.us-west-2.amazonaws.com'
-	
+
 	// Custom endpoint (MinIO)
 	config2 := S3Config{
 		endpoint: 'http://localhost:9000'
@@ -173,9 +173,9 @@ fn test_parse_list_objects_response() {
     <Size>128</Size>
   </Contents>
 </ListBucketResult>'
-	
+
 	objects := parse_list_objects_response(xml_response)
-	
+
 	assert objects.len == 2
 	assert objects[0].key == 'datacore/topics/topic1/metadata.json'
 	assert objects[1].key == 'datacore/topics/topic2/metadata.json'
@@ -183,19 +183,19 @@ fn test_parse_list_objects_response() {
 
 fn test_cached_topic_structure() {
 	meta := domain.TopicMetadata{
-		name: 'test'
-		topic_id: [u8(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+		name:            'test'
+		topic_id:        [u8(1), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 		partition_count: 3
-		config: {}
-		is_internal: false
+		config:          {}
+		is_internal:     false
 	}
-	
+
 	cached := CachedTopic{
-		meta: meta
-		etag: '"abc123"'
+		meta:      meta
+		etag:      '"abc123"'
 		cached_at: time.now()
 	}
-	
+
 	assert cached.meta.name == 'test'
 	assert cached.meta.partition_count == 3
 }
@@ -203,12 +203,12 @@ fn test_cached_topic_structure() {
 fn test_log_segment_structure() {
 	segment := LogSegment{
 		start_offset: 1000
-		end_offset: 1999
-		key: 'path/to/segment.bin'
-		size_bytes: 1048576 // 1MB
-		created_at: time.now()
+		end_offset:   1999
+		key:          'path/to/segment.bin'
+		size_bytes:   1048576 // 1MB
+		created_at:   time.now()
 	}
-	
+
 	assert segment.end_offset - segment.start_offset == 999
 	assert segment.size_bytes == 1048576
 }
@@ -223,7 +223,6 @@ fn test_s3_real_object_lifecycle() {
 	app_config := config.load_config(config_path) or { panic('config.toml 읽기 실패: ${err}') }
 	s3 := app_config.storage.s3
 
-
 	// 디버그: config.toml에서 읽은 S3 필드 전체 출력
 	println('Loaded S3 config from TOML:')
 	println('  region   : ${s3.region}')
@@ -234,12 +233,12 @@ fn test_s3_real_object_lifecycle() {
 	println('  prefix   : ${s3.prefix}')
 
 	s3_config := S3Config{
-		bucket_name: s3.bucket
-		region: s3.region
-		endpoint: s3.endpoint
-		prefix: s3.prefix
-		access_key: s3.access_key
-		secret_key: s3.secret_key
+		bucket_name:    s3.bucket
+		region:         s3.region
+		endpoint:       s3.endpoint
+		prefix:         s3.prefix
+		access_key:     s3.access_key
+		secret_key:     s3.secret_key
 		use_path_style: false
 	}
 	mut adapter := S3StorageAdapter{
@@ -248,18 +247,12 @@ fn test_s3_real_object_lifecycle() {
 	key := 'test-adapter-object.txt'
 	value := 'hello s3 from test'.bytes()
 
-	adapter.put_object(key, value) or {
-		panic('S3 put_object failed: ${err}')
-	}
+	adapter.put_object(key, value) or { panic('S3 put_object failed: ${err}') }
 
 	// get_object (조회)
-	data, _ := adapter.get_object(key) or {
-		panic('S3 get_object failed: ${err}')
-	}
+	data, _ := adapter.get_object(key) or { panic('S3 get_object failed: ${err}') }
 	assert data == value
 
 	// delete_object (삭제)
-	adapter.delete_object(key) or {
-		panic('S3 delete_object failed: ${err}')
-	}
+	adapter.delete_object(key) or { panic('S3 delete_object failed: ${err}') }
 }

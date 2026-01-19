@@ -1,5 +1,5 @@
 // Unit Tests - Infra Layer: Kafka Codec
-module kafka
+module kafka_test
 
 import infra.protocol.kafka
 

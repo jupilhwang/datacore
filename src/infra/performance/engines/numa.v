@@ -11,7 +11,6 @@ module engines
 // - Interleaved allocation across nodes
 //
 // Note: Full NUMA support only on Linux, other platforms use fallback
-
 import os
 
 // ============================================================================
@@ -54,32 +53,32 @@ $if linux {
 // NumaNode represents a NUMA node
 pub struct NumaNode {
 pub:
-	id         int
-	total_mem  i64 // Total memory in bytes
-	free_mem   i64 // Free memory in bytes
-	cpu_count  int
-	cpus       []int
+	id        int
+	total_mem i64 // Total memory in bytes
+	free_mem  i64 // Free memory in bytes
+	cpu_count int
+	cpus      []int
 }
 
 // NumaTopology represents the system's NUMA topology
 pub struct NumaTopology {
 pub:
-	available   bool
-	node_count  int
-	cpu_count   int
-	nodes       []NumaNode
-	local_node  int // Node where current thread is running
+	available  bool
+	node_count int
+	cpu_count  int
+	nodes      []NumaNode
+	local_node int // Node where current thread is running
 }
 
 // NumaCapabilities indicates NUMA support level
 pub struct NumaCapabilities {
 pub:
-	has_numa           bool
-	has_node_binding   bool
-	has_cpu_binding    bool
-	has_interleave     bool
-	has_local_alloc    bool
-	platform_name      string
+	has_numa         bool
+	has_node_binding bool
+	has_cpu_binding  bool
+	has_interleave   bool
+	has_local_alloc  bool
+	platform_name    string
 }
 
 // ============================================================================
@@ -91,34 +90,34 @@ pub fn get_numa_capabilities() NumaCapabilities {
 	$if linux {
 		available := C.numa_available() >= 0
 		return NumaCapabilities{
-			has_numa: available
+			has_numa:         available
 			has_node_binding: available
-			has_cpu_binding: available
-			has_interleave: available
-			has_local_alloc: available
-			platform_name: 'Linux'
+			has_cpu_binding:  available
+			has_interleave:   available
+			has_local_alloc:  available
+			platform_name:    'Linux'
 		}
 	} $else $if macos {
 		return NumaCapabilities{
-			has_numa: false
+			has_numa:         false
 			has_node_binding: false
-			has_cpu_binding: false
-			has_interleave: false
-			has_local_alloc: false
-			platform_name: 'macOS'
+			has_cpu_binding:  false
+			has_interleave:   false
+			has_local_alloc:  false
+			platform_name:    'macOS'
 		}
 	} $else $if windows {
 		return NumaCapabilities{
-			has_numa: false // Windows has NUMA support but different API
+			has_numa:         false // Windows has NUMA support but different API
 			has_node_binding: false
-			has_cpu_binding: false
-			has_interleave: false
-			has_local_alloc: false
-			platform_name: 'Windows'
+			has_cpu_binding:  false
+			has_interleave:   false
+			has_local_alloc:  false
+			platform_name:    'Windows'
 		}
 	} $else {
 		return NumaCapabilities{
-			has_numa: false
+			has_numa:      false
 			platform_name: 'Unknown'
 		}
 	}
@@ -129,9 +128,9 @@ pub fn get_numa_topology() NumaTopology {
 	$if linux {
 		if C.numa_available() < 0 {
 			return NumaTopology{
-				available: false
+				available:  false
 				node_count: 1
-				cpu_count: 1
+				cpu_count:  1
 				local_node: 0
 			}
 		}
@@ -156,34 +155,34 @@ pub fn get_numa_topology() NumaTopology {
 			}
 
 			nodes << NumaNode{
-				id: node
+				id:        node
 				total_mem: total_mem
-				free_mem: free_mem
+				free_mem:  free_mem
 				cpu_count: node_cpus.len
-				cpus: node_cpus
+				cpus:      node_cpus
 			}
 		}
 
 		return NumaTopology{
-			available: true
+			available:  true
 			node_count: node_count
-			cpu_count: cpu_count
-			nodes: nodes
+			cpu_count:  cpu_count
+			nodes:      nodes
 			local_node: local_node
 		}
 	} $else {
 		// Fallback: single node topology
 		return NumaTopology{
-			available: false
+			available:  false
 			node_count: 1
-			cpu_count: 1
-			nodes: [
+			cpu_count:  1
+			nodes:      [
 				NumaNode{
-					id: 0
+					id:        0
 					total_mem: get_total_memory()
-					free_mem: get_free_memory()
+					free_mem:  get_free_memory()
 					cpu_count: 1
-					cpus: [0]
+					cpus:      [0]
 				},
 			]
 			local_node: 0
@@ -257,19 +256,19 @@ fn get_free_memory() i64 {
 // NumaMemory represents NUMA-allocated memory
 pub struct NumaMemory {
 pub:
-	ptr       voidptr
-	size      usize
-	node      int
-	policy    NumaPolicy
-	is_numa   bool // True if actually NUMA-allocated
+	ptr     voidptr
+	size    usize
+	node    int
+	policy  NumaPolicy
+	is_numa bool // True if actually NUMA-allocated
 }
 
 pub enum NumaPolicy {
-	default_policy   // System default
-	local            // Allocate on local node
-	preferred        // Prefer specific node, fallback allowed
-	bind             // Strict binding to node(s)
-	interleaved      // Round-robin across nodes
+	default_policy // System default
+	local          // Allocate on local node
+	preferred      // Prefer specific node, fallback allowed
+	bind           // Strict binding to node(s)
+	interleaved    // Round-robin across nodes
 }
 
 // numa_alloc allocates memory on a specific NUMA node
@@ -285,10 +284,10 @@ pub fn numa_alloc(size usize, node int) NumaMemory {
 		}
 
 		return NumaMemory{
-			ptr: ptr
-			size: size
-			node: node
-			policy: .bind
+			ptr:     ptr
+			size:    size
+			node:    node
+			policy:  .bind
 			is_numa: true
 		}
 	} $else {
@@ -309,10 +308,10 @@ pub fn numa_alloc_local(size usize) NumaMemory {
 		}
 
 		return NumaMemory{
-			ptr: ptr
-			size: size
-			node: get_current_node()
-			policy: .local
+			ptr:     ptr
+			size:    size
+			node:    get_current_node()
+			policy:  .local
 			is_numa: true
 		}
 	} $else {
@@ -333,10 +332,10 @@ pub fn numa_alloc_interleaved(size usize) NumaMemory {
 		}
 
 		return NumaMemory{
-			ptr: ptr
-			size: size
-			node: -1 // interleaved across all
-			policy: .interleaved
+			ptr:     ptr
+			size:    size
+			node:    -1 // interleaved across all
+			policy:  .interleaved
 			is_numa: true
 		}
 	} $else {
@@ -348,10 +347,10 @@ pub fn numa_alloc_interleaved(size usize) NumaMemory {
 fn numa_alloc_fallback(size usize) NumaMemory {
 	ptr := unsafe { C.malloc(size) }
 	return NumaMemory{
-		ptr: ptr
-		size: size
-		node: 0
-		policy: .default_policy
+		ptr:     ptr
+		size:    size
+		node:    0
+		policy:  .default_policy
 		is_numa: false
 	}
 }
@@ -379,9 +378,9 @@ pub fn numa_free(mem NumaMemory) {
 // NumaBufferPool provides NUMA-aware buffer allocation
 pub struct NumaBufferPool {
 pub mut:
-	node_pools  []NodePool
-	topology    NumaTopology
-	stats       NumaPoolStats
+	node_pools []NodePool
+	topology   NumaTopology
+	stats      NumaPoolStats
 }
 
 struct NodePool {
@@ -394,20 +393,20 @@ mut:
 
 pub struct NumaPoolStats {
 pub mut:
-	allocations_total    u64
-	allocations_local    u64
-	allocations_remote   u64
-	bytes_allocated      u64
-	cache_hits           u64
-	cache_misses         u64
+	allocations_total  u64
+	allocations_local  u64
+	allocations_remote u64
+	bytes_allocated    u64
+	cache_hits         u64
+	cache_misses       u64
 }
 
 // NumaBufferConfig configures NUMA buffer pool
 pub struct NumaBufferConfig {
 pub:
-	buffer_size       usize = 4096
-	buffers_per_node  int   = 100
-	prefer_local      bool  = true
+	buffer_size      usize = 4096
+	buffers_per_node int   = 100
+	prefer_local     bool  = true
 }
 
 // new_numa_buffer_pool creates a NUMA-aware buffer pool
@@ -418,10 +417,10 @@ pub fn new_numa_buffer_pool(config NumaBufferConfig) NumaBufferPool {
 
 	for node in topology.nodes {
 		mut pool := NodePool{
-			node: node.id
-			buffers: []NumaMemory{cap: config.buffers_per_node}
+			node:      node.id
+			buffers:   []NumaMemory{cap: config.buffers_per_node}
 			available: []int{cap: config.buffers_per_node}
-			buf_size: config.buffer_size
+			buf_size:  config.buffer_size
 		}
 
 		// Pre-allocate buffers
@@ -436,7 +435,7 @@ pub fn new_numa_buffer_pool(config NumaBufferConfig) NumaBufferPool {
 
 	return NumaBufferPool{
 		node_pools: node_pools
-		topology: topology
+		topology:   topology
 	}
 }
 
@@ -581,8 +580,8 @@ pub fn new_numa_array(cap int, elem_size int) NumaArray {
 
 	return NumaArray{
 		memory: mem
-		len: 0
-		cap: cap
+		len:    0
+		cap:    cap
 	}
 }
 
@@ -593,8 +592,8 @@ pub fn new_numa_array_on_node(cap int, elem_size int, node int) NumaArray {
 
 	return NumaArray{
 		memory: mem
-		len: 0
-		cap: cap
+		len:    0
+		cap:    cap
 	}
 }
 

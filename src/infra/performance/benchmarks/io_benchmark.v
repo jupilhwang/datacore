@@ -7,7 +7,6 @@ module benchmarks
 // - DMA / Scatter-Gather I/O
 // - io_uring (Linux)
 // - NUMA-aware allocation
-
 import os
 import time
 
@@ -18,22 +17,22 @@ import time
 pub struct IoBenchmarkConfig {
 pub:
 	// Test parameters
-	iterations      int   = 100
-	warmup_runs     int   = 10
-	data_size       usize = 4096  // bytes
-	file_size       i64   = 1024 * 1024 // 1MB for file tests
+	iterations  int   = 100
+	warmup_runs int   = 10
+	data_size   usize = 4096        // bytes
+	file_size   i64   = 1024 * 1024 // 1MB for file tests
 
 	// Test selection
-	test_regular_io     bool = true
-	test_mmap           bool = true
-	test_dma            bool = true
-	test_io_uring       bool = true
-	test_numa           bool = true
-	test_buffer_pools   bool = true
+	test_regular_io   bool = true
+	test_mmap         bool = true
+	test_dma          bool = true
+	test_io_uring     bool = true
+	test_numa         bool = true
+	test_buffer_pools bool = true
 
 	// Output
-	verbose             bool = false
-	output_format       OutputFormat = .text
+	verbose       bool         = false
+	output_format OutputFormat = .text
 }
 
 pub enum OutputFormat {
@@ -61,20 +60,20 @@ pub mut:
 
 pub struct IoBenchmarkSuite {
 pub mut:
-	config    IoBenchmarkConfig
-	results   []IoBenchmarkResults
-	system    SystemInfo
+	config  IoBenchmarkConfig
+	results []IoBenchmarkResults
+	system  SystemInfo
 }
 
 pub struct SystemInfo {
 pub:
-	os_name         string
-	numa_nodes      int
-	numa_available  bool
+	os_name            string
+	numa_nodes         int
+	numa_available     bool
 	io_uring_available bool
-	mmap_available  bool
-	dma_available   bool
-	total_memory    i64
+	mmap_available     bool
+	dma_available      bool
+	total_memory       i64
 }
 
 // ============================================================================
@@ -84,9 +83,9 @@ pub:
 // new_io_benchmark_suite creates a new benchmark suite
 pub fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
 	return IoBenchmarkSuite{
-		config: config
+		config:  config
 		results: []IoBenchmarkResults{}
-		system: detect_system_capabilities()
+		system:  detect_system_capabilities()
 	}
 }
 
@@ -105,13 +104,13 @@ fn detect_system_capabilities() SystemInfo {
 	}
 
 	return SystemInfo{
-		os_name: detected_os
-		numa_nodes: topology.node_count
-		numa_available: topology.available
+		os_name:            detected_os
+		numa_nodes:         topology.node_count
+		numa_available:     topology.available
 		io_uring_available: io_caps.has_io_uring
-		mmap_available: true // Always available via fallback
-		dma_available: dma_caps.has_scatter_gather
-		total_memory: topology.nodes[0].total_mem
+		mmap_available:     true // Always available via fallback
+		dma_available:      dma_caps.has_scatter_gather
+		total_memory:       topology.nodes[0].total_mem
 	}
 }
 
@@ -424,7 +423,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 	mut numa_times := []i64{cap: s.config.iterations}
 
 	mut numa_pool := new_numa_buffer_pool(NumaBufferConfig{
-		buffer_size: s.config.data_size
+		buffer_size:      s.config.data_size
 		buffers_per_node: 100
 	})
 	defer {
@@ -466,7 +465,9 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 
 fn calculate_io_results(name string, times []i64, data_size usize) IoBenchmarkResults {
 	if times.len == 0 {
-		return IoBenchmarkResults{test_name: name}
+		return IoBenchmarkResults{
+			test_name: name
+		}
 	}
 
 	mut total := i64(0)
@@ -492,15 +493,15 @@ fn calculate_io_results(name string, times []i64, data_size usize) IoBenchmarkRe
 	ops := if avg > 0 { 1_000_000_000.0 / f64(avg) } else { 0.0 }
 
 	return IoBenchmarkResults{
-		test_name: name
-		iterations: times.len
-		total_time_ns: total
-		avg_time_ns: avg
-		min_time_ns: min_t
-		max_time_ns: max_t
+		test_name:       name
+		iterations:      times.len
+		total_time_ns:   total
+		avg_time_ns:     avg
+		min_time_ns:     min_t
+		max_time_ns:     max_t
 		throughput_mbps: throughput
-		ops_per_sec: ops
-		data_size: data_size
+		ops_per_sec:     ops
+		data_size:       data_size
 	}
 }
 
@@ -533,14 +534,16 @@ fn (s &IoBenchmarkSuite) format_text() string {
 	sb << ''
 	sb << 'Results:'
 	sb << '------------------------------------------------------------'
-	sb << '${pad_right("Test Name", 25)} | ${pad_right("Avg (ns)", 12)} | ${pad_right("Throughput", 12)} | Ops/sec'
+	sb << '${pad_right('Test Name', 25)} | ${pad_right('Avg (ns)', 12)} | ${pad_right('Throughput',
+		12)} | Ops/sec'
 	sb << '------------------------------------------------------------'
 
 	for r in s.results {
 		if r.iterations > 0 {
 			throughput_str := '${r.throughput_mbps:.2f} MB/s'
 			ops_str := '${r.ops_per_sec:.0f}'
-			sb << '${pad_right(r.test_name, 25)} | ${pad_right(r.avg_time_ns.str(), 12)} | ${pad_right(throughput_str, 12)} | ${ops_str}'
+			sb << '${pad_right(r.test_name, 25)} | ${pad_right(r.avg_time_ns.str(), 12)} | ${pad_right(throughput_str,
+				12)} | ${ops_str}'
 		} else {
 			sb << '${r.test_name}'
 		}
@@ -653,9 +656,9 @@ fn pad_right(s string, width int) string {
 // run_quick_benchmark runs a quick benchmark with default settings
 pub fn run_quick_io_benchmark() string {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
-		iterations: 50
+		iterations:  50
 		warmup_runs: 5
-		data_size: 4096
+		data_size:   4096
 	})
 
 	suite.run_all()
@@ -665,11 +668,11 @@ pub fn run_quick_io_benchmark() string {
 // run_comprehensive_benchmark runs a comprehensive benchmark
 pub fn run_comprehensive_io_benchmark() string {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
-		iterations: 200
-		warmup_runs: 20
-		data_size: 65536 // 64KB
-		file_size: 10 * 1024 * 1024 // 10MB
-		verbose: true
+		iterations:    200
+		warmup_runs:   20
+		data_size:     65536            // 64KB
+		file_size:     10 * 1024 * 1024 // 10MB
+		verbose:       true
 		output_format: .markdown
 	})
 
@@ -680,9 +683,9 @@ pub fn run_comprehensive_io_benchmark() string {
 // compare_io_methods returns a comparison of different I/O methods
 pub fn compare_io_methods(data_size usize, iterations int) []IoBenchmarkResults {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
-		iterations: iterations
-		data_size: data_size
-		test_numa: false
+		iterations:        iterations
+		data_size:         data_size
+		test_numa:         false
 		test_buffer_pools: false
 	})
 
@@ -693,12 +696,12 @@ pub fn compare_io_methods(data_size usize, iterations int) []IoBenchmarkResults 
 // compare_memory_strategies returns memory allocation comparison
 pub fn compare_memory_strategies(size usize, iterations int) []IoBenchmarkResults {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
-		iterations: iterations
-		data_size: size
+		iterations:      iterations
+		data_size:       size
 		test_regular_io: false
-		test_mmap: false
-		test_dma: false
-		test_io_uring: false
+		test_mmap:       false
+		test_dma:        false
+		test_io_uring:   false
 	})
 
 	suite.run_all()

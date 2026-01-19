@@ -13,7 +13,6 @@ module io
 // │ copy_file_range     │  ✓    │   ✗   │   ✗     │
 // │ TransmitFile        │  ✗    │   ✗   │   ✓     │
 // └─────────────────────┴───────┴───────┴─────────┘
-
 import os
 
 // ============================================================================
@@ -36,6 +35,7 @@ fn C.writev(fd int, iov &C.iovec, iovcnt int) isize
 // Linux-specific: sendfile
 $if linux {
 	#include <sys/sendfile.h>
+
 	fn C.sendfile(out_fd int, in_fd int, offset &i64, count usize) isize
 }
 
@@ -51,6 +51,7 @@ $if macos {
 // Linux-specific: splice and copy_file_range
 $if linux {
 	#include <fcntl.h>
+
 	fn C.splice(fd_in int, off_in &i64, fd_out int, off_out &i64, len usize, flags u32) isize
 	fn C.copy_file_range(fd_in int, off_in &i64, fd_out int, off_out &i64, len usize, flags u32) isize
 
@@ -78,35 +79,35 @@ pub:
 pub fn get_platform_capabilities() PlatformCapabilities {
 	$if linux {
 		return PlatformCapabilities{
-			has_scatter_gather: true
-			has_sendfile: true
-			has_splice: true
+			has_scatter_gather:  true
+			has_sendfile:        true
+			has_splice:          true
 			has_copy_file_range: true
-			os_name: 'Linux'
+			os_name:             'Linux'
 		}
 	} $else $if macos {
 		return PlatformCapabilities{
-			has_scatter_gather: true
-			has_sendfile: true
-			has_splice: false
+			has_scatter_gather:  true
+			has_sendfile:        true
+			has_splice:          false
 			has_copy_file_range: false
-			os_name: 'macOS'
+			os_name:             'macOS'
 		}
 	} $else $if windows {
 		return PlatformCapabilities{
-			has_scatter_gather: false
-			has_sendfile: false // Could implement with TransmitFile
-			has_splice: false
+			has_scatter_gather:  false
+			has_sendfile:        false // Could implement with TransmitFile
+			has_splice:          false
 			has_copy_file_range: false
-			os_name: 'Windows'
+			os_name:             'Windows'
 		}
 	} $else {
 		return PlatformCapabilities{
-			has_scatter_gather: false
-			has_sendfile: false
-			has_splice: false
+			has_scatter_gather:  false
+			has_sendfile:        false
+			has_splice:          false
 			has_copy_file_range: false
-			os_name: 'Unknown'
+			os_name:             'Unknown'
 		}
 	}
 }
@@ -121,31 +122,31 @@ pub:
 	success           bool
 	error_msg         string
 	used_zero_copy    bool
-	new_offset        i64  // Updated offset after operation
+	new_offset        i64 // Updated offset after operation
 }
 
 fn dma_success(bytes i64, zero_copy bool) DmaResult {
 	return DmaResult{
 		bytes_transferred: bytes
-		success: true
-		used_zero_copy: zero_copy
-		new_offset: 0
+		success:           true
+		used_zero_copy:    zero_copy
+		new_offset:        0
 	}
 }
 
 fn dma_success_with_offset(bytes i64, zero_copy bool, offset i64) DmaResult {
 	return DmaResult{
 		bytes_transferred: bytes
-		success: true
-		used_zero_copy: zero_copy
-		new_offset: offset
+		success:           true
+		used_zero_copy:    zero_copy
+		new_offset:        offset
 	}
 }
 
 fn dma_error(msg string) DmaResult {
 	return DmaResult{
-		success: false
-		error_msg: msg
+		success:        false
+		error_msg:      msg
 		used_zero_copy: false
 	}
 }
@@ -165,7 +166,7 @@ pub mut:
 pub fn new_sg_buffer(size int) ScatterGatherBuffer {
 	return ScatterGatherBuffer{
 		data: []u8{len: size}
-		len: 0
+		len:  0
 	}
 }
 
@@ -173,7 +174,7 @@ pub fn new_sg_buffer(size int) ScatterGatherBuffer {
 pub fn new_sg_buffer_from(data []u8) ScatterGatherBuffer {
 	return ScatterGatherBuffer{
 		data: data
-		len: data.len
+		len:  data.len
 	}
 }
 
@@ -189,7 +190,7 @@ pub fn scatter_read_native(fd int, mut buffers []ScatterGatherBuffer) DmaResult 
 		for i, mut buf in buffers {
 			iovecs[i] = C.iovec{
 				iov_base: buf.data.data
-				iov_len: usize(buf.data.len)
+				iov_len:  usize(buf.data.len)
 			}
 		}
 
@@ -234,8 +235,8 @@ fn scatter_read_fallback(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 
 	return DmaResult{
 		bytes_transferred: total
-		success: true
-		used_zero_copy: false
+		success:           true
+		used_zero_copy:    false
 	}
 }
 
@@ -251,7 +252,7 @@ pub fn gather_write_native(fd int, buffers []ScatterGatherBuffer) DmaResult {
 		for i, buf in buffers {
 			iovecs[i] = C.iovec{
 				iov_base: buf.data.data
-				iov_len: usize(buf.len)
+				iov_len:  usize(buf.len)
 			}
 		}
 
@@ -281,8 +282,8 @@ fn gather_write_fallback(fd int, buffers []ScatterGatherBuffer) DmaResult {
 
 	return DmaResult{
 		bytes_transferred: total
-		success: true
-		used_zero_copy: false
+		success:           true
+		used_zero_copy:    false
 	}
 }
 
@@ -319,9 +320,9 @@ fn sendfile_fallback(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 	// For now, return indication that fallback was used
 	return DmaResult{
 		bytes_transferred: 0
-		success: true
-		error_msg: 'sendfile not available, use buffered copy'
-		used_zero_copy: false
+		success:           true
+		error_msg:         'sendfile not available, use buffered copy'
+		used_zero_copy:    false
 	}
 }
 
@@ -336,7 +337,8 @@ pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult 
 
 		if use_pipe {
 			// Direct splice between fd_in and fd_out
-			result := C.splice(fd_in, unsafe { nil }, fd_out, unsafe { nil }, usize(count), flags)
+			result := C.splice(fd_in, unsafe { nil }, fd_out, unsafe { nil }, usize(count),
+				flags)
 			if result < 0 {
 				return dma_error('splice failed')
 			}
@@ -347,8 +349,8 @@ pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult 
 		}
 	} $else {
 		return DmaResult{
-			success: false
-			error_msg: 'splice is only available on Linux'
+			success:        false
+			error_msg:      'splice is only available on Linux'
 			used_zero_copy: false
 		}
 	}
@@ -371,8 +373,8 @@ pub fn copy_file_range_native(fd_in int, off_in i64, fd_out int, off_out i64, co
 		return dma_success_with_offset(i64(result), true, in_off)
 	} $else {
 		return DmaResult{
-			success: false
-			error_msg: 'copy_file_range is only available on Linux 4.5+'
+			success:        false
+			error_msg:      'copy_file_range is only available on Linux 4.5+'
 			used_zero_copy: false
 		}
 	}
@@ -392,11 +394,11 @@ pub mut:
 
 pub struct DmaStats {
 pub mut:
-	total_transfers      u64
-	zero_copy_transfers  u64
-	fallback_transfers   u64
-	bytes_zero_copy      u64
-	bytes_fallback       u64
+	total_transfers     u64
+	zero_copy_transfers u64
+	fallback_transfers  u64
+	bytes_zero_copy     u64
+	bytes_fallback      u64
 }
 
 // new_dma_transfer creates a new DMA transfer handler
@@ -479,9 +481,9 @@ pub fn (mut d DmaTransfer) copy_file(fd_in int, fd_out int, count i64) DmaResult
 	d.stats.fallback_transfers++
 	return DmaResult{
 		bytes_transferred: 0
-		success: true
-		error_msg: 'using buffered copy fallback'
-		used_zero_copy: false
+		success:           true
+		error_msg:         'using buffered copy fallback'
+		used_zero_copy:    false
 	}
 }
 
@@ -543,8 +545,8 @@ pub fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) Dm
 
 	return DmaResult{
 		bytes_transferred: total
-		success: true
-		used_zero_copy: false // Using V's API, not native readv
+		success:           true
+		used_zero_copy:    false // Using V's API, not native readv
 	}
 }
 
@@ -560,9 +562,9 @@ pub fn gather_write_file(mut file os.File, buffers []ScatterGatherBuffer) DmaRes
 		bytes_written := file.write(buf.data[..buf.len]) or {
 			return DmaResult{
 				bytes_transferred: total
-				success: false
-				error_msg: 'write failed: ${err}'
-				used_zero_copy: false
+				success:           false
+				error_msg:         'write failed: ${err}'
+				used_zero_copy:    false
 			}
 		}
 
@@ -571,7 +573,7 @@ pub fn gather_write_file(mut file os.File, buffers []ScatterGatherBuffer) DmaRes
 
 	return DmaResult{
 		bytes_transferred: total
-		success: true
-		used_zero_copy: false // Using V's API, not native writev
+		success:           true
+		used_zero_copy:    false // Using V's API, not native writev
 	}
 }

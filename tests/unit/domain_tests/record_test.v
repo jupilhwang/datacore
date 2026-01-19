@@ -1,5 +1,5 @@
 // Unit Tests - Domain Layer: Record
-module domain
+module domain_test
 
 import domain as d
 import time

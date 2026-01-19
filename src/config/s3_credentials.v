@@ -26,7 +26,7 @@ fn load_s3_credentials_from_file() (string, string) {
 			continue
 		}
 		if l.starts_with('[') && l.ends_with(']') {
-			cur_prof = l[1..l.len-1].trim_space()
+			cur_prof = l[1..l.len - 1].trim_space()
 			continue
 		}
 		if cur_prof == target_prof {

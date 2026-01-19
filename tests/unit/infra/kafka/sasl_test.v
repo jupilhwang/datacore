@@ -1,5 +1,5 @@
 // Unit Tests - Infra Layer: SASL Protocol
-module kafka
+module kafka_test
 
 import domain
 import infra.protocol.kafka
@@ -254,31 +254,10 @@ fn create_mock_storage() port.StoragePort {
 // MockStorage implements StoragePort for testing
 struct MockStorage {}
 
-fn (m MockStorage) append(topic string, partition i32, records []domain.Record) !domain.AppendResult {
-    return domain.AppendResult{
-        base_offset: 0
-        log_append_time: 0
-        log_start_offset: 0
-        record_count: records.len
-    }
-}
-
-fn (m MockStorage) read(topic string, partition i32, offset i64, max_bytes i32) !domain.FetchResult {
-    return domain.FetchResult{
-        records: []
-        high_watermark: 0
-        log_start_offset: 0
-    }
-}
-
-fn (m MockStorage) get_topic(name string) !domain.TopicMetadata {
-    return error('topic not found')
-}
-
-fn (m MockStorage) create_topic(name string, partition_count int, replication_factor int, configs map[string]string) !domain.TopicMetadata {
+fn (m MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
     return domain.TopicMetadata{
         name: name
-        partition_count: partition_count
+        partition_count: partitions
     }
 }
 
@@ -288,22 +267,59 @@ fn (m MockStorage) list_topics() ![]domain.TopicMetadata {
     return []domain.TopicMetadata{}
 }
 
-fn (m MockStorage) get_earliest_offset(topic string, partition i32) !i64 {
-    return 0
+fn (m MockStorage) get_topic(name string) !domain.TopicMetadata {
+    return error('topic not found')
 }
 
-fn (m MockStorage) get_latest_offset(topic string, partition i32) !i64 {
-    return 0
+fn (m MockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+    return error('topic not found')
 }
 
-fn (m MockStorage) get_high_watermark(topic string, partition i32) !i64 {
-    return 0
+fn (m MockStorage) add_partitions(name string, new_count int) ! {}
+
+fn (m MockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+    return domain.AppendResult{
+        base_offset: 0
+        log_append_time: 0
+        log_start_offset: 0
+        record_count: records.len
+    }
 }
 
-fn (m MockStorage) commit_offset(group_id string, topic string, partition i32, offset i64, metadata string) ! {}
+fn (m MockStorage) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+    return domain.FetchResult{
+        records: []
+        high_watermark: 0
+        log_start_offset: 0
+    }
+}
 
-fn (m MockStorage) get_committed_offset(group_id string, topic string, partition i32) !i64 {
-    return -1
+fn (m MockStorage) delete_records(topic string, partition int, before_offset i64) ! {}
+
+fn (m MockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo {
+    return domain.PartitionInfo{}
+}
+
+fn (m MockStorage) save_group(group domain.ConsumerGroup) ! {}
+
+fn (m MockStorage) load_group(group_id string) !domain.ConsumerGroup {
+    return error('group not found')
+}
+
+fn (m MockStorage) delete_group(group_id string) ! {}
+
+fn (m MockStorage) list_groups() ![]domain.GroupInfo {
+    return []domain.GroupInfo{}
+}
+
+fn (m MockStorage) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {}
+
+fn (m MockStorage) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+    return []domain.OffsetFetchResult{}
+}
+
+fn (m MockStorage) health_check() !port.HealthStatus {
+    return .healthy
 }
 
 fn test_handler_sasl_handshake_success() {
