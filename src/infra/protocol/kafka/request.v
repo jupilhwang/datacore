@@ -1509,3 +1509,93 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 		auth_bytes: auth_bytes
 	}
 }
+
+// ============================================================================
+// DescribeCluster Request (API Key 48)
+// ============================================================================
+
+pub struct DescribeClusterRequest {
+pub:
+	include_cluster_authorized_operations bool
+}
+
+fn parse_describe_cluster_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeClusterRequest {
+	// DescribeCluster is always flexible (v0+)
+	include_cluster_authorized_operations := reader.read_i8()! != 0
+	
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return DescribeClusterRequest{
+		include_cluster_authorized_operations: include_cluster_authorized_operations
+	}
+}
+
+// ============================================================================
+// DescribeConfigs Request (API Key 32)
+// ============================================================================
+
+pub struct DescribeConfigsRequest {
+pub:
+	resources        []DescribeConfigsResource
+	include_synonyms bool
+}
+
+pub struct DescribeConfigsResource {
+pub:
+	resource_type i8
+	resource_name string
+	config_names  ?[]string
+}
+
+fn parse_describe_configs_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeConfigsRequest {
+	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	mut resources := []DescribeConfigsResource{}
+
+	for _ in 0 .. count {
+		resource_type := reader.read_i8()!
+		resource_name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		
+		mut config_names := ?[]string(none)
+		
+		// For config_names
+		n_count := if is_flexible { 
+			reader.read_compact_array_len()! 
+		} else { 
+			reader.read_array_len()! 
+		}
+
+		if n_count >= 0 {
+			mut names := []string{}
+			for _ in 0 .. n_count {
+				names << if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+			}
+			config_names = names.clone()
+		}
+
+		if is_flexible {
+			reader.skip_tagged_fields()!
+		}
+
+		resources << DescribeConfigsResource{
+			resource_type: resource_type
+			resource_name: resource_name
+			config_names:  config_names
+		}
+	}
+
+	mut include_synonyms := false
+	if version >= 1 {
+		include_synonyms = reader.read_i8()! != 0
+	}
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return DescribeConfigsRequest{
+		resources:        resources
+		include_synonyms: include_synonyms
+	}
+}

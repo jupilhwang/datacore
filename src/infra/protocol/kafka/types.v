@@ -218,19 +218,19 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.leave_group, 0, 5}, // v4+ flexible
 		ApiVersionRange{.sync_group, 0, 5}, // v4+ flexible
 		ApiVersionRange{.describe_groups, 0, 5}, // v5+ flexible
-		ApiVersionRange{.list_groups, 0, 5}, // v3+ flexible, v4+ states_filter, v5+ types_filter
+		ApiVersionRange{.list_groups, 0, 4}, // v3+ flexible, v4+ states_filter. v5 adds GroupType (not supported)
 		ApiVersionRange{.sasl_handshake, 0, 1}, // SASL mechanism negotiation
 		ApiVersionRange{.api_versions, 0, 3}, // v0-v2 non-flexible, v3 flexible
 		ApiVersionRange{.create_topics, 0, 7},
 		ApiVersionRange{.delete_topics, 0, 6},
-		ApiVersionRange{.delete_records, 0, 2},
+		// ApiVersionRange{.delete_records, 0, 2},
 		ApiVersionRange{.init_producer_id, 0, 4},
 		ApiVersionRange{.describe_configs, 0, 4},
-		ApiVersionRange{.alter_configs, 0, 2},
-		ApiVersionRange{.create_partitions, 0, 3},
+		// ApiVersionRange{.alter_configs, 0, 2},
+		// ApiVersionRange{.create_partitions, 0, 3},
 		ApiVersionRange{.sasl_authenticate, 0, 2}, // SASL authentication (v2+ flexible)
-		ApiVersionRange{.delete_groups, 0, 2},
-		ApiVersionRange{.describe_cluster, 0, 1},
+		// ApiVersionRange{.delete_groups, 0, 2},
+		ApiVersionRange{.describe_cluster, 0, 0},
 		ApiVersionRange{.consumer_group_heartbeat, 0, 0},
 		ApiVersionRange{.consumer_group_describe, 0, 0},
 		ApiVersionRange{.share_group_heartbeat, 0, 0},

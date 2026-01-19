@@ -141,13 +141,15 @@ test_create_topic_with_partitions() {
         --create \
         --topic $topic \
         --partitions 5 \
-        --replication-factor 1 \
-        2>/dev/null
+        --replication-factor 1
     
     # Verify partition count
     local info=$($KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
-        --describe --topic $topic 2>/dev/null)
+        --describe --topic $topic)
     
+    echo "DEBUG: Topic info for $topic:"
+    echo "$info"
+
     if echo "$info" | grep -q "PartitionCount.*5"; then
         $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
         return 0
@@ -155,7 +157,14 @@ test_create_topic_with_partitions() {
     
     # Fallback: count partition lines
     local count=$(echo "$info" | grep -c "Partition:")
-    [[ $count -eq 5 ]]
+    echo "DEBUG: Counted $count partitions"
+    
+    if [[ $count -eq 5 ]]; then
+        $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
+        return 0
+    fi
+
+    return 1
 }
 
 test_create_duplicate_topic() {
@@ -382,16 +391,15 @@ test_kcat_produce_consume() {
     
     # Create topic
     $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
-        --create --topic $topic --partitions 1 --replication-factor 1 \
-        2>/dev/null || true
+        --create --topic $topic --partitions 1 --replication-factor 1
     
     # Produce with kcat
-    echo "$message" | kcat -b $BOOTSTRAP_SERVER -P -t $topic 2>/dev/null
+    echo "$message" | kcat -b $BOOTSTRAP_SERVER -P -t $topic
     
     sleep 1
     
     # Consume with kcat
-    local received=$(kcat -b $BOOTSTRAP_SERVER -C -t $topic -c 1 -e 2>/dev/null)
+    local received=$(kcat -b $BOOTSTRAP_SERVER -C -t $topic -c 1 -e)
     
     # Cleanup
     $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
@@ -409,15 +417,13 @@ test_consumer_group_basic() {
     
     # Create topic and produce
     $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
-        --create --topic $topic --partitions 3 --replication-factor 1 \
-        2>/dev/null || true
+        --create --topic $topic --partitions 3 --replication-factor 1
     
     for i in $(seq 1 10); do
         echo "Group message $i"
     done | timeout $TIMEOUT $KAFKA_PRODUCER \
         --bootstrap-server $BOOTSTRAP_SERVER \
-        --topic $topic \
-        2>/dev/null
+        --topic $topic
     
     sleep 1
     
@@ -428,12 +434,14 @@ test_consumer_group_basic() {
         --group $group \
         --from-beginning \
         --max-messages 10 \
-        --timeout-ms $((TIMEOUT*1000)) \
-        2>/dev/null > /dev/null
+        --timeout-ms $((TIMEOUT*1000))
     
     # Check group exists
-    local groups=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER --list 2>/dev/null)
+    local groups=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER --list)
     
+    echo "DEBUG: Consumer groups list:"
+    echo "$groups"
+
     # Cleanup
     $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
     

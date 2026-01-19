@@ -22,6 +22,8 @@ pub:
 	max_request_size   int    = 104857600
 	request_timeout_ms int    = 30000
 	idle_timeout_ms    int    = 600000
+	advertised_host    string = '127.0.0.1'
+	advertised_port    int    = 9092
 }
 
 pub struct StorageConfig {
@@ -148,6 +150,8 @@ pub fn load_config(path string) !Config {
 		max_request_size:   get_int(doc, 'broker.max_request_size', 104857600)
 		request_timeout_ms: get_int(doc, 'broker.request_timeout_ms', 30000)
 		idle_timeout_ms:    get_int(doc, 'broker.idle_timeout_ms', 600000)
+		advertised_host:    get_string(doc, 'broker.advertised_host', get_string(doc, 'broker.host', '127.0.0.1'))
+		advertised_port:    get_int(doc, 'broker.advertised_port', get_int(doc, 'broker.port', 9092))
 	}
 
 	// Parse storage config

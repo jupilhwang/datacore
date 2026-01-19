@@ -60,7 +60,7 @@ done
 
 echo -e "${BLUE}Running Compatibility Tests...${NC}"
 # Use BOOTSTRAP_SERVER env if not set
-export BOOTSTRAP_SERVER="${BOOTSTRAP_SERVER:-localhost:9092}"
+export BOOTSTRAP_SERVER="${BOOTSTRAP_SERVER:-127.0.0.1:9092}"
 bash "$ROOT_DIR/tests/integration/test_kafka_compat.sh"
 
 TEST_EXIT_CODE=$?

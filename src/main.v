@@ -201,8 +201,9 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 
 	// 2. Create Protocol Handler with storage injection
 	cli.print_progress('Initializing Kafka protocol handler')
-	mut protocol_handler := kafka.new_handler(conf.broker.broker_id, conf.broker.host,
-		conf.broker.port, conf.broker.cluster_id, storage)
+	// Pass advertised host/port to handler so metadata responses contain the correct connect string
+	mut protocol_handler := kafka.new_handler(conf.broker.broker_id, conf.broker.advertised_host,
+		conf.broker.advertised_port, conf.broker.cluster_id, storage)
 	cli.print_done()
 
 	if conf.schema_registry.enabled {

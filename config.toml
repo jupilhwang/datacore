@@ -22,8 +22,16 @@ cluster_id = "datacore-cluster"
 # "127.0.0.1" = 로컬 연결만 허용
 host = "0.0.0.0"
 
+# 클라이언트에게 알릴 호스트 주소 (advertised.listeners)
+# Docker/Cloud 환경에서 외부 접근 주소를 지정할 때 사용
+# 기본값: 127.0.0.1 (로컬 개발 환경 호환성)
+advertised_host = "127.0.0.1"
+
 # Kafka 프로토콜 포트 (기본: 9092)
 port = 9092
+
+# 클라이언트에게 알릴 포트 (기본: port와 동일)
+advertised_port = 9092
 
 # 최대 동시 연결 수
 # 권장값: 메모리 4GB당 10000
