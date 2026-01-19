@@ -718,14 +718,9 @@ fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i1
 
 // ApiVersions handler
 fn (h Handler) handle_api_versions(version i16) []u8 {
-	// Force version 2 (non-flexible) max to prevent client crashes.
-	// The client seems to expect a non-flexible response (Int32 array length)
-	// even when requesting v3 (flexible), causing memory allocation errors
-	// when it interprets a compact Varint length byte as a huge Int32.
-	safe_version := if version > 2 { i16(2) } else { version }
-
+	// Use requested version up to supported max (now v3+)
 	resp := new_api_versions_response()
-	return resp.encode(safe_version)
+	return resp.encode(version)
 }
 
 // Metadata handler
