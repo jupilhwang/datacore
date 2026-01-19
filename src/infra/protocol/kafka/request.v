@@ -373,18 +373,18 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 // Fetch Request (simplified)
 pub struct FetchRequest {
 pub:
-	replica_id      i32
-	max_wait_ms     i32
-	min_bytes       i32
-	max_bytes       i32
-	isolation_level i8
-	topics          []FetchRequestTopic
+	replica_id            i32
+	max_wait_ms           i32
+	min_bytes             i32
+	max_bytes             i32
+	isolation_level       i8
+	topics                []FetchRequestTopic
 	forgotten_topics_data []FetchRequestForgottenTopic
 }
 
 pub struct FetchRequestForgottenTopic {
-	name string
-	topic_id []u8
+	name       string
+	topic_id   []u8
 	partitions []i32
 }
 
@@ -535,10 +535,10 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 			for _ in 0 .. forgotten_partitions_count {
 				forgotten_partitions << reader.read_i32()! // partition
 			}
-			
+
 			forgotten_topics_data << FetchRequestForgottenTopic{
-				name: forgotten_name
-				topic_id: forgotten_topic_id
+				name:       forgotten_name
+				topic_id:   forgotten_topic_id
 				partitions: forgotten_partitions
 			}
 
@@ -580,12 +580,12 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 	}
 
 	return FetchRequest{
-		replica_id:      replica_id
-		max_wait_ms:     max_wait_ms
-		min_bytes:       min_bytes
-		max_bytes:       max_bytes
-		isolation_level: isolation_level
-		topics:          topics
+		replica_id:            replica_id
+		max_wait_ms:           max_wait_ms
+		min_bytes:             min_bytes
+		max_bytes:             max_bytes
+		isolation_level:       isolation_level
+		topics:                topics
 		forgotten_topics_data: forgotten_topics_data
 	}
 }
@@ -603,11 +603,13 @@ fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexi
 	mut coordinator_keys := []string{}
 	mut key_type := i8(0) // 0 = GROUP, 1 = TRANSACTION
 
-	// In all versions, 'key' comes first for backward compatibility
-	key = if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
+	// v0-v3: 'key' is the first field
+	if version <= 3 {
+		key = if is_flexible {
+			reader.read_compact_string()!
+		} else {
+			reader.read_string()!
+		}
 	}
 
 	if version >= 1 {
@@ -628,9 +630,7 @@ fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexi
 				} else {
 					reader.read_string()!
 				}
-				if is_flexible {
-					reader.skip_tagged_fields()! // per-key tagged fields
-				}
+				// Note: Array of strings (primitives) does not have tagged fields per element
 				coordinator_keys << k
 			}
 		}

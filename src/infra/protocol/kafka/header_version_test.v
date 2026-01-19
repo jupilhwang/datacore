@@ -17,9 +17,11 @@ fn test_api_versions_request_header_version() {
 	assert get_request_header_version(.api_versions, 1) == 1
 	// v2: non-flexible → Header v1
 	assert get_request_header_version(.api_versions, 2) == 1
-	// v3+: even if body is flexible, Header is still v1 (KIP-511)
-	assert get_request_header_version(.api_versions, 3) == 1
-	assert get_request_header_version(.api_versions, 4) == 1
+	// v3+: even if body is flexible, Header is still v1 (KIP-511) - WRONG!
+	// ApiVersions Request v3+ USES Header v2 (Flexible)
+	// Only Response Header is always v0.
+	assert get_request_header_version(.api_versions, 3) == 2
+	assert get_request_header_version(.api_versions, 4) == 2
 }
 
 fn test_api_versions_response_header_version() {
@@ -137,14 +139,14 @@ fn test_is_flexible_version_sasl() {
 
 fn test_header_version_symmetry_exception() {
 	// ApiVersions is special:
-	// Request: Header v1 (always)
+	// Request: Header v2 (flexible) for v3+
 	// Response: Header v0 (always)
 
 	// For v3:
 	req_header := get_request_header_version(.api_versions, 3)
 	resp_header := get_response_header_version(.api_versions, 3)
 
-	assert req_header == 1
+	assert req_header == 2
 	assert resp_header == 0
 	assert req_header != resp_header
 }

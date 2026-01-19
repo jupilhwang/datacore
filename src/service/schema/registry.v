@@ -505,6 +505,7 @@ fn (r &SchemaRegistry) check_compatibility_internal(subject string, schema_str s
 			}
 			.full, .full_transitive {
 				// Both directions
+
 				check_backward_compatible(existing.schema_str, schema_str, schema_type)
 					&& check_forward_compatible(existing.schema_str, schema_str, schema_type)
 			}

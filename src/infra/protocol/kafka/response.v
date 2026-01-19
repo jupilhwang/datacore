@@ -125,31 +125,12 @@ pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
 		writer.write_i32(r.throttle_time_ms)
 	}
 
-	// v3+ KRaft feature fields - MUST be included to avoid parsing errors!
+	// v3+ KRaft feature fields
+	// Note: supported_features and finalized_features are likely Tagged Fields in v3
+	// Since we don't support them yet, we just send an empty tag buffer.
+	// Writing them as explicit fields (CompactArray) caused parsing errors if they are indeed Tagged Fields.
 	if is_flexible {
-		// supported_features (COMPACT_ARRAY)
-		writer.write_compact_array_len(r.supported_features.len)
-		for f in r.supported_features {
-			writer.write_compact_string(f.name)
-			writer.write_i16(f.min_version)
-			writer.write_i16(f.max_version)
-			writer.write_tagged_fields()
-		}
-
-		// finalized_features_epoch (INT64)
-		writer.write_i64(r.finalized_features_epoch)
-
-		// finalized_features (COMPACT_ARRAY)
-		writer.write_compact_array_len(r.finalized_features.len)
-		for f in r.finalized_features {
-			writer.write_compact_string(f.name)
-			writer.write_i16(f.max_version_level)
-			writer.write_i16(f.min_version_level)
-			writer.write_tagged_fields()
-		}
-
-		// zk_migration_ready is a tagged field in some versions, omit for simplicity
-		// Final tag_buffer
+		// Just write empty tag buffer (0)
 		writer.write_tagged_fields()
 	}
 
@@ -426,7 +407,7 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 		} else {
 			writer.write_array_len(t.partitions.len)
 		}
-		
+
 		for p in t.partitions {
 			writer.write_i32(p.index)
 			writer.write_i16(p.error_code)

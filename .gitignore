@@ -59,3 +59,4 @@ docs/*
 !docs/CONTRIBUTING.md
 !docs/BENCHMARK.md
 .taskmaster/*
+AGENTS.md

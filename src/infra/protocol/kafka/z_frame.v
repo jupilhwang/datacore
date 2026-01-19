@@ -122,26 +122,63 @@ fn parse_body(api_key ApiKey, version i16, data []u8) !Body {
 	is_flexible := is_flexible_version(api_key, version)
 
 	return match api_key {
-		.api_versions { Body(parse_api_versions_request(mut reader, version, is_flexible)!) }
-		.metadata { Body(parse_metadata_request(mut reader, version, is_flexible)!) }
-		.produce { Body(parse_produce_request(mut reader, version, is_flexible)!) }
-		.fetch { Body(parse_fetch_request(mut reader, version, is_flexible)!) }
-		.find_coordinator { Body(parse_find_coordinator_request(mut reader, version, is_flexible)!) }
-		.join_group { Body(parse_join_group_request(mut reader, version, is_flexible)!) }
-		.sync_group { Body(parse_sync_group_request(mut reader, version, is_flexible)!) }
-		.heartbeat { Body(parse_heartbeat_request(mut reader, version, is_flexible)!) }
-		.leave_group { Body(parse_leave_group_request(mut reader, version, is_flexible)!) }
-		.offset_commit { Body(parse_offset_commit_request(mut reader, version, is_flexible)!) }
-		.offset_fetch { Body(parse_offset_fetch_request(mut reader, version, is_flexible)!) }
-		.list_offsets { Body(parse_list_offsets_request(mut reader, version, is_flexible)!) }
-		.create_topics { Body(parse_create_topics_request(mut reader, version, is_flexible)!) }
-		.delete_topics { Body(parse_delete_topics_request(mut reader, version, is_flexible)!) }
-		.list_groups { Body(parse_list_groups_request(mut reader, version, is_flexible)!) }
-		.describe_groups { Body(parse_describe_groups_request(mut reader, version, is_flexible)!) }
-		.init_producer_id { Body(parse_init_producer_id_request(mut reader, version, is_flexible)!) }
-		.consumer_group_heartbeat { Body(parse_consumer_group_heartbeat_request(mut reader,
-				version, is_flexible)!) }
-		else { return error('unsupported API key: ${int(api_key)}') }
+		.api_versions {
+			Body(parse_api_versions_request(mut reader, version, is_flexible)!)
+		}
+		.metadata {
+			Body(parse_metadata_request(mut reader, version, is_flexible)!)
+		}
+		.produce {
+			Body(parse_produce_request(mut reader, version, is_flexible)!)
+		}
+		.fetch {
+			Body(parse_fetch_request(mut reader, version, is_flexible)!)
+		}
+		.find_coordinator {
+			Body(parse_find_coordinator_request(mut reader, version, is_flexible)!)
+		}
+		.join_group {
+			Body(parse_join_group_request(mut reader, version, is_flexible)!)
+		}
+		.sync_group {
+			Body(parse_sync_group_request(mut reader, version, is_flexible)!)
+		}
+		.heartbeat {
+			Body(parse_heartbeat_request(mut reader, version, is_flexible)!)
+		}
+		.leave_group {
+			Body(parse_leave_group_request(mut reader, version, is_flexible)!)
+		}
+		.offset_commit {
+			Body(parse_offset_commit_request(mut reader, version, is_flexible)!)
+		}
+		.offset_fetch {
+			Body(parse_offset_fetch_request(mut reader, version, is_flexible)!)
+		}
+		.list_offsets {
+			Body(parse_list_offsets_request(mut reader, version, is_flexible)!)
+		}
+		.create_topics {
+			Body(parse_create_topics_request(mut reader, version, is_flexible)!)
+		}
+		.delete_topics {
+			Body(parse_delete_topics_request(mut reader, version, is_flexible)!)
+		}
+		.list_groups {
+			Body(parse_list_groups_request(mut reader, version, is_flexible)!)
+		}
+		.describe_groups {
+			Body(parse_describe_groups_request(mut reader, version, is_flexible)!)
+		}
+		.init_producer_id {
+			Body(parse_init_producer_id_request(mut reader, version, is_flexible)!)
+		}
+		.consumer_group_heartbeat {
+			Body(parse_consumer_group_heartbeat_request(mut reader, version, is_flexible)!)
+		}
+		else {
+			return error('unsupported API key: ${int(api_key)}')
+		}
 	}
 }
 
