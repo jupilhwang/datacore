@@ -150,8 +150,10 @@ pub fn load_config(path string) !Config {
 		max_request_size:   get_int(doc, 'broker.max_request_size', 104857600)
 		request_timeout_ms: get_int(doc, 'broker.request_timeout_ms', 30000)
 		idle_timeout_ms:    get_int(doc, 'broker.idle_timeout_ms', 600000)
-		advertised_host:    get_string(doc, 'broker.advertised_host', get_string(doc, 'broker.host', '127.0.0.1'))
-		advertised_port:    get_int(doc, 'broker.advertised_port', get_int(doc, 'broker.port', 9092))
+		advertised_host:    get_string(doc, 'broker.advertised_host', get_string(doc,
+			'broker.host', '127.0.0.1'))
+		advertised_port:    get_int(doc, 'broker.advertised_port', get_int(doc, 'broker.port',
+			9092))
 	}
 
 	// Parse storage config

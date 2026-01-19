@@ -1522,7 +1522,7 @@ pub:
 fn parse_describe_cluster_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeClusterRequest {
 	// DescribeCluster is always flexible (v0+)
 	include_cluster_authorized_operations := reader.read_i8()! != 0
-	
+
 	if is_flexible {
 		reader.skip_tagged_fields()!
 	}
@@ -1555,21 +1555,29 @@ fn parse_describe_configs_request(mut reader BinaryReader, version i16, is_flexi
 
 	for _ in 0 .. count {
 		resource_type := reader.read_i8()!
-		resource_name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-		
+		resource_name := if is_flexible {
+			reader.read_compact_string()!
+		} else {
+			reader.read_string()!
+		}
+
 		mut config_names := ?[]string(none)
-		
+
 		// For config_names
-		n_count := if is_flexible { 
-			reader.read_compact_array_len()! 
-		} else { 
-			reader.read_array_len()! 
+		n_count := if is_flexible {
+			reader.read_compact_array_len()!
+		} else {
+			reader.read_array_len()!
 		}
 
 		if n_count >= 0 {
 			mut names := []string{}
 			for _ in 0 .. n_count {
-				names << if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+				names << if is_flexible {
+					reader.read_compact_string()!
+				} else {
+					reader.read_string()!
+				}
 			}
 			config_names = names.clone()
 		}

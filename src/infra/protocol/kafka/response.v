@@ -1599,12 +1599,12 @@ pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
 
 pub struct DescribeClusterResponse {
 pub:
-	throttle_time_ms            i32
-	error_code                  i16
-	error_message               ?string
-	cluster_id                  string
-	controller_id               i32
-	brokers                     []DescribeClusterBroker
+	throttle_time_ms              i32
+	error_code                    i16
+	error_message                 ?string
+	cluster_id                    string
+	controller_id                 i32
+	brokers                       []DescribeClusterBroker
 	cluster_authorized_operations i32
 }
 
@@ -1622,7 +1622,7 @@ pub fn (r DescribeClusterResponse) encode(version i16) []u8 {
 
 	writer.write_i32(r.throttle_time_ms)
 	writer.write_i16(r.error_code)
-	
+
 	if is_flexible {
 		writer.write_compact_nullable_string(r.error_message)
 		writer.write_compact_string(r.cluster_id)

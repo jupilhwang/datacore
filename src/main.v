@@ -381,14 +381,14 @@ fn run_group(args []string) ! {
 		return error('Usage: datacore group <list|describe> [options]')
 	}
 
+	opts := cli.parse_group_options(args[1..])
+
 	match args[0] {
 		'list' {
-			println('\x1b[33m⚠\x1b[0m  Group list command not yet implemented.')
-			println('    Use kafka-consumer-groups.sh --bootstrap-server localhost:9092 --list')
+			cli.run_group_list(opts)!
 		}
 		'describe' {
-			println('\x1b[33m⚠\x1b[0m  Group describe command not yet implemented.')
-			println('    Use kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group <group>')
+			cli.run_group_describe(opts)!
 		}
 		else {
 			return error('Unknown group command: ${args[0]}')
