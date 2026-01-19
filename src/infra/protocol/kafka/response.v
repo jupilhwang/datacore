@@ -559,15 +559,19 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 				writer.write_i32(-1) // No preferred replica
 			}
 			// Records - RECORDS type (not COMPACT_BYTES!)
-			// RECORDS type uses i32 length prefix even in flexible versions
-			// -1 = null (no records), 0 = empty records, N = N bytes of record data
-			if p.records.len == 0 {
-				// Write length = 0 for empty records (not -1 for null)
-				// Null (-1) can cause client parsing issues
-				writer.write_i32(0)
+			// RECORDS type uses i32 length prefix in non-flexible versions
+			// In flexible versions (v12+), it uses COMPACT_RECORDS (varint length + 1)
+			if is_flexible {
+				writer.write_compact_bytes(p.records)
 			} else {
-				writer.write_i32(i32(p.records.len))
-				writer.write_raw(p.records)
+				// -1 = null (no records), 0 = empty records, N = N bytes of record data
+				if p.records.len == 0 {
+					// Write length = 0 for empty records (not -1 for null)
+					writer.write_i32(0)
+				} else {
+					writer.write_i32(i32(p.records.len))
+					writer.write_raw(p.records)
+				}
 			}
 			if is_flexible {
 				writer.write_tagged_fields()
