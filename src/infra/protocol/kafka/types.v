@@ -212,7 +212,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.metadata, 0, 12}, // v9+ flexible, v10+ topic_id, v12 name is nullable
 		ApiVersionRange{.offset_commit, 0, 9}, // v8+ flexible
 		ApiVersionRange{.offset_fetch, 0, 10}, // v6+ flexible, v8+ groups format, v9+ member_id/epoch
-		ApiVersionRange{.find_coordinator, 0, 3}, // v3 is flexible but simple. v4+ adds batches which might be complex. Downgrade to v3 for safety.
+		ApiVersionRange{.find_coordinator, 0, 4}, // v3 is flexible but simple. v4+ adds batches which might be complex. Downgrade to v3 for safety.
 		ApiVersionRange{.join_group, 0, 9}, // v6+ flexible
 		ApiVersionRange{.heartbeat, 0, 4}, // v4+ flexible
 		ApiVersionRange{.leave_group, 0, 5}, // v4+ flexible
@@ -220,7 +220,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.describe_groups, 0, 5}, // v5+ flexible
 		ApiVersionRange{.list_groups, 0, 5}, // v3+ flexible, v4+ states_filter, v5+ types_filter
 		ApiVersionRange{.sasl_handshake, 0, 1}, // SASL mechanism negotiation
-		ApiVersionRange{.api_versions, 0, 2}, // v0-v2 non-flexible. v3+ requires valid tagged fields support
+		ApiVersionRange{.api_versions, 0, 3}, // v0-v2 non-flexible. v3 uses flexible response body but non-flexible header
 		ApiVersionRange{.create_topics, 0, 7},
 		ApiVersionRange{.delete_topics, 0, 6},
 		ApiVersionRange{.delete_records, 0, 2},
