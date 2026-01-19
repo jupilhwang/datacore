@@ -9,6 +9,15 @@
 
 set -o pipefail
 
+# Define timeout function for macOS/BSD compatibility
+if ! command -v timeout &> /dev/null; then
+    if command -v gtimeout &> /dev/null; then
+        timeout() { gtimeout "$@"; }
+    else
+        function timeout() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+    fi
+fi
+
 # Configuration
 BOOTSTRAP_SERVER="${BOOTSTRAP_SERVER:-localhost:9092}"
 TEST_PREFIX="compat-test"

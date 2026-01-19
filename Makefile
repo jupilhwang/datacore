@@ -37,6 +37,14 @@ test:
 	@echo "Running tests..."
 	cd $(SRC_DIR) && v -d use_openssl test service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/
 
+## Run compatibility tests (requires Kafka CLI tools)
+test-compat:
+	@echo "Running compatibility tests..."
+	./scripts/run_compat_test.sh
+
+## Run all tests (unit + compat)
+test-all: test test-compat
+
 ## Format code
 fmt:
 	@echo "Formatting code..."
