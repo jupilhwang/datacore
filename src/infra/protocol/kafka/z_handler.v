@@ -718,9 +718,13 @@ fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i1
 
 // ApiVersions handler
 fn (h Handler) handle_api_versions(version i16) []u8 {
-	// Use requested version up to supported max (now v3+)
+	// Force version 2 (non-flexible) max to prevent client crashes.
+	// Even if client requests v3/v4 (flexible), we must respond with v2
+	// because we advertise max_version=2 in types.v
+	safe_version := if version > 2 { i16(2) } else { version }
+
 	resp := new_api_versions_response()
-	return resp.encode(version)
+	return resp.encode(safe_version)
 }
 
 // Metadata handler
