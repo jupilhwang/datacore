@@ -15,8 +15,8 @@ pub struct Handler {
 	cluster_id  string
 mut:
 	storage         port.StoragePort
-	auth_manager    ?port.AuthManager // Optional: SASL authentication manager
-	acl_manager     ?port.AclManager  // Optional: ACL manager
+	auth_manager    ?port.AuthManager                   // Optional: SASL authentication manager
+	acl_manager     ?port.AclManager                    // Optional: ACL manager
 	txn_coordinator ?transaction.TransactionCoordinator // Optional: Transaction coordinator
 	logger          log.Log
 }
@@ -146,8 +146,14 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		.add_partitions_to_txn {
 			h.handle_add_partitions_to_txn(req.body, version)!
 		}
+		.add_offsets_to_txn {
+			h.handle_add_offsets_to_txn(req.body, version)!
+		}
 		.end_txn {
 			h.handle_end_txn(req.body, version)!
+		}
+		.txn_offset_commit {
+			h.handle_txn_offset_commit(req.body, version)!
 		}
 		.consumer_group_heartbeat {
 			h.handle_consumer_group_heartbeat(req.body, version)!
@@ -952,6 +958,31 @@ fn (h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_produce_request(mut reader, version, is_flexible_version(.produce, version))!
+
+	// Validate transactional producer if transactional_id is present
+	if txn_id := req.transactional_id {
+		if txn_id.len > 0 {
+			if mut txn_coord := h.txn_coordinator {
+				// Verify the transaction is in a valid state for producing
+				// The producer must have called AddPartitionsToTxn first
+				meta := txn_coord.get_transaction(txn_id) or {
+					// Transaction not found - producer hasn't initialized properly
+					return build_produce_error_response(req, i16(ErrorCode.transactional_id_not_found),
+						version)
+				}
+
+				// Check if transaction is in ongoing state
+				if meta.state != .ongoing && meta.state != .empty {
+					return build_produce_error_response(req, i16(ErrorCode.invalid_txn_state),
+						version)
+				}
+			} else {
+				// No transaction coordinator - transactional produce not supported
+				return build_produce_error_response(req, i16(ErrorCode.coordinator_not_available),
+					version)
+			}
+		}
+	}
 
 	mut topics := []ProduceResponseTopic{}
 	for t in req.topic_data {
@@ -1985,6 +2016,32 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
+// build_produce_error_response builds a ProduceResponse with error for all partitions
+fn build_produce_error_response(req ProduceRequest, error_code i16, version i16) []u8 {
+	mut topics := []ProduceResponseTopic{}
+	for t in req.topic_data {
+		mut partitions := []ProduceResponsePartition{}
+		for p in t.partition_data {
+			partitions << ProduceResponsePartition{
+				index:            p.index
+				error_code:       error_code
+				base_offset:      -1
+				log_append_time:  -1
+				log_start_offset: -1
+			}
+		}
+		topics << ProduceResponseTopic{
+			name:       t.name
+			topic_id:   t.topic_id.clone()
+			partitions: partitions
+		}
+	}
+	return ProduceResponse{
+		topics:           topics
+		throttle_time_ms: 0
+	}.encode(version)
+}
+
 // generate_uuid generates a random UUID v4 (16 bytes)
 fn generate_uuid() []u8 {
 	mut uuid := []u8{len: 16}
@@ -2006,7 +2063,8 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 
 	// Use TransactionCoordinator if available
 	if mut txn_coord := h.txn_coordinator {
-		result := txn_coord.init_producer_id(req.transactional_id, req.transaction_timeout_ms, req.producer_id, req.producer_epoch) or {
+		result := txn_coord.init_producer_id(req.transactional_id, req.transaction_timeout_ms,
+			req.producer_id, req.producer_epoch) or {
 			// Handle error
 			resp := InitProducerIdResponse{
 				throttle_time_ms: 0
@@ -2083,7 +2141,8 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 			}
 		}
 
-		txn_coord.add_partitions_to_txn(req.transactional_id, req.producer_id, req.producer_epoch, partitions) or {
+		txn_coord.add_partitions_to_txn(req.transactional_id, req.producer_id, req.producer_epoch,
+			partitions) or {
 			// Global error (e.g. invalid transaction state)
 			// We need to return error for all partitions
 			mut results := []AddPartitionsToTxnResult{}
@@ -2155,8 +2214,12 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 	req := parse_end_txn_request(mut reader, version, is_flexible)!
 
 	if mut txn_coord := h.txn_coordinator {
-		result := if req.transaction_result { domain.TransactionResult.commit } else { domain.TransactionResult.abort }
-		
+		result := if req.transaction_result {
+			domain.TransactionResult.commit
+		} else {
+			domain.TransactionResult.abort
+		}
+
 		txn_coord.end_txn(req.transactional_id, req.producer_id, req.producer_epoch, result) or {
 			return EndTxnResponse{
 				throttle_time_ms: 0
@@ -2173,6 +2236,126 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 	return EndTxnResponse{
 		throttle_time_ms: 0
 		error_code:       i16(ErrorCode.coordinator_not_available)
+	}.encode(version)
+}
+
+// Handle AddOffsetsToTxn (API Key 25)
+fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
+	is_flexible := is_flexible_version(.add_offsets_to_txn, version)
+	mut reader := new_reader(body)
+	req := parse_add_offsets_to_txn_request(mut reader, version, is_flexible)!
+
+	if mut txn_coord := h.txn_coordinator {
+		txn_coord.add_offsets_to_txn(req.transactional_id, req.producer_id, req.producer_epoch,
+			req.group_id) or {
+			return AddOffsetsToTxnResponse{
+				throttle_time_ms: 0
+				error_code:       i16(ErrorCode.invalid_txn_state) // Simplified error mapping
+			}.encode(version)
+		}
+
+		return AddOffsetsToTxnResponse{
+			throttle_time_ms: 0
+			error_code:       0
+		}.encode(version)
+	}
+
+	return AddOffsetsToTxnResponse{
+		throttle_time_ms: 0
+		error_code:       i16(ErrorCode.coordinator_not_available)
+	}.encode(version)
+}
+
+// Handle TxnOffsetCommit (API Key 28)
+fn (mut h Handler) handle_txn_offset_commit(body []u8, version i16) ![]u8 {
+	is_flexible := is_flexible_version(.txn_offset_commit, version)
+	mut reader := new_reader(body)
+	req := parse_txn_offset_commit_request(mut reader, version, is_flexible)!
+
+	// Validate transaction coordinator exists
+	if _ := h.txn_coordinator {
+		// Transaction coordinator exists - process the commit
+		// In a full implementation, we would:
+		// 1. Validate the transaction is in the correct state
+		// 2. Write the offsets to __consumer_offsets with the transactional marker
+		// 3. Return success
+
+		// For now, we store the offsets in the regular storage
+		mut all_offsets := []domain.PartitionOffset{}
+		for t in req.topics {
+			for p in t.partitions {
+				all_offsets << domain.PartitionOffset{
+					topic:        t.name
+					partition:    int(p.partition_index)
+					offset:       p.committed_offset
+					leader_epoch: p.committed_leader_epoch
+					metadata:     p.committed_metadata
+				}
+			}
+		}
+
+		// Commit offsets to storage
+		h.storage.commit_offsets(req.group_id, all_offsets) or {
+			// Build error response for all partitions
+			mut topics := []TxnOffsetCommitResponseTopic{}
+			for t in req.topics {
+				mut partitions := []TxnOffsetCommitResponsePartition{}
+				for p in t.partitions {
+					partitions << TxnOffsetCommitResponsePartition{
+						partition_index: p.partition_index
+						error_code:      i16(ErrorCode.unknown_server_error)
+					}
+				}
+				topics << TxnOffsetCommitResponseTopic{
+					name:       t.name
+					partitions: partitions
+				}
+			}
+			return TxnOffsetCommitResponse{
+				throttle_time_ms: 0
+				topics:           topics
+			}.encode(version)
+		}
+
+		// Build success response
+		mut topics := []TxnOffsetCommitResponseTopic{}
+		for t in req.topics {
+			mut partitions := []TxnOffsetCommitResponsePartition{}
+			for p in t.partitions {
+				partitions << TxnOffsetCommitResponsePartition{
+					partition_index: p.partition_index
+					error_code:      0
+				}
+			}
+			topics << TxnOffsetCommitResponseTopic{
+				name:       t.name
+				partitions: partitions
+			}
+		}
+		return TxnOffsetCommitResponse{
+			throttle_time_ms: 0
+			topics:           topics
+		}.encode(version)
+	}
+
+	// Coordinator not available - return error for all partitions
+	mut topics := []TxnOffsetCommitResponseTopic{}
+	for t in req.topics {
+		mut partitions := []TxnOffsetCommitResponsePartition{}
+		for p in t.partitions {
+			partitions << TxnOffsetCommitResponsePartition{
+				partition_index: p.partition_index
+				error_code:      i16(ErrorCode.coordinator_not_available)
+			}
+		}
+		topics << TxnOffsetCommitResponseTopic{
+			name:       t.name
+			partitions: partitions
+		}
+	}
+	return TxnOffsetCommitResponse{
+		throttle_time_ms: 0
+		topics:           topics
 	}.encode(version)
 }
 

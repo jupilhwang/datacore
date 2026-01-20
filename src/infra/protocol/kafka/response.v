@@ -2118,3 +2118,91 @@ pub fn (r DescribeConfigsResponse) encode(version i16) []u8 {
 
 	return writer.bytes()
 }
+
+// ============================================================================
+// AddOffsetsToTxn Response (API Key 25)
+// ============================================================================
+
+pub struct AddOffsetsToTxnResponse {
+pub:
+	throttle_time_ms i32
+	error_code       i16
+}
+
+pub fn (r AddOffsetsToTxnResponse) encode(version i16) []u8 {
+	is_flexible := version >= 3
+	mut writer := new_writer()
+
+	writer.write_i32(r.throttle_time_ms)
+	writer.write_i16(r.error_code)
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}
+
+// ============================================================================
+// TxnOffsetCommit Response (API Key 28)
+// ============================================================================
+
+pub struct TxnOffsetCommitResponse {
+pub:
+	throttle_time_ms i32
+	topics           []TxnOffsetCommitResponseTopic
+}
+
+pub struct TxnOffsetCommitResponseTopic {
+pub:
+	name       string
+	partitions []TxnOffsetCommitResponsePartition
+}
+
+pub struct TxnOffsetCommitResponsePartition {
+pub:
+	partition_index i32
+	error_code      i16
+}
+
+pub fn (r TxnOffsetCommitResponse) encode(version i16) []u8 {
+	is_flexible := version >= 3
+	mut writer := new_writer()
+
+	writer.write_i32(r.throttle_time_ms)
+
+	if is_flexible {
+		writer.write_compact_array_len(r.topics.len)
+	} else {
+		writer.write_array_len(r.topics.len)
+	}
+
+	for t in r.topics {
+		if is_flexible {
+			writer.write_compact_string(t.name)
+			writer.write_compact_array_len(t.partitions.len)
+		} else {
+			writer.write_string(t.name)
+			writer.write_array_len(t.partitions.len)
+		}
+
+		for p in t.partitions {
+			writer.write_i32(p.partition_index)
+			writer.write_i16(p.error_code)
+
+			if is_flexible {
+				writer.write_tagged_fields()
+			}
+		}
+
+		if is_flexible {
+			writer.write_tagged_fields()
+		}
+	}
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}

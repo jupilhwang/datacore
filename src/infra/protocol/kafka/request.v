@@ -1871,6 +1871,45 @@ fn parse_add_partitions_to_txn_request(mut reader BinaryReader, version i16, is_
 }
 
 // ============================================================================
+// AddOffsetsToTxn Request (API Key 25)
+// ============================================================================
+// Adds consumer group offsets to a transaction
+
+pub struct AddOffsetsToTxnRequest {
+pub:
+	transactional_id string
+	producer_id      i64
+	producer_epoch   i16
+	group_id         string
+}
+
+fn parse_add_offsets_to_txn_request(mut reader BinaryReader, version i16, is_flexible bool) !AddOffsetsToTxnRequest {
+	transactional_id := if is_flexible {
+		reader.read_compact_string()!
+	} else {
+		reader.read_string()!
+	}
+	producer_id := reader.read_i64()!
+	producer_epoch := reader.read_i16()!
+	group_id := if is_flexible {
+		reader.read_compact_string()!
+	} else {
+		reader.read_string()!
+	}
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return AddOffsetsToTxnRequest{
+		transactional_id: transactional_id
+		producer_id:      producer_id
+		producer_epoch:   producer_epoch
+		group_id:         group_id
+	}
+}
+
+// ============================================================================
 // EndTxn Request (API Key 26)
 // ============================================================================
 
@@ -1901,5 +1940,139 @@ fn parse_end_txn_request(mut reader BinaryReader, version i16, is_flexible bool)
 		producer_id:        producer_id
 		producer_epoch:     producer_epoch
 		transaction_result: transaction_result
+	}
+}
+
+// ============================================================================
+// TxnOffsetCommit Request (API Key 28)
+// ============================================================================
+// Commits offsets within a transaction
+
+pub struct TxnOffsetCommitRequest {
+pub:
+	transactional_id  string
+	group_id          string
+	producer_id       i64
+	producer_epoch    i16
+	generation_id     i32
+	member_id         string
+	group_instance_id ?string
+	topics            []TxnOffsetCommitRequestTopic
+}
+
+pub struct TxnOffsetCommitRequestTopic {
+pub:
+	name       string
+	partitions []TxnOffsetCommitRequestPartition
+}
+
+pub struct TxnOffsetCommitRequestPartition {
+pub:
+	partition_index        i32
+	committed_offset       i64
+	committed_leader_epoch i32
+	committed_metadata     string
+}
+
+fn parse_txn_offset_commit_request(mut reader BinaryReader, version i16, is_flexible bool) !TxnOffsetCommitRequest {
+	transactional_id := if is_flexible {
+		reader.read_compact_string()!
+	} else {
+		reader.read_string()!
+	}
+	group_id := if is_flexible {
+		reader.read_compact_string()!
+	} else {
+		reader.read_string()!
+	}
+	producer_id := reader.read_i64()!
+	producer_epoch := reader.read_i16()!
+
+	// v3+: generation_id, member_id, group_instance_id
+	mut generation_id := i32(-1)
+	mut member_id := ''
+	mut group_instance_id := ?string(none)
+	if version >= 3 {
+		generation_id = reader.read_i32()!
+		member_id = if is_flexible {
+			reader.read_compact_string()!
+		} else {
+			reader.read_string()!
+		}
+		raw_group_instance_id := if is_flexible {
+			reader.read_compact_nullable_string()!
+		} else {
+			reader.read_nullable_string()!
+		}
+		group_instance_id = if raw_group_instance_id.len > 0 { raw_group_instance_id } else { none }
+	}
+
+	topic_count := if is_flexible {
+		reader.read_compact_array_len()!
+	} else {
+		reader.read_array_len()!
+	}
+
+	mut topics := []TxnOffsetCommitRequestTopic{}
+	for _ in 0 .. topic_count {
+		name := if is_flexible {
+			reader.read_compact_string()!
+		} else {
+			reader.read_string()!
+		}
+
+		partition_count := if is_flexible {
+			reader.read_compact_array_len()!
+		} else {
+			reader.read_array_len()!
+		}
+
+		mut partitions := []TxnOffsetCommitRequestPartition{}
+		for _ in 0 .. partition_count {
+			partition_index := reader.read_i32()!
+			committed_offset := reader.read_i64()!
+			// v2+: committed_leader_epoch
+			committed_leader_epoch := if version >= 2 { reader.read_i32()! } else { i32(-1) }
+			committed_metadata := if is_flexible {
+				reader.read_compact_nullable_string() or { '' }
+			} else {
+				reader.read_nullable_string() or { '' }
+			}
+
+			partitions << TxnOffsetCommitRequestPartition{
+				partition_index:        partition_index
+				committed_offset:       committed_offset
+				committed_leader_epoch: committed_leader_epoch
+				committed_metadata:     committed_metadata
+			}
+
+			if is_flexible {
+				reader.skip_tagged_fields()!
+			}
+		}
+
+		topics << TxnOffsetCommitRequestTopic{
+			name:       name
+			partitions: partitions
+		}
+
+		if is_flexible {
+			reader.skip_tagged_fields()!
+		}
+	}
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return TxnOffsetCommitRequest{
+		transactional_id:  transactional_id
+		group_id:          group_id
+		producer_id:       producer_id
+		producer_epoch:    producer_epoch
+		generation_id:     generation_id
+		member_id:         member_id
+		group_instance_id: group_instance_id
+		topics:            topics
 	}
 }
