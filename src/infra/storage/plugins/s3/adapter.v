@@ -207,7 +207,7 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 
 	// Fetch from S3
 	key := a.topic_metadata_key(name)
-	data, etag := a.get_object(key)!
+	data, etag := a.get_object(key, -1, -1)!
 
 	meta := json.decode(domain.TopicMetadata, data.bytestr())!
 
@@ -371,7 +371,30 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		}
 
 		// Fetch segment from S3
-		data, _ := a.get_object(seg.key) or { continue }
+		// Optimization: If reading from start of segment, use Range Request
+		mut data := []u8{}
+		if offset == seg.start_offset && max_bytes > 0 {
+			// Fetch max_bytes + overhead (header 4 bytes + safety buffer)
+			// We don't know exact size, but fetching a bit more is safe.
+			// If segment is smaller than max_bytes, get_object handles it (S3 ignores range > size usually, or returns what it has)
+			// Actually S3 returns 416 if range is invalid, but standard says return satisfiable range.
+			// Let's try to fetch up to max_bytes * 2 to be safe for overhead, or full segment if smaller.
+			mut fetch_size := i64(max_bytes) * 2
+			if fetch_size > seg.size_bytes {
+				fetch_size = -1 // Read full
+			}
+			
+			// Start index is 0 (beginning of file)
+			// But wait, the file structure is [Count:4][Rec1][Rec2]...
+			// If we want records starting at offset X, and X == start_offset, we want the beginning.
+			
+			range_end := if fetch_size > 0 { fetch_size } else { -1 }
+			data, _ = a.get_object(seg.key, 0, range_end) or { continue }
+		} else {
+			// Random access without index: must download full segment
+			data, _ = a.get_object(seg.key, -1, -1) or { continue }
+		}
+		
 		stored_records := decode_stored_records(data)
 
 		for rec in stored_records {
@@ -476,7 +499,7 @@ pub fn (mut a S3StorageAdapter) load_group(group_id string) !domain.ConsumerGrou
 	a.group_lock.runlock()
 
 	key := a.group_key(group_id)
-	data, etag := a.get_object(key)!
+	data, etag := a.get_object(key, -1, -1)!
 
 	group := json.decode(domain.ConsumerGroup, data.bytestr())!
 
@@ -586,7 +609,7 @@ pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []doma
 		}
 
 		// Fetch from S3
-		data, _ := a.get_object(key) or {
+		data, _ := a.get_object(key, -1, -1) or {
 			results << domain.OffsetFetchResult{
 				topic:      part.topic
 				partition:  part.partition
@@ -695,7 +718,7 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 
 	// 2. Fetch from S3
 	index_key := a.partition_index_key(topic, partition)
-	data, etag := a.get_object(index_key) or {
+	data, etag := a.get_object(index_key, -1, -1) or {
 		// Index not found, return default empty index
 		a.topic_lock.@lock()
 		a.topic_index_cache[key] = CachedPartitionIndex{
@@ -727,7 +750,7 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 }
 
 // S3 HTTP operations using signature v4
-fn (mut a S3StorageAdapter) get_object(key string) !([]u8, string) {
+fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
 		'${endpoint}/${a.config.bucket_name}/${key}'
@@ -735,7 +758,18 @@ fn (mut a S3StorageAdapter) get_object(key string) !([]u8, string) {
 		'${endpoint}/${key}'
 	}
 
-	headers := a.sign_request('GET', key, '', []u8{})
+	// Prepare headers
+	mut headers := a.sign_request('GET', key, '', []u8{})
+	
+	// Add Range header if start is non-negative
+	if start >= 0 {
+		range_val := if end > start { 'bytes=${start}-${end}' } else { 'bytes=${start}-' }
+		headers.add_custom('Range', range_val) or {}
+		// Note: AWS SigV4 might require Range header to be signed if added. 
+		// Our sign_request signs "SignedHeaders". If we add Range AFTER signing, it might fail if we included it in signed headers list.
+		// But our sign_request currently only signs host, x-amz-content-sha256, x-amz-date.
+		// So adding Range afterwards is fine unless we change sign_request to sign all headers.
+	}
 
 	resp := http.fetch(http.FetchConfig{
 		url:    url
@@ -746,7 +780,8 @@ fn (mut a S3StorageAdapter) get_object(key string) !([]u8, string) {
 	if resp.status_code == 404 {
 		return error('Object not found: ${key}')
 	}
-	if resp.status_code != 200 {
+	// 206 Partial Content is success for Range requests
+	if resp.status_code != 200 && resp.status_code != 206 {
 		return error('S3 GET failed with status ${resp.status_code}')
 	}
 
@@ -1244,7 +1279,7 @@ fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut inde
 	mut merged_data := []u8{}
 	
 	for seg in segments {
-		data, _ := a.get_object(seg.key) or { 
+		data, _ := a.get_object(seg.key, -1, -1) or { 
 			// Log error and continue to next segment set, or return error
 			// We return error to be safe.
 			return error('Failed to download segment ${seg.key}: ${err}')
