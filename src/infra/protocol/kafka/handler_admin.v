@@ -1,5 +1,6 @@
 // Admin API - AlterConfigs, CreatePartitions, DeleteRecords
 // Task #31, #32: Admin API 구현
+// Moved from admin_api.v to handlers/admin.v for better organization
 module kafka
 
 // ============================================================================
