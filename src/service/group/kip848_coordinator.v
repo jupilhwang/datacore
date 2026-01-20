@@ -483,7 +483,7 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	now := time.now().unix_milli()
 
 	// Validate group_id
-	if group_id.len == 0 {
+	if group_id == '' {
 		return HeartbeatResult{
 			error_code:    24 // INVALID_GROUP_ID
 			error_message: 'Group ID cannot be empty'
@@ -495,7 +495,7 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	mut group := c.get_or_create_group(group_id)
 
 	// Handle based on member_epoch
-	if member_epoch == 0 && member_id.len == 0 {
+	if member_epoch == 0 && member_id == '' {
 		// New member joining
 		return c.handle_join(mut group, instance_id, rack_id, rebalance_timeout_ms, subscribed_topic_names,
 			server_assignor, now)

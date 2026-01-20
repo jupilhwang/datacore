@@ -895,7 +895,7 @@ fn (a &S3StorageAdapter) get_endpoint() string {
 }
 
 fn (a &S3StorageAdapter) canonicalize_query(query string) string {
-	if query.len == 0 {
+	if query == '' {
 		return ''
 	}
 
@@ -1034,7 +1034,7 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 	}
 
 	// Canonical Request
-	canonical_uri := if key.len == 0 {
+	canonical_uri := if key == '' {
 		'/${a.config.bucket_name}'
 	} else if key.starts_with('/') {
 		'/${a.config.bucket_name}${key}'

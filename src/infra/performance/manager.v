@@ -96,6 +96,8 @@ pub fn (m &PerformanceManager) compute_checksum(data []u8) u32 {
 
 // ============================================================================
 // Global Performance Manager
+// Note: Requires -enable-globals flag for tests in infra/performance/
+// The main test target in Makefile excludes these tests intentionally.
 // ============================================================================
 
 __global (

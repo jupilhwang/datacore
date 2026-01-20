@@ -5,7 +5,6 @@ module rest
 import domain
 import service.schema
 import json
-import net.http
 
 // SchemaAPI provides REST API handlers for Schema Registry
 pub struct SchemaAPI {

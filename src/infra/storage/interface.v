@@ -1,7 +1,6 @@
 // Adapter Layer - Storage Interface
 module storage
 
-import domain
 import service.port
 
 // PluginInfo contains storage plugin metadata
