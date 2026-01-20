@@ -2,48 +2,48 @@ module domain
 
 // ResourceType represents the type of resource being accessed
 pub enum ResourceType {
-	unknown = 0
-	any = 1
-	topic = 2
-	group = 3
-	cluster = 4
+	unknown          = 0
+	any              = 1
+	topic            = 2
+	group            = 3
+	cluster          = 4
 	transactional_id = 5
 	delegation_token = 6
-	user = 7
+	user             = 7
 }
 
 // PatternType represents the pattern matching type for resource names
 pub enum PatternType {
-	unknown = 0
-	any = 1
-	match = 2 // Literal match (renamed from 'match' to avoid keyword conflict if needed, but 'match' is keyword in V)
-	literal = 3
+	unknown  = 0
+	any      = 1
+	match    = 2 // Literal match (renamed from 'match' to avoid keyword conflict if needed, but 'match' is keyword in V)
+	literal  = 3
 	prefixed = 4
 }
 
 // Operation represents the operation being performed
 pub enum AclOperation {
-	unknown = 0
-	any = 1
-	all = 2
-	read = 3
-	write = 4
-	create = 5
-	delete = 6
-	alter = 7
-	describe = 8
-	cluster_action = 9
+	unknown          = 0
+	any              = 1
+	all              = 2
+	read             = 3
+	write            = 4
+	create           = 5
+	delete           = 6
+	alter            = 7
+	describe         = 8
+	cluster_action   = 9
 	describe_configs = 10
-	alter_configs = 11
+	alter_configs    = 11
 	idempotent_write = 12
 }
 
 // PermissionType represents allow or deny permission
 pub enum PermissionType {
 	unknown = 0
-	any = 1
-	allow = 2
-	deny = 3
+	any     = 1
+	allow   = 2
+	deny    = 3
 }
 
 // AccessControlEntry (ACE) defines who can do what
@@ -94,15 +94,15 @@ pub:
 
 pub struct AclCreateResult {
 pub:
-	error_code i16
+	error_code    i16
 	error_message ?string
 }
 
 pub struct AclDeleteResult {
 pub:
-	error_code i16
+	error_code    i16
 	error_message ?string
-	deleted_acls []AclBinding
+	deleted_acls  []AclBinding
 }
 
 // Helper methods for enums

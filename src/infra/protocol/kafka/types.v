@@ -223,15 +223,15 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.api_versions, 0, 3}, // v0-v2 non-flexible, v3 flexible
 		ApiVersionRange{.create_topics, 0, 7},
 		ApiVersionRange{.delete_topics, 0, 6},
-		// ApiVersionRange{.delete_records, 0, 2},
+		ApiVersionRange{.delete_records, 0, 2},
 		ApiVersionRange{.init_producer_id, 0, 4},
 		ApiVersionRange{.add_partitions_to_txn, 0, 4},
 		ApiVersionRange{.add_offsets_to_txn, 0, 3},
 		ApiVersionRange{.end_txn, 0, 3},
 		ApiVersionRange{.txn_offset_commit, 0, 3},
 		ApiVersionRange{.describe_configs, 0, 4},
-		// ApiVersionRange{.alter_configs, 0, 2},
-		// ApiVersionRange{.create_partitions, 0, 3},
+		ApiVersionRange{.alter_configs, 0, 2},
+		ApiVersionRange{.create_partitions, 0, 3},
 		ApiVersionRange{.sasl_authenticate, 0, 2}, // SASL authentication (v2+ flexible)
 		// ApiVersionRange{.delete_groups, 0, 2},
 		ApiVersionRange{.describe_cluster, 0, 0},

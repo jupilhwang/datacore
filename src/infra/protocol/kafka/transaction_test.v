@@ -11,29 +11,69 @@ fn create_test_handler_with_transaction() kafka.Handler {
 	storage := TransactionMockStorage{}
 	txn_store := infra_txn.new_memory_transaction_store()
 	txn_coordinator := transaction.new_transaction_coordinator(txn_store)
-	
+
 	// Use new_handler_full
-	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none, none, *txn_coordinator)
+	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
+		none, *txn_coordinator)
 }
 
 struct TransactionMockStorage {}
-fn (m TransactionMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata { return domain.TopicMetadata{} }
+
+fn (m TransactionMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+	return domain.TopicMetadata{}
+}
+
 fn (m TransactionMockStorage) delete_topic(name string) ! {}
-fn (m TransactionMockStorage) list_topics() ![]domain.TopicMetadata { return []domain.TopicMetadata{} }
-fn (m TransactionMockStorage) get_topic(name string) !domain.TopicMetadata { return error('topic not found') }
-fn (m TransactionMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata { return error('topic not found') }
+
+fn (m TransactionMockStorage) list_topics() ![]domain.TopicMetadata {
+	return []domain.TopicMetadata{}
+}
+
+fn (m TransactionMockStorage) get_topic(name string) !domain.TopicMetadata {
+	return error('topic not found')
+}
+
+fn (m TransactionMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+	return error('topic not found')
+}
+
 fn (m TransactionMockStorage) add_partitions(name string, new_count int) ! {}
-fn (m TransactionMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult { return domain.AppendResult{} }
-fn (m TransactionMockStorage) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult { return domain.FetchResult{} }
+
+fn (m TransactionMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+	return domain.AppendResult{}
+}
+
+fn (m TransactionMockStorage) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	return domain.FetchResult{}
+}
+
 fn (m TransactionMockStorage) delete_records(topic string, partition int, before_offset i64) ! {}
-fn (m TransactionMockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo { return domain.PartitionInfo{} }
+
+fn (m TransactionMockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo {
+	return domain.PartitionInfo{}
+}
+
 fn (m TransactionMockStorage) save_group(group domain.ConsumerGroup) ! {}
-fn (m TransactionMockStorage) load_group(group_id string) !domain.ConsumerGroup { return error('group not found') }
+
+fn (m TransactionMockStorage) load_group(group_id string) !domain.ConsumerGroup {
+	return error('group not found')
+}
+
 fn (m TransactionMockStorage) delete_group(group_id string) ! {}
-fn (m TransactionMockStorage) list_groups() ![]domain.GroupInfo { return []domain.GroupInfo{} }
+
+fn (m TransactionMockStorage) list_groups() ![]domain.GroupInfo {
+	return []domain.GroupInfo{}
+}
+
 fn (m TransactionMockStorage) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {}
-fn (m TransactionMockStorage) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult { return []domain.OffsetFetchResult{} }
-fn (m TransactionMockStorage) health_check() !port.HealthStatus { return .healthy }
+
+fn (m TransactionMockStorage) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+	return []domain.OffsetFetchResult{}
+}
+
+fn (m TransactionMockStorage) health_check() !port.HealthStatus {
+	return .healthy
+}
 
 fn test_handler_init_producer_id_transactional() {
 	mut handler := create_test_handler_with_transaction()
@@ -46,12 +86,12 @@ fn test_handler_init_producer_id_transactional() {
 	request.write_i32(1)
 	request.write_nullable_string('test-client')
 	request.write_tagged_fields() // Header tagged fields (v2 header)
-	
+
 	// transactional_id (compact nullable string in v3 flexible)
 	// But wait, InitProducerId v3 is flexible?
 	// request.v: is_flexible_version(.init_producer_id, version) -> version >= 2
 	// So v3 is flexible.
-	
+
 	// transactional_id: COMPACT_NULLABLE_STRING
 	request.write_compact_nullable_string('my-transactional-id')
 	// transaction_timeout_ms: INT32
@@ -60,7 +100,7 @@ fn test_handler_init_producer_id_transactional() {
 	request.write_i64(-1)
 	// producer_epoch: INT16 (-1 for new)
 	request.write_i16(-1)
-	
+
 	// Tagged fields
 	request.write_tagged_fields()
 
@@ -75,7 +115,7 @@ fn test_handler_init_producer_id_transactional() {
 	_ = reader.read_i32()! // throttle_time_ms
 	error_code := reader.read_i16()!
 	assert error_code == 0
-	
+
 	producer_id := reader.read_i64()!
 	assert producer_id > 0
 	producer_epoch := reader.read_i16()!
@@ -98,7 +138,7 @@ fn test_handler_add_partitions_to_txn() {
 	init_req.write_i64(-1)
 	init_req.write_i16(-1)
 	init_req.write_tagged_fields()
-	
+
 	init_resp := handler.handle_request(init_req.bytes()) or { panic(err) }
 	mut init_reader := kafka.new_reader(init_resp)
 	_ = init_reader.read_i32()!
@@ -117,14 +157,14 @@ fn test_handler_add_partitions_to_txn() {
 	request.write_i32(2)
 	request.write_nullable_string('test-client')
 	request.write_tagged_fields() // Header tagged fields
-	
+
 	// transactional_id
 	request.write_compact_string('my-txn-id')
 	// producer_id
 	request.write_i64(pid)
 	// producer_epoch
 	request.write_i16(epoch)
-	
+
 	// topics array
 	request.write_compact_array_len(1)
 	// topic 1
@@ -146,32 +186,32 @@ fn test_handler_add_partitions_to_txn() {
 	_ = reader.read_uvarint()!
 
 	_ = reader.read_i32()! // throttle
-	
+
 	// results array
 	count := reader.read_compact_array_len()!
 	eprintln('DEBUG: results count=${count}')
 	assert count == 1
-	
+
 	eprintln('DEBUG: remaining before name=${reader.remaining()}')
 	name := reader.read_compact_string()!
 	eprintln('DEBUG: topic name=${name}')
 	assert name == 'test-topic'
-	
+
 	p_count := reader.read_compact_array_len()!
 	assert p_count == 1
-	
+
 	p_idx := reader.read_i32()!
 	assert p_idx == 0
-	
+
 	error_code := reader.read_i16()!
 	assert error_code == 0
-	
+
 	// Skip partition tagged fields
 	reader.skip_tagged_fields()!
-	
+
 	// Skip topic tagged fields
 	reader.skip_tagged_fields()!
-	
+
 	// Skip response tagged fields
 	reader.skip_tagged_fields()!
 }
@@ -229,7 +269,7 @@ fn test_handler_end_txn_commit() {
 	request.write_i32(3)
 	request.write_nullable_string('test-client')
 	request.write_tagged_fields() // Header tagged fields
-	
+
 	request.write_compact_string('my-txn-id')
 	request.write_i64(pid)
 	request.write_i16(epoch)
@@ -246,7 +286,7 @@ fn test_handler_end_txn_commit() {
 	_ = reader.read_i32()! // throttle
 	error_code := reader.read_i16()!
 	assert error_code == 0
-	
+
 	// Skip tagged fields
 	reader.skip_tagged_fields()!
 }

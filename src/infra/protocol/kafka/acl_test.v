@@ -3,36 +3,75 @@ module kafka_test
 import domain
 import infra.protocol.kafka
 import infra.auth as infra_auth
-import service.auth
 import service.port
 
 // Helper: Create ACL handler
 fn create_test_handler_with_acl() kafka.Handler {
 	storage := AclMockStorage{}
 	acl_manager := infra_auth.new_memory_acl_manager()
-	
-	// Use new_handler_full
-	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none, acl_manager)
+
+	// Use new_handler_full (8 args: broker_id, host, port, cluster_id, storage, auth_manager, acl_manager, txn_coordinator)
+	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
+		acl_manager, none)
 }
 
 struct AclMockStorage {}
-fn (m AclMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata { return domain.TopicMetadata{} }
+
+fn (m AclMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+	return domain.TopicMetadata{}
+}
+
 fn (m AclMockStorage) delete_topic(name string) ! {}
-fn (m AclMockStorage) list_topics() ![]domain.TopicMetadata { return []domain.TopicMetadata{} }
-fn (m AclMockStorage) get_topic(name string) !domain.TopicMetadata { return error('topic not found') }
-fn (m AclMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata { return error('topic not found') }
+
+fn (m AclMockStorage) list_topics() ![]domain.TopicMetadata {
+	return []domain.TopicMetadata{}
+}
+
+fn (m AclMockStorage) get_topic(name string) !domain.TopicMetadata {
+	return error('topic not found')
+}
+
+fn (m AclMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+	return error('topic not found')
+}
+
 fn (m AclMockStorage) add_partitions(name string, new_count int) ! {}
-fn (m AclMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult { return domain.AppendResult{} }
-fn (m AclMockStorage) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult { return domain.FetchResult{} }
+
+fn (m AclMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+	return domain.AppendResult{}
+}
+
+fn (m AclMockStorage) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	return domain.FetchResult{}
+}
+
 fn (m AclMockStorage) delete_records(topic string, partition int, before_offset i64) ! {}
-fn (m AclMockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo { return domain.PartitionInfo{} }
+
+fn (m AclMockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo {
+	return domain.PartitionInfo{}
+}
+
 fn (m AclMockStorage) save_group(group domain.ConsumerGroup) ! {}
-fn (m AclMockStorage) load_group(group_id string) !domain.ConsumerGroup { return error('group not found') }
+
+fn (m AclMockStorage) load_group(group_id string) !domain.ConsumerGroup {
+	return error('group not found')
+}
+
 fn (m AclMockStorage) delete_group(group_id string) ! {}
-fn (m AclMockStorage) list_groups() ![]domain.GroupInfo { return []domain.GroupInfo{} }
+
+fn (m AclMockStorage) list_groups() ![]domain.GroupInfo {
+	return []domain.GroupInfo{}
+}
+
 fn (m AclMockStorage) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {}
-fn (m AclMockStorage) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult { return []domain.OffsetFetchResult{} }
-fn (m AclMockStorage) health_check() !port.HealthStatus { return .healthy }
+
+fn (m AclMockStorage) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+	return []domain.OffsetFetchResult{}
+}
+
+fn (m AclMockStorage) health_check() !port.HealthStatus {
+	return .healthy
+}
 
 fn test_handler_create_acls() {
 	mut handler := create_test_handler_with_acl()
@@ -128,7 +167,7 @@ fn test_handler_describe_acls() {
 	assert res_type == 2 // TOPIC
 	res_name := reader.read_string()!
 	assert res_name == 'test-topic'
-	
+
 	// Read pattern_type (v1+)
 	pattern_type := reader.read_i8()!
 	assert pattern_type == 3 // LITERAL
@@ -136,7 +175,7 @@ fn test_handler_describe_acls() {
 	// ACLs array
 	acl_count := reader.read_array_len()!
 	assert acl_count == 1
-	
+
 	principal := reader.read_string()!
 	assert principal == 'User:alice'
 	host := reader.read_string()!
@@ -192,7 +231,7 @@ fn test_handler_delete_acls() {
 	_ = reader.read_i32()!
 
 	_ = reader.read_i32()! // throttle_time_ms
-	
+
 	// Results array
 	count := reader.read_array_len()!
 	assert count == 1
@@ -208,12 +247,12 @@ fn test_handler_delete_acls() {
 	match_error := reader.read_i16()!
 	assert match_error == 0
 	_ = reader.read_nullable_string()!
-	
+
 	res_type := reader.read_i8()!
 	assert res_type == 2
 	res_name := reader.read_string()!
 	assert res_name == 'test-topic'
-	
+
 	// Read pattern_type (v1+)
 	pattern_type := reader.read_i8()!
 	assert pattern_type == 3 // LITERAL

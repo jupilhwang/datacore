@@ -29,13 +29,13 @@ pub fn (mut m MemoryAclManager) create_acls(acls []domain.AclBinding) ![]domain.
 		// Check if ACL already exists
 		mut exists := false
 		for existing in m.acls {
-			if existing.pattern.resource_type == acl.pattern.resource_type &&
-			   existing.pattern.name == acl.pattern.name &&
-			   existing.pattern.pattern_type == acl.pattern.pattern_type &&
-			   existing.entry.principal == acl.entry.principal &&
-			   existing.entry.host == acl.entry.host &&
-			   existing.entry.operation == acl.entry.operation &&
-			   existing.entry.permission_type == acl.entry.permission_type {
+			if existing.pattern.resource_type == acl.pattern.resource_type
+				&& existing.pattern.name == acl.pattern.name
+				&& existing.pattern.pattern_type == acl.pattern.pattern_type
+				&& existing.entry.principal == acl.entry.principal
+				&& existing.entry.host == acl.entry.host
+				&& existing.entry.operation == acl.entry.operation
+				&& existing.entry.permission_type == acl.entry.permission_type {
 				exists = true
 				break
 			}
@@ -75,7 +75,7 @@ pub fn (mut m MemoryAclManager) delete_acls(filters []domain.AclBindingFilter) !
 		m.acls = remaining_acls
 
 		results << domain.AclDeleteResult{
-			error_code: 0
+			error_code:   0
 			deleted_acls: deleted_acls
 		}
 	}
@@ -105,10 +105,10 @@ pub fn (mut m MemoryAclManager) authorize(principal string, host string, operati
 	// 1. Check for Deny permissions first (Deny overrides Allow)
 	for acl in m.acls {
 		if acl.entry.permission_type == .deny {
-			if matches_resource(acl.pattern, resource) &&
-			   matches_principal(acl.entry.principal, principal) &&
-			   matches_host(acl.entry.host, host) &&
-			   matches_operation(acl.entry.operation, operation) {
+			if matches_resource(acl.pattern, resource)
+				&& matches_principal(acl.entry.principal, principal)
+				&& matches_host(acl.entry.host, host)
+				&& matches_operation(acl.entry.operation, operation) {
 				return false
 			}
 		}
@@ -117,10 +117,10 @@ pub fn (mut m MemoryAclManager) authorize(principal string, host string, operati
 	// 2. Check for Allow permissions
 	for acl in m.acls {
 		if acl.entry.permission_type == .allow {
-			if matches_resource(acl.pattern, resource) &&
-			   matches_principal(acl.entry.principal, principal) &&
-			   matches_host(acl.entry.host, host) &&
-			   matches_operation(acl.entry.operation, operation) {
+			if matches_resource(acl.pattern, resource)
+				&& matches_principal(acl.entry.principal, principal)
+				&& matches_host(acl.entry.host, host)
+				&& matches_operation(acl.entry.operation, operation) {
 				return true
 			}
 		}
@@ -136,7 +136,8 @@ pub fn (mut m MemoryAclManager) authorize(principal string, host string, operati
 
 fn matches_filter(acl domain.AclBinding, filter domain.AclBindingFilter) bool {
 	// Resource Pattern Filter
-	if filter.pattern_filter.resource_type != .any && filter.pattern_filter.resource_type != acl.pattern.resource_type {
+	if filter.pattern_filter.resource_type != .any
+		&& filter.pattern_filter.resource_type != acl.pattern.resource_type {
 		return false
 	}
 	if name := filter.pattern_filter.name {
@@ -144,7 +145,8 @@ fn matches_filter(acl domain.AclBinding, filter domain.AclBindingFilter) bool {
 			return false
 		}
 	}
-	if filter.pattern_filter.pattern_type != .any && filter.pattern_filter.pattern_type != .match && filter.pattern_filter.pattern_type != acl.pattern.pattern_type {
+	if filter.pattern_filter.pattern_type != .any && filter.pattern_filter.pattern_type != .match
+		&& filter.pattern_filter.pattern_type != acl.pattern.pattern_type {
 		return false
 	}
 
@@ -162,7 +164,8 @@ fn matches_filter(acl domain.AclBinding, filter domain.AclBindingFilter) bool {
 	if filter.entry_filter.operation != .any && filter.entry_filter.operation != acl.entry.operation {
 		return false
 	}
-	if filter.entry_filter.permission_type != .any && filter.entry_filter.permission_type != acl.entry.permission_type {
+	if filter.entry_filter.permission_type != .any
+		&& filter.entry_filter.permission_type != acl.entry.permission_type {
 		return false
 	}
 

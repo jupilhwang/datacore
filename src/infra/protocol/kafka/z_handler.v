@@ -179,6 +179,15 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		.delete_acls {
 			h.handle_delete_acls(req.body, version)!
 		}
+		.alter_configs {
+			h.handle_alter_configs(req.body, version)!
+		}
+		.create_partitions {
+			h.handle_create_partitions(req.body, version)!
+		}
+		.delete_records {
+			h.handle_delete_records(req.body, version)!
+		}
 		else {
 			// h.logger.warn('Unsupported API key: ${int(api_key)}')
 			return error('unsupported API key: ${int(api_key)}')

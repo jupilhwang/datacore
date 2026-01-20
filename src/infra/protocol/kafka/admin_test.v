@@ -74,7 +74,20 @@ fn (mut s MockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 }
 
 fn (mut s MockStorage) add_partitions(name string, new_count int) ! {
-	return error('not implemented')
+	if name !in s.topics {
+		return error('topic not found')
+	}
+	topic := s.topics[name]
+	if new_count <= topic.partition_count {
+		return error('new partition count must be greater than current')
+	}
+	s.topics[name] = domain.TopicMetadata{
+		name:            topic.name
+		topic_id:        topic.topic_id
+		partition_count: new_count
+		config:          topic.config
+		is_internal:     topic.is_internal
+	}
 }
 
 fn (mut s MockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
@@ -85,10 +98,21 @@ fn (mut s MockStorage) fetch(topic string, partition int, offset i64, max_bytes 
 	return domain.FetchResult{}
 }
 
-fn (mut s MockStorage) delete_records(topic string, partition int, before_offset i64) ! {}
+fn (mut s MockStorage) delete_records(topic string, partition int, before_offset i64) ! {
+	if topic !in s.topics {
+		return error('topic not found')
+	}
+	s.call_count += 1
+}
 
 fn (mut s MockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo {
-	return domain.PartitionInfo{}
+	if topic !in s.topics {
+		return error('topic not found')
+	}
+	return domain.PartitionInfo{
+		earliest_offset: 10
+		latest_offset:   100
+	}
 }
 
 fn (mut s MockStorage) save_group(group domain.ConsumerGroup) ! {}
@@ -581,6 +605,453 @@ fn test_describe_groups_response_encoding() {
 				protocol_type: 'consumer'
 				protocol_data: 'range'
 				members:       []
+			},
+		]
+	}
+
+	encoded := resp.encode(0)
+	assert encoded.len > 0
+}
+
+// ============================================================================
+// AlterConfigs API Tests
+// ============================================================================
+
+fn test_parse_alter_configs_request() {
+	// Build AlterConfigs request (v0)
+	mut writer := new_writer()
+
+	// resources array length: 1
+	writer.write_i32(1)
+
+	// resource_type (2 = TOPIC)
+	writer.write_i8(2)
+
+	// resource_name
+	writer.write_string('test-topic')
+
+	// configs array length: 2
+	writer.write_i32(2)
+
+	// config 1
+	writer.write_string('retention.ms')
+	writer.write_string('86400000')
+
+	// config 2
+	writer.write_string('cleanup.policy')
+	writer.write_string('delete')
+
+	// validate_only
+	writer.write_i8(0)
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_alter_configs_request(mut reader, 0, false) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	assert req.resources.len == 1
+	assert req.resources[0].resource_type == 2
+	assert req.resources[0].resource_name == 'test-topic'
+	assert req.resources[0].configs.len == 2
+	assert req.resources[0].configs[0].name == 'retention.ms'
+	assert req.validate_only == false
+}
+
+fn test_handler_alter_configs_success() {
+	mut storage := new_mock_storage()
+
+	// Pre-create topic
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 3
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+
+	// Build request
+	mut writer := new_writer()
+	writer.write_i32(1) // 1 resource
+	writer.write_i8(2) // TOPIC
+	writer.write_string('test-topic')
+	writer.write_i32(1) // 1 config
+	writer.write_string('retention.ms')
+	writer.write_string('86400000')
+	writer.write_i8(0) // validate_only = false
+
+	result := handler.handle_alter_configs(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	// Parse response - v0 format: throttle_time_ms, [results]
+	mut reader := new_reader(result)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+
+	results_len := reader.read_i32() or { 0 }
+	assert results_len == 1
+
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == 0
+}
+
+fn test_handler_alter_configs_topic_not_found() {
+	mut storage := new_mock_storage()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+
+	// Build request for non-existent topic
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_i8(2) // TOPIC
+	writer.write_string('nonexistent')
+	writer.write_i32(0) // no configs
+	writer.write_i8(0)
+
+	result := handler.handle_alter_configs(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	// Parse response
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 } // throttle
+	_ := reader.read_i32() or { 0 } // results len
+	error_code := reader.read_i16() or { -999 }
+
+	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
+}
+
+// ============================================================================
+// CreatePartitions API Tests
+// ============================================================================
+
+fn test_parse_create_partitions_request() {
+	// Build CreatePartitions request (v0)
+	mut writer := new_writer()
+
+	// topics array length: 1
+	writer.write_i32(1)
+
+	// topic name
+	writer.write_string('test-topic')
+
+	// count (new partition count)
+	writer.write_i32(10)
+
+	// assignments (nullable array) - null
+	writer.write_i32(-1)
+
+	// timeout_ms
+	writer.write_i32(30000)
+
+	// validate_only
+	writer.write_i8(0)
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_create_partitions_request(mut reader, 0, false) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	assert req.topics.len == 1
+	assert req.topics[0].name == 'test-topic'
+	assert req.topics[0].count == 10
+	assert req.timeout_ms == 30000
+	assert req.validate_only == false
+}
+
+fn test_handler_create_partitions_success() {
+	mut storage := new_mock_storage()
+
+	// Pre-create topic with 3 partitions
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 3
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+
+	// Build request to increase to 10 partitions
+	mut writer := new_writer()
+	writer.write_i32(1) // 1 topic
+	writer.write_string('test-topic')
+	writer.write_i32(10) // new count
+	writer.write_i32(-1) // no assignments
+	writer.write_i32(30000) // timeout
+	writer.write_i8(0) // validate_only = false
+
+	result := handler.handle_create_partitions(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	// Parse response
+	mut reader := new_reader(result)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+
+	results_len := reader.read_i32() or { 0 }
+	assert results_len == 1
+
+	name := reader.read_string() or { '' }
+	assert name == 'test-topic'
+
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == 0
+
+	// Verify partition count was updated
+	assert storage.topics['test-topic'].partition_count == 10
+}
+
+fn test_handler_create_partitions_topic_not_found() {
+	mut storage := new_mock_storage()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+
+	// Build request for non-existent topic
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('nonexistent')
+	writer.write_i32(10)
+	writer.write_i32(-1)
+	writer.write_i32(30000)
+	writer.write_i8(0)
+
+	result := handler.handle_create_partitions(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	// Parse response
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 } // throttle
+	_ := reader.read_i32() or { 0 } // results len
+	_ := reader.read_string() or { '' } // name
+	error_code := reader.read_i16() or { -999 }
+
+	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
+}
+
+fn test_handler_create_partitions_invalid_count() {
+	mut storage := new_mock_storage()
+
+	// Pre-create topic with 10 partitions
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 10
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+
+	// Build request to decrease to 5 partitions (invalid)
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('test-topic')
+	writer.write_i32(5) // less than current (invalid)
+	writer.write_i32(-1)
+	writer.write_i32(30000)
+	writer.write_i8(0)
+
+	result := handler.handle_create_partitions(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	// Parse response
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 } // throttle
+	_ := reader.read_i32() or { 0 } // results len
+	_ := reader.read_string() or { '' } // name
+	error_code := reader.read_i16() or { -999 }
+
+	assert error_code == i16(ErrorCode.invalid_partitions)
+}
+
+// ============================================================================
+// DeleteRecords API Tests
+// ============================================================================
+
+fn test_parse_delete_records_request() {
+	// Build DeleteRecords request (v0)
+	mut writer := new_writer()
+
+	// topics array length: 1
+	writer.write_i32(1)
+
+	// topic name
+	writer.write_string('test-topic')
+
+	// partitions array length: 2
+	writer.write_i32(2)
+
+	// partition 0, offset 100
+	writer.write_i32(0)
+	writer.write_i64(100)
+
+	// partition 1, offset 200
+	writer.write_i32(1)
+	writer.write_i64(200)
+
+	// timeout_ms
+	writer.write_i32(30000)
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_delete_records_request(mut reader, 0, false) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	assert req.topics.len == 1
+	assert req.topics[0].name == 'test-topic'
+	assert req.topics[0].partitions.len == 2
+	assert req.topics[0].partitions[0].partition_index == 0
+	assert req.topics[0].partitions[0].offset == 100
+	assert req.topics[0].partitions[1].partition_index == 1
+	assert req.topics[0].partitions[1].offset == 200
+	assert req.timeout_ms == 30000
+}
+
+fn test_handler_delete_records_success() {
+	mut storage := new_mock_storage()
+
+	// Pre-create topic
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 3
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+
+	// Build request
+	mut writer := new_writer()
+	writer.write_i32(1) // 1 topic
+	writer.write_string('test-topic')
+	writer.write_i32(1) // 1 partition
+	writer.write_i32(0) // partition index
+	writer.write_i64(50) // delete before offset 50
+	writer.write_i32(30000) // timeout
+
+	result := handler.handle_delete_records(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	// Parse response
+	mut reader := new_reader(result)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+
+	topics_len := reader.read_i32() or { 0 }
+	assert topics_len == 1
+
+	name := reader.read_string() or { '' }
+	assert name == 'test-topic'
+
+	partitions_len := reader.read_i32() or { 0 }
+	assert partitions_len == 1
+
+	partition_index := reader.read_i32() or { -1 }
+	assert partition_index == 0
+
+	low_watermark := reader.read_i64() or { -1 }
+	assert low_watermark >= 0
+
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == 0
+}
+
+fn test_handler_delete_records_topic_not_found() {
+	mut storage := new_mock_storage()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+
+	// Build request for non-existent topic
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('nonexistent')
+	writer.write_i32(1)
+	writer.write_i32(0)
+	writer.write_i64(50)
+	writer.write_i32(30000)
+
+	result := handler.handle_delete_records(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	// Parse response
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 } // throttle
+	_ := reader.read_i32() or { 0 } // topics len
+	_ := reader.read_string() or { '' } // name
+	_ := reader.read_i32() or { 0 } // partitions len
+	_ := reader.read_i32() or { 0 } // partition index
+	_ := reader.read_i64() or { 0 } // low watermark
+	error_code := reader.read_i16() or { -999 }
+
+	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
+}
+
+// ============================================================================
+// Response Encoding Tests
+// ============================================================================
+
+fn test_alter_configs_response_encoding() {
+	resp := AlterConfigsResponse{
+		throttle_time_ms: 0
+		results:          [
+			AlterConfigsResult{
+				error_code:    0
+				error_message: none
+				resource_type: 2
+				resource_name: 'test-topic'
+			},
+		]
+	}
+
+	encoded := resp.encode(0)
+	assert encoded.len > 0
+
+	// Verify basic structure
+	mut reader := new_reader(encoded)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+}
+
+fn test_create_partitions_response_encoding() {
+	resp := CreatePartitionsResponse{
+		throttle_time_ms: 0
+		results:          [
+			CreatePartitionsResult{
+				name:          'test-topic'
+				error_code:    0
+				error_message: none
+			},
+		]
+	}
+
+	encoded := resp.encode(0)
+	assert encoded.len > 0
+}
+
+fn test_delete_records_response_encoding() {
+	resp := DeleteRecordsResponse{
+		throttle_time_ms: 0
+		topics:           [
+			DeleteRecordsResponseTopic{
+				name:       'test-topic'
+				partitions: [
+					DeleteRecordsResponsePartition{
+						partition_index: 0
+						low_watermark:   50
+						error_code:      0
+					},
+				]
 			},
 		]
 	}

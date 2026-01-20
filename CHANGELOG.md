@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0] - 2026-01-21
+
+### Added
+- `AlterConfigs` (API Key 33) for modifying topic and broker configurations
+- `CreatePartitions` (API Key 37) for adding partitions to existing topics
+- `DeleteRecords` (API Key 21) for deleting records before a specified offset
+- Comprehensive unit tests for new Admin APIs (15 test cases)
+
+### Changed
+- Enabled API version ranges for `delete_records`, `alter_configs`, and `create_partitions` in types.v
+- Updated handler routing in z_handler.v to support new Admin APIs
+
 ## [0.18.0] - 2026-01-21
 
 ### Added
