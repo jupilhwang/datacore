@@ -3,7 +3,6 @@
 // Request/Response types, parsing, encoding, and handlers
 module kafka
 
-
 // ============================================================================
 // SaslHandshake Request (API Key 17)
 // ============================================================================
@@ -53,7 +52,6 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 		auth_bytes: auth_bytes
 	}
 }
-
 
 // ============================================================================
 // SaslHandshake Response (API Key 17)

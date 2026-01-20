@@ -6,7 +6,6 @@ module kafka
 import domain
 import rand
 
-
 // InitProducerId Request (API Key 22)
 // Used by idempotent/transactional producers to obtain a producer ID
 pub struct InitProducerIdRequest {
@@ -330,7 +329,6 @@ fn parse_txn_offset_commit_request(mut reader BinaryReader, version i16, is_flex
 		topics:            topics
 	}
 }
-
 
 // ============================================================================
 // InitProducerId Response (API Key 22)

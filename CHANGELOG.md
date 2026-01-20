@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.19.1] - 2026-01-21
+
+### Changed
+- Consolidated all `request_*.v` and `response_*.v` files into respective `handler_*.v` files
+- Renamed `z_frame.v` to `frame.v` for cleaner naming
+- Removed `zerocopy_*.v` files (functionality merged into handler_produce.v)
+
+### Added
+- LeaveGroup API v3-v5 support with batch member identities
+- `LeaveGroupMember` struct for v3+ batch leave operations
+- Full `process_*` function implementations with storage integration
+
+### Fixed
+- LeaveGroupRequest parsing for v3+ protocol versions
+
 ## [0.19.0] - 2026-01-21
 
 ### Added

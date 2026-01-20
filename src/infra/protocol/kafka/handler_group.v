@@ -3,7 +3,6 @@
 // Request/Response types, parsing, encoding, and handlers
 module kafka
 
-
 pub struct ListGroupsRequest {
 pub:
 	states_filter []string
@@ -51,7 +50,6 @@ fn parse_describe_groups_request(mut reader BinaryReader, version i16, is_flexib
 		include_authorized_operations: include_authorized_operations
 	}
 }
-
 
 // ============================================================================
 // ListGroups Response (API Key 16)

@@ -1004,7 +1004,8 @@ fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !Li
 // Legacy handler - delegates to process_list_offsets
 fn (mut h Handler) handle_list_offsets(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
-	req := parse_list_offsets_request(mut reader, version, is_flexible_version(.list_offsets, version))!
+	req := parse_list_offsets_request(mut reader, version, is_flexible_version(.list_offsets,
+		version))!
 	resp := h.process_list_offsets(req, version)!
 	return resp.encode(version)
 }

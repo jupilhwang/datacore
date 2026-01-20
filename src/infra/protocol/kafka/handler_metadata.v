@@ -386,7 +386,8 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 
 fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
-	req := parse_metadata_request(mut reader, version, is_flexible_version(.metadata, version))!
+	req := parse_metadata_request(mut reader, version, is_flexible_version(.metadata,
+		version))!
 	resp := h.process_metadata(req, version)!
 	eprintln('[DEBUG] handle_metadata: Building response with broker node_id=${h.broker_id} host="${h.host}" (len=${h.host.len}) port=${h.broker_port}')
 	return resp.encode(version)
@@ -651,7 +652,8 @@ pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
 
 fn (h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
-	req := parse_find_coordinator_request(mut reader, version, is_flexible_version(.find_coordinator, version))!
+	req := parse_find_coordinator_request(mut reader, version, is_flexible_version(.find_coordinator,
+		version))!
 	resp := h.process_find_coordinator(req, version)!
 	return resp.encode(version)
 }
@@ -782,7 +784,8 @@ pub fn (r DescribeClusterResponse) encode(version i16) []u8 {
 
 fn (mut h Handler) handle_describe_cluster(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
-	req := parse_describe_cluster_request(mut reader, version, is_flexible_version(.describe_cluster, version))!
+	req := parse_describe_cluster_request(mut reader, version, is_flexible_version(.describe_cluster,
+		version))!
 	resp := h.process_describe_cluster(req, version)!
 	return resp.encode(version)
 }

@@ -242,7 +242,6 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 	}
 }
 
-
 // ============================================================================
 // OffsetCommit Response (API Key 8)
 // ============================================================================
