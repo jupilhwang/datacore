@@ -167,18 +167,18 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 
 		// Map config to S3Config
 		mut s_config := s3.S3Config{
-			bucket_name: conf.storage.s3.bucket
-			region: conf.storage.s3.region
-			endpoint: conf.storage.s3.endpoint
-			access_key: conf.storage.s3.access_key
-			secret_key: conf.storage.s3.secret_key
-			prefix: conf.storage.s3.prefix
-			timezone: conf.storage.s3.timezone
-			batch_timeout_ms: conf.storage.s3.batch_timeout_ms
-			batch_max_bytes: conf.storage.s3.batch_max_bytes
+			bucket_name:            conf.storage.s3.bucket
+			region:                 conf.storage.s3.region
+			endpoint:               conf.storage.s3.endpoint
+			access_key:             conf.storage.s3.access_key
+			secret_key:             conf.storage.s3.secret_key
+			prefix:                 conf.storage.s3.prefix
+			timezone:               conf.storage.s3.timezone
+			batch_timeout_ms:       conf.storage.s3.batch_timeout_ms
+			batch_max_bytes:        conf.storage.s3.batch_max_bytes
 			compaction_interval_ms: conf.storage.s3.compaction_interval_ms
-			target_segment_bytes: conf.storage.s3.target_segment_bytes
-			index_cache_ttl_ms: conf.storage.s3.index_cache_ttl_ms
+			target_segment_bytes:   conf.storage.s3.target_segment_bytes
+			index_cache_ttl_ms:     conf.storage.s3.index_cache_ttl_ms
 		}
 
 		masked_key := if s_config.access_key.len > 4 {

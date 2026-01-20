@@ -25,15 +25,15 @@ pub:
 	prefix         string = 'datacore/'
 	max_retries    int    = 3
 	retry_delay_ms int    = 100
-	use_path_style bool   = true // For MinIO compatibility
+	use_path_style bool   = true  // For MinIO compatibility
 	timezone       string = 'UTC' // Added for SigV4 compatibility
 	// Batching
 	batch_timeout_ms int
-	batch_max_bytes i64
+	batch_max_bytes  i64
 	// Compaction
 	compaction_interval_ms int
-	target_segment_bytes i64
-	index_cache_ttl_ms int // Added for config-based TTL
+	target_segment_bytes   i64
+	index_cache_ttl_ms     int // Added for config-based TTL
 }
 
 // S3StorageAdapter implements StoragePort for S3 storage
@@ -41,9 +41,9 @@ pub struct S3StorageAdapter {
 mut:
 	config S3Config
 	// Local caches with TTL
-	topic_cache  map[string]CachedTopic
-	group_cache  map[string]CachedGroup
-	offset_cache map[string]map[string]i64
+	topic_cache       map[string]CachedTopic
+	group_cache       map[string]CachedGroup
+	offset_cache      map[string]map[string]i64
 	topic_index_cache map[string]CachedPartitionIndex // Added index cache
 	// Locks for thread safety
 	topic_lock  sync.RwMutex
@@ -310,7 +310,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	a.buffer_lock.lock()
 	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
 		TopicPartitionBuffer{
-			records: []
+			records:            []
 			current_size_bytes: 0
 		}
 	}
@@ -383,18 +383,18 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 			if fetch_size > seg.size_bytes {
 				fetch_size = -1 // Read full
 			}
-			
+
 			// Start index is 0 (beginning of file)
 			// But wait, the file structure is [Count:4][Rec1][Rec2]...
 			// If we want records starting at offset X, and X == start_offset, we want the beginning.
-			
+
 			range_end := if fetch_size > 0 { fetch_size } else { -1 }
 			data, _ = a.get_object(seg.key, 0, range_end) or { continue }
 		} else {
 			// Random access without index: must download full segment
 			data, _ = a.get_object(seg.key, -1, -1) or { continue }
 		}
-		
+
 		stored_records := decode_stored_records(data)
 
 		for rec in stored_records {
@@ -676,6 +676,7 @@ fn (a &S3StorageAdapter) group_key(group_id string) string {
 fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int) string {
 	return '${a.config.prefix}offsets/${group_id}/${topic}:${partition}.json'
 }
+
 // ============================================================
 // S3 Operations (Abstract - to be implemented with actual SDK)
 // ============================================================
@@ -722,14 +723,14 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 		// Index not found, return default empty index
 		a.topic_lock.@lock()
 		a.topic_index_cache[key] = CachedPartitionIndex{
-			index: PartitionIndex{
+			index:     PartitionIndex{
 				topic:           topic
 				partition:       partition
 				earliest_offset: 0
 				high_watermark:  0
 				log_segments:    []
 			}
-			etag: ''
+			etag:      ''
 			cached_at: time.now()
 		}
 		a.topic_lock.unlock()
@@ -740,8 +741,8 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 	index := json.decode(PartitionIndex, data.bytestr())!
 	a.topic_lock.@lock()
 	a.topic_index_cache[key] = CachedPartitionIndex{
-		index: index
-		etag: etag
+		index:     index
+		etag:      etag
 		cached_at: time.now()
 	}
 	a.topic_lock.unlock()
@@ -760,12 +761,12 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 
 	// Prepare headers
 	mut headers := a.sign_request('GET', key, '', []u8{})
-	
+
 	// Add Range header if start is non-negative
 	if start >= 0 {
 		range_val := if end > start { 'bytes=${start}-${end}' } else { 'bytes=${start}-' }
 		headers.add_custom('Range', range_val) or {}
-		// Note: AWS SigV4 might require Range header to be signed if added. 
+		// Note: AWS SigV4 might require Range header to be signed if added.
 		// Our sign_request signs "SignedHeaders". If we add Range AFTER signing, it might fail if we included it in signed headers list.
 		// But our sign_request currently only signs host, x-amz-content-sha256, x-amz-date.
 		// So adding Range afterwards is fine unless we change sign_request to sign all headers.
@@ -1093,7 +1094,7 @@ struct StoredRecord {
 // TopicPartitionBuffer holds records for a specific partition before flushing to S3
 struct TopicPartitionBuffer {
 mut:
-	records []StoredRecord
+	records            []StoredRecord
 	current_size_bytes i64 // Current total size of all records in this buffer
 }
 
@@ -1104,57 +1105,59 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 		return error('Invalid partition key for flush: ${partition_key}')
 	}
 	topic := parts[0]
-	partition_i64 := strconv.atoi64(parts[1]) or { return error('Invalid partition number in key: ${parts[1]}') }
+	partition_i64 := strconv.atoi64(parts[1]) or {
+		return error('Invalid partition number in key: ${parts[1]}')
+	}
 	partition := int(partition_i64)
-	
+
 	// 1. Acquire lock, copy buffer, and clear buffer in memory
 	a.buffer_lock.lock()
-	
-	mut tp_buffer := a.topic_partition_buffers[partition_key] or { 
+
+	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
 		a.buffer_lock.unlock()
 		return
 	}
-	
+
 	if tp_buffer.records.len == 0 {
 		a.buffer_lock.unlock()
 		return
 	}
-	
+
 	buffer_data := tp_buffer.records.clone()
 	tp_buffer.records.clear()
 	tp_buffer.current_size_bytes = 0
 	a.topic_partition_buffers[partition_key] = tp_buffer
 	a.buffer_lock.unlock()
-	
+
 	// 2. Calculate offsets for batch
 	base_offset := buffer_data[0].offset
 	end_offset := buffer_data[buffer_data.len - 1].offset
-	
+
 	// 3. Encode and Write segment to S3
 	segment_data := encode_stored_records(buffer_data)
 	segment_key := a.log_segment_key(topic, partition, base_offset, end_offset)
-	
+
 	// Write segment to S3
-	a.put_object(segment_key, segment_data) or { 
+	a.put_object(segment_key, segment_data) or {
 		// Failure means data loss if not retried. For now, log and return error.
 		eprintln('[S3] ASYNC FLUSH FAILED for ${partition_key}: Segment put failed: ${err}')
 		return error('Segment put failed during async flush: ${err}')
 	}
-		
+
 	// 4. Update partition index with new segment (MUST be atomic/safe from concurrent updates)
-	
+
 	// Re-fetch the latest index from S3 to ensure we don't overwrite concurrent changes
 	mut index := a.get_partition_index(topic, partition)!
-	
+
 	// Verify that the high_watermark has not advanced past our segment
 	if index.high_watermark > base_offset {
 		// This should not happen if the `append` function only updates in-memory high_watermark for response
 		// and the async flush is the only process updating the S3 index.
 		// For now, assume it's safe to append if the current index doesn't overlap our range.
-		
+
 		// NOTE: In a multi-writer environment, optimistic locking (If-Match: ETag) is needed here.
 		// Given single-node DataCore, simple read-update-write is acceptable for now.
-		
+
 		// High watermark is calculated based on the data that has been successfully stored to S3.
 		index.high_watermark = end_offset + 1 // New high watermark
 		index.log_segments << LogSegment{
@@ -1164,7 +1167,7 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 			size_bytes:   i64(segment_data.len)
 			created_at:   time.now()
 		}
-	
+
 		// Write updated index to S3
 		index_key := a.partition_index_key(topic, partition)
 		a.put_object(index_key, json.encode(index).bytes()) or {
@@ -1181,9 +1184,9 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 fn (mut a S3StorageAdapter) flush_worker() {
 	for a.compactor_running { // Use compactor_running flag to stop both workers
 		time.sleep(a.config.batch_timeout_ms)
-		
+
 		a.buffer_lock.lock()
-		
+
 		// Collect all keys to flush
 		mut keys_to_flush := []string{}
 		for key, tp_buffer in a.topic_partition_buffers {
@@ -1191,7 +1194,7 @@ fn (mut a S3StorageAdapter) flush_worker() {
 				keys_to_flush << key
 			}
 		}
-		
+
 		a.buffer_lock.unlock()
 
 		for key in keys_to_flush {
@@ -1217,7 +1220,7 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 fn (mut a S3StorageAdapter) compaction_worker() {
 	for a.compactor_running {
 		time.sleep(a.config.compaction_interval_ms)
-		
+
 		a.compact_all_partitions() or {
 			// In production, use structured logging here
 			eprintln('[S3] Compaction failed: ${err}')
@@ -1229,10 +1232,10 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 // compact_all_partitions iterates over all topics and partitions and attempts to merge small segments.
 fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 	topics := a.list_topics()!
-	
+
 	// Use map/set to track active partitions to compact
 	// For simplicity, we iterate over all known topics/partitions.
-	
+
 	for t in topics {
 		for p in 0 .. t.partition_count {
 			a.compact_partition(t.name, p)!
@@ -1243,28 +1246,29 @@ fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 	// 1. Get current index
 	mut index := a.get_partition_index(topic, partition)!
-	
+
 	// 2. Identify segments for compaction
 	mut segments_to_compact := []LogSegment{}
 	mut total_size := i64(0)
-	
+
 	for seg in index.log_segments {
 		if total_size >= a.config.target_segment_bytes {
 			break
 		}
-		
+
 		// Only consider segments smaller than the target size
 		if seg.size_bytes < a.config.target_segment_bytes {
 			segments_to_compact << seg
 			total_size += seg.size_bytes
 		}
 	}
-	
+
 	// Check if enough small segments were found
-	if segments_to_compact.len < a.min_segment_count_to_compact || total_size < a.config.target_segment_bytes / 2 {
-		return // Not enough segments or total size is too small
+	if segments_to_compact.len < a.min_segment_count_to_compact
+		|| total_size < a.config.target_segment_bytes / 2 {
+		return
 	}
-	
+
 	// 3. Perform Compaction
 	// Merge segments and upload new large segment to S3
 	a.merge_segments(topic, partition, mut index, segments_to_compact)!
@@ -1274,29 +1278,29 @@ fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut inde
 	if segments.len == 0 {
 		return
 	}
-	
+
 	// Download all segment data in parallel (simplified to sequential for now)
 	mut merged_data := []u8{}
-	
+
 	for seg in segments {
-		data, _ := a.get_object(seg.key, -1, -1) or { 
+		data, _ := a.get_object(seg.key, -1, -1) or {
 			// Log error and continue to next segment set, or return error
 			// We return error to be safe.
 			return error('Failed to download segment ${seg.key}: ${err}')
 		}
 		merged_data << data
 	}
-	
+
 	// New segment metadata
 	new_start_offset := segments[0].start_offset
 	new_end_offset := segments[segments.len - 1].end_offset
 	new_key := a.log_segment_key(topic, partition, new_start_offset, new_end_offset)
-	
+
 	// Upload new merged segment to S3
 	a.put_object(new_key, merged_data)!
-	
+
 	// 4. Update index and delete old segments (Atomic Index Update)
-	
+
 	// Find the range of offsets covered by the merged segments
 	start_index := index.log_segments.index(segments[0])
 	if start_index < 0 {
@@ -1306,15 +1310,15 @@ fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut inde
 	if end_index < 0 {
 		return error('Compaction internal error: end segment not found in index')
 	}
-	
+
 	// New list of log segments (excluding merged ones)
 	mut new_log_segments := []LogSegment{}
-	
+
 	// Segments before the merged block
 	if start_index > 0 {
 		new_log_segments << index.log_segments[0..start_index]
 	}
-	
+
 	// Add the new merged segment
 	new_log_segments << LogSegment{
 		start_offset: new_start_offset
@@ -1323,22 +1327,24 @@ fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut inde
 		size_bytes:   i64(merged_data.len)
 		created_at:   time.now()
 	}
-	
+
 	// Segments after the merged block
 	if end_index < index.log_segments.len - 1 {
 		new_log_segments << index.log_segments[end_index + 1..]
 	}
-	
+
 	// Update index object
 	index.log_segments = new_log_segments
 	index_key := a.partition_index_key(topic, partition)
-	
+
 	// Atomically write the new index (overwrite old one)
 	a.put_object(index_key, json.encode(index).bytes())!
-	
+
 	// 5. Delete old segments (Non-critical step after index update)
 	for seg in segments {
-		a.delete_object(seg.key) or { eprintln('[S3] Failed to delete old segment ${seg.key}: ${err}') }
+		a.delete_object(seg.key) or {
+			eprintln('[S3] Failed to delete old segment ${seg.key}: ${err}')
+		}
 	}
 }
 

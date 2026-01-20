@@ -51,11 +51,11 @@ pub mut:
 	timezone   string = 'UTC'
 	// Batching
 	batch_timeout_ms int = 1000
-	batch_max_bytes i64 = 10485760
+	batch_max_bytes  i64 = 10485760
 	// Compaction
 	compaction_interval_ms int = 60000
-	target_segment_bytes i64 = 104857600
-	index_cache_ttl_ms int = 30000 // New field: 30 seconds default TTL for partition index cache
+	target_segment_bytes   i64 = 104857600
+	index_cache_ttl_ms     int = 30000 // New field: 30 seconds default TTL for partition index cache
 }
 
 pub struct SqliteStorageConfig {
@@ -173,18 +173,18 @@ pub fn load_config(path string) !Config {
 	// Parse S3 config with environment variable override
 	// Parse S3 config (base values from TOML)
 	mut s3 := S3StorageConfig{
-		endpoint:   get_string(doc, 'storage.s3.endpoint', '')
-		bucket:     get_string(doc, 'storage.s3.bucket', '')
-		region:     get_string(doc, 'storage.s3.region', 'us-east-1')
-		prefix:     get_string(doc, 'storage.s3.prefix', 'datacore/')
-		timezone:   get_string(doc, 'storage.s3.timezone', 'UTC')
-		batch_timeout_ms: get_int(doc, 'storage.s3.batch_timeout_ms', 1000)
-		batch_max_bytes: get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
+		endpoint:               get_string(doc, 'storage.s3.endpoint', '')
+		bucket:                 get_string(doc, 'storage.s3.bucket', '')
+		region:                 get_string(doc, 'storage.s3.region', 'us-east-1')
+		prefix:                 get_string(doc, 'storage.s3.prefix', 'datacore/')
+		timezone:               get_string(doc, 'storage.s3.timezone', 'UTC')
+		batch_timeout_ms:       get_int(doc, 'storage.s3.batch_timeout_ms', 1000)
+		batch_max_bytes:        get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
 		compaction_interval_ms: get_int(doc, 'storage.s3.compaction_interval_ms', 60000)
-		target_segment_bytes: get_i64(doc, 'storage.s3.target_segment_bytes', 104857600)
-		index_cache_ttl_ms: get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000) // Added TTL parsing
-		access_key: ''
-		secret_key: ''
+		target_segment_bytes:   get_i64(doc, 'storage.s3.target_segment_bytes', 104857600)
+		index_cache_ttl_ms:     get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000) // Added TTL parsing
+		access_key:             ''
+		secret_key:             ''
 	}
 
 	// 1. Priority: Environment variables (*)

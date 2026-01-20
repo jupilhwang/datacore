@@ -81,13 +81,13 @@ pub fn parse_request(data []u8) !Request {
 	mut reader := new_reader(data)
 
 	// Read size field (first 4 bytes)
-	reader.read_i32()! 
-	
+	reader.read_i32()!
+
 	// Parse header
 	api_key := reader.read_i16()!
 	api_version := reader.read_i16()!
 	correlation_id := reader.read_i32()!
-	
+
 	// Check if this is a flexible version (v2 header)
 	api_key_enum := unsafe { ApiKey(api_key) }
 	header_version := get_request_header_version(api_key_enum, api_version)
@@ -114,6 +114,7 @@ pub fn parse_request(data []u8) !Request {
 		body:   body
 	}
 }
+
 // Check if API version uses flexible encoding
 pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 	// Flexible versions were introduced in Kafka 2.4
