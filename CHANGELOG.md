@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0] - 2026-01-20
+
+### Added
+- ACL Authorization support.
+- `DescribeAcls` (API Key 29), `CreateAcls` (API Key 30), `DeleteAcls` (API Key 31) APIs.
+- In-memory ACL manager for permission control.
+
 ## [0.15.0] - 2026-01-20
 
 ### Added

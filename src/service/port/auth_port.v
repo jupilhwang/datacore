@@ -57,3 +57,19 @@ mut:
 	// Authenticate using the specified mechanism
 	authenticate(mechanism domain.SaslMechanism, auth_bytes []u8) !domain.AuthResult
 }
+
+// AclManager manages Access Control Lists
+pub interface AclManager {
+mut:
+	// Create ACLs
+	create_acls(acls []domain.AclBinding) ![]domain.AclCreateResult
+
+	// Delete ACLs matching the filter
+	delete_acls(filters []domain.AclBindingFilter) ![]domain.AclDeleteResult
+
+	// Describe ACLs matching the filter
+	describe_acls(filter domain.AclBindingFilter) ![]domain.AclBinding
+
+	// Authorize an operation
+	authorize(principal string, host string, operation domain.AclOperation, resource domain.ResourcePattern) !bool
+}
