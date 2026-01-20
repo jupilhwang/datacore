@@ -91,10 +91,14 @@ pub fn run_topic_create(opts TopicOptions) ! {
 		opts.timeout_ms)
 
 	// Send request
-	send_kafka_request(mut conn, 19, 7, request)! // API Key 19 = CreateTopics, version 7
+	println('[DEBUG] Sending CreateTopics request (${request.len} bytes)...')
+	send_kafka_request(mut conn, 19, 3, request)! // API Key 19 = CreateTopics, version 3 (non-flexible)
+	println('[DEBUG] Request sent successfully')
 
 	// Read response
+	println('[DEBUG] Waiting for response...')
 	response := read_kafka_response(mut conn)!
+	println('[DEBUG] Received response (${response.len} bytes): ${response.hex()}')
 
 	// Parse and check response
 	check_create_topic_response(response, opts.topic)!
@@ -244,13 +248,30 @@ fn send_kafka_request(mut conn net.TcpConn, api_key i16, api_version i16, body [
 	header << u8((correlation_id >> 8) & 0xff)
 	header << u8(correlation_id & 0xff)
 
-	// Client ID (compact string for flexible versions)
+	// Client ID
 	client_id := 'datacore-cli'
-	header << u8(client_id.len + 1) // compact string length
-	header << client_id.bytes()
 
-	// Tagged fields (empty)
-	header << u8(0)
+	// Determine if we should use Flexible Header (V2) or Non-Flexible Header (V1)
+	// CreateTopics V3 is NON-FLEXIBLE. Metadata V12 is FLEXIBLE.
+	is_flexible_api := (api_key == 3 && api_version >= 9) || // Metadata V9+
+	 (api_key == 1 && api_version >= 12) || // Fetch V12+
+	 (api_key == 20 && api_version >= 6) || // DeleteTopics V6+
+	 (api_key == 19 && api_version >= 5) // CreateTopics V5+ is flexible
+
+	if is_flexible_api {
+		// Flexible Header V2: Compact Client ID + Tagged Fields
+		// Client ID (compact string)
+		header << u8(client_id.len + 1)
+		header << client_id.bytes()
+		// Tagged fields (empty compact array)
+		header << u8(0)
+	} else {
+		// Non-Flexible Header V1: Nullable String Client ID
+		// Use i16 for length prefix (2 bytes)
+		header << u8(client_id.len >> 8)
+		header << u8(client_id.len & 0xff)
+		header << client_id.bytes()
+	}
 
 	// Combine header and body
 	mut message := header.clone()
@@ -304,11 +325,15 @@ fn read_kafka_response(mut conn net.TcpConn) ![]u8 {
 fn build_create_topic_request(name string, partitions int, replication int, timeout_ms int) []u8 {
 	mut body := []u8{}
 
-	// Topics array (compact array)
-	body << u8(2) // array length + 1
+	// Topics array (non-flexible array)
+	body << u8(0) // array length byte 1
+	body << u8(0) // array length byte 2
+	body << u8(0) // array length byte 3
+	body << u8(1) // array length byte 4 (1 topic)
 
-	// Topic name (compact string)
-	body << u8(name.len + 1)
+	// Topic name (string)
+	body << u8(name.len >> 8)
+	body << u8(name.len & 0xff)
 	body << name.bytes()
 
 	// Num partitions (4 bytes)
@@ -321,26 +346,23 @@ fn build_create_topic_request(name string, partitions int, replication int, time
 	body << u8(replication >> 8)
 	body << u8(replication & 0xff)
 
-	// Assignments (empty compact array)
-	body << u8(1)
+	// Assignments (empty array)
+	body << u8(0) // array length byte 1
+	body << u8(0) // array length byte 2
+	body << u8(0) // array length byte 3
+	body << u8(0) // array length byte 4 (0 assignments)
 
-	// Configs (empty compact array)
-	body << u8(1)
-
-	// Tagged fields for topic
-	body << u8(0)
+	// Configs (empty array)
+	body << u8(0) // array length byte 1
+	body << u8(0) // array length byte 2
+	body << u8(0) // array length byte 3
+	body << u8(0) // array length byte 4 (0 configs)
 
 	// Timeout ms (4 bytes)
 	body << u8(timeout_ms >> 24)
 	body << u8((timeout_ms >> 16) & 0xff)
 	body << u8((timeout_ms >> 8) & 0xff)
 	body << u8(timeout_ms & 0xff)
-
-	// Validate only (1 byte)
-	body << u8(0)
-
-	// Tagged fields for request
-	body << u8(0)
 
 	return body
 }
@@ -415,22 +437,84 @@ fn build_delete_topic_request(name string, timeout_ms int) []u8 {
 // ============================================================
 
 fn check_create_topic_response(response []u8, expected_topic string) ! {
-	if response.len < 10 {
-		return error('Invalid response')
+	println('[DEBUG] Checking CreateTopics response...')
+	if response.len < 4 {
+		return error('Invalid response: too short')
 	}
 
-	// Skip correlation_id (4) + tagged_fields (1) + throttle_time (4)
-	// + topics array length (varint)
-	// This is a simplified check - full parsing would be more complex
+	// Parse CreateTopics response (version 3, non-flexible)
+	// Structure:
+	// throttle_time_ms (4 bytes)
+	// topics (array)
+	//   - name (string)
+	//   - error_code (2 bytes)
+	//   - error_message (nullable string)
+	//   - topic_id (16 bytes, v3+)
+	//   - num_partitions (4 bytes)
+	//   - replication_factor (2 bytes)
 
-	// Look for error code
-	// For now, just check if response seems valid
-	if response.len > 20 {
-		// Response looks reasonable, assume success
-		return
+	mut pos := 4 // Skip throttle_time_ms
+
+	// Read topics array length (i32)
+	if pos + 4 > response.len {
+		return error('Invalid response: cannot read topics array length')
+	}
+	topics_len := i32(u32(response[pos]) << 24 | u32(response[pos + 1]) << 16 | u32(response[pos + 2]) << 8 | u32(response[
+		pos + 3]))
+	pos += 4
+
+	println('[DEBUG] Topics array length: ${topics_len}')
+
+	if topics_len != 1 {
+		return error('Expected 1 topic in response, got ${topics_len}')
 	}
 
-	return error('Failed to create topic')
+	// Read topic name (string: i16 length + data)
+	if pos + 2 > response.len {
+		return error('Invalid response: cannot read topic name length')
+	}
+	name_len := i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
+	pos += 2
+
+	if pos + int(name_len) > response.len {
+		return error('Invalid response: cannot read topic name')
+	}
+	topic_name := response[pos..pos + int(name_len)].bytestr()
+	pos += int(name_len)
+
+	println('[DEBUG] Topic name: ${topic_name}')
+
+	// Read error_code (2 bytes)
+	if pos + 2 > response.len {
+		return error('Invalid response: cannot read error code')
+	}
+	error_code := i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
+	pos += 2
+
+	println('[DEBUG] Error code: ${error_code}')
+
+	if error_code != 0 {
+		// Error occurred
+		mut error_message := 'Unknown error'
+		// Try to read error_message (nullable string)
+		if pos + 2 <= response.len {
+			msg_len := i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
+			pos += 2
+			if msg_len > 0 && pos + int(msg_len) <= response.len {
+				error_message = response[pos..pos + int(msg_len)].bytestr()
+			}
+		}
+		return error('Failed to create topic: ${error_message} (error code: ${error_code})')
+	}
+
+	// Skip error_message, topic_id, num_partitions, replication_factor
+	// Just verify we got a success response
+
+	if topic_name != expected_topic {
+		return error('Topic name mismatch: expected "${expected_topic}", got "${topic_name}"')
+	}
+
+	println('[DEBUG] Topic created successfully!')
 }
 
 fn check_delete_topic_response(response []u8, expected_topic string) ! {

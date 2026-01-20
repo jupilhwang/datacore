@@ -23,7 +23,6 @@ pub:
 	request_timeout_ms int    = 30000
 	idle_timeout_ms    int    = 600000
 	advertised_host    string = '127.0.0.1'
-	advertised_port    int    = 9092
 }
 
 pub struct StorageConfig {
@@ -49,6 +48,14 @@ pub mut:
 	secret_key string
 	region     string = 'us-east-1'
 	prefix     string = 'datacore/'
+	timezone   string = 'UTC'
+	// Batching
+	batch_timeout_ms int = 1000
+	batch_max_bytes i64 = 10485760
+	// Compaction
+	compaction_interval_ms int = 60000
+	target_segment_bytes i64 = 104857600
+	index_cache_ttl_ms int = 30000 // New field: 30 seconds default TTL for partition index cache
 }
 
 pub struct SqliteStorageConfig {
@@ -152,8 +159,6 @@ pub fn load_config(path string) !Config {
 		idle_timeout_ms:    get_int(doc, 'broker.idle_timeout_ms', 600000)
 		advertised_host:    get_string(doc, 'broker.advertised_host', get_string(doc,
 			'broker.host', '127.0.0.1'))
-		advertised_port:    get_int(doc, 'broker.advertised_port', get_int(doc, 'broker.port',
-			9092))
 	}
 
 	// Parse storage config
@@ -172,6 +177,12 @@ pub fn load_config(path string) !Config {
 		bucket:     get_string(doc, 'storage.s3.bucket', '')
 		region:     get_string(doc, 'storage.s3.region', 'us-east-1')
 		prefix:     get_string(doc, 'storage.s3.prefix', 'datacore/')
+		timezone:   get_string(doc, 'storage.s3.timezone', 'UTC')
+		batch_timeout_ms: get_int(doc, 'storage.s3.batch_timeout_ms', 1000)
+		batch_max_bytes: get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
+		compaction_interval_ms: get_int(doc, 'storage.s3.compaction_interval_ms', 60000)
+		target_segment_bytes: get_i64(doc, 'storage.s3.target_segment_bytes', 104857600)
+		index_cache_ttl_ms: get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000) // Added TTL parsing
 		access_key: ''
 		secret_key: ''
 	}
@@ -327,6 +338,12 @@ fn get_string(doc toml.Doc, key string, default_val string) string {
 fn get_int(doc toml.Doc, key string, default_val int) int {
 	val := doc.value_opt(key) or { return default_val }
 	return val.int()
+}
+
+// Helper function to get i64 value from TOML
+fn get_i64(doc toml.Doc, key string, default_val i64) i64 {
+	val := doc.value_opt(key) or { return default_val }
+	return val.i64()
 }
 
 // Helper function to get f64 value from TOML

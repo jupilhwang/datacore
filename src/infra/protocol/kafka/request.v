@@ -80,19 +80,20 @@ pub fn parse_request(data []u8) !Request {
 
 	mut reader := new_reader(data)
 
+	// Read size field (first 4 bytes)
+	reader.read_i32()! 
+	
 	// Parse header
 	api_key := reader.read_i16()!
 	api_version := reader.read_i16()!
 	correlation_id := reader.read_i32()!
-
+	
 	// Check if this is a flexible version (v2 header)
-	// Note: ApiVersions is ALWAYS non-flexible in header (client doesn't know server version yet)
 	api_key_enum := unsafe { ApiKey(api_key) }
 	header_version := get_request_header_version(api_key_enum, api_version)
 	is_flexible_header := header_version >= 2
 
-	// In Request Header v2 (flexible), client_id is still a regular NULLABLE_STRING (2-byte length prefix)
-	// NOT a compact string! Only the tag_buffer at the end is compact-encoded
+	// In Request Header v2 (flexible), client_id is still NULLABLE_STRING (NOT compact!)
 	client_id := reader.read_nullable_string()!
 
 	if is_flexible_header {
@@ -101,20 +102,7 @@ pub fn parse_request(data []u8) !Request {
 	}
 
 	// Remaining data is the request body
-	body := data[reader.pos..].clone()
-
-	// Debug: print header parsing position for FETCH requests
-	if api_key_enum == .fetch {
-		eprintln('[DEBUG] parse_request FETCH: total_len=${data.len} header_end_pos=${reader.pos} body.len=${body.len}')
-		eprintln('[DEBUG] parse_request FETCH: api_key=${api_key} api_version=${api_version} correlation_id=${correlation_id}')
-		eprintln('[DEBUG] parse_request FETCH: client_id=${client_id} is_flexible=${is_flexible_header}')
-		if data.len >= 40 {
-			eprintln('[DEBUG] parse_request FETCH: first 40 bytes of full data: ${data[..40].hex()}')
-		}
-		if body.len >= 40 {
-			eprintln('[DEBUG] parse_request FETCH: first 40 bytes of BODY: ${body[..40].hex()}')
-		}
-	}
+	body := reader.data[reader.pos..].clone()
 
 	return Request{
 		header: RequestHeader{
@@ -126,7 +114,6 @@ pub fn parse_request(data []u8) !Request {
 		body:   body
 	}
 }
-
 // Check if API version uses flexible encoding
 pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 	// Flexible versions were introduced in Kafka 2.4

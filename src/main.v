@@ -8,6 +8,8 @@
 module main
 
 import os
+import time
+import net.http
 import config as cfg
 import interface.server
 import interface.cli
@@ -160,14 +162,23 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 			conf.storage.memory.segment_size_bytes))
 		storage_opt = port.StoragePort(memory.new_memory_adapter())
 	} else if engine == 's3' {
+		// Set timezone for S3 operations
+		os.setenv('TZ', conf.storage.s3.timezone, true)
+
 		// Map config to S3Config
-		s_config := s3.S3Config{
+		mut s_config := s3.S3Config{
 			bucket_name: conf.storage.s3.bucket
-			region:      conf.storage.s3.region
-			endpoint:    conf.storage.s3.endpoint
-			access_key:  conf.storage.s3.access_key
-			secret_key:  conf.storage.s3.secret_key
-			prefix:      conf.storage.s3.prefix
+			region: conf.storage.s3.region
+			endpoint: conf.storage.s3.endpoint
+			access_key: conf.storage.s3.access_key
+			secret_key: conf.storage.s3.secret_key
+			prefix: conf.storage.s3.prefix
+			timezone: conf.storage.s3.timezone
+			batch_timeout_ms: conf.storage.s3.batch_timeout_ms
+			batch_max_bytes: conf.storage.s3.batch_max_bytes
+			compaction_interval_ms: conf.storage.s3.compaction_interval_ms
+			target_segment_bytes: conf.storage.s3.target_segment_bytes
+			index_cache_ttl_ms: conf.storage.s3.index_cache_ttl_ms
 		}
 
 		masked_key := if s_config.access_key.len > 4 {
@@ -179,8 +190,9 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 			observability.field_string('region', s_config.region), observability.field_string('endpoint',
 			s_config.endpoint), observability.field_string('access_key', masked_key))
 
-		if s3_adapter := s3.new_s3_adapter(s_config) {
+		if mut s3_adapter := s3.new_s3_adapter(s_config) {
 			storage_opt = port.StoragePort(s3_adapter)
+			s3_adapter.start_workers() // S3 Compaction Worker 시작
 		} else {
 			cli.print_failed('Failed to init S3 storage: ${err}')
 			cli.print_failed('Falling back to memory storage')
@@ -203,7 +215,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 	cli.print_progress('Initializing Kafka protocol handler')
 	// Pass advertised host/port to handler so metadata responses contain the correct connect string
 	mut protocol_handler := kafka.new_handler(conf.broker.broker_id, conf.broker.advertised_host,
-		conf.broker.advertised_port, conf.broker.cluster_id, storage)
+		conf.broker.port, conf.broker.cluster_id, storage)
 	cli.print_done()
 
 	if conf.schema_registry.enabled {
@@ -279,34 +291,6 @@ fn stop_broker(opts cli.CliOptions) ! {
 	cli.print_done()
 	cli.remove_pid(opts.pid_path)
 	println('\x1b[32m✓\x1b[0m Broker stopped.')
-}
-
-fn show_status(opts cli.CliOptions) ! {
-	pid := cli.read_pid(opts.pid_path) or {
-		cli.print_status(cli.BrokerStatus{
-			running: false
-		})
-		return
-	}
-
-	running := cli.check_pid_running(pid)
-
-	if running {
-		// TODO: Query broker for actual stats
-		cli.print_status(cli.BrokerStatus{
-			running:    true
-			pid:        pid
-			host:       '0.0.0.0'
-			port:       9092
-			broker_id:  1
-			cluster_id: 'datacore-cluster'
-		})
-	} else {
-		cli.remove_pid(opts.pid_path)
-		cli.print_status(cli.BrokerStatus{
-			running: false
-		})
-	}
 }
 
 // Topic commands
@@ -393,5 +377,108 @@ fn run_group(args []string) ! {
 		else {
 			return error('Unknown group command: ${args[0]}')
 		}
+	}
+}
+
+// ============================================================
+// Broker Status Implementation
+// ============================================================
+
+struct BrokerStats {
+	topics      int
+	partitions  int
+	connections int
+	error_msg   string
+}
+
+// get_metric_value extracts a gauge metric value from Prometheus text format
+fn get_metric_value(body string, name string) int {
+	line_start := body.index('${name}') or { return 0 }
+	line_end := body.index_after('\n', line_start) or { return 0 }
+
+	line := body[line_start..line_end]
+	parts := line.split(' ')
+
+	if parts.len >= 2 {
+		return parts[1].trim_space().int()
+	}
+
+	return 0
+}
+
+// get_broker_stats queries the running broker's metrics endpoint for live status
+fn get_broker_stats(metrics_port int) BrokerStats {
+	url := 'http://localhost:${metrics_port}/metrics'
+
+	resp := http.get(url) or {
+		return BrokerStats{
+			error_msg: 'Failed to connect to metrics server on port ${metrics_port}'
+		}
+	}
+
+	if resp.status_code != 200 {
+		return BrokerStats{
+			error_msg: 'Metrics server returned status ${resp.status_code}'
+		}
+	}
+
+	body := resp.body
+
+	return BrokerStats{
+		topics:      get_metric_value(body, 'datacore_topics_total')
+		partitions:  get_metric_value(body, 'datacore_partitions_total')
+		connections: get_metric_value(body, 'datacore_active_connections')
+	}
+}
+
+fn show_status(opts cli.CliOptions) ! {
+	conf := cfg.load_config(opts.config_path) or {
+		return error('Failed to load config for status check: ${err}')
+	}
+
+	pid := cli.read_pid(opts.pid_path) or {
+		cli.print_status(cli.BrokerStatus{
+			running: false
+		})
+		return
+	}
+
+	running := cli.check_pid_running(pid)
+
+	if running {
+		stats := get_broker_stats(conf.observability.metrics.prometheus_port)
+
+		mut topics := 0
+		mut partitions := 0
+		mut connections := 0
+
+		if stats.error_msg.len > 0 {
+			eprintln('\x1b[33m⚠\x1b[0m Failed to fetch live metrics: ${stats.error_msg}')
+			topics = -1
+			partitions = -1
+			connections = -1
+		} else {
+			topics = stats.topics
+			partitions = stats.partitions
+			connections = stats.connections
+		}
+
+		cli.print_status(cli.BrokerStatus{
+			running:     true
+			pid:         pid
+			uptime:      time.Duration(0)
+			host:        conf.broker.host
+			port:        conf.broker.port
+			broker_id:   conf.broker.broker_id
+			cluster_id:  conf.broker.cluster_id
+			topics:      topics
+			partitions:  partitions
+			connections: connections
+		})
+	} else {
+		cli.remove_pid(opts.pid_path)
+		cli.print_status(cli.BrokerStatus{
+			running: false
+		})
 	}
 }

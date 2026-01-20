@@ -171,7 +171,7 @@ test_baseline() {
     log_info "Test 1: Baseline Performance"
     log_info "=========================================="
     
-    local topic="${TOPIC_PREFIX}-baseline"
+    local topic="${TOPIC_PREFIX}-baseline-${TIMESTAMP}"
     create_topic "${topic}" 1
     sleep 2
     

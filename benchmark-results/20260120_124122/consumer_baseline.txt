@@ -1,0 +1,2 @@
+time, threadId, data.consumed.in.MB, MB.sec, data.consumed.in.nMsg, nMsg.sec, rebalance.time.ms, fetch.time.ms, fetch.MB.sec, fetch.nMsg.sec
+[2026-01-20 12:41:29,102] ERROR [Consumer clientId=perf-consumer-client, groupId=perf-consumer-98909] LeaveGroup request with Generation{generationId=1, memberId='consumer-1-100eed58-7a04-42d4-8af2-a49984deb184', protocol='range'} failed with error: The coordinator is not aware of this member. (org.apache.kafka.clients.consumer.internals.ConsumerCoordinator)

@@ -1811,6 +1811,11 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	req := parse_create_topics_request(mut reader, version, is_flexible_version(.create_topics,
 		version))!
 
+	eprintln('[CreateTopics] Parsed request with ${req.topics.len} topic(s)')
+	for t in req.topics {
+		eprintln('[CreateTopics]   Topic: ${t.name}, Partitions: ${t.num_partitions}')
+	}
+
 	mut topics := []CreateTopicsResponseTopic{}
 	for t in req.topics {
 		// Convert config map to domain.TopicConfig
@@ -1863,7 +1868,10 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 		topics:           topics
 	}
 
-	return resp.encode(version)
+	eprintln('[CreateTopics] Encoding response with ${topics.len} topic(s)...')
+	encoded := resp.encode(version)
+	eprintln('[CreateTopics] Encoded ${encoded.len} bytes: ${encoded.hex()}')
+	return encoded
 }
 
 // Helper function to parse config as i64
