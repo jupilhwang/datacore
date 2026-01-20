@@ -972,9 +972,41 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
 				}
 
 				// Check if transaction is in ongoing state
-				if meta.state != .ongoing && meta.state != .empty {
+				// Producer must call AddPartitionsToTxn before producing
+				if meta.state != .ongoing {
 					return build_produce_error_response(req, i16(ErrorCode.invalid_txn_state),
 						version)
+				}
+
+				// Verify that the partitions being produced to are in the transaction
+				// This ensures AddPartitionsToTxn was called for these partitions
+				for t in req.topic_data {
+					topic_name := if t.name.len > 0 {
+						t.name
+					} else {
+						// v13+ uses topic_id, need to resolve
+						if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
+							topic_meta.name
+						} else {
+							// Topic not found, will be handled later
+							continue
+						}
+					}
+
+					for p in t.partition_data {
+						mut found := false
+						for tp in meta.topic_partitions {
+							if tp.topic == topic_name && tp.partition == int(p.index) {
+								found = true
+								break
+							}
+						}
+						if !found {
+							// Partition not added to transaction
+							return build_produce_error_response(req, i16(ErrorCode.invalid_txn_state),
+								version)
+						}
+					}
 				}
 			} else {
 				// No transaction coordinator - transactional produce not supported
@@ -2273,14 +2305,96 @@ fn (mut h Handler) handle_txn_offset_commit(body []u8, version i16) ![]u8 {
 	req := parse_txn_offset_commit_request(mut reader, version, is_flexible)!
 
 	// Validate transaction coordinator exists
-	if _ := h.txn_coordinator {
-		// Transaction coordinator exists - process the commit
-		// In a full implementation, we would:
-		// 1. Validate the transaction is in the correct state
-		// 2. Write the offsets to __consumer_offsets with the transactional marker
-		// 3. Return success
+	if mut txn_coord := h.txn_coordinator {
+		// Verify transaction exists and is valid
+		meta := txn_coord.get_transaction(req.transactional_id) or {
+			// Transaction not found
+			mut topics := []TxnOffsetCommitResponseTopic{}
+			for t in req.topics {
+				mut partitions := []TxnOffsetCommitResponsePartition{}
+				for p in t.partitions {
+					partitions << TxnOffsetCommitResponsePartition{
+						partition_index: p.partition_index
+						error_code:      i16(ErrorCode.transactional_id_not_found)
+					}
+				}
+				topics << TxnOffsetCommitResponseTopic{
+					name:       t.name
+					partitions: partitions
+				}
+			}
+			return TxnOffsetCommitResponse{
+				throttle_time_ms: 0
+				topics:           topics
+			}.encode(version)
+		}
 
-		// For now, we store the offsets in the regular storage
+		// Validate producer ID and epoch
+		if meta.producer_id != req.producer_id {
+			mut topics := []TxnOffsetCommitResponseTopic{}
+			for t in req.topics {
+				mut partitions := []TxnOffsetCommitResponsePartition{}
+				for p in t.partitions {
+					partitions << TxnOffsetCommitResponsePartition{
+						partition_index: p.partition_index
+						error_code:      i16(ErrorCode.invalid_producer_id_mapping)
+					}
+				}
+				topics << TxnOffsetCommitResponseTopic{
+					name:       t.name
+					partitions: partitions
+				}
+			}
+			return TxnOffsetCommitResponse{
+				throttle_time_ms: 0
+				topics:           topics
+			}.encode(version)
+		}
+
+		if meta.producer_epoch != req.producer_epoch {
+			mut topics := []TxnOffsetCommitResponseTopic{}
+			for t in req.topics {
+				mut partitions := []TxnOffsetCommitResponsePartition{}
+				for p in t.partitions {
+					partitions << TxnOffsetCommitResponsePartition{
+						partition_index: p.partition_index
+						error_code:      i16(ErrorCode.invalid_producer_epoch)
+					}
+				}
+				topics << TxnOffsetCommitResponseTopic{
+					name:       t.name
+					partitions: partitions
+				}
+			}
+			return TxnOffsetCommitResponse{
+				throttle_time_ms: 0
+				topics:           topics
+			}.encode(version)
+		}
+
+		// Validate transaction state - must be ongoing
+		if meta.state != .ongoing {
+			mut topics := []TxnOffsetCommitResponseTopic{}
+			for t in req.topics {
+				mut partitions := []TxnOffsetCommitResponsePartition{}
+				for p in t.partitions {
+					partitions << TxnOffsetCommitResponsePartition{
+						partition_index: p.partition_index
+						error_code:      i16(ErrorCode.invalid_txn_state)
+					}
+				}
+				topics << TxnOffsetCommitResponseTopic{
+					name:       t.name
+					partitions: partitions
+				}
+			}
+			return TxnOffsetCommitResponse{
+				throttle_time_ms: 0
+				topics:           topics
+			}.encode(version)
+		}
+
+		// Transaction is valid - commit offsets
 		mut all_offsets := []domain.PartitionOffset{}
 		for t in req.topics {
 			for p in t.partitions {

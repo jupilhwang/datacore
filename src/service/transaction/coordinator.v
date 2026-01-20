@@ -159,16 +159,49 @@ pub fn (mut c TransactionCoordinator) add_offsets_to_txn(transactional_id string
 
 	// 4. Add the __consumer_offsets partition for this group to the transaction
 	// The partition is determined by the group_id hash % 50 (default __consumer_offsets partitions)
-	// For simplicity, we just track the group_id and update state to ongoing
+	// Calculate the partition for this consumer group
+	group_partition := hash_group_id(group_id) % 50
 
-	// Update state to ongoing if not already
+	// Add __consumer_offsets partition to the transaction
+	mut new_partitions := meta.topic_partitions.clone()
+	consumer_offsets_partition := domain.TopicPartition{
+		topic:     '__consumer_offsets'
+		partition: group_partition
+	}
+
+	// Check if this partition is already in the transaction
+	mut already_added := false
+	for tp in new_partitions {
+		if tp.topic == '__consumer_offsets' && tp.partition == group_partition {
+			already_added = true
+			break
+		}
+	}
+
+	if !already_added {
+		new_partitions << consumer_offsets_partition
+	}
+
+	// Update state to ongoing and add the partition
 	updated_meta := domain.TransactionMetadata{
 		...meta
 		state:                     .ongoing
+		topic_partitions:          new_partitions
 		txn_last_update_timestamp: time.now().unix_milli()
 	}
 
 	c.store.save_transaction(updated_meta)!
+}
+
+// hash_group_id calculates a hash for the group_id to determine the __consumer_offsets partition
+fn hash_group_id(group_id string) int {
+	// Simple hash function (Java's String.hashCode equivalent)
+	mut hash := u32(0)
+	for c in group_id {
+		hash = hash * 31 + u32(c)
+	}
+	// Convert to positive int
+	return int(hash & 0x7fffffff)
 }
 
 // end_txn ends a transaction (commit or abort)
