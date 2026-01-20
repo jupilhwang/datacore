@@ -1,12 +1,140 @@
-// Infra Layer - Kafka Protocol Handler - SASL Operations
-// SaslHandshake, SaslAuthenticate handlers
+// Kafka Protocol - SASL Operations
+// SaslHandshake, SaslAuthenticate
+// Request/Response types, parsing, encoding, and handlers
 module kafka
 
-// ============================================================================
-// SaslHandshake Handler (API Key 17)
-// ============================================================================
-// Handles SASL mechanism negotiation
 
+// ============================================================================
+// SaslHandshake Request (API Key 17)
+// ============================================================================
+// Used to negotiate SASL mechanism between client and broker
+// v0: Basic mechanism negotiation
+// v1: Adds mechanism enable/disable flags
+
+pub struct SaslHandshakeRequest {
+pub:
+	mechanism string // The SASL mechanism chosen by the client
+}
+
+fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslHandshakeRequest {
+	// SaslHandshake is never flexible (v0-v1 only)
+	mechanism := reader.read_string()!
+
+	return SaslHandshakeRequest{
+		mechanism: mechanism
+	}
+}
+
+// ============================================================================
+// SaslAuthenticate Request (API Key 36)
+// ============================================================================
+// Used to perform SASL authentication after mechanism handshake
+// v0: Basic authentication
+// v1: Adds session lifetime
+// v2: Flexible versions
+
+pub struct SaslAuthenticateRequest {
+pub:
+	auth_bytes []u8 // The SASL authentication bytes from the client
+}
+
+fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslAuthenticateRequest {
+	auth_bytes := if is_flexible {
+		reader.read_compact_bytes()!
+	} else {
+		reader.read_bytes()!
+	}
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return SaslAuthenticateRequest{
+		auth_bytes: auth_bytes
+	}
+}
+
+
+// ============================================================================
+// SaslHandshake Response (API Key 17)
+// ============================================================================
+// Returns the list of SASL mechanisms supported by the broker
+
+pub struct SaslHandshakeResponse {
+pub:
+	error_code i16      // Error code (0 = no error, 33 = unsupported mechanism)
+	mechanisms []string // List of SASL mechanisms enabled by the broker
+}
+
+pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
+	// SaslHandshake is never flexible (v0-v1 only)
+	mut writer := new_writer()
+
+	// error_code: INT16
+	writer.write_i16(r.error_code)
+
+	// mechanisms: ARRAY[STRING]
+	writer.write_array_len(r.mechanisms.len)
+	for m in r.mechanisms {
+		writer.write_string(m)
+	}
+
+	return writer.bytes()
+}
+
+// ============================================================================
+// SaslAuthenticate Response (API Key 36)
+// ============================================================================
+// Returns the result of SASL authentication
+
+pub struct SaslAuthenticateResponse {
+pub:
+	error_code          i16     // Error code (0 = success, 58 = SASL_AUTHENTICATION_FAILED)
+	error_message       ?string // Error message if authentication failed
+	auth_bytes          []u8    // SASL authentication bytes from server (for multi-step)
+	session_lifetime_ms i64     // v1+: Session lifetime in milliseconds (0 = no lifetime)
+}
+
+pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
+	is_flexible := version >= 2
+	mut writer := new_writer()
+
+	// error_code: INT16
+	writer.write_i16(r.error_code)
+
+	// error_message: NULLABLE_STRING / COMPACT_NULLABLE_STRING
+	if is_flexible {
+		writer.write_compact_nullable_string(r.error_message)
+	} else {
+		writer.write_nullable_string(r.error_message)
+	}
+
+	// auth_bytes: BYTES / COMPACT_BYTES
+	if is_flexible {
+		writer.write_compact_bytes(r.auth_bytes)
+	} else {
+		writer.write_bytes(r.auth_bytes)
+	}
+
+	// session_lifetime_ms: INT64 (v1+)
+	if version >= 1 {
+		writer.write_i64(r.session_lifetime_ms)
+	}
+
+	// Tagged fields for flexible versions
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}
+
+// ============================================================================
+// SASL Handlers
+// ============================================================================
+
+// Handle SaslHandshake (API Key 17)
+// Handles SASL mechanism negotiation
 fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	is_flexible := is_flexible_version(.sasl_handshake, version)
@@ -44,11 +172,8 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 	return response.encode(version)
 }
 
-// ============================================================================
-// SaslAuthenticate Handler (API Key 36)
-// ============================================================================
+// Handle SaslAuthenticate (API Key 36)
 // Handles SASL authentication
-
 fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	is_flexible := is_flexible_version(.sasl_authenticate, version)

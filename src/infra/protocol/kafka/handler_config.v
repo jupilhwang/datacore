@@ -1,6 +1,216 @@
-// Infra Layer - Kafka Protocol Handler - Config Operations
-// DescribeConfigs handler
+// Kafka Protocol - Config Operations
+// DescribeConfigs
+// Request/Response types, parsing, encoding, and handlers
 module kafka
+
+// ============================================================================
+// DescribeConfigs (API Key 32)
+// ============================================================================
+
+pub struct DescribeConfigsRequest {
+pub:
+	resources        []DescribeConfigsResource
+	include_synonyms bool
+}
+
+pub struct DescribeConfigsResource {
+pub:
+	resource_type i8
+	resource_name string
+	config_names  ?[]string
+}
+
+pub struct DescribeConfigsResponse {
+pub:
+	throttle_time_ms i32
+	results          []DescribeConfigsResult
+}
+
+pub struct DescribeConfigsResult {
+pub:
+	error_code    i16
+	error_message ?string
+	resource_type i8
+	resource_name string
+	configs       []DescribeConfigsEntry
+}
+
+pub struct DescribeConfigsEntry {
+pub:
+	name          string
+	value         ?string
+	read_only     bool
+	is_default    bool // v0 (deprecated in v1+)
+	config_source i8   // v1+ (replaces is_default)
+	is_sensitive  bool
+	synonyms      []DescribeConfigsSynonym // v1+
+	config_type   i8                       // v3+
+	documentation ?string                  // v3+
+}
+
+pub struct DescribeConfigsSynonym {
+pub:
+	name          string
+	value         ?string
+	config_source i8
+}
+
+fn parse_describe_configs_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeConfigsRequest {
+	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	mut resources := []DescribeConfigsResource{}
+
+	for _ in 0 .. count {
+		resource_type := reader.read_i8()!
+		resource_name := if is_flexible {
+			reader.read_compact_string()!
+		} else {
+			reader.read_string()!
+		}
+
+		mut config_names := ?[]string(none)
+
+		n_count := if is_flexible {
+			reader.read_compact_array_len()!
+		} else {
+			reader.read_array_len()!
+		}
+
+		if n_count >= 0 {
+			mut names := []string{}
+			for _ in 0 .. n_count {
+				names << if is_flexible {
+					reader.read_compact_string()!
+				} else {
+					reader.read_string()!
+				}
+			}
+			config_names = names.clone()
+		}
+
+		if is_flexible {
+			reader.skip_tagged_fields()!
+		}
+
+		resources << DescribeConfigsResource{
+			resource_type: resource_type
+			resource_name: resource_name
+			config_names:  config_names
+		}
+	}
+
+	mut include_synonyms := false
+	if version >= 1 {
+		include_synonyms = reader.read_i8()! != 0
+	}
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return DescribeConfigsRequest{
+		resources:        resources
+		include_synonyms: include_synonyms
+	}
+}
+
+pub fn (r DescribeConfigsResponse) encode(version i16) []u8 {
+	is_flexible := version >= 4
+	mut writer := new_writer()
+
+	writer.write_i32(r.throttle_time_ms)
+
+	if is_flexible {
+		writer.write_compact_array_len(r.results.len)
+	} else {
+		writer.write_array_len(r.results.len)
+	}
+
+	for res in r.results {
+		writer.write_i16(res.error_code)
+		if is_flexible {
+			writer.write_compact_nullable_string(res.error_message)
+		} else {
+			writer.write_nullable_string(res.error_message)
+		}
+		writer.write_i8(res.resource_type)
+		if is_flexible {
+			writer.write_compact_string(res.resource_name)
+			writer.write_compact_array_len(res.configs.len)
+		} else {
+			writer.write_string(res.resource_name)
+			writer.write_array_len(res.configs.len)
+		}
+
+		for c in res.configs {
+			if is_flexible {
+				writer.write_compact_string(c.name)
+				writer.write_compact_nullable_string(c.value)
+			} else {
+				writer.write_string(c.name)
+				writer.write_nullable_string(c.value)
+			}
+			writer.write_i8(if c.read_only { i8(1) } else { i8(0) })
+
+			if version == 0 {
+				writer.write_i8(if c.is_default { i8(1) } else { i8(0) })
+			} else {
+				// v1+ uses config_source instead of is_default
+				writer.write_i8(c.config_source)
+			}
+
+			writer.write_i8(if c.is_sensitive { i8(1) } else { i8(0) })
+
+			if version >= 1 {
+				// synonyms
+				if is_flexible {
+					writer.write_compact_array_len(c.synonyms.len)
+				} else {
+					writer.write_array_len(c.synonyms.len)
+				}
+				for s in c.synonyms {
+					if is_flexible {
+						writer.write_compact_string(s.name)
+						writer.write_compact_nullable_string(s.value)
+					} else {
+						writer.write_string(s.name)
+						writer.write_nullable_string(s.value)
+					}
+					writer.write_i8(s.config_source)
+					if is_flexible {
+						writer.write_tagged_fields()
+					}
+				}
+			}
+
+			if version >= 3 {
+				writer.write_i8(c.config_type)
+				if is_flexible {
+					writer.write_compact_nullable_string(c.documentation)
+				} else {
+					writer.write_nullable_string(c.documentation)
+				}
+			}
+
+			if is_flexible {
+				writer.write_tagged_fields()
+			}
+		}
+
+		if is_flexible {
+			writer.write_tagged_fields()
+		}
+	}
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}
+
+// ============================================================================
+// DescribeConfigs Handler
+// ============================================================================
 
 // DescribeConfigs handler
 fn (mut h Handler) handle_describe_configs(body []u8, version i16) ![]u8 {

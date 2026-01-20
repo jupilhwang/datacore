@@ -23,6 +23,10 @@ pub fn (r &BinaryReader) remaining() int {
 	return r.data.len - r.pos
 }
 
+pub fn (r &BinaryReader) position() int {
+	return r.pos
+}
+
 pub fn (mut r BinaryReader) read_i8() !i8 {
 	if r.remaining() < 1 {
 		return error('not enough data for i8')
@@ -148,17 +152,23 @@ pub fn (mut r BinaryReader) read_compact_nullable_string() !string {
 	return str
 }
 
-pub fn (mut r BinaryReader) read_bytes() ![]u8 {
-	len := r.read_i32()!
+// Read bytes with specified length
+pub fn (mut r BinaryReader) read_bytes_len(len int) ![]u8 {
 	if len < 0 {
 		return []u8{}
 	}
-	if r.remaining() < int(len) {
+	if r.remaining() < len {
 		return error('not enough data for bytes')
 	}
-	bytes := r.data[r.pos..r.pos + int(len)].clone()
-	r.pos += int(len)
+	bytes := r.data[r.pos..r.pos + len].clone()
+	r.pos += len
 	return bytes
+}
+
+// Read bytes with i32 length prefix
+pub fn (mut r BinaryReader) read_bytes() ![]u8 {
+	len := r.read_i32()!
+	return r.read_bytes_len(int(len))!
 }
 
 // Read UUID (16 bytes, fixed length)
@@ -196,6 +206,18 @@ pub fn (mut r BinaryReader) read_compact_array_len() !int {
 		return -1
 	}
 	return int(len) - 1
+}
+
+pub fn (mut r BinaryReader) skip(n int) ! {
+	if r.remaining() < n {
+		return error('not enough data to skip')
+	}
+	r.pos += n
+}
+
+pub fn (mut r BinaryReader) read_i32_bytes() ![]u8 {
+	length := r.read_i32()!
+	return r.read_bytes_len(int(length))!
 }
 
 pub fn (mut r BinaryReader) skip_tagged_fields() ! {
