@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.0] - 2026-01-20
+
+### Added
+- Transaction Coordinator support for Exactly-Once Semantics (EOS).
+- `InitProducerId` (API Key 22) enhancement for transactional producers.
+- `AddPartitionsToTxn` (API Key 24) and `EndTxn` (API Key 26) APIs.
+- In-memory transaction store and coordinator logic.
+
 ## [0.16.0] - 2026-01-20
 
 ### Added

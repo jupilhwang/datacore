@@ -64,6 +64,93 @@ pub fn build_response_auto(api_key ApiKey, api_version i16, correlation_id i32, 
 }
 
 // ============================================================================
+// AddPartitionsToTxn Response (API Key 24)
+// ============================================================================
+
+pub struct AddPartitionsToTxnResponse {
+pub:
+	throttle_time_ms i32
+	results          []AddPartitionsToTxnResult
+}
+
+pub struct AddPartitionsToTxnResult {
+pub:
+	name       string
+	partitions []AddPartitionsToTxnPartitionResult
+}
+
+pub struct AddPartitionsToTxnPartitionResult {
+pub:
+	partition_index i32
+	error_code      i16
+}
+
+pub fn (r AddPartitionsToTxnResponse) encode(version i16) []u8 {
+	is_flexible := version >= 3
+	mut writer := new_writer()
+
+	writer.write_i32(r.throttle_time_ms)
+
+	if is_flexible {
+		writer.write_compact_array_len(r.results.len)
+	} else {
+		writer.write_array_len(r.results.len)
+	}
+
+	for res in r.results {
+		if is_flexible {
+			writer.write_compact_string(res.name)
+			writer.write_compact_array_len(res.partitions.len)
+		} else {
+			writer.write_string(res.name)
+			writer.write_array_len(res.partitions.len)
+		}
+
+		for p in res.partitions {
+			writer.write_i32(p.partition_index)
+			writer.write_i16(p.error_code)
+			if is_flexible {
+				writer.write_tagged_fields()
+			}
+		}
+
+		if is_flexible {
+			writer.write_tagged_fields()
+		}
+	}
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}
+
+// ============================================================================
+// EndTxn Response (API Key 26)
+// ============================================================================
+
+pub struct EndTxnResponse {
+pub:
+	throttle_time_ms i32
+	error_code       i16
+}
+
+pub fn (r EndTxnResponse) encode(version i16) []u8 {
+	is_flexible := version >= 3
+	mut writer := new_writer()
+
+	writer.write_i32(r.throttle_time_ms)
+	writer.write_i16(r.error_code)
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}
+
+// ============================================================================
 // DescribeAcls Response (API Key 29)
 // ============================================================================
 

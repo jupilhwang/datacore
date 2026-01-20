@@ -5,6 +5,7 @@ import domain
 import log
 import rand
 import service.port
+import service.transaction
 
 // Protocol Handler - processes Kafka requests and generates responses
 pub struct Handler {
@@ -13,52 +14,56 @@ pub struct Handler {
 	broker_port i32
 	cluster_id  string
 mut:
-	storage      port.StoragePort
-	auth_manager ?port.AuthManager // Optional: SASL authentication manager
-	acl_manager  ?port.AclManager  // Optional: ACL manager
-	logger       log.Log
+	storage         port.StoragePort
+	auth_manager    ?port.AuthManager // Optional: SASL authentication manager
+	acl_manager     ?port.AclManager  // Optional: ACL manager
+	txn_coordinator ?transaction.TransactionCoordinator // Optional: Transaction coordinator
+	logger          log.Log
 }
 
 // new_handler creates a new Kafka protocol handler with storage
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
 	eprintln('[DEBUG] new_handler: broker_id=${broker_id} host="${host}" (len=${host.len}) broker_port=${broker_port} cluster_id="${cluster_id}"')
 	return Handler{
-		broker_id:    broker_id
-		host:         host
-		broker_port:  broker_port
-		cluster_id:   cluster_id
-		storage:      storage
-		auth_manager: none
-		acl_manager:  none
-		logger:       log.Log{}
+		broker_id:       broker_id
+		host:            host
+		broker_port:     broker_port
+		cluster_id:      cluster_id
+		storage:         storage
+		auth_manager:    none
+		acl_manager:     none
+		txn_coordinator: none
+		logger:          log.Log{}
 	}
 }
 
 // new_handler_with_auth creates a new Kafka protocol handler with storage and authentication
 pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager) Handler {
 	return Handler{
-		broker_id:    broker_id
-		host:         host
-		broker_port:  broker_port
-		cluster_id:   cluster_id
-		storage:      storage
-		auth_manager: auth_manager
-		acl_manager:  none
-		logger:       log.Log{}
+		broker_id:       broker_id
+		host:            host
+		broker_port:     broker_port
+		cluster_id:      cluster_id
+		storage:         storage
+		auth_manager:    auth_manager
+		acl_manager:     none
+		txn_coordinator: none
+		logger:          log.Log{}
 	}
 }
 
 // new_handler_full creates a new Kafka protocol handler with all components
-pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager) Handler {
+pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator) Handler {
 	return Handler{
-		broker_id:    broker_id
-		host:         host
-		broker_port:  broker_port
-		cluster_id:   cluster_id
-		storage:      storage
-		auth_manager: auth_manager
-		acl_manager:  acl_manager
-		logger:       log.Log{}
+		broker_id:       broker_id
+		host:            host
+		broker_port:     broker_port
+		cluster_id:      cluster_id
+		storage:         storage
+		auth_manager:    auth_manager
+		acl_manager:     acl_manager
+		txn_coordinator: txn_coordinator
+		logger:          log.Log{}
 	}
 }
 
@@ -137,6 +142,12 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		}
 		.init_producer_id {
 			h.handle_init_producer_id(req.body, version)!
+		}
+		.add_partitions_to_txn {
+			h.handle_add_partitions_to_txn(req.body, version)!
+		}
+		.end_txn {
+			h.handle_end_txn(req.body, version)!
 		}
 		.consumer_group_heartbeat {
 			h.handle_consumer_group_heartbeat(req.body, version)!
@@ -1993,6 +2004,29 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_init_producer_id_request(mut reader, version, is_flexible)!
 
+	// Use TransactionCoordinator if available
+	if mut txn_coord := h.txn_coordinator {
+		result := txn_coord.init_producer_id(req.transactional_id, req.transaction_timeout_ms, req.producer_id, req.producer_epoch) or {
+			// Handle error
+			resp := InitProducerIdResponse{
+				throttle_time_ms: 0
+				error_code:       i16(ErrorCode.unknown_server_error) // TODO: Map errors
+				producer_id:      -1
+				producer_epoch:   -1
+			}
+			return resp.encode(version)
+		}
+
+		resp := InitProducerIdResponse{
+			throttle_time_ms: 0
+			error_code:       0
+			producer_id:      result.producer_id
+			producer_epoch:   result.producer_epoch
+		}
+		return resp.encode(version)
+	}
+
+	// Fallback for idempotent producers (no transaction coordinator)
 	mut producer_id := req.producer_id
 	mut producer_epoch := req.producer_epoch
 	mut error_code := i16(ErrorCode.none)
@@ -2016,8 +2050,8 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	if transactional_id := req.transactional_id {
 		if transactional_id.len > 0 {
 			// Transactional producers require coordinator support
-			// For now, return success but don't track transactions
-			_ = transactional_id // Acknowledge but don't use yet
+			// Return error if coordinator not configured
+			error_code = i16(ErrorCode.coordinator_not_available)
 		}
 	}
 
@@ -2029,6 +2063,117 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	}
 
 	return resp.encode(version)
+}
+
+// Handle AddPartitionsToTxn (API Key 24)
+fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
+	is_flexible := is_flexible_version(.add_partitions_to_txn, version)
+	mut reader := new_reader(body)
+	req := parse_add_partitions_to_txn_request(mut reader, version, is_flexible)!
+
+	if mut txn_coord := h.txn_coordinator {
+		// Convert request topics to TopicPartition list
+		mut partitions := []domain.TopicPartition{}
+		for t in req.topics {
+			for p in t.partitions {
+				partitions << domain.TopicPartition{
+					topic:     t.name
+					partition: int(p)
+				}
+			}
+		}
+
+		txn_coord.add_partitions_to_txn(req.transactional_id, req.producer_id, req.producer_epoch, partitions) or {
+			// Global error (e.g. invalid transaction state)
+			// We need to return error for all partitions
+			mut results := []AddPartitionsToTxnResult{}
+			for t in req.topics {
+				mut p_results := []AddPartitionsToTxnPartitionResult{}
+				for p in t.partitions {
+					p_results << AddPartitionsToTxnPartitionResult{
+						partition_index: p
+						error_code:      i16(ErrorCode.invalid_txn_state) // Simplified error mapping
+					}
+				}
+				results << AddPartitionsToTxnResult{
+					name:       t.name
+					partitions: p_results
+				}
+			}
+			return AddPartitionsToTxnResponse{
+				throttle_time_ms: 0
+				results:          results
+			}.encode(version)
+		}
+
+		// Success
+		mut results := []AddPartitionsToTxnResult{}
+		for t in req.topics {
+			mut p_results := []AddPartitionsToTxnPartitionResult{}
+			for p in t.partitions {
+				p_results << AddPartitionsToTxnPartitionResult{
+					partition_index: p
+					error_code:      0
+				}
+			}
+			results << AddPartitionsToTxnResult{
+				name:       t.name
+				partitions: p_results
+			}
+		}
+		return AddPartitionsToTxnResponse{
+			throttle_time_ms: 0
+			results:          results
+		}.encode(version)
+	}
+
+	// Coordinator not available
+	mut results := []AddPartitionsToTxnResult{}
+	for t in req.topics {
+		mut p_results := []AddPartitionsToTxnPartitionResult{}
+		for p in t.partitions {
+			p_results << AddPartitionsToTxnPartitionResult{
+				partition_index: p
+				error_code:      i16(ErrorCode.coordinator_not_available)
+			}
+		}
+		results << AddPartitionsToTxnResult{
+			name:       t.name
+			partitions: p_results
+		}
+	}
+	return AddPartitionsToTxnResponse{
+		throttle_time_ms: 0
+		results:          results
+	}.encode(version)
+}
+
+// Handle EndTxn (API Key 26)
+fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
+	is_flexible := is_flexible_version(.end_txn, version)
+	mut reader := new_reader(body)
+	req := parse_end_txn_request(mut reader, version, is_flexible)!
+
+	if mut txn_coord := h.txn_coordinator {
+		result := if req.transaction_result { domain.TransactionResult.commit } else { domain.TransactionResult.abort }
+		
+		txn_coord.end_txn(req.transactional_id, req.producer_id, req.producer_epoch, result) or {
+			return EndTxnResponse{
+				throttle_time_ms: 0
+				error_code:       i16(ErrorCode.invalid_txn_state) // Simplified error mapping
+			}.encode(version)
+		}
+
+		return EndTxnResponse{
+			throttle_time_ms: 0
+			error_code:       0
+		}.encode(version)
+	}
+
+	return EndTxnResponse{
+		throttle_time_ms: 0
+		error_code:       i16(ErrorCode.coordinator_not_available)
+	}.encode(version)
 }
 
 // Handle ConsumerGroupHeartbeat (API Key 68) - KIP-848

@@ -142,6 +142,11 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 		.describe_configs { version >= 4 }
 		.alter_configs { version >= 2 }
 		.create_partitions { version >= 2 }
+		.add_partitions_to_txn { version >= 3 }
+		.add_offsets_to_txn { version >= 3 }
+		.end_txn { version >= 3 }
+		.write_txn_markers { version >= 1 }
+		.txn_offset_commit { version >= 3 }
 		.sasl_authenticate { version >= 2 } // v2+ is flexible
 		.delete_groups { version >= 2 }
 		.describe_cluster { version >= 0 }
@@ -1788,5 +1793,113 @@ fn parse_delete_acls_request(mut reader BinaryReader, version i16, is_flexible b
 
 	return DeleteAclsRequest{
 		filters: filters
+	}
+}
+
+// ============================================================================
+// AddPartitionsToTxn Request (API Key 24)
+// ============================================================================
+
+pub struct AddPartitionsToTxnRequest {
+pub:
+	transactional_id string
+	producer_id      i64
+	producer_epoch   i16
+	topics           []AddPartitionsToTxnTopic
+}
+
+pub struct AddPartitionsToTxnTopic {
+pub:
+	name       string
+	partitions []i32
+}
+
+fn parse_add_partitions_to_txn_request(mut reader BinaryReader, version i16, is_flexible bool) !AddPartitionsToTxnRequest {
+	transactional_id := if is_flexible {
+		reader.read_compact_string()!
+	} else {
+		reader.read_string()!
+	}
+	producer_id := reader.read_i64()!
+	producer_epoch := reader.read_i16()!
+
+	topic_count := if is_flexible {
+		reader.read_compact_array_len()!
+	} else {
+		reader.read_array_len()!
+	}
+
+	mut topics := []AddPartitionsToTxnTopic{}
+	for _ in 0 .. topic_count {
+		name := if is_flexible {
+			reader.read_compact_string()!
+		} else {
+			reader.read_string()!
+		}
+
+		partition_count := if is_flexible {
+			reader.read_compact_array_len()!
+		} else {
+			reader.read_array_len()!
+		}
+
+		mut partitions := []i32{}
+		for _ in 0 .. partition_count {
+			partitions << reader.read_i32()!
+		}
+
+		topics << AddPartitionsToTxnTopic{
+			name:       name
+			partitions: partitions
+		}
+
+		if is_flexible {
+			reader.skip_tagged_fields()!
+		}
+	}
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return AddPartitionsToTxnRequest{
+		transactional_id: transactional_id
+		producer_id:      producer_id
+		producer_epoch:   producer_epoch
+		topics:           topics
+	}
+}
+
+// ============================================================================
+// EndTxn Request (API Key 26)
+// ============================================================================
+
+pub struct EndTxnRequest {
+pub:
+	transactional_id   string
+	producer_id        i64
+	producer_epoch     i16
+	transaction_result bool // false=ABORT, true=COMMIT
+}
+
+fn parse_end_txn_request(mut reader BinaryReader, version i16, is_flexible bool) !EndTxnRequest {
+	transactional_id := if is_flexible {
+		reader.read_compact_string()!
+	} else {
+		reader.read_string()!
+	}
+	producer_id := reader.read_i64()!
+	producer_epoch := reader.read_i16()!
+	transaction_result := reader.read_i8()! != 0
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return EndTxnRequest{
+		transactional_id:   transactional_id
+		producer_id:        producer_id
+		producer_epoch:     producer_epoch
+		transaction_result: transaction_result
 	}
 }
