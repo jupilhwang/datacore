@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0] - 2026-01-20
+
+### Added
+- SASL PLAIN authentication mechanism support.
+- `SaslHandshake` (API Key 17) and `SaslAuthenticate` (API Key 36) APIs.
+- In-memory user store for managing credentials.
+
 ## [0.14.0] - 2026-01-20
 
 ### Added

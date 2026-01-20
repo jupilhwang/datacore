@@ -325,6 +325,7 @@ fn test_handler_sasl_handshake_success() {
 	// Build SaslHandshake request: [size][header][body]
 	// Request header v0: api_key(2) + version(2) + correlation_id(4) + client_id(nullable string)
 	mut request := kafka.new_writer()
+	request.write_i32(0) // size (ignored by parse_request but required)
 	request.write_i16(17) // api_key: SaslHandshake
 	request.write_i16(0) // version
 	request.write_i32(1) // correlation_id
@@ -359,6 +360,7 @@ fn test_handler_sasl_handshake_unsupported_mechanism() {
 	mut handler := create_test_handler_with_auth()
 
 	mut request := kafka.new_writer()
+	request.write_i32(0) // size
 	request.write_i16(17) // api_key: SaslHandshake
 	request.write_i16(0) // version
 	request.write_i32(2) // correlation_id
@@ -384,6 +386,7 @@ fn test_handler_sasl_authenticate_success() {
 	auth_bytes := make_plain_auth('', 'admin', 'adminpass')
 
 	mut request := kafka.new_writer()
+	request.write_i32(0) // size
 	request.write_i16(36) // api_key: SaslAuthenticate
 	request.write_i16(0) // version
 	request.write_i32(3) // correlation_id
@@ -411,6 +414,7 @@ fn test_handler_sasl_authenticate_failure() {
 	auth_bytes := make_plain_auth('', 'admin', 'wrongpassword')
 
 	mut request := kafka.new_writer()
+	request.write_i32(0) // size
 	request.write_i16(36) // api_key: SaslAuthenticate
 	request.write_i16(0) // version
 	request.write_i32(4) // correlation_id
