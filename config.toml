@@ -86,7 +86,7 @@ ws_ping_interval_ms = 30000
 [storage]
 
 # 사용할 스토리지 엔진
-# 지원값: "memory", "s3", "sqlite", "postgres" (P2)
+# 지원값: "memory", "s3", "postgres" (P2)
 # 현재 구현됨: "memory", "s3"
 engine = "s3"
 
@@ -149,18 +149,6 @@ target_segment_bytes = 104857600
 # 파티션 인덱스 캐시 TTL (밀리초). TTL 만료 시 S3에서 재로딩하여 Latency 유발 가능.
 # 현재 성능 테스트를 위해 매우 긴 TTL을 설정하여 S3 GET 요청을 최소화함. (24시간)
 index_cache_ttl_ms = 86400000
-
-# -----------------------------------------------------------------------------
-# [storage.sqlite] - SQLite 스토리지 설정 (P2 - 미구현)
-# -----------------------------------------------------------------------------
-[storage.sqlite]
-
-# 데이터베이스 파일 경로
-path = "datacore.db"
-
-# 저널 모드
-# 지원값: "WAL" (권장), "DELETE", "TRUNCATE", "PERSIST", "MEMORY"
-journal_mode = "WAL"
 
 # -----------------------------------------------------------------------------
 # [storage.postgres] - PostgreSQL 스토리지 설정 (P2 - 미구현)
