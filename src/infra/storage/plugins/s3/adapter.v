@@ -174,6 +174,17 @@ pub fn (mut a S3StorageAdapter) list_topics() ![]domain.TopicMetadata {
 	mut topics := []domain.TopicMetadata{}
 	mut seen := map[string]bool{}
 
+	// First, add all cached topics
+	a.topic_lock.rlock()
+	for name, cached in a.topic_cache {
+		if name !in seen {
+			seen[name] = true
+			topics << cached.meta
+		}
+	}
+	a.topic_lock.runlock()
+
+	// Then, add topics from S3 that are not already in cache
 	for obj in objects {
 		// Extract topic name from path like "datacore/topics/my-topic/metadata.json"
 		if obj.key.ends_with('/metadata.json') {
@@ -325,13 +336,27 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	a.topic_partition_buffers[partition_key] = tp_buffer
 	a.buffer_lock.unlock()
 
-	// 4. Trigger fast path flush if buffer is full (Non-blocking)
-	if should_flush {
-		go a.async_flush_partition(partition_key)
-	}
+	// 4. Fast path flush is DISABLED to avoid race conditions with flush_worker
+	// All flushes are now handled by the periodic flush_worker
+	// if should_flush {
+	// 	go a.async_flush_partition(partition_key)
+	// }
+	_ = should_flush // Suppress unused variable warning
 
 	// 5. Update in-memory high_watermark immediately for response
-	index.high_watermark = base_offset + i64(records.len)
+	// Also update the cache so the next append gets the correct offset
+	new_high_watermark := base_offset + i64(records.len)
+	a.topic_lock.@lock()
+	if cached := a.topic_index_cache[partition_key] {
+		mut updated_index := cached.index
+		updated_index.high_watermark = new_high_watermark
+		a.topic_index_cache[partition_key] = CachedPartitionIndex{
+			index:     updated_index
+			etag:      cached.etag
+			cached_at: cached.cached_at
+		}
+	}
+	a.topic_lock.unlock()
 
 	return domain.AppendResult{
 		base_offset:      base_offset
@@ -361,7 +386,9 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 	// Find relevant segments
 	mut all_records := []domain.Record{}
 	mut bytes_read := 0
+	partition_key := '${topic}:${partition}'
 
+	// 1. First, try to read from S3 segments
 	for seg in index.log_segments {
 		if seg.end_offset < offset {
 			continue
@@ -413,6 +440,25 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		if bytes_read >= max_bytes {
 			break
 		}
+	}
+
+	// 2. Also read from in-memory buffer (not yet flushed to S3)
+	if bytes_read < max_bytes {
+		a.buffer_lock.lock()
+		if tp_buffer := a.topic_partition_buffers[partition_key] {
+			for rec in tp_buffer.records {
+				if rec.offset >= offset && bytes_read < max_bytes {
+					all_records << domain.Record{
+						key:       rec.key
+						value:     rec.value
+						headers:   rec.headers
+						timestamp: rec.timestamp
+					}
+					bytes_read += rec.value.len + rec.key.len
+				}
+			}
+		}
+		a.buffer_lock.unlock()
 	}
 
 	return domain.FetchResult{
@@ -709,7 +755,13 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 	key := '${topic}:${partition}'
 	// 1. Check cache
 	a.topic_lock.rlock()
-	if cached := a.topic_index_cache[key] {
+	cached_exists := key in a.topic_index_cache
+	mut cached_index := PartitionIndex{}
+	mut cached_etag := ''
+	if cached_exists {
+		cached := a.topic_index_cache[key]
+		cached_index = cached.index
+		cached_etag = cached.etag
 		if time.since(cached.cached_at).milliseconds() < a.config.index_cache_ttl_ms {
 			a.topic_lock.runlock()
 			return cached.index
@@ -720,7 +772,20 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 	// 2. Fetch from S3
 	index_key := a.partition_index_key(topic, partition)
 	data, etag := a.get_object(index_key, -1, -1) or {
-		// Index not found, return default empty index
+		// Index not found in S3
+		// If we have a cached version (even if stale), prefer it over creating a new empty one
+		if cached_exists {
+			// Refresh cache timestamp but keep the data
+			a.topic_lock.@lock()
+			a.topic_index_cache[key] = CachedPartitionIndex{
+				index:     cached_index
+				etag:      cached_etag
+				cached_at: time.now()
+			}
+			a.topic_lock.unlock()
+			return cached_index
+		}
+		// No cache exists, create new empty index
 		a.topic_lock.@lock()
 		a.topic_index_cache[key] = CachedPartitionIndex{
 			index:     PartitionIndex{
@@ -737,17 +802,25 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 		return a.topic_index_cache[key].index // Return the newly cached empty index
 	}
 
-	// 3. Decode and Update cache
-	index := json.decode(PartitionIndex, data.bytestr())!
+	// 3. Decode S3 index
+	s3_index := json.decode(PartitionIndex, data.bytestr())!
+
+	// 4. Merge with cached index - keep higher high_watermark
+	// This handles the case where append updated the cache but flush hasn't written to S3 yet
+	mut final_index := s3_index
+	if cached_exists && cached_index.high_watermark > s3_index.high_watermark {
+		final_index.high_watermark = cached_index.high_watermark
+	}
+
 	a.topic_lock.@lock()
 	a.topic_index_cache[key] = CachedPartitionIndex{
-		index:     index
+		index:     final_index
 		etag:      etag
 		cached_at: time.now()
 	}
 	a.topic_lock.unlock()
 
-	return index
+	return final_index
 }
 
 // S3 HTTP operations using signature v4
@@ -791,6 +864,11 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 }
 
 fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
+	a.put_object_with_retry(key, data, 3)!
+}
+
+// put_object_with_retry attempts to put an object with exponential backoff retry
+fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries int) ! {
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
 		'${endpoint}/${a.config.bucket_name}/${key}'
@@ -798,18 +876,41 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 		'${endpoint}/${key}'
 	}
 
-	headers := a.sign_request('PUT', key, '', data)
+	mut last_err := ''
+	for attempt in 0 .. max_retries {
+		headers := a.sign_request('PUT', key, '', data)
 
-	resp := http.fetch(http.FetchConfig{
-		url:    url
-		method: .put
-		header: headers
-		data:   data.bytestr()
-	}) or { return error('S3 PUT failed: ${err}') }
+		resp := http.fetch(http.FetchConfig{
+			url:    url
+			method: .put
+			header: headers
+			data:   data.bytestr()
+		}) or {
+			last_err = 'S3 PUT failed: ${err}'
+			if attempt < max_retries - 1 {
+				// Exponential backoff: 100ms, 200ms, 400ms...
+				time.sleep(time.Duration(100 * (1 << attempt)) * time.millisecond)
+				continue
+			}
+			return error(last_err)
+		}
 
-	if resp.status_code !in [200, 201, 204] {
+		if resp.status_code in [200, 201, 204] {
+			return // Success
+		}
+
+		// Retry on 503 (Service Unavailable / Throttling) and 500 (Server Error)
+		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
+			last_err = 'S3 PUT failed with status ${resp.status_code}'
+			// Exponential backoff with jitter
+			backoff_ms := 100 * (1 << attempt) + int(time.now().unix_milli() % 50)
+			time.sleep(time.Duration(backoff_ms) * time.millisecond)
+			continue
+		}
+
 		return error('S3 PUT failed with status ${resp.status_code}')
 	}
+	return error(last_err)
 }
 
 fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
@@ -1146,12 +1247,25 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 
 	// 4. Update partition index with new segment (MUST be atomic/safe from concurrent updates)
 
-	// Re-fetch the latest index from S3 to ensure we don't overwrite concurrent changes
-	mut index := a.get_partition_index(topic, partition)!
+	// Get the current index from S3 directly (bypass cache) to ensure we have the latest persisted state
+	index_key := a.partition_index_key(topic, partition)
+	mut index := PartitionIndex{
+		topic:           topic
+		partition:       partition
+		earliest_offset: 0
+		high_watermark:  0
+		log_segments:    []
+	}
+
+	if data, _ := a.get_object(index_key, -1, -1) {
+		if decoded := json.decode(PartitionIndex, data.bytestr()) {
+			index = decoded
+		}
+	}
 
 	// Update index with new segment
-	// The condition checks if the new segment is after or at the current high_watermark
-	// This prevents duplicate segments from being added
+	// The segment is added if it extends beyond the current S3 high_watermark
+	// This is based on S3 persisted state, not in-memory cache
 	if base_offset >= index.high_watermark {
 		// High watermark is calculated based on the data that has been successfully stored to S3.
 		index.high_watermark = end_offset + 1 // New high watermark
@@ -1164,18 +1278,31 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 		}
 
 		// Write updated index to S3
-		index_key := a.partition_index_key(topic, partition)
 		a.put_object(index_key, json.encode(index).bytes()) or {
 			eprintln('[S3] ASYNC FLUSH FAILED for ${partition_key}: Index put failed: ${err}')
 			return error('Index put failed during async flush: ${err}')
 		}
 
-		// Update local cache with new index
+		// Update local cache with new index (preserving the higher high_watermark from in-memory)
 		cache_key := '${topic}:${partition}'
-		a.topic_index_cache[cache_key] = CachedPartitionIndex{
-			index:     index
-			cached_at: time.now()
+		a.topic_lock.@lock()
+		if cached := a.topic_index_cache[cache_key] {
+			// Keep the higher high_watermark between cache and S3
+			mut final_index := index
+			if cached.index.high_watermark > index.high_watermark {
+				final_index.high_watermark = cached.index.high_watermark
+			}
+			a.topic_index_cache[cache_key] = CachedPartitionIndex{
+				index:     final_index
+				cached_at: time.now()
+			}
+		} else {
+			a.topic_index_cache[cache_key] = CachedPartitionIndex{
+				index:     index
+				cached_at: time.now()
+			}
 		}
+		a.topic_lock.unlock()
 	} else {
 		// This segment overlaps with already stored data, skip updating index
 		eprintln('[S3] ASYNC FLUSH WARNING: Segment base_offset ${base_offset} < high_watermark ${index.high_watermark}. Index not updated.')
@@ -1183,6 +1310,7 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 }
 
 // flush_worker periodically flushes all buffers that have accumulated data.
+// Uses sequential processing per partition to avoid index conflicts.
 fn (mut a S3StorageAdapter) flush_worker() {
 	for a.compactor_running { // Use compactor_running flag to stop both workers
 		time.sleep(a.config.batch_timeout_ms)
@@ -1199,9 +1327,12 @@ fn (mut a S3StorageAdapter) flush_worker() {
 
 		a.buffer_lock.unlock()
 
+		// Process flushes sequentially to avoid index conflicts
+		// This ensures that each partition's index is updated atomically
 		for key in keys_to_flush {
-			// Flush asynchronously
-			go a.async_flush_partition(key) // Removed or {}
+			a.async_flush_partition(key) or {
+				eprintln('[S3] Flush failed for ${key}: ${err}')
+			}
 		}
 	}
 }
