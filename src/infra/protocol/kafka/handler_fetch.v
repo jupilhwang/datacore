@@ -87,11 +87,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 		_ = reader.read_i32()! // session_epoch
 	}
 
-	topic_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	mut topics := []FetchRequestTopic{}
 	for _ in 0 .. topic_count {
@@ -106,11 +102,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 			name = reader.read_string()!
 		}
 
-		partition_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		partition_count := reader.read_flex_array_len(is_flexible)!
 
 		mut partitions := []FetchRequestPartition{}
 		for _ in 0 .. partition_count {
@@ -134,9 +126,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 				partition_max_bytes: partition_max_bytes
 			}
 
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 		}
 
 		topics << FetchRequestTopic{
@@ -145,18 +135,12 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 			partitions: partitions
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 
 	mut forgotten_topics_data := []FetchRequestForgottenTopic{}
 	if version >= 7 {
-		forgotten_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		forgotten_count := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. forgotten_count {
 			mut fname := ''
 			mut ftopic_id := []u8{}
@@ -167,11 +151,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 			} else {
 				fname = reader.read_string()!
 			}
-			fpartition_count := if is_flexible {
-				reader.read_compact_array_len()!
-			} else {
-				reader.read_array_len()!
-			}
+			fpartition_count := reader.read_flex_array_len(is_flexible)!
 			mut fpartitions := []i32{}
 			for _ in 0 .. fpartition_count {
 				fpartitions << reader.read_i32()!
@@ -181,14 +161,12 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 				topic_id:   ftopic_id,
 				partitions: fpartitions,
 			}
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 		}
 	}
 
 	if version >= 11 {
-		_ = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		_ = reader.read_flex_string(is_flexible)!
 	}
 
 	return FetchRequest{

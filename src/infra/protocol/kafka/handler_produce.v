@@ -66,11 +66,7 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 	acks := reader.read_i16()!
 	timeout_ms := reader.read_i32()!
 
-	topic_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	mut topic_data := []ProduceRequestTopic{}
 	for _ in 0 .. topic_count {
@@ -85,11 +81,7 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 			name = reader.read_string()!
 		}
 
-		partition_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		partition_count := reader.read_flex_array_len(is_flexible)!
 
 		mut partition_data := []ProduceRequestPartition{}
 		for _ in 0 .. partition_count {
@@ -105,9 +97,7 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 				records: records
 			}
 
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 		}
 
 		topic_data << ProduceRequestTopic{
@@ -116,9 +106,7 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 			partition_data: partition_data
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 
 	return ProduceRequest{

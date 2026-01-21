@@ -44,9 +44,7 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 		reader.read_bytes()!
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return SaslAuthenticateRequest{
 		auth_bytes: auth_bytes

@@ -41,35 +41,21 @@ pub:
 }
 
 fn parse_alter_configs_request(mut reader BinaryReader, version i16, is_flexible bool) !AlterConfigsRequest {
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut resources := []AlterConfigsResource{}
 
 	for _ in 0 .. count {
 		resource_type := reader.read_i8()!
-		resource_name := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		resource_name := reader.read_flex_string(is_flexible)!
 
-		config_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		config_count := reader.read_flex_array_len(is_flexible)!
 		mut configs := []AlterConfigsEntry{}
 
 		for _ in 0 .. config_count {
-			name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-			value := if is_flexible {
-				reader.read_compact_nullable_string()!
-			} else {
-				reader.read_nullable_string()!
-			}
+			name := reader.read_flex_string(is_flexible)!
+			value := reader.read_flex_nullable_string(is_flexible)!
 
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 
 			configs << AlterConfigsEntry{
 				name:  name
@@ -77,9 +63,7 @@ fn parse_alter_configs_request(mut reader BinaryReader, version i16, is_flexible
 			}
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 
 		resources << AlterConfigsResource{
 			resource_type: resource_type
@@ -90,9 +74,7 @@ fn parse_alter_configs_request(mut reader BinaryReader, version i16, is_flexible
 
 	validate_only := reader.read_i8()! != 0
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return AlterConfigsRequest{
 		resources:     resources
@@ -177,36 +159,26 @@ pub:
 }
 
 fn parse_create_partitions_request(mut reader BinaryReader, version i16, is_flexible bool) !CreatePartitionsRequest {
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut topics := []CreatePartitionsTopic{}
 
 	for _ in 0 .. count {
-		name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		name := reader.read_flex_string(is_flexible)!
 		partition_count := reader.read_i32()!
 
 		// Assignments (nullable array)
-		assign_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		assign_count := reader.read_flex_array_len(is_flexible)!
 
 		mut assignments := ?[]CreatePartitionsAssignment(none)
 		if assign_count >= 0 {
 			mut assigns := []CreatePartitionsAssignment{}
 			for _ in 0 .. assign_count {
-				broker_count := if is_flexible {
-					reader.read_compact_array_len()!
-				} else {
-					reader.read_array_len()!
-				}
+				broker_count := reader.read_flex_array_len(is_flexible)!
 				mut broker_ids := []i32{}
 				for _ in 0 .. broker_count {
 					broker_ids << reader.read_i32()!
 				}
-				if is_flexible {
-					reader.skip_tagged_fields()!
-				}
+				reader.skip_flex_tagged_fields(is_flexible)!
 				assigns << CreatePartitionsAssignment{
 					broker_ids: broker_ids
 				}
@@ -214,9 +186,7 @@ fn parse_create_partitions_request(mut reader BinaryReader, version i16, is_flex
 			assignments = assigns.clone()
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 
 		topics << CreatePartitionsTopic{
 			name:        name
@@ -228,9 +198,7 @@ fn parse_create_partitions_request(mut reader BinaryReader, version i16, is_flex
 	timeout_ms := reader.read_i32()!
 	validate_only := reader.read_i8()! != 0
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return CreatePartitionsRequest{
 		topics:        topics
@@ -319,26 +287,20 @@ pub:
 }
 
 fn parse_delete_records_request(mut reader BinaryReader, version i16, is_flexible bool) !DeleteRecordsRequest {
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut topics := []DeleteRecordsTopic{}
 
 	for _ in 0 .. count {
-		name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		name := reader.read_flex_string(is_flexible)!
 
-		partition_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		partition_count := reader.read_flex_array_len(is_flexible)!
 		mut partitions := []DeleteRecordsPartition{}
 
 		for _ in 0 .. partition_count {
 			partition_index := reader.read_i32()!
 			offset := reader.read_i64()!
 
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 
 			partitions << DeleteRecordsPartition{
 				partition_index: partition_index
@@ -346,9 +308,7 @@ fn parse_delete_records_request(mut reader BinaryReader, version i16, is_flexibl
 			}
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 
 		topics << DeleteRecordsTopic{
 			name:       name
@@ -358,9 +318,7 @@ fn parse_delete_records_request(mut reader BinaryReader, version i16, is_flexibl
 
 	timeout_ms := reader.read_i32()!
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return DeleteRecordsRequest{
 		topics:     topics

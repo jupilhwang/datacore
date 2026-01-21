@@ -46,30 +46,16 @@ pub:
 
 fn parse_describe_acls_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeAclsRequest {
 	resource_type := reader.read_i8()!
-	resource_name := if is_flexible {
-		reader.read_compact_nullable_string()!
-	} else {
-		reader.read_nullable_string()!
-	}
+	resource_name := reader.read_flex_nullable_string(is_flexible)!
 	// v1+: pattern_type
 	pattern_type := if version >= 1 { reader.read_i8()! } else { i8(3) } // Default to LITERAL (3)
 
-	principal := if is_flexible {
-		reader.read_compact_nullable_string()!
-	} else {
-		reader.read_nullable_string()!
-	}
-	host := if is_flexible {
-		reader.read_compact_nullable_string()!
-	} else {
-		reader.read_nullable_string()!
-	}
+	principal := reader.read_flex_nullable_string(is_flexible)!
+	host := reader.read_flex_nullable_string(is_flexible)!
 	operation := reader.read_i8()!
 	permission_type := reader.read_i8()!
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return DescribeAclsRequest{
 		resource_type:   resource_type
@@ -179,35 +165,21 @@ pub:
 }
 
 fn parse_create_acls_request(mut reader BinaryReader, version i16, is_flexible bool) !CreateAclsRequest {
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut creations := []CreateAclsCreation{}
 
 	for _ in 0 .. count {
 		resource_type := reader.read_i8()!
-		resource_name := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		resource_name := reader.read_flex_string(is_flexible)!
 		// v1+: pattern_type
 		pattern_type := if version >= 1 { reader.read_i8()! } else { i8(3) } // Default to LITERAL (3)
 
-		principal := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
-		host := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		principal := reader.read_flex_string(is_flexible)!
+		host := reader.read_flex_string(is_flexible)!
 		operation := reader.read_i8()!
 		permission_type := reader.read_i8()!
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 
 		creations << CreateAclsCreation{
 			resource_type:   resource_type
@@ -220,9 +192,7 @@ fn parse_create_acls_request(mut reader BinaryReader, version i16, is_flexible b
 		}
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return CreateAclsRequest{
 		creations: creations
@@ -305,35 +275,21 @@ pub:
 }
 
 fn parse_delete_acls_request(mut reader BinaryReader, version i16, is_flexible bool) !DeleteAclsRequest {
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut filters := []DeleteAclsFilter{}
 
 	for _ in 0 .. count {
 		resource_type := reader.read_i8()!
-		resource_name := if is_flexible {
-			reader.read_compact_nullable_string()!
-		} else {
-			reader.read_nullable_string()!
-		}
+		resource_name := reader.read_flex_nullable_string(is_flexible)!
 		// v1+: pattern_type
 		pattern_type := if version >= 1 { reader.read_i8()! } else { i8(3) } // Default to LITERAL (3)
 
-		principal := if is_flexible {
-			reader.read_compact_nullable_string()!
-		} else {
-			reader.read_nullable_string()!
-		}
-		host := if is_flexible {
-			reader.read_compact_nullable_string()!
-		} else {
-			reader.read_nullable_string()!
-		}
+		principal := reader.read_flex_nullable_string(is_flexible)!
+		host := reader.read_flex_nullable_string(is_flexible)!
 		operation := reader.read_i8()!
 		permission_type := reader.read_i8()!
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 
 		filters << DeleteAclsFilter{
 			resource_type:   resource_type
@@ -346,9 +302,7 @@ fn parse_delete_acls_request(mut reader BinaryReader, version i16, is_flexible b
 		}
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return DeleteAclsRequest{
 		filters: filters

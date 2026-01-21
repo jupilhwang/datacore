@@ -53,15 +53,11 @@ fn parse_list_offsets_request(mut reader BinaryReader, version i16, is_flexible 
 		isolation_level = reader.read_i8()!
 	}
 
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut topics := []ListOffsetsRequestTopic{}
 	for _ in 0 .. count {
-		name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-		pcount := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		name := reader.read_flex_string(is_flexible)!
+		pcount := reader.read_flex_array_len(is_flexible)!
 		mut partitions := []ListOffsetsRequestPartition{}
 		for _ in 0 .. pcount {
 			pi := reader.read_i32()!
@@ -73,17 +69,13 @@ fn parse_list_offsets_request(mut reader BinaryReader, version i16, is_flexible 
 				partition_index: pi
 				timestamp:       ts
 			}
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 		}
 		topics << ListOffsetsRequestTopic{
 			name:       name
 			partitions: partitions
 		}
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 	return ListOffsetsRequest{
 		replica_id:      replica_id

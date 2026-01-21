@@ -11,17 +11,9 @@ pub:
 fn parse_list_groups_request(mut reader BinaryReader, version i16, is_flexible bool) !ListGroupsRequest {
 	mut states_filter := []string{}
 	if version >= 4 {
-		count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		count := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. count {
-			states_filter << if is_flexible {
-				reader.read_compact_string()!
-			} else {
-				reader.read_string()!
-			}
+			states_filter << reader.read_flex_string(is_flexible)!
 		}
 	}
 	return ListGroupsRequest{
@@ -36,10 +28,10 @@ pub:
 }
 
 fn parse_describe_groups_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeGroupsRequest {
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut groups := []string{}
 	for _ in 0 .. count {
-		groups << if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		groups << reader.read_flex_string(is_flexible)!
 	}
 	mut include_authorized_operations := false
 	if version >= 3 {

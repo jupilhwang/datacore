@@ -26,37 +26,29 @@ pub:
 }
 
 fn parse_offset_commit_request(mut reader BinaryReader, version i16, is_flexible bool) !OffsetCommitRequest {
-	group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+	group_id := reader.read_flex_string(is_flexible)!
 	// v1+: generation_id
 	if version >= 1 {
 		_ = reader.read_i32()!
 	}
 	// v1+: member_id
 	if version >= 1 {
-		_ = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		_ = reader.read_flex_string(is_flexible)!
 	}
 	// v7+: group_instance_id
 	if version >= 7 {
-		_ = if is_flexible {
-			reader.read_compact_nullable_string()!
-		} else {
-			reader.read_nullable_string()!
-		}
+		_ = reader.read_flex_nullable_string(is_flexible)!
 	}
 	// v2-v4: retention_time_ms (deprecated, removed in v5)
 	if version >= 2 && version <= 4 {
 		_ = reader.read_i64()!
 	}
 
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut topics := []OffsetCommitRequestTopic{}
 	for _ in 0 .. count {
-		name := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-		pcount := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		name := reader.read_flex_string(is_flexible)!
+		pcount := reader.read_flex_array_len(is_flexible)!
 		mut partitions := []OffsetCommitRequestPartition{}
 		for _ in 0 .. pcount {
 			pi := reader.read_i32()!
@@ -69,24 +61,19 @@ fn parse_offset_commit_request(mut reader BinaryReader, version i16, is_flexible
 			if version >= 1 && version <= 4 {
 				_ = reader.read_i64()!
 			}
-			cm := if is_flexible { reader.read_compact_nullable_string() or { '' } } else { reader.read_nullable_string() or {
-					''} }
+			cm := reader.read_flex_nullable_string(is_flexible) or { '' }
 			partitions << OffsetCommitRequestPartition{
 				partition_index:    pi
 				committed_offset:   co
 				committed_metadata: cm
 			}
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 		}
 		topics << OffsetCommitRequestTopic{
 			name:       name
 			partitions: partitions
 		}
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 	return OffsetCommitRequest{
 		group_id: group_id
@@ -129,24 +116,12 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 	mut require_stable := false
 
 	if version <= 7 {
-		group_id = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
-		count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		group_id = reader.read_flex_string(is_flexible)!
+		count := reader.read_flex_array_len(is_flexible)!
 		if count >= 0 {
 			for _ in 0 .. count {
-				name := if is_flexible {
-					reader.read_compact_string()!
-				} else {
-					reader.read_string()!
-				}
-				pcount := if is_flexible {
-					reader.read_compact_array_len()!
-				} else {
-					reader.read_array_len()!
-				}
+				name := reader.read_flex_string(is_flexible)!
+				pcount := reader.read_flex_array_len(is_flexible)!
 				mut partitions := []i32{}
 				for _ in 0 .. pcount {
 					partitions << reader.read_i32()!
@@ -155,24 +130,14 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 					name:       name
 					partitions: partitions
 				}
-				if is_flexible {
-					reader.skip_tagged_fields()!
-				}
+				reader.skip_flex_tagged_fields(is_flexible)!
 			}
 		}
 	} else {
-		gcount := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		gcount := reader.read_flex_array_len(is_flexible)!
 		if gcount >= 0 {
 			for _ in 0 .. gcount {
-				gid := if is_flexible {
-					reader.read_compact_string()!
-				} else {
-					reader.read_string()!
-				}
+				gid := reader.read_flex_string(is_flexible)!
 				mut member_id := ?string(none)
 				mut member_epoch := i32(-1)
 				if version >= 9 {
@@ -185,24 +150,12 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 					}
 					member_epoch = reader.read_i32()!
 				}
-				tcount := if is_flexible {
-					reader.read_compact_array_len()!
-				} else {
-					reader.read_array_len()!
-				}
+				tcount := reader.read_flex_array_len(is_flexible)!
 				mut gtopics := []OffsetFetchRequestGroupTopic{}
 				if tcount >= 0 {
 					for _ in 0 .. tcount {
-						name := if is_flexible {
-							reader.read_compact_string()!
-						} else {
-							reader.read_string()!
-						}
-						pcount := if is_flexible {
-							reader.read_compact_array_len()!
-						} else {
-							reader.read_array_len()!
-						}
+						name := reader.read_flex_string(is_flexible)!
+						pcount := reader.read_flex_array_len(is_flexible)!
 						mut partitions := []i32{}
 						for _ in 0 .. pcount {
 							partitions << reader.read_i32()!
@@ -211,9 +164,7 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 							name:       name
 							partitions: partitions
 						}
-						if is_flexible {
-							reader.skip_tagged_fields()!
-						}
+						reader.skip_flex_tagged_fields(is_flexible)!
 					}
 				}
 				groups << OffsetFetchRequestGroup{
@@ -222,9 +173,7 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 					member_epoch: member_epoch
 					topics:       gtopics
 				}
-				if is_flexible {
-					reader.skip_tagged_fields()!
-				}
+				reader.skip_flex_tagged_fields(is_flexible)!
 			}
 		}
 	}

@@ -25,11 +25,7 @@ pub:
 }
 
 fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bool) !JoinGroupRequest {
-	group_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	group_id := reader.read_flex_string(is_flexible)!
 
 	session_timeout_ms := reader.read_i32()!
 
@@ -38,11 +34,7 @@ fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bo
 		rebalance_timeout_ms = reader.read_i32()!
 	}
 
-	member_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	member_id := reader.read_flex_string(is_flexible)!
 
 	mut group_instance_id := ?string(none)
 	if version >= 5 {
@@ -55,25 +47,13 @@ fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bo
 		}
 	}
 
-	protocol_type := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	protocol_type := reader.read_flex_string(is_flexible)!
 
-	protocol_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	protocol_count := reader.read_flex_array_len(is_flexible)!
 
 	mut protocols := []JoinGroupRequestProtocol{}
 	for _ in 0 .. protocol_count {
-		name := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		name := reader.read_flex_string(is_flexible)!
 		metadata := if is_flexible {
 			reader.read_compact_bytes()!
 		} else {
@@ -85,9 +65,7 @@ fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bo
 			metadata: metadata
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 
 	return JoinGroupRequest{
@@ -120,9 +98,9 @@ pub:
 }
 
 fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bool) !SyncGroupRequest {
-	group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+	group_id := reader.read_flex_string(is_flexible)!
 	generation_id := reader.read_i32()!
-	member_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+	member_id := reader.read_flex_string(is_flexible)!
 
 	mut group_instance_id := ?string(none)
 	if version >= 3 {
@@ -151,18 +129,16 @@ fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bo
 		}
 	}
 
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut assignments := []SyncGroupRequestAssignment{}
 	for _ in 0 .. count {
-		mid := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		mid := reader.read_flex_string(is_flexible)!
 		assign := if is_flexible { reader.read_compact_bytes()! } else { reader.read_bytes()! }
 		assignments << SyncGroupRequestAssignment{
 			member_id:  mid
 			assignment: assign
 		}
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 
 	return SyncGroupRequest{
@@ -186,9 +162,9 @@ pub:
 }
 
 fn parse_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !HeartbeatRequest {
-	group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+	group_id := reader.read_flex_string(is_flexible)!
 	generation_id := reader.read_i32()!
-	member_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+	member_id := reader.read_flex_string(is_flexible)!
 	mut group_instance_id := ?string(none)
 	if version >= 3 {
 		if is_flexible {
@@ -224,14 +200,14 @@ pub:
 }
 
 fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible bool) !LeaveGroupRequest {
-	group_id := if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+	group_id := reader.read_flex_string(is_flexible)!
 
 	// v0-v2: single member_id
 	mut member_id := ''
 	mut members := []LeaveGroupMember{}
 
 	if version <= 2 {
-		member_id = if is_flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		member_id = reader.read_flex_string(is_flexible)!
 	} else {
 		// v3+: members array
 		members_len := if is_flexible {
@@ -241,16 +217,8 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 		}
 
 		for _ in 0 .. members_len {
-			m_member_id := if is_flexible {
-				reader.read_compact_string()!
-			} else {
-				reader.read_string()!
-			}
-			raw_group_instance_id := if is_flexible {
-				reader.read_compact_nullable_string()!
-			} else {
-				reader.read_nullable_string()!
-			}
+			m_member_id := reader.read_flex_string(is_flexible)!
+			raw_group_instance_id := reader.read_flex_nullable_string(is_flexible)!
 			m_group_instance_id := if raw_group_instance_id.len > 0 {
 				?string(raw_group_instance_id)
 			} else {
@@ -260,20 +228,14 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 			// v5+: reason field
 			mut m_reason := ?string(none)
 			if version >= 5 {
-				raw_reason := if is_flexible {
-					reader.read_compact_nullable_string()!
-				} else {
-					reader.read_nullable_string()!
-				}
+				raw_reason := reader.read_flex_nullable_string(is_flexible)!
 				if raw_reason.len > 0 {
 					m_reason = raw_reason
 				}
 			}
 
 			// Skip tagged fields for each member in flexible version
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 
 			members << LeaveGroupMember{
 				member_id:         m_member_id
@@ -284,9 +246,7 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 
 	// Skip tagged fields for flexible version
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return LeaveGroupRequest{
 		group_id:  group_id

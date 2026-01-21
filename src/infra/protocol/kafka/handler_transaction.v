@@ -18,11 +18,7 @@ pub:
 
 fn parse_init_producer_id_request(mut reader BinaryReader, version i16, is_flexible bool) !InitProducerIdRequest {
 	// transactional_id: NULLABLE_STRING (v0-v1) / COMPACT_NULLABLE_STRING (v2+)
-	raw_transactional_id := if is_flexible {
-		reader.read_compact_nullable_string()!
-	} else {
-		reader.read_nullable_string()!
-	}
+	raw_transactional_id := reader.read_flex_nullable_string(is_flexible)!
 	// Convert empty string to none for optional type
 	transactional_id := if raw_transactional_id.len > 0 {
 		?string(raw_transactional_id)
@@ -68,33 +64,17 @@ pub:
 }
 
 fn parse_add_partitions_to_txn_request(mut reader BinaryReader, version i16, is_flexible bool) !AddPartitionsToTxnRequest {
-	transactional_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	transactional_id := reader.read_flex_string(is_flexible)!
 	producer_id := reader.read_i64()!
 	producer_epoch := reader.read_i16()!
 
-	topic_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	mut topics := []AddPartitionsToTxnTopic{}
 	for _ in 0 .. topic_count {
-		name := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		name := reader.read_flex_string(is_flexible)!
 
-		partition_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		partition_count := reader.read_flex_array_len(is_flexible)!
 
 		mut partitions := []i32{}
 		for _ in 0 .. partition_count {
@@ -106,14 +86,10 @@ fn parse_add_partitions_to_txn_request(mut reader BinaryReader, version i16, is_
 			partitions: partitions
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return AddPartitionsToTxnRequest{
 		transactional_id: transactional_id
@@ -137,22 +113,12 @@ pub:
 }
 
 fn parse_add_offsets_to_txn_request(mut reader BinaryReader, version i16, is_flexible bool) !AddOffsetsToTxnRequest {
-	transactional_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	transactional_id := reader.read_flex_string(is_flexible)!
 	producer_id := reader.read_i64()!
 	producer_epoch := reader.read_i16()!
-	group_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	group_id := reader.read_flex_string(is_flexible)!
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return AddOffsetsToTxnRequest{
 		transactional_id: transactional_id
@@ -175,18 +141,12 @@ pub:
 }
 
 fn parse_end_txn_request(mut reader BinaryReader, version i16, is_flexible bool) !EndTxnRequest {
-	transactional_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	transactional_id := reader.read_flex_string(is_flexible)!
 	producer_id := reader.read_i64()!
 	producer_epoch := reader.read_i16()!
 	transaction_result := reader.read_i8()! != 0
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return EndTxnRequest{
 		transactional_id:   transactional_id
@@ -228,16 +188,8 @@ pub:
 }
 
 fn parse_txn_offset_commit_request(mut reader BinaryReader, version i16, is_flexible bool) !TxnOffsetCommitRequest {
-	transactional_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
-	group_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	transactional_id := reader.read_flex_string(is_flexible)!
+	group_id := reader.read_flex_string(is_flexible)!
 	producer_id := reader.read_i64()!
 	producer_epoch := reader.read_i16()!
 
@@ -247,38 +199,18 @@ fn parse_txn_offset_commit_request(mut reader BinaryReader, version i16, is_flex
 	mut group_instance_id := ?string(none)
 	if version >= 3 {
 		generation_id = reader.read_i32()!
-		member_id = if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
-		raw_group_instance_id := if is_flexible {
-			reader.read_compact_nullable_string()!
-		} else {
-			reader.read_nullable_string()!
-		}
+		member_id = reader.read_flex_string(is_flexible)!
+		raw_group_instance_id := reader.read_flex_nullable_string(is_flexible)!
 		group_instance_id = if raw_group_instance_id.len > 0 { raw_group_instance_id } else { none }
 	}
 
-	topic_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	mut topics := []TxnOffsetCommitRequestTopic{}
 	for _ in 0 .. topic_count {
-		name := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		name := reader.read_flex_string(is_flexible)!
 
-		partition_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		partition_count := reader.read_flex_array_len(is_flexible)!
 
 		mut partitions := []TxnOffsetCommitRequestPartition{}
 		for _ in 0 .. partition_count {
@@ -299,9 +231,7 @@ fn parse_txn_offset_commit_request(mut reader BinaryReader, version i16, is_flex
 				committed_metadata:     committed_metadata
 			}
 
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 		}
 
 		topics << TxnOffsetCommitRequestTopic{
@@ -309,14 +239,10 @@ fn parse_txn_offset_commit_request(mut reader BinaryReader, version i16, is_flex
 			partitions: partitions
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return TxnOffsetCommitRequest{
 		transactional_id:  transactional_id

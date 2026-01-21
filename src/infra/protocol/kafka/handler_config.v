@@ -56,40 +56,26 @@ pub:
 }
 
 fn parse_describe_configs_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeConfigsRequest {
-	count := if is_flexible { reader.read_compact_array_len()! } else { reader.read_array_len()! }
+	count := reader.read_flex_array_len(is_flexible)!
 	mut resources := []DescribeConfigsResource{}
 
 	for _ in 0 .. count {
 		resource_type := reader.read_i8()!
-		resource_name := if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		resource_name := reader.read_flex_string(is_flexible)!
 
 		mut config_names := ?[]string(none)
 
-		n_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		n_count := reader.read_flex_array_len(is_flexible)!
 
 		if n_count >= 0 {
 			mut names := []string{}
 			for _ in 0 .. n_count {
-				names << if is_flexible {
-					reader.read_compact_string()!
-				} else {
-					reader.read_string()!
-				}
+				names << reader.read_flex_string(is_flexible)!
 			}
 			config_names = names.clone()
 		}
 
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 
 		resources << DescribeConfigsResource{
 			resource_type: resource_type
@@ -103,9 +89,7 @@ fn parse_describe_configs_request(mut reader BinaryReader, version i16, is_flexi
 		include_synonyms = reader.read_i8()! != 0
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return DescribeConfigsRequest{
 		resources:        resources

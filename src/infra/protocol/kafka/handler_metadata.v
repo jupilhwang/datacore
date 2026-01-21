@@ -183,11 +183,7 @@ pub:
 fn parse_metadata_request(mut reader BinaryReader, version i16, is_flexible bool) !MetadataRequest {
 	mut topics := []MetadataRequestTopic{}
 
-	topic_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	if topic_count >= 0 {
 		for _ in 0 .. topic_count {
@@ -581,11 +577,7 @@ fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexi
 	mut key_type := i8(0)
 
 	if version <= 3 {
-		key = if is_flexible {
-			reader.read_compact_string()!
-		} else {
-			reader.read_string()!
-		}
+		key = reader.read_flex_string(is_flexible)!
 	}
 
 	if version >= 1 {
@@ -593,26 +585,16 @@ fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexi
 	}
 
 	if version >= 4 {
-		keys_len := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		keys_len := reader.read_flex_array_len(is_flexible)!
 		if keys_len > 0 {
 			for _ in 0 .. keys_len {
-				k := if is_flexible {
-					reader.read_compact_string()!
-				} else {
-					reader.read_string()!
-				}
+				k := reader.read_flex_string(is_flexible)!
 				coordinator_keys << k
 			}
 		}
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return FindCoordinatorRequest{
 		key:              key
@@ -763,9 +745,7 @@ pub:
 fn parse_describe_cluster_request(mut reader BinaryReader, version i16, is_flexible bool) !DescribeClusterRequest {
 	include_cluster_authorized_operations := reader.read_i8()! != 0
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return DescribeClusterRequest{
 		include_cluster_authorized_operations: include_cluster_authorized_operations
