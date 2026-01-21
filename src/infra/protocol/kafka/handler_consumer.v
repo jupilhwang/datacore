@@ -980,6 +980,7 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 
 fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !LeaveGroupResponse {
 	mut group := h.storage.load_group(req.group_id) or {
+		eprintln('[DEBUG] LeaveGroup: group ${req.group_id} not found')
 		return LeaveGroupResponse{
 			throttle_time_ms: 0
 			error_code:       i16(ErrorCode.group_id_not_found)
@@ -1026,6 +1027,17 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		}
 	}
 
+	// If no members were removed, return unknown_member_id error
+	if removed_members.len == 0 {
+		target_member := if req.members.len > 0 { req.members[0].member_id } else { req.member_id }
+		eprintln('[DEBUG] LeaveGroup: member ${target_member} not found in group ${req.group_id}')
+		return LeaveGroupResponse{
+			throttle_time_ms: 0
+			error_code:       i16(ErrorCode.unknown_member_id)
+			members:          []LeaveGroupResponseMember{}
+		}
+	}
+
 	// Update group state
 	new_state := if remaining_members.len == 0 {
 		domain.GroupState.empty
@@ -1049,7 +1061,10 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		leader:        new_leader
 	}
 
-	h.storage.save_group(new_group) or { return error('failed to save group: ${err}') }
+	h.storage.save_group(new_group) or {
+		eprintln('[ERROR] LeaveGroup: failed to save group ${req.group_id}: ${err}')
+		return error('failed to save group: ${err}')
+	}
 
 	return LeaveGroupResponse{
 		throttle_time_ms: 0

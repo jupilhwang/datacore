@@ -417,6 +417,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	}
 
 	h.storage.commit_offsets(req.group_id, all_offsets) or {
+		eprintln('[ERROR] Offset commit failed for group ${req.group_id}: ${err}')
 		mut topics := []OffsetCommitResponseTopic{}
 		for t in req.topics {
 			mut partitions := []OffsetCommitResponsePartition{}

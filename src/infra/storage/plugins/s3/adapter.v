@@ -612,22 +612,43 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 // ============================================================
 
 pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
+	mut failed := []string{}
+	mut succeeded := []domain.PartitionOffset{}
+
+	// Try to commit each offset individually
 	for offset in offsets {
 		key := a.offset_key(group_id, offset.topic, offset.partition)
 		data := json.encode(offset)
-		a.put_object(key, data.bytes())!
+		a.put_object(key, data.bytes()) or {
+			failed << '${offset.topic}:${offset.partition}'
+			eprintln('[WARN] Failed to commit offset for ${offset.topic}:${offset.partition}: ${err}')
+			continue
+		}
+		succeeded << offset
 	}
 
-	// Update local cache
-	a.offset_lock.@lock()
-	if group_id !in a.offset_cache {
-		a.offset_cache[group_id] = map[string]i64{}
+	// Update local cache for successfully committed offsets
+	if succeeded.len > 0 {
+		a.offset_lock.@lock()
+		if group_id !in a.offset_cache {
+			a.offset_cache[group_id] = map[string]i64{}
+		}
+		for offset in succeeded {
+			cache_key := '${offset.topic}:${offset.partition}'
+			a.offset_cache[group_id][cache_key] = offset.offset
+		}
+		a.offset_lock.unlock()
 	}
-	for offset in offsets {
-		cache_key := '${offset.topic}:${offset.partition}'
-		a.offset_cache[group_id][cache_key] = offset.offset
+
+	// Return error only if all commits failed
+	if failed.len == offsets.len {
+		return error('all offset commits failed: ${failed.join(", ")}')
 	}
-	a.offset_lock.unlock()
+
+	// Partial success is acceptable
+	if failed.len > 0 {
+		eprintln('[WARN] Partial offset commit success: ${succeeded.len} succeeded, ${failed.len} failed')
+	}
 }
 
 pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
