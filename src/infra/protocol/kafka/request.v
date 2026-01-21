@@ -73,16 +73,13 @@ pub fn get_response_header_version(api_key ApiKey, api_version i16) i16 {
 }
 
 // Parse request from raw bytes
-// Format: [size: 4 bytes][header][body]
+// Format: [header][body] (size field already stripped by TCP layer)
 pub fn parse_request(data []u8) !Request {
 	if data.len < 8 {
 		return error('request too short')
 	}
 
 	mut reader := new_reader(data)
-
-	// Read size field (first 4 bytes)
-	reader.read_i32()!
 
 	// Parse header
 	api_key := reader.read_i16()!

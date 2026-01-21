@@ -4,15 +4,10 @@ import infra.protocol.kafka
 
 // test_request_header_parsing tests parsing of the common Kafka request header
 fn test_request_header_parsing() {
-	// API_KEY=3 (Metadata), API_VERSION=12, CORRELATION_ID=1234, CLIENT_ID="test-client"
-	// Total bytes: 2(ApiKey) + 2(ApiVersion) + 4(CorrelationId) + VarInt(11+1)=12(ClientId) + VarInt(0)(Tags) = 21 bytes
+	// API_KEY=3 (Metadata), API_VERSION=8, CORRELATION_ID=1234, CLIENT_ID="test-client"
+	// Note: parse_request expects data WITHOUT size field (TCP layer strips it)
 
 	mut data := [
-		// Request Size (i32: 21 bytes) - Required for parse_request
-		u8(0x00),
-		u8(0x00),
-		u8(0x00),
-		u8(0x15),
 		// API Key (Metadata - 3)
 		u8(0x00),
 		u8(0x03),
@@ -24,7 +19,7 @@ fn test_request_header_parsing() {
 		u8(0x00),
 		u8(0x04),
 		u8(0xD2),
-		// Client ID Length (11, i16)
+		// Client ID Length (11, i16) - NULLABLE_STRING
 		u8(0x00),
 		u8(0x0B),
 		// Client ID ("test-client")

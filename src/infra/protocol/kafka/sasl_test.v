@@ -333,7 +333,7 @@ fn test_handler_sasl_handshake_success() {
 	request.write_string('PLAIN') // mechanism
 
 	// Handle request
-	response := handler.handle_request(request.bytes()) or {
+	response := handler.handle_request(request.bytes()[4..]) or {
 		panic('handle_request failed: ${err}')
 	}
 
@@ -367,7 +367,7 @@ fn test_handler_sasl_handshake_unsupported_mechanism() {
 	request.write_nullable_string('test-client')
 	request.write_string('SCRAM-SHA-256') // unsupported mechanism
 
-	response := handler.handle_request(request.bytes()) or {
+	response := handler.handle_request(request.bytes()[4..]) or {
 		panic('handle_request failed: ${err}')
 	}
 
@@ -393,7 +393,7 @@ fn test_handler_sasl_authenticate_success() {
 	request.write_nullable_string('test-client')
 	request.write_bytes(auth_bytes)
 
-	response := handler.handle_request(request.bytes()) or {
+	response := handler.handle_request(request.bytes()[4..]) or {
 		panic('handle_request failed: ${err}')
 	}
 
@@ -421,7 +421,7 @@ fn test_handler_sasl_authenticate_failure() {
 	request.write_nullable_string('test-client')
 	request.write_bytes(auth_bytes)
 
-	response := handler.handle_request(request.bytes()) or {
+	response := handler.handle_request(request.bytes()[4..]) or {
 		panic('handle_request failed: ${err}')
 	}
 

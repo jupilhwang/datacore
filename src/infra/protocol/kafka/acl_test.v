@@ -94,7 +94,7 @@ fn test_handler_create_acls() {
 	request.write_i8(3) // operation: READ
 	request.write_i8(2) // permission_type: ALLOW
 
-	response := handler.handle_request(request.bytes()) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()! // size
@@ -129,7 +129,7 @@ fn test_handler_describe_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3) // READ
 	create_req.write_i8(2) // ALLOW
-	_ = handler.handle_request(create_req.bytes()) or { panic(err) }
+	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
 
 	// Now describe ACLs
 	mut request := kafka.new_writer()
@@ -148,7 +148,7 @@ fn test_handler_describe_acls() {
 	request.write_i8(1) // operation: ANY
 	request.write_i8(1) // permission_type: ANY
 
-	response := handler.handle_request(request.bytes()) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -204,7 +204,7 @@ fn test_handler_delete_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3) // READ
 	create_req.write_i8(2) // ALLOW
-	_ = handler.handle_request(create_req.bytes()) or { panic(err) }
+	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
 
 	// Delete ACL
 	mut request := kafka.new_writer()
@@ -224,7 +224,7 @@ fn test_handler_delete_acls() {
 	request.write_i8(1) // ANY
 	request.write_i8(1) // ANY
 
-	response := handler.handle_request(request.bytes()) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
