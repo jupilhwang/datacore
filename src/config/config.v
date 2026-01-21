@@ -128,11 +128,13 @@ pub:
 pub struct LoggingConfig {
 pub:
 	enabled              bool   = true
-	level                string = 'info'
-	format               string = 'json'
-	otlp_export          bool
-	console_output       bool = true
-	inject_trace_context bool = true
+	level                string = 'info'   // trace, debug, info, warn, error, fatal
+	format               string = 'json'   // json, text
+	output               string = 'stdout' // stdout, otel, both, none
+	otlp_endpoint        string             // OTLP endpoint for log export (e.g., http://localhost:4317)
+	otlp_export          bool               // Deprecated: use output = 'otel' or 'both'
+	console_output       bool   = true     // Deprecated: use output = 'stdout' or 'both'
+	inject_trace_context bool   = true
 }
 
 pub struct TracingConfig {
@@ -308,6 +310,8 @@ pub fn load_config(path string) !Config {
 		enabled:              get_bool(doc, 'observability.logging.enabled', true)
 		level:                get_string(doc, 'observability.logging.level', 'info')
 		format:               get_string(doc, 'observability.logging.format', 'json')
+		output:               get_string(doc, 'observability.logging.output', 'stdout')
+		otlp_endpoint:        get_string(doc, 'observability.logging.otlp_endpoint', '')
 		otlp_export:          get_bool(doc, 'observability.logging.otlp_export', false)
 		console_output:       get_bool(doc, 'observability.logging.console_output', true)
 		inject_trace_context: get_bool(doc, 'observability.logging.inject_trace_context',

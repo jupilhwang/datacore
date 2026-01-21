@@ -2,6 +2,9 @@
 // Request/Response types, parsing, encoding, and handlers
 module kafka
 
+import infra.observability
+import time
+
 // ============================================================================
 // Fetch (API Key 1)
 // ============================================================================
@@ -261,9 +264,18 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 
 // Process fetch request (Frame-based)
 fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
-	eprintln('[Fetch] Request: version=${version}, topics=${req.topics.len}')
+	start_time := time.now()
+
+	h.logger.debug('Processing fetch request',
+		observability.field_int('version', version),
+		observability.field_int('topics', req.topics.len),
+		observability.field_int('max_wait_ms', req.max_wait_ms),
+		observability.field_int('max_bytes', req.max_bytes))
 
 	mut topics := []FetchResponseTopic{}
+	mut total_records := 0
+	mut total_bytes := i64(0)
+
 	for t in req.topics {
 		mut topic_name := t.name
 		mut topic_id := t.topic_id.clone()
@@ -285,6 +297,11 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 					i16(ErrorCode.unknown_server_error)
 				}
 
+				h.logger.debug('Fetch partition error',
+					observability.field_string('topic', topic_name),
+					observability.field_int('partition', p.partition),
+					observability.field_int('error_code', error_code))
+
 				partitions << FetchResponsePartition{
 					partition_index:    p.partition
 					error_code:         error_code
@@ -297,7 +314,14 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			}
 
 			records_data := encode_record_batch_zerocopy(result.records, p.fetch_offset)
-			eprintln('[Fetch] Topic=${topic_name} partition=${p.partition} has ${result.records.len} records - returning ${records_data.len} bytes')
+			total_records += result.records.len
+			total_bytes += records_data.len
+
+			h.logger.trace('Fetch partition success',
+				observability.field_string('topic', topic_name),
+				observability.field_int('partition', p.partition),
+				observability.field_int('records', result.records.len),
+				observability.field_bytes('response_size', records_data.len))
 
 			partitions << FetchResponsePartition{
 				partition_index:    p.partition
@@ -314,6 +338,13 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			partitions: partitions
 		}
 	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Fetch request completed',
+		observability.field_int('topics', topics.len),
+		observability.field_int('total_records', total_records),
+		observability.field_bytes('total_bytes', total_bytes),
+		observability.field_duration('latency', elapsed))
 
 	return FetchResponse{
 		throttle_time_ms: 0

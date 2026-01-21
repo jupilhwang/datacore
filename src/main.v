@@ -124,20 +124,26 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 	cli.print_startup_info(conf.broker.host, conf.broker.port, conf.broker.broker_id,
 		conf.broker.cluster_id)
 
-	// Initialize logger
+	// Initialize logger with new configuration
 	log_level := observability.log_level_from_string(conf.observability.logging.level)
 	log_format := if conf.observability.logging.format == 'json' {
 		observability.OutputFormat.json
 	} else {
 		observability.OutputFormat.text
 	}
+	log_output := observability.log_output_from_string(conf.observability.logging.output)
 
-	logger := observability.new_logger(observability.LoggerConfig{
-		name:    'datacore'
-		level:   log_level
-		format:  log_format
-		service: 'datacore-broker'
+	// Initialize global logger
+	observability.init_global_logger(observability.LoggerConfig{
+		name:          'datacore'
+		level:         log_level
+		format:        log_format
+		output:        log_output
+		service:       'datacore-broker'
+		otlp_endpoint: conf.observability.logging.otlp_endpoint
 	})
+
+	mut logger := observability.get_logger()
 
 	// Log configuration summary
 	logger.info('Broker configuration summary', observability.field_string('host', conf.broker.host),

@@ -3,6 +3,8 @@
 module kafka
 
 import domain
+import infra.observability
+import time
 
 // ============================================================================
 // Produce (API Key 0)
@@ -188,15 +190,39 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 
 // Process produce request (Frame-based)
 fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResponse {
+	start_time := time.now()
+	mut total_records := 0
+	mut total_bytes := i64(0)
+
+	// Count records and bytes for logging
+	for t in req.topic_data {
+		for p in t.partition_data {
+			total_bytes += p.records.len
+		}
+	}
+
+	h.logger.debug('Processing produce request',
+		observability.field_int('topics', req.topic_data.len),
+		observability.field_int('acks', req.acks),
+		observability.field_bytes('total_size', total_bytes))
+
 	// Validate transactional producer if transactional_id is present
 	if txn_id := req.transactional_id {
 		if txn_id.len > 0 {
+			h.logger.debug('Validating transaction',
+				observability.field_string('txn_id', txn_id))
+
 			if mut txn_coord := h.txn_coordinator {
 				meta := txn_coord.get_transaction(txn_id) or {
+					h.logger.warn('Transaction not found',
+						observability.field_string('txn_id', txn_id))
 					return h.build_produce_error_response_typed(req, ErrorCode.transactional_id_not_found)
 				}
 
 				if meta.state != .ongoing {
+					h.logger.warn('Invalid transaction state',
+						observability.field_string('txn_id', txn_id),
+						observability.field_string('state', meta.state.str()))
 					return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
 				}
 
@@ -274,6 +300,8 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 				continue
 			}
 
+			total_records += parsed.records.len
+
 			if parsed.records.len == 0 {
 				partitions << ProduceResponsePartition{
 					index:            p.index
@@ -340,6 +368,12 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 			partitions: partitions
 		}
 	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Produce request completed',
+		observability.field_int('topics', topics.len),
+		observability.field_int('total_records', total_records),
+		observability.field_duration('latency', elapsed))
 
 	return ProduceResponse{
 		topics:           topics

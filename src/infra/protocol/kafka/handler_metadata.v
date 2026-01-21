@@ -3,6 +3,8 @@
 module kafka
 
 import domain
+import infra.observability
+import time
 
 // ============================================================================
 // Metadata (API Key 3)
@@ -262,6 +264,12 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 }
 
 fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
+	start_time := time.now()
+
+	h.logger.debug('Processing metadata request',
+		observability.field_int('topics', req.topics.len),
+		observability.field_bool('allow_auto_create', req.allow_auto_topic_creation))
+
 	mut resp_topics := []MetadataResponseTopic{}
 
 	// Get active brokers for multi-broker mode
@@ -400,6 +408,12 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 
 	// Controller is the first active broker in multi-broker mode, or self in single-broker mode
 	controller_id := if active_broker_ids.len > 0 { active_broker_ids[0] } else { h.broker_id }
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Metadata request completed',
+		observability.field_int('brokers', brokers.len),
+		observability.field_int('topics', resp_topics.len),
+		observability.field_duration('latency', elapsed))
 
 	return MetadataResponse{
 		throttle_time_ms:       0

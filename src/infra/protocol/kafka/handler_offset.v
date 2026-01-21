@@ -4,6 +4,8 @@
 module kafka
 
 import domain
+import infra.observability
+import time
 
 // OffsetCommit Request
 pub struct OffsetCommitRequest {
@@ -399,13 +401,20 @@ pub fn (r OffsetFetchResponse) encode(version i16) []u8 {
 
 // OffsetCommit handler - persists consumer group offsets
 fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_offset_commit_request(mut reader, version, is_flexible_version(.offset_commit,
 		version))!
 
+	h.logger.debug('Processing offset commit',
+		observability.field_string('group_id', req.group_id),
+		observability.field_int('topics', req.topics.len))
+
 	mut all_offsets := []domain.PartitionOffset{}
+	mut total_partitions := 0
 	for t in req.topics {
 		for p in t.partitions {
+			total_partitions += 1
 			all_offsets << domain.PartitionOffset{
 				topic:        t.name
 				partition:    int(p.partition_index)
@@ -417,7 +426,9 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	}
 
 	h.storage.commit_offsets(req.group_id, all_offsets) or {
-		eprintln('[ERROR] Offset commit failed for group ${req.group_id}: ${err}')
+		h.logger.error('Offset commit failed',
+			observability.field_string('group_id', req.group_id),
+			observability.field_string('error', err.str()))
 		mut topics := []OffsetCommitResponseTopic{}
 		for t in req.topics {
 			mut partitions := []OffsetCommitResponsePartition{}
@@ -458,14 +469,26 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 		topics:           topics
 	}
 
+	elapsed := time.since(start_time)
+	h.logger.debug('Offset commit completed',
+		observability.field_string('group_id', req.group_id),
+		observability.field_int('partitions', total_partitions),
+		observability.field_duration('latency', elapsed))
+
 	return resp.encode(version)
 }
 
 // OffsetFetch handler - retrieves consumer group offsets
 fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_offset_fetch_request(mut reader, version, is_flexible_version(.offset_fetch,
 		version))!
+
+	h.logger.debug('Processing offset fetch',
+		observability.field_string('group_id', req.group_id),
+		observability.field_int('topics', req.topics.len),
+		observability.field_int('groups', req.groups.len))
 
 	if version >= 8 {
 		mut groups := []OffsetFetchResponseGroup{}
@@ -597,6 +620,12 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		error_code:       0
 		groups:           []
 	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Offset fetch completed',
+		observability.field_string('group_id', req.group_id),
+		observability.field_int('topics', topics.len),
+		observability.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

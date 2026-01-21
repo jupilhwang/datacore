@@ -2,12 +2,13 @@
 // Main handler structure and request routing
 module kafka
 
-import log
+import infra.observability
 import rand
 import service.cluster
 import service.group
 import service.port
 import service.transaction
+import time
 
 // Protocol Handler - processes Kafka requests and generates responses
 pub struct Handler {
@@ -22,7 +23,7 @@ mut:
 	acl_manager             ?port.AclManager                    // Optional: ACL manager
 	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
 	share_group_coordinator ?&group.ShareGroupCoordinator       // Optional: Share group coordinator (KIP-932)
-	logger                  log.Log
+	logger                  &observability.Logger
 }
 
 // new_handler creates a new Kafka protocol handler with storage
@@ -38,7 +39,7 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 		acl_manager:             none
 		txn_coordinator:         none
 		share_group_coordinator: none
-		logger:                  log.Log{}
+		logger:                  observability.get_named_logger('kafka.handler')
 	}
 }
 
@@ -55,7 +56,7 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 		acl_manager:             none
 		txn_coordinator:         none
 		share_group_coordinator: none
-		logger:                  log.Log{}
+		logger:                  observability.get_named_logger('kafka.handler')
 	}
 }
 
@@ -72,7 +73,7 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
 		share_group_coordinator: none
-		logger:                  log.Log{}
+		logger:                  observability.get_named_logger('kafka.handler')
 	}
 }
 
@@ -89,7 +90,7 @@ pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
 		share_group_coordinator: share_coordinator
-		logger:                  log.Log{}
+		logger:                  observability.get_named_logger('kafka.handler')
 	}
 }
 
@@ -105,12 +106,25 @@ pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroup
 
 // Handle incoming request and return response bytes (legacy method)
 pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
+	start_time := time.now()
+
 	// Parse request
-	req := parse_request(data)!
+	req := parse_request(data) or {
+		h.logger.error('Failed to parse request',
+			observability.field_err_str(err.str()),
+			observability.field_bytes('request_size', data.len))
+		return err
+	}
 
 	api_key := unsafe { ApiKey(req.header.api_key) }
 	version := req.header.api_version
 	correlation_id := req.header.correlation_id
+
+	h.logger.debug('Processing request',
+		observability.field_string('api', api_key.str()),
+		observability.field_int('version', version),
+		observability.field_int('correlation_id', correlation_id),
+		observability.field_bytes('request_size', data.len))
 
 	// Handle by API key
 	response_body := match api_key {
@@ -223,9 +237,18 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 			h.handle_share_acknowledge(req.body, version)!
 		}
 		else {
+			h.logger.warn('Unsupported API key',
+				observability.field_int('api_key', int(api_key)))
 			return error('unsupported API key: ${int(api_key)}')
 		}
 	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Request completed',
+		observability.field_string('api', api_key.str()),
+		observability.field_int('correlation_id', correlation_id),
+		observability.field_bytes('response_size', response_body.len),
+		observability.field_duration('latency', elapsed))
 
 	// Build response with header
 	// Note: ApiVersions is special - always uses non-flexible header even for v3+

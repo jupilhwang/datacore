@@ -4,6 +4,8 @@
 module kafka
 
 import domain
+import infra.observability
+import time
 
 pub struct CreateTopicsRequest {
 pub:
@@ -244,17 +246,25 @@ pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
 
 // CreateTopics handler - creates topics in storage
 fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_create_topics_request(mut reader, version, is_flexible_version(.create_topics,
 		version))!
 
-	eprintln('[CreateTopics] Parsed request with ${req.topics.len} topic(s)')
-	for t in req.topics {
-		eprintln('[CreateTopics]   Topic: ${t.name}, Partitions: ${t.num_partitions}')
-	}
+	h.logger.debug('Processing create topics request',
+		observability.field_int('topics', req.topics.len),
+		observability.field_int('timeout_ms', req.timeout_ms),
+		observability.field_bool('validate_only', req.validate_only))
 
 	mut topics := []CreateTopicsResponseTopic{}
+	mut created_count := 0
+	mut error_count := 0
+
 	for t in req.topics {
+		h.logger.trace('Creating topic',
+			observability.field_string('topic', t.name),
+			observability.field_int('partitions', t.num_partitions),
+			observability.field_int('replication_factor', t.replication_factor))
 		// Convert config map to domain.TopicConfig
 		topic_config := domain.TopicConfig{
 			retention_ms:        parse_config_i64(t.configs, 'retention.ms', 604800000)
@@ -278,6 +288,12 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 				i16(ErrorCode.unknown_server_error)
 			}
 
+			h.logger.warn('Failed to create topic',
+				observability.field_string('topic', t.name),
+				observability.field_int('error_code', error_code),
+				observability.field_string('error', err.str()))
+			error_count += 1
+
 			topics << CreateTopicsResponseTopic{
 				name:               t.name
 				topic_id:           generate_uuid()
@@ -288,6 +304,11 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 			}
 			continue
 		}
+
+		h.logger.info('Topic created',
+			observability.field_string('topic', t.name),
+			observability.field_int('partitions', int(t.num_partitions)))
+		created_count += 1
 
 		// Success - use topic_id from created metadata
 		topics << CreateTopicsResponseTopic{
@@ -300,24 +321,35 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 		}
 	}
 
+	elapsed := time.since(start_time)
+	h.logger.debug('Create topics completed',
+		observability.field_int('created', created_count),
+		observability.field_int('errors', error_count),
+		observability.field_duration('latency', elapsed))
+
 	resp := CreateTopicsResponse{
 		throttle_time_ms: 0
 		topics:           topics
 	}
 
-	eprintln('[CreateTopics] Encoding response with ${topics.len} topic(s)...')
-	encoded := resp.encode(version)
-	eprintln('[CreateTopics] Encoded ${encoded.len} bytes: ${encoded.hex()}')
-	return encoded
+	return resp.encode(version)
 }
 
 // DeleteTopics handler - deletes topics from storage
 fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_delete_topics_request(mut reader, version, is_flexible_version(.delete_topics,
 		version))!
 
+	h.logger.debug('Processing delete topics request',
+		observability.field_int('topics', req.topics.len),
+		observability.field_int('timeout_ms', req.timeout_ms))
+
 	mut topics := []DeleteTopicsResponseTopic{}
+	mut deleted_count := 0
+	mut error_count := 0
+
 	for t in req.topics {
 		// For v6+, we may need to find topic name from topic_id
 		mut topic_name := t.name
@@ -329,6 +361,8 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 				topic_name = topic_meta.name
 				topic_id = topic_meta.topic_id.clone()
 			} else {
+				h.logger.warn('Delete topic failed: topic not found by ID')
+				error_count += 1
 				topics << DeleteTopicsResponseTopic{
 					name:       ''
 					topic_id:   t.topic_id
@@ -349,6 +383,12 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 				i16(ErrorCode.unknown_server_error)
 			}
 
+			h.logger.warn('Failed to delete topic',
+				observability.field_string('topic', topic_name),
+				observability.field_int('error_code', error_code),
+				observability.field_string('error', err.str()))
+			error_count += 1
+
 			topics << DeleteTopicsResponseTopic{
 				name:       topic_name
 				topic_id:   topic_id
@@ -357,6 +397,10 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 			continue
 		}
 
+		h.logger.info('Topic deleted',
+			observability.field_string('topic', topic_name))
+		deleted_count += 1
+
 		// Success
 		topics << DeleteTopicsResponseTopic{
 			name:       topic_name
@@ -364,6 +408,12 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 			error_code: 0
 		}
 	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Delete topics completed',
+		observability.field_int('deleted', deleted_count),
+		observability.field_int('errors', error_count),
+		observability.field_duration('latency', elapsed))
 
 	resp := DeleteTopicsResponse{
 		throttle_time_ms: 0
