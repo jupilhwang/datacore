@@ -9,13 +9,17 @@ import domain
 // ============================================================================
 
 // varint_size calculates the encoded size of a varint
+// Uses the same ZigZag encoding as write_varint in codec.v for correctness
 fn varint_size(val i64) int {
-	mut v := u64(if val < 0 { u64(-val) * 2 - 1 } else { u64(val) * 2 })
+	// ZigZag encoding: (n << 1) ^ (n >> 63)
+	// Cast to unsigned first to avoid signed shift warning
+	v := (u64(val) << 1) ^ u64(val >> 63)
 	mut size := 0
+	mut value := v
 	for {
 		size++
-		v >>= 7
-		if v == 0 {
+		value >>= 7
+		if value == 0 {
 			break
 		}
 	}
@@ -25,16 +29,16 @@ fn varint_size(val i64) int {
 // calculate_record_size calculates the size of an encoded record without actually encoding it
 fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.Record) int {
 	mut size := 0
-	
+
 	// attributes (1 byte)
 	size += 1
-	
+
 	// timestamp_delta (varint)
 	size += varint_size(timestamp_delta)
-	
+
 	// offset_delta (varint)
 	size += varint_size(i64(offset_delta))
-	
+
 	// key length + key
 	if record.key.len > 0 {
 		size += varint_size(i64(record.key.len))
@@ -42,7 +46,7 @@ fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.R
 	} else {
 		size += varint_size(-1)
 	}
-	
+
 	// value length + value
 	if record.value.len > 0 {
 		size += varint_size(i64(record.value.len))
@@ -50,10 +54,10 @@ fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.R
 	} else {
 		size += varint_size(-1)
 	}
-	
+
 	// headers count (varint, 0 for no headers)
 	size += varint_size(0)
-	
+
 	return size
 }
 
