@@ -358,9 +358,7 @@ pub fn (mut r SchemaRegistry) set_compatibility(subject string, level domain.Com
 	r.lock.@lock()
 	defer { r.lock.unlock() }
 
-	existing := r.subject_configs[subject] or {
-		domain.SubjectConfig{}
-	}
+	existing := r.subject_configs[subject] or { domain.SubjectConfig{} }
 	// Create new config with updated compatibility (SubjectConfig fields are immutable)
 	r.subject_configs[subject] = domain.SubjectConfig{
 		compatibility: level

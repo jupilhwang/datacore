@@ -241,28 +241,22 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 
 	if version >= 3 {
 		writer.write_i32(r.throttle_time_ms)
-		eprintln('[DEBUG] MetadataResponse.encode: after throttle_time_ms, len=${writer.data.len} hex=${writer.data.hex()}')
 	}
 
 	if is_flexible {
 		writer.write_compact_array_len(r.brokers.len)
-		eprintln('[DEBUG] MetadataResponse.encode: after brokers compact_array_len(${r.brokers.len}), len=${writer.data.len} hex=${writer.data.hex()}')
 	} else {
 		writer.write_array_len(r.brokers.len)
 	}
 
 	for b in r.brokers {
-		eprintln('[DEBUG] MetadataResponse.encode: encoding broker node_id=${b.node_id} host="${b.host}" port=${b.port}')
 		writer.write_i32(b.node_id)
-		eprintln('[DEBUG] MetadataResponse.encode: after write_i32(node_id), len=${writer.data.len} hex=${writer.data[writer.data.len - 4..].hex()}')
 		if is_flexible {
 			writer.write_compact_string(b.host)
-			eprintln('[DEBUG] MetadataResponse.encode: after write_compact_string("${b.host}"), len=${writer.data.len}')
 		} else {
 			writer.write_string(b.host)
 		}
 		writer.write_i32(b.port)
-		eprintln('[DEBUG] MetadataResponse.encode: after write_i32(port), len=${writer.data.len}')
 		if version >= 1 {
 			if is_flexible {
 				writer.write_compact_nullable_string(b.rack)
@@ -271,7 +265,6 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 			}
 		}
 		if is_flexible {
-			eprintln('[DEBUG] MetadataResponse: encoded broker node_id=${b.node_id} host_len=${b.host.len} port=${b.port}')
 			writer.write_tagged_fields()
 		}
 	}
@@ -376,7 +369,6 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 	}
 
 	resp_bytes := writer.bytes()
-	eprintln('[DEBUG] MetadataResponse.encode version=${version} flexible=${is_flexible} len=${resp_bytes.len} body_hex=${resp_bytes.hex()}')
 	return resp_bytes
 }
 
@@ -385,7 +377,6 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 	req := parse_metadata_request(mut reader, version, is_flexible_version(.metadata,
 		version))!
 	resp := h.process_metadata(req, version)!
-	eprintln('[DEBUG] handle_metadata: Building response with broker node_id=${h.broker_id} host="${h.host}" (len=${h.host.len}) port=${h.broker_port}')
 	return resp.encode(version)
 }
 

@@ -91,14 +91,10 @@ pub fn run_topic_create(opts TopicOptions) ! {
 		opts.timeout_ms)
 
 	// Send request
-	println('[DEBUG] Sending CreateTopics request (${request.len} bytes)...')
 	send_kafka_request(mut conn, 19, 3, request)! // API Key 19 = CreateTopics, version 3 (non-flexible)
-	println('[DEBUG] Request sent successfully')
 
 	// Read response
-	println('[DEBUG] Waiting for response...')
 	response := read_kafka_response(mut conn)!
-	println('[DEBUG] Received response (${response.len} bytes): ${response.hex()}')
 
 	// Parse and check response
 	check_create_topic_response(response, opts.topic)!
@@ -437,7 +433,6 @@ fn build_delete_topic_request(name string, timeout_ms int) []u8 {
 // ============================================================
 
 fn check_create_topic_response(response []u8, expected_topic string) ! {
-	println('[DEBUG] Checking CreateTopics response...')
 	if response.len < 4 {
 		return error('Invalid response: too short')
 	}
@@ -463,8 +458,6 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 		pos + 3]))
 	pos += 4
 
-	println('[DEBUG] Topics array length: ${topics_len}')
-
 	if topics_len != 1 {
 		return error('Expected 1 topic in response, got ${topics_len}')
 	}
@@ -482,16 +475,12 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 	topic_name := response[pos..pos + int(name_len)].bytestr()
 	pos += int(name_len)
 
-	println('[DEBUG] Topic name: ${topic_name}')
-
 	// Read error_code (2 bytes)
 	if pos + 2 > response.len {
 		return error('Invalid response: cannot read error code')
 	}
 	error_code := i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
 	pos += 2
-
-	println('[DEBUG] Error code: ${error_code}')
 
 	if error_code != 0 {
 		// Error occurred
@@ -513,8 +502,6 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 	if topic_name != expected_topic {
 		return error('Topic name mismatch: expected "${expected_topic}", got "${topic_name}"')
 	}
-
-	println('[DEBUG] Topic created successfully!')
 }
 
 fn check_delete_topic_response(response []u8, expected_topic string) ! {

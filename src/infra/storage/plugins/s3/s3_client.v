@@ -10,10 +10,10 @@ import time
 // S3Object represents an object in S3 listing
 pub struct S3Object {
 pub:
-	key          string
-	size         i64
+	key           string
+	size          i64
 	last_modified time.Time
-	etag         string
+	etag          string
 }
 
 // ============================================================

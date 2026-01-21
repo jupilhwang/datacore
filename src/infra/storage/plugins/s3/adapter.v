@@ -642,7 +642,7 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 
 	// Return error only if all commits failed
 	if failed.len == offsets.len {
-		return error('all offset commits failed: ${failed.join(", ")}')
+		return error('all offset commits failed: ${failed.join(', ')}')
 	}
 
 	// Partial success is acceptable

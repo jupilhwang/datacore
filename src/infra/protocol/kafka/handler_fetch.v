@@ -157,9 +157,9 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 				fpartitions << reader.read_i32()!
 			}
 			forgotten_topics_data << FetchRequestForgottenTopic{
-				name:       fname,
-				topic_id:   ftopic_id,
-				partitions: fpartitions,
+				name:       fname
+				topic_id:   ftopic_id
+				partitions: fpartitions
 			}
 			reader.skip_flex_tagged_fields(is_flexible)!
 		}
@@ -432,10 +432,6 @@ pub:
 
 // parse_fetch_request_simple: lightweight Fetch request parser
 pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !SimpleFetchRequest {
-	first_bytes := if data.len >= 40 { data[..40].hex() } else { data.hex() }
-	eprintln('[DEBUG] parse_fetch_request_simple: version=${version} flexible=${flexible} data.len=${data.len}')
-	eprintln('[DEBUG] first 40 bytes: ${first_bytes}')
-
 	mut reader := new_reader(data)
 
 	// In v15+, replica_id was removed from main body and replaced with replica_state tagged field
@@ -459,33 +455,24 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 	session_id := if version >= 7 { reader.read_i32()! } else { i32(0) }
 	session_epoch := if version >= 7 { reader.read_i32()! } else { i32(-1) }
 
-	eprintln('[DEBUG] Fetch v${version}: parsed fields - replica_id=${replica_id}, max_wait_ms=${max_wait_ms}, min_bytes=${min_bytes}, max_bytes=${max_bytes}')
-	eprintln('[DEBUG] Fetch: isolation_level=${isolation_level}, session_id=${session_id}, session_epoch=${session_epoch}')
-	eprintln('[DEBUG] Fetch: after header, pos=${reader.position()}, remaining=${reader.remaining()}')
-
 	// Parse topics
 	mut topics := []SimpleFetchTopic{}
-	eprintln('[DEBUG] Fetch: before reading topic_count, pos=${reader.position()}, remaining=${reader.remaining()}')
 	topic_count := if flexible {
 		reader.read_compact_array_len()!
 	} else {
 		reader.read_array_len()!
 	}
 
-	eprintln('[DEBUG] Fetch: topic_count=${topic_count}, pos=${reader.position()}')
-
-	for ti in 0 .. topic_count {
+	for _ in 0 .. topic_count {
 		// v13+ uses topic_id
 		mut topic_id := []u8{}
 		mut topic_name := ''
 
 		if version >= 13 {
 			topic_id = reader.read_uuid()!
-			eprintln('[DEBUG] Fetch: topic ${ti} - read topic_id=${topic_id.hex()}')
 		}
 		if version < 13 || !flexible {
 			topic_name = if flexible { reader.read_compact_string()! } else { reader.read_string()! }
-			eprintln('[DEBUG] Fetch: topic ${ti} - read topic_name=${topic_name}')
 		}
 
 		// Parse partitions

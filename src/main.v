@@ -207,11 +207,11 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 		storage_opt = port.StoragePort(memory.new_memory_adapter())
 	}
 
-	if storage_opt == none {
+	mut storage := storage_opt or {
 		cli.print_failed('Failed to initialize any storage engine')
 		exit(1)
 	}
-	mut storage := storage_opt or { panic('unreachable') }
+
 	cli.print_done()
 
 	// 2. Create Protocol Handler with storage injection

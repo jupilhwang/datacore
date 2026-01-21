@@ -213,12 +213,6 @@ pub fn (f Frame) response_to_bytes(api_key ApiKey, version i16) []u8 {
 
 	if is_flexible {
 		resp_bytes := build_flexible_response(f.header.correlation_id(), body_bytes)
-		// Debug: log first bytes of response for troubleshooting header encoding
-		eprintln('[DEBUG] Response bytes (first 16): ${resp_bytes[..if resp_bytes.len > 16 {
-			16
-		} else {
-			resp_bytes.len
-		}].hex()}')
 		return resp_bytes
 	}
 	return build_response(f.header.correlation_id(), body_bytes)

@@ -518,8 +518,9 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 
 // get_or_create_group returns existing group or creates new one
 fn (mut c KIP848GroupCoordinator) get_or_create_group(group_id string) &KIP848ConsumerGroup {
-	if group_id in c.groups {
-		return c.groups[group_id] or { panic('unreachable') }
+	// Check if group exists and return it
+	if group := c.groups[group_id] {
+		return group
 	}
 
 	now := time.now().unix_milli()

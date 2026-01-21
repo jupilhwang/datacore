@@ -27,7 +27,6 @@ mut:
 
 // new_handler creates a new Kafka protocol handler with storage
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
-	eprintln('[DEBUG] new_handler: broker_id=${broker_id} host="${host}" (len=${host.len}) broker_port=${broker_port} cluster_id="${cluster_id}"')
 	return Handler{
 		broker_id:               broker_id
 		host:                    host
