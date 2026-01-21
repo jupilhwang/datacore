@@ -27,7 +27,7 @@ level = "info"
 	}
 
 	// Create watcher
-	watcher := new_config_watcher(WatcherConfig{
+	mut watcher := new_config_watcher(WatcherConfig{
 		file_path:      tmp_path
 		check_interval: 100 * time.millisecond
 	}) or {

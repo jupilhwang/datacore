@@ -55,34 +55,48 @@ pub fn (mut w ConfigWatcher) on_reload(callback ConfigCallback) {
 	w.callbacks << callback
 }
 
-// get_config returns the current configuration
-pub fn (w &ConfigWatcher) get_config() Config {
+// get_config returns the current configuration (thread-safe)
+pub fn (mut w ConfigWatcher) get_config() Config {
+	w.lock.@lock()
+	defer { w.lock.unlock() }
 	return w.current_config
 }
 
-// start starts the configuration watcher in background
+// start starts the configuration watcher in background (thread-safe)
 pub fn (mut w ConfigWatcher) start() {
+	w.lock.@lock()
 	if w.running {
+		w.lock.unlock()
 		return
 	}
 	w.running = true
+	w.lock.unlock()
 
 	spawn w.watch_loop()
 	println('[ConfigWatcher] Started watching ${w.file_path} (interval: ${w.check_interval})')
 }
 
-// stop stops the configuration watcher
+// stop stops the configuration watcher (thread-safe)
 pub fn (mut w ConfigWatcher) stop() {
+	w.lock.@lock()
 	w.running = false
+	w.lock.unlock()
 	println('[ConfigWatcher] Stopped')
+}
+
+// is_running returns whether the watcher is running (thread-safe)
+fn (mut w ConfigWatcher) is_running() bool {
+	w.lock.@lock()
+	defer { w.lock.unlock() }
+	return w.running
 }
 
 // watch_loop is the main loop that checks for file changes
 fn (mut w ConfigWatcher) watch_loop() {
-	for w.running {
+	for w.is_running() {
 		time.sleep(w.check_interval)
 
-		if !w.running {
+		if !w.is_running() {
 			break
 		}
 
@@ -92,9 +106,15 @@ fn (mut w ConfigWatcher) watch_loop() {
 			continue
 		}
 
-		if file_info.mtime != w.last_modified {
+		w.lock.@lock()
+		last_mod := w.last_modified
+		w.lock.unlock()
+
+		if file_info.mtime != last_mod {
 			// File has been modified
+			w.lock.@lock()
 			w.last_modified = file_info.mtime
+			w.lock.unlock()
 
 			// Try to reload config
 			w.reload_config()
@@ -167,13 +187,25 @@ fn detect_config_changes(old_config Config, new_config Config) ConfigChanges {
 		changes.has_non_reloadable = true
 		changes.non_reloadable_items << 'broker.host'
 	}
+	if old_config.broker.cluster_id != new_config.broker.cluster_id {
+		changes.has_non_reloadable = true
+		changes.non_reloadable_items << 'broker.cluster_id'
+	}
 	if old_config.storage.engine != new_config.storage.engine {
 		changes.has_non_reloadable = true
 		changes.non_reloadable_items << 'storage.engine'
 	}
+	if old_config.rest.host != new_config.rest.host {
+		changes.has_non_reloadable = true
+		changes.non_reloadable_items << 'rest.host'
+	}
 	if old_config.rest.port != new_config.rest.port {
 		changes.has_non_reloadable = true
 		changes.non_reloadable_items << 'rest.port'
+	}
+	if old_config.observability.metrics.prometheus_port != new_config.observability.metrics.prometheus_port {
+		changes.has_non_reloadable = true
+		changes.non_reloadable_items << 'observability.metrics.prometheus_port'
 	}
 
 	// Reloadable settings (can be changed at runtime)
@@ -189,6 +221,10 @@ fn detect_config_changes(old_config Config, new_config Config) ConfigChanges {
 		changes.has_reloadable = true
 		changes.reloadable_items << 'broker.idle_timeout_ms: ${old_config.broker.idle_timeout_ms} -> ${new_config.broker.idle_timeout_ms}'
 	}
+	if old_config.broker.max_request_size != new_config.broker.max_request_size {
+		changes.has_reloadable = true
+		changes.reloadable_items << 'broker.max_request_size: ${old_config.broker.max_request_size} -> ${new_config.broker.max_request_size}'
+	}
 	if old_config.observability.logging.level != new_config.observability.logging.level {
 		changes.has_reloadable = true
 		changes.reloadable_items << 'observability.logging.level: ${old_config.observability.logging.level} -> ${new_config.observability.logging.level}'
@@ -201,6 +237,14 @@ fn detect_config_changes(old_config Config, new_config Config) ConfigChanges {
 		changes.has_reloadable = true
 		changes.reloadable_items << 'observability.metrics.collection_interval: ${old_config.observability.metrics.collection_interval} -> ${new_config.observability.metrics.collection_interval}'
 	}
+	if old_config.observability.tracing.enabled != new_config.observability.tracing.enabled {
+		changes.has_reloadable = true
+		changes.reloadable_items << 'observability.tracing.enabled: ${old_config.observability.tracing.enabled} -> ${new_config.observability.tracing.enabled}'
+	}
+	if old_config.observability.tracing.sample_rate != new_config.observability.tracing.sample_rate {
+		changes.has_reloadable = true
+		changes.reloadable_items << 'observability.tracing.sample_rate: ${old_config.observability.tracing.sample_rate} -> ${new_config.observability.tracing.sample_rate}'
+	}
 	if old_config.rest.max_connections != new_config.rest.max_connections {
 		changes.has_reloadable = true
 		changes.reloadable_items << 'rest.max_connections: ${old_config.rest.max_connections} -> ${new_config.rest.max_connections}'
@@ -208,6 +252,14 @@ fn detect_config_changes(old_config Config, new_config Config) ConfigChanges {
 	if old_config.rest.sse_heartbeat_interval_ms != new_config.rest.sse_heartbeat_interval_ms {
 		changes.has_reloadable = true
 		changes.reloadable_items << 'rest.sse_heartbeat_interval_ms: ${old_config.rest.sse_heartbeat_interval_ms} -> ${new_config.rest.sse_heartbeat_interval_ms}'
+	}
+	if old_config.rest.sse_connection_timeout_ms != new_config.rest.sse_connection_timeout_ms {
+		changes.has_reloadable = true
+		changes.reloadable_items << 'rest.sse_connection_timeout_ms: ${old_config.rest.sse_connection_timeout_ms} -> ${new_config.rest.sse_connection_timeout_ms}'
+	}
+	if old_config.rest.ws_max_message_size != new_config.rest.ws_max_message_size {
+		changes.has_reloadable = true
+		changes.reloadable_items << 'rest.ws_max_message_size: ${old_config.rest.ws_max_message_size} -> ${new_config.rest.ws_max_message_size}'
 	}
 	if old_config.rest.ws_ping_interval_ms != new_config.rest.ws_ping_interval_ms {
 		changes.has_reloadable = true
