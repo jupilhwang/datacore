@@ -15,6 +15,7 @@ pub:
 }
 
 // Creates a ByteView from a byte array
+/// new creates a new ByteView from a byte array
 pub fn ByteView.new(data []u8) ByteView {
 	return ByteView{
 		data:   data
@@ -24,6 +25,7 @@ pub fn ByteView.new(data []u8) ByteView {
 }
 
 // Creates a sub-view without copying data
+/// slice creates a sub-view without copying data
 pub fn (v ByteView) slice(start int, end int) !ByteView {
 	if start < 0 || end > v.length || start > end {
 		return error('slice bounds out of range')
@@ -36,6 +38,7 @@ pub fn (v ByteView) slice(start int, end int) !ByteView {
 }
 
 // Returns the actual bytes (zero-copy when offset is 0)
+/// bytes returns the written bytes
 pub fn (v ByteView) bytes() []u8 {
 	if v.length == 0 {
 		return []u8{}
@@ -44,6 +47,7 @@ pub fn (v ByteView) bytes() []u8 {
 }
 
 // Returns a copy of the data (when ownership is needed)
+/// to_owned returns a copy of the data
 pub fn (v ByteView) to_owned() []u8 {
 	if v.length == 0 {
 		return []u8{}
@@ -52,6 +56,7 @@ pub fn (v ByteView) to_owned() []u8 {
 }
 
 // Converts to string (zero-copy when possible)
+/// to_string converts the view to a string
 pub fn (v ByteView) to_string() string {
 	if v.length == 0 {
 		return ''
@@ -60,11 +65,13 @@ pub fn (v ByteView) to_string() string {
 }
 
 // Returns length of the view
+/// len returns the length
 pub fn (v ByteView) len() int {
 	return v.length
 }
 
 // Checks if view is empty
+/// is_empty checks if empty
 pub fn (v ByteView) is_empty() bool {
 	return v.length == 0
 }
@@ -76,6 +83,7 @@ pub mut:
 	pos  int
 }
 
+/// new_reader creates a new BinaryReader from a byte array
 pub fn new_reader(data []u8) BinaryReader {
 	return BinaryReader{
 		data: data
@@ -91,6 +99,7 @@ pub fn (r &BinaryReader) position() int {
 	return r.pos
 }
 
+/// read_i8 reads a signed 8-bit integer from the buffer
 pub fn (mut r BinaryReader) read_i8() !i8 {
 	if r.remaining() < 1 {
 		return error('not enough data for i8')
@@ -100,6 +109,7 @@ pub fn (mut r BinaryReader) read_i8() !i8 {
 	return val
 }
 
+/// read_i16 reads a signed 16-bit integer in big-endian format
 pub fn (mut r BinaryReader) read_i16() !i16 {
 	if r.remaining() < 2 {
 		return error('not enough data for i16')
@@ -109,6 +119,7 @@ pub fn (mut r BinaryReader) read_i16() !i16 {
 	return val
 }
 
+/// read_i32 reads a signed 32-bit integer in big-endian format
 pub fn (mut r BinaryReader) read_i32() !i32 {
 	if r.remaining() < 4 {
 		return error('not enough data for i32')
@@ -119,6 +130,7 @@ pub fn (mut r BinaryReader) read_i32() !i32 {
 	return val
 }
 
+/// read_i64 reads a signed 64-bit integer in big-endian format
 pub fn (mut r BinaryReader) read_i64() !i64 {
 	if r.remaining() < 8 {
 		return error('not enough data for i64')
@@ -130,6 +142,7 @@ pub fn (mut r BinaryReader) read_i64() !i64 {
 	return val
 }
 
+/// read_uvarint reads an unsigned variable-length integer (zigzag encoding)
 pub fn (mut r BinaryReader) read_uvarint() !u64 {
 	mut result := u64(0)
 	mut shift := u32(0)
@@ -153,11 +166,13 @@ pub fn (mut r BinaryReader) read_uvarint() !u64 {
 	return result
 }
 
+/// read_varint reads a signed variable-length integer (zigzag encoding)
 pub fn (mut r BinaryReader) read_varint() !i64 {
 	uval := r.read_uvarint()!
 	return i64((uval >> 1) ^ (-(uval & 1)))
 }
 
+/// read_string reads a length-prefixed string (i16 length)
 pub fn (mut r BinaryReader) read_string() !string {
 	len := r.read_i16()!
 	if len < 0 {
@@ -171,6 +186,7 @@ pub fn (mut r BinaryReader) read_string() !string {
 	return str
 }
 
+/// read_nullable_string reads a nullable length-prefixed string (i16 length, -1 for null)
 pub fn (mut r BinaryReader) read_nullable_string() !string {
 	len := r.read_i16()!
 	if len < 0 {
@@ -184,6 +200,7 @@ pub fn (mut r BinaryReader) read_nullable_string() !string {
 	return str
 }
 
+/// read_compact_string reads a compact string (unsigned varint length + 1)
 pub fn (mut r BinaryReader) read_compact_string() !string {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -198,6 +215,7 @@ pub fn (mut r BinaryReader) read_compact_string() !string {
 	return str
 }
 
+/// read_compact_nullable_string reads a compact nullable string (unsigned varint length, 0 for null)
 pub fn (mut r BinaryReader) read_compact_nullable_string() !string {
 	// Compact nullable string: length 0 means null, length N means N-1 bytes
 	len := r.read_uvarint()!
@@ -217,6 +235,7 @@ pub fn (mut r BinaryReader) read_compact_nullable_string() !string {
 }
 
 // Read bytes with specified length
+/// read_bytes_len reads exactly n bytes from the buffer
 pub fn (mut r BinaryReader) read_bytes_len(len int) ![]u8 {
 	if len < 0 {
 		return []u8{}
@@ -230,12 +249,14 @@ pub fn (mut r BinaryReader) read_bytes_len(len int) ![]u8 {
 }
 
 // Read bytes with i32 length prefix
+/// read_bytes reads a length-prefixed byte array (i32 length)
 pub fn (mut r BinaryReader) read_bytes() ![]u8 {
 	len := r.read_i32()!
 	return r.read_bytes_len(int(len))!
 }
 
 // Read UUID (16 bytes, fixed length)
+/// read_uuid reads a 16-byte UUID
 pub fn (mut r BinaryReader) read_uuid() ![]u8 {
 	if r.remaining() < 16 {
 		return error('not enough data for UUID')
@@ -245,6 +266,7 @@ pub fn (mut r BinaryReader) read_uuid() ![]u8 {
 	return uuid
 }
 
+/// read_compact_bytes reads a compact byte array (unsigned varint length + 1)
 pub fn (mut r BinaryReader) read_compact_bytes() ![]u8 {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -259,11 +281,13 @@ pub fn (mut r BinaryReader) read_compact_bytes() ![]u8 {
 	return bytes
 }
 
+/// read_array_len reads an array length (i32, -1 for null array)
 pub fn (mut r BinaryReader) read_array_len() !int {
 	len := r.read_i32()!
 	return int(len)
 }
 
+/// read_compact_array_len reads a compact array length (unsigned varint, 0 for null)
 pub fn (mut r BinaryReader) read_compact_array_len() !int {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -272,6 +296,7 @@ pub fn (mut r BinaryReader) read_compact_array_len() !int {
 	return int(len) - 1
 }
 
+/// skip advances the read position by n bytes
 pub fn (mut r BinaryReader) skip(n int) ! {
 	if r.remaining() < n {
 		return error('not enough data to skip')
@@ -284,6 +309,7 @@ pub fn (mut r BinaryReader) skip(n int) ! {
 // ============================================================
 
 // Read bytes as a zero-copy view (no memory allocation)
+/// read_bytes_view reads n bytes as a zero-copy ByteView
 pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
 	if len < 0 {
 		return ByteView{}
@@ -301,12 +327,14 @@ pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
 }
 
 // Read bytes with i32 length prefix as a zero-copy view
+/// read_bytes_as_view reads a length-prefixed byte array as a ByteView
 pub fn (mut r BinaryReader) read_bytes_as_view() !ByteView {
 	len := r.read_i32()!
 	return r.read_bytes_view(int(len))!
 }
 
 // Read compact bytes as a zero-copy view
+/// read_compact_bytes_view reads compact bytes as a ByteView
 pub fn (mut r BinaryReader) read_compact_bytes_view() !ByteView {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -337,11 +365,13 @@ pub fn (r &BinaryReader) remaining_view() ByteView {
 	}
 }
 
+/// read_i32 reads a signed 32-bit integer in big-endian format
 pub fn (mut r BinaryReader) read_i32_bytes() ![]u8 {
 	length := r.read_i32()!
 	return r.read_bytes_len(int(length))!
 }
 
+/// skip_tagged_fields skips Kafka tagged fields (flexible message format)
 pub fn (mut r BinaryReader) skip_tagged_fields() ! {
 	num_fields := r.read_uvarint()!
 	for _ in 0 .. num_fields {
@@ -392,12 +422,14 @@ pub mut:
 	data []u8
 }
 
+/// new_writer creates a new BinaryWriter
 pub fn new_writer() BinaryWriter {
 	return BinaryWriter{
 		data: []u8{}
 	}
 }
 
+/// new_writer creates a new BinaryWriter
 pub fn new_writer_with_capacity(capacity int) BinaryWriter {
 	return BinaryWriter{
 		data: []u8{cap: capacity}
@@ -412,15 +444,18 @@ pub fn (w &BinaryWriter) len() int {
 	return w.data.len
 }
 
+/// write_i8 writes a signed 8-bit integer
 pub fn (mut w BinaryWriter) write_i8(val i8) {
 	w.data << u8(val)
 }
 
+/// write_i16 writes a signed 16-bit integer in big-endian format
 pub fn (mut w BinaryWriter) write_i16(val i16) {
 	w.data << u8(val >> 8)
 	w.data << u8(val)
 }
 
+/// write_i32 writes a signed 32-bit integer in big-endian format
 pub fn (mut w BinaryWriter) write_i32(val i32) {
 	w.data << u8(val >> 24)
 	w.data << u8(val >> 16)
@@ -435,6 +470,7 @@ pub fn (mut w BinaryWriter) write_u32(val u32) {
 	w.data << u8(val)
 }
 
+/// write_i64 writes a signed 64-bit integer in big-endian format
 pub fn (mut w BinaryWriter) write_i64(val i64) {
 	w.data << u8(val >> 56)
 	w.data << u8(val >> 48)
@@ -446,6 +482,7 @@ pub fn (mut w BinaryWriter) write_i64(val i64) {
 	w.data << u8(val)
 }
 
+/// write_uvarint writes an unsigned variable-length integer
 pub fn (mut w BinaryWriter) write_uvarint(val u64) {
 	mut v := val
 	for v >= 0x80 {
@@ -455,6 +492,7 @@ pub fn (mut w BinaryWriter) write_uvarint(val u64) {
 	w.data << u8(v)
 }
 
+/// write_varint writes a signed variable-length integer (zigzag encoding)
 pub fn (mut w BinaryWriter) write_varint(val i64) {
 	// ZigZag encoding: convert signed to unsigned
 	// Maps negative numbers to odd positive numbers, positive to even
@@ -463,11 +501,13 @@ pub fn (mut w BinaryWriter) write_varint(val i64) {
 	w.write_uvarint(uval)
 }
 
+/// write_string writes a length-prefixed string (i16 length)
 pub fn (mut w BinaryWriter) write_string(s string) {
 	w.write_i16(i16(s.len))
 	w.data << s.bytes()
 }
 
+/// write_nullable_string writes a nullable string (i16 length, -1 for null)
 pub fn (mut w BinaryWriter) write_nullable_string(s ?string) {
 	if str := s {
 		w.write_i16(i16(str.len))
@@ -477,11 +517,13 @@ pub fn (mut w BinaryWriter) write_nullable_string(s ?string) {
 	}
 }
 
+/// write_compact_string writes a compact string (unsigned varint length + 1)
 pub fn (mut w BinaryWriter) write_compact_string(s string) {
 	w.write_uvarint(u64(s.len) + 1)
 	w.data << s.bytes()
 }
 
+/// write_compact_nullable_string writes a compact nullable string
 pub fn (mut w BinaryWriter) write_compact_nullable_string(s ?string) {
 	if str := s {
 		w.write_uvarint(u64(str.len) + 1)
@@ -491,11 +533,13 @@ pub fn (mut w BinaryWriter) write_compact_nullable_string(s ?string) {
 	}
 }
 
+/// write_bytes writes a length-prefixed byte array (i32 length)
 pub fn (mut w BinaryWriter) write_bytes(b []u8) {
 	w.write_i32(i32(b.len))
 	w.data << b
 }
 
+/// write_compact_bytes writes a compact byte array
 pub fn (mut w BinaryWriter) write_compact_bytes(b []u8) {
 	w.write_uvarint(u64(b.len) + 1)
 	w.data << b
@@ -503,6 +547,7 @@ pub fn (mut w BinaryWriter) write_compact_bytes(b []u8) {
 
 // Write UUID (16 bytes, fixed length)
 // If uuid is empty or less than 16 bytes, writes zero UUID
+/// write_uuid writes a 16-byte UUID
 pub fn (mut w BinaryWriter) write_uuid(uuid []u8) {
 	if uuid.len >= 16 {
 		w.data << uuid[0..16]
@@ -514,10 +559,12 @@ pub fn (mut w BinaryWriter) write_uuid(uuid []u8) {
 	}
 }
 
+/// write_array_len writes an array length (i32)
 pub fn (mut w BinaryWriter) write_array_len(len int) {
 	w.write_i32(i32(len))
 }
 
+/// write_compact_array_len writes a compact array length
 pub fn (mut w BinaryWriter) write_compact_array_len(len int) {
 	if len < 0 {
 		w.write_uvarint(0)
@@ -526,6 +573,7 @@ pub fn (mut w BinaryWriter) write_compact_array_len(len int) {
 	}
 }
 
+/// write_tagged_fields writes empty tagged fields section
 pub fn (mut w BinaryWriter) write_tagged_fields() {
 	w.write_uvarint(0)
 }
