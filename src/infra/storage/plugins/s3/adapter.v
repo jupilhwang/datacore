@@ -270,12 +270,17 @@ pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMeta
 
 	// Cache miss - fetch from S3 and populate cache
 	topics := a.list_topics()!
+
+	// Lock once for all cache updates
+	a.topic_lock.@lock()
 	for t in topics {
 		// Populate topic_id_cache for future lookups
-		a.topic_lock.@lock()
 		a.topic_id_cache[t.topic_id.hex()] = t.name
-		a.topic_lock.unlock()
+	}
+	a.topic_lock.unlock()
 
+	// Find the matching topic
+	for t in topics {
 		if t.topic_id == topic_id {
 			return t
 		}

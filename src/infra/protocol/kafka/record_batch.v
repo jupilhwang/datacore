@@ -86,12 +86,11 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 		return []u8{}
 	}
 
-	// Use optimized encoding path
-	// For now, delegate to existing encoder but with pre-allocated buffer
-	_ = estimate_batch_size(records)
+	// Use optimized encoding path with pre-allocated buffer
+	estimated_size := estimate_batch_size(records)
 
-	// RecordBatch header
-	mut writer := new_writer()
+	// RecordBatch header - use pre-allocated writer
+	mut writer := new_writer_with_capacity(estimated_size)
 
 	// Base offset (8 bytes)
 	writer.write_i64(base_offset)

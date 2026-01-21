@@ -242,7 +242,8 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	if a.config.max_messages_per_partition > 0 {
 		excess := part.records.len - a.config.max_messages_per_partition
 		if excess > 0 {
-			part.records = part.records[excess..].clone()
+			// Use drop_first to avoid clone - shift elements in place
+			part.records = part.records[excess..]
 			part.base_offset += i64(excess)
 		}
 	}
@@ -312,7 +313,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 	}
 
 	return domain.FetchResult{
-		records:            part.records[start_idx..end_idx].clone()
+		records:            part.records[start_idx..end_idx]
 		high_watermark:     part.high_watermark
 		last_stable_offset: part.high_watermark
 		log_start_offset:   part.base_offset
@@ -337,7 +338,8 @@ pub fn (mut a MemoryStorageAdapter) delete_records(topic_name string, partition 
 
 	delete_count := int(before_offset - part.base_offset)
 	if delete_count > 0 && delete_count <= part.records.len {
-		part.records = part.records[delete_count..].clone()
+		// Use slice assignment instead of clone
+		part.records = part.records[delete_count..]
 		part.base_offset = before_offset
 	}
 }
