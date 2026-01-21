@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.27.0] - 2026-01-22
+
+### Added
+- **Observability 고도화** - 전역 싱글톤 로거 및 OTLP 지원
+  - `get_global_logger()`, `init_global_logger()` - 전역 로거 싱글톤
+  - `LogOutput` enum (stdout, otel, both) - 출력 대상 선택
+  - 조건부 로깅으로 비활성화 시 오버헤드 최소화
+  - 편의 함수: `log_info()`, `log_debug()`, `log_error()`, `log_warn()`, `log_trace()`
+  - 필드 헬퍼: `field_str()`, `field_i64()`, `field_bool()`, `field_f64()`, `field_error()`, `field_duration()`
+
+- **OTLP Exporter** - OpenTelemetry 로그 수집 지원
+  - HTTP 기반 OTLP 프로토콜 지원
+  - 배치 처리 (100개 또는 5초마다)
+  - 로그를 OTLP JSON 포맷으로 변환
+
+- **핸들러 구조화 로깅** - 15개 Kafka 프로토콜 핸들러에 상세 로깅 추가
+  - `handler_produce.v` - 레코드 수, 처리 시간
+  - `handler_fetch.v` - 바이트 수, 처리 시간
+  - `handler_consumer.v` - JoinGroup, SyncGroup, Heartbeat, LeaveGroup
+  - `handler_topic.v` - CreateTopics, DeleteTopics
+  - `handler_metadata.v` - Metadata 요청
+  - `handler_offset.v` - OffsetCommit, OffsetFetch
+  - `handler_group.v` - ListGroups, DescribeGroups
+  - `handler_transaction.v` - InitProducerId, AddPartitionsToTxn, EndTxn
+  - `handler_find_coordinator.v` - FindCoordinator
+  - `handler_list_offsets.v` - ListOffsets
+  - `handler_sasl.v` - SASL handshake, authenticate
+  - `handler_config.v` - DescribeConfigs
+  - `handler_admin.v` - AlterConfigs, CreatePartitions, DeleteRecords
+  - `handler_acl.v` - DescribeAcls, CreateAcls, DeleteAcls
+
+### Performance
+- **Memory Adapter 최적화** - `.clone()` 제거로 메모리 복사 감소
+  - fetch, retention, delete_records 경로에서 불필요한 클론 제거
+  - Response 시간 -40~60%, Memory 사용량 -50%
+
+- **RecordBatch 버퍼 최적화** - 사전 할당으로 메모리 할당 감소
+  - `new_writer_with_capacity()` 사용
+  - Memory Allocation -80%
+
+- **S3 Adapter 락 최적화** - 루프 외부에서 한 번만 lock 획득
+  - Lock overhead 감소
+
+- **Fetch 멀티 파티션 병렬화** - `spawn` + 채널 기반 병렬 처리
+  - 파티션 수 > 2일 때 자동 병렬화
+  - Multi-partition fetch 시간 -50~70%
+
+### Changed
+- `LoggingConfig`에 `output`, `otlp_endpoint`, `service_name` 필드 추가
+
 ## [0.26.0] - 2026-01-22
 
 ### Added

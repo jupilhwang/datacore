@@ -112,7 +112,7 @@ fn test_field_constructors() {
 
 fn test_field_duration() {
 	f := field_duration('latency', 1500 * time.millisecond)
-	assert f.key == 'latency'
+	assert f.key == 'latency_ms' // field_duration appends _ms suffix
 	assert f.value.contains('1500')
 }
 
@@ -133,7 +133,7 @@ fn test_json_output_format() {
 
 	json := format_entry_json(entry)
 	assert json.contains('"level":"INFO"')
-	assert json.contains('"message":"test message"')
+	assert json.contains('"msg":"test message"') // JSON format uses "msg" not "message"
 	assert json.contains('"trace_id":"trace-id"')
 	assert json.contains('"key":"value"')
 }
