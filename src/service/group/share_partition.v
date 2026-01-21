@@ -1,0 +1,326 @@
+// Service Layer - Share Partition Management (KIP-932)
+// Manages share partitions, record acquisition, acknowledgment, and release
+module group
+
+import domain
+import service.port
+import sync
+import time
+
+// ============================================================================
+// Share Partition Manager
+// ============================================================================
+
+// SharePartitionManager manages share partitions and record states
+pub struct SharePartitionManager {
+mut:
+	// Share partitions keyed by "group_id:topic:partition"
+	partitions map[string]&domain.SharePartition
+	// Storage for persistence
+	storage port.StoragePort
+	// Thread safety
+	lock sync.RwMutex
+}
+
+// new_share_partition_manager creates a new share partition manager
+pub fn new_share_partition_manager(storage port.StoragePort) &SharePartitionManager {
+	return &SharePartitionManager{
+		partitions: map[string]&domain.SharePartition{}
+		storage:    storage
+	}
+}
+
+// ============================================================================
+// Partition Management
+// ============================================================================
+
+// get_or_create_partition gets or creates a share partition
+pub fn (mut m SharePartitionManager) get_or_create_partition(group_id string, topic_name string, partition i32) &domain.SharePartition {
+	m.lock.@lock()
+	defer { m.lock.unlock() }
+
+	return m.get_or_create_partition_internal(group_id, topic_name, partition)
+}
+
+// get_partition returns a share partition
+pub fn (mut m SharePartitionManager) get_partition(group_id string, topic_name string, partition i32) ?&domain.SharePartition {
+	m.lock.rlock()
+	defer { m.lock.runlock() }
+
+	key := '${group_id}:${topic_name}:${partition}'
+	return m.partitions[key] or { return none }
+}
+
+// delete_partitions_for_group deletes all partitions for a group
+pub fn (mut m SharePartitionManager) delete_partitions_for_group(group_id string) {
+	m.lock.@lock()
+	defer { m.lock.unlock() }
+
+	mut to_delete := []string{}
+	for key, _ in m.partitions {
+		if key.starts_with('${group_id}:') {
+			to_delete << key
+		}
+	}
+	for key in to_delete {
+		m.partitions.delete(key)
+	}
+}
+
+// get_partition_stats returns statistics for partitions of a group
+pub fn (mut m SharePartitionManager) get_partition_stats(group_id string) (int, i64, i64, i64, i64) {
+	m.lock.rlock()
+	defer { m.lock.runlock() }
+
+	mut partition_count := 0
+	mut total_acquired := i64(0)
+	mut total_acknowledged := i64(0)
+	mut total_released := i64(0)
+	mut total_rejected := i64(0)
+
+	for key, sp in m.partitions {
+		if key.starts_with('${group_id}:') {
+			partition_count += 1
+			total_acquired += sp.total_acquired
+			total_acknowledged += sp.total_acknowledged
+			total_released += sp.total_released
+			total_rejected += sp.total_rejected
+		}
+	}
+
+	return partition_count, total_acquired, total_acknowledged, total_released, total_rejected
+}
+
+// ============================================================================
+// Record Acquisition
+// ============================================================================
+
+// acquire_records acquires records for a consumer
+pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id string, topic_name string, partition i32, max_records int, lock_duration_ms i64, max_partition_locks int) []domain.AcquiredRecordInfo {
+	m.lock.@lock()
+	defer { m.lock.unlock() }
+
+	mut sp := m.get_or_create_partition_internal(group_id, topic_name, partition)
+	now := time.now().unix_milli()
+
+	mut acquired := []domain.AcquiredRecordInfo{}
+	mut offset := sp.start_offset
+
+	// Find available records to acquire
+	for acquired.len < max_records && offset <= sp.end_offset {
+		state := sp.record_states[offset] or { domain.RecordState.available }
+
+		if state == .available {
+			// Check if we've hit the max partition locks
+			if sp.acquired_records.len >= max_partition_locks {
+				break
+			}
+
+			// Get or initialize delivery count
+			mut delivery_count := i32(1)
+			if existing := sp.acquired_records[offset] {
+				delivery_count = existing.delivery_count + 1
+			}
+
+			// Acquire the record
+			sp.record_states[offset] = .acquired
+			sp.acquired_records[offset] = domain.AcquiredRecord{
+				offset:          offset
+				member_id:       member_id
+				delivery_count:  delivery_count
+				acquired_at:     now
+				lock_expires_at: now + lock_duration_ms
+			}
+
+			acquired << domain.AcquiredRecordInfo{
+				offset:         offset
+				delivery_count: delivery_count
+				timestamp:      now
+			}
+
+			sp.total_acquired += 1
+		}
+
+		offset += 1
+	}
+
+	// Advance end offset if needed
+	if offset > sp.end_offset {
+		sp.end_offset = offset
+	}
+
+	return acquired
+}
+
+// ============================================================================
+// Record Acknowledgment
+// ============================================================================
+
+// acknowledge_records processes acknowledgements for records
+pub fn (mut m SharePartitionManager) acknowledge_records(group_id string, member_id string, batch domain.AcknowledgementBatch, delivery_attempt_limit i32) domain.ShareAcknowledgeResult {
+	m.lock.@lock()
+	defer { m.lock.unlock() }
+
+	mut sp := m.get_or_create_partition_internal(group_id, batch.topic_name, batch.partition)
+
+	// Process each offset in the batch
+	for offset := batch.first_offset; offset <= batch.last_offset; offset++ {
+		// Skip gap offsets
+		if offset in batch.gap_offsets {
+			continue
+		}
+
+		// Check if record is acquired by this member
+		acquired := sp.acquired_records[offset] or { continue }
+
+		if acquired.member_id != member_id {
+			// Record not owned by this member
+			continue
+		}
+
+		match batch.acknowledge_type {
+			.accept {
+				// Successfully processed
+				sp.record_states[offset] = .acknowledged
+				sp.acquired_records.delete(offset)
+				sp.total_acknowledged += 1
+			}
+			.release {
+				// Release for redelivery
+				if acquired.delivery_count < delivery_attempt_limit {
+					sp.record_states[offset] = .available
+				} else {
+					// Max attempts reached - archive
+					sp.record_states[offset] = .archived
+				}
+				sp.acquired_records.delete(offset)
+				sp.total_released += 1
+			}
+			.reject {
+				// Rejected as unprocessable
+				sp.record_states[offset] = .archived
+				sp.acquired_records.delete(offset)
+				sp.total_rejected += 1
+			}
+		}
+	}
+
+	// Advance SPSO if possible
+	m.advance_spso_internal(mut sp)
+
+	return domain.ShareAcknowledgeResult{
+		topic_name: batch.topic_name
+		partition:  batch.partition
+		error_code: 0
+	}
+}
+
+// ============================================================================
+// Record Release
+// ============================================================================
+
+// release_expired_locks_with_limits releases records with expired acquisition locks
+// using delivery attempt limits from the provided map
+pub fn (mut m SharePartitionManager) release_expired_locks_with_limits(group_limits map[string]i32) {
+	m.lock.@lock()
+	defer { m.lock.unlock() }
+
+	now := time.now().unix_milli()
+
+	for _, mut sp in m.partitions {
+		delivery_limit := group_limits[sp.group_id] or { continue }
+
+		mut expired := []i64{}
+		for offset, acquired in sp.acquired_records {
+			if now > acquired.lock_expires_at {
+				expired << offset
+			}
+		}
+
+		for offset in expired {
+			acquired := sp.acquired_records[offset] or { continue }
+
+			// Check delivery count
+			if acquired.delivery_count >= delivery_limit {
+				// Max attempts reached - archive
+				sp.record_states[offset] = .archived
+			} else {
+				// Release for redelivery
+				sp.record_states[offset] = .available
+			}
+			sp.acquired_records.delete(offset)
+			sp.total_released += 1
+		}
+
+		// Advance SPSO if possible
+		m.advance_spso_internal(mut sp)
+	}
+}
+
+// release_member_records releases all records acquired by a member
+pub fn (mut m SharePartitionManager) release_member_records(group_id string, member_id string) {
+	m.lock.@lock()
+	defer { m.lock.unlock() }
+
+	m.release_member_records_internal(group_id, member_id)
+}
+
+// release_member_records_internal is the internal implementation without locking
+pub fn (mut m SharePartitionManager) release_member_records_internal(group_id string, member_id string) {
+	for _, mut sp in m.partitions {
+		if sp.group_id != group_id {
+			continue
+		}
+
+		mut to_release := []i64{}
+		for offset, acquired in sp.acquired_records {
+			if acquired.member_id == member_id {
+				to_release << offset
+			}
+		}
+
+		for offset in to_release {
+			sp.record_states[offset] = .available
+			sp.acquired_records.delete(offset)
+		}
+	}
+}
+
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+fn (mut m SharePartitionManager) get_or_create_partition_internal(group_id string, topic_name string, partition i32) &domain.SharePartition {
+	key := '${group_id}:${topic_name}:${partition}'
+
+	if sp := m.partitions[key] {
+		return sp
+	}
+
+	mut start_offset := i64(0)
+	if info := m.storage.get_partition_info(topic_name, partition) {
+		start_offset = info.high_watermark
+	}
+
+	mut sp := &domain.SharePartition{
+		...domain.new_share_partition(topic_name, partition, group_id, start_offset)
+	}
+	m.partitions[key] = sp
+	return sp
+}
+
+fn (mut m SharePartitionManager) advance_spso_internal(mut sp domain.SharePartition) {
+	// Advance SPSO past all acknowledged/archived records
+	mut new_start := sp.start_offset
+	for new_start <= sp.end_offset {
+		state := sp.record_states[new_start] or { break }
+		if state == .acknowledged || state == .archived {
+			// Clean up state for this offset
+			sp.record_states.delete(new_start)
+			new_start += 1
+		} else {
+			break
+		}
+	}
+	sp.start_offset = new_start
+}

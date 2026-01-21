@@ -17,10 +17,6 @@ pub struct ShareGroupCoordinator {
 mut:
 	// Share groups keyed by group_id
 	groups map[string]&domain.ShareGroup
-	// Share partitions keyed by "group_id:topic:partition"
-	partitions map[string]&domain.SharePartition
-	// Share sessions keyed by "group_id:member_id"
-	sessions map[string]&domain.ShareSession
 	// Configuration
 	config domain.ShareGroupConfig
 	// Storage for persistence
@@ -29,17 +25,21 @@ mut:
 	lock sync.RwMutex
 	// Assignor
 	assignor &ShareGroupSimpleAssignor
+	// Partition manager
+	partition_manager &SharePartitionManager
+	// Session manager
+	session_manager &ShareSessionManager
 }
 
 // new_share_group_coordinator creates a new share group coordinator
 pub fn new_share_group_coordinator(storage port.StoragePort, config domain.ShareGroupConfig) &ShareGroupCoordinator {
 	return &ShareGroupCoordinator{
-		groups:     map[string]&domain.ShareGroup{}
-		partitions: map[string]&domain.SharePartition{}
-		sessions:   map[string]&domain.ShareSession{}
-		config:     config
-		storage:    storage
-		assignor:   new_simple_assignor()
+		groups:            map[string]&domain.ShareGroup{}
+		config:            config
+		storage:           storage
+		assignor:          new_simple_assignor()
+		partition_manager: new_share_partition_manager(storage)
+		session_manager:   new_share_session_manager()
 	}
 }
 
@@ -83,28 +83,24 @@ pub fn (mut c ShareGroupCoordinator) delete_group(group_id string) ! {
 	}
 
 	// Delete associated partitions
-	mut to_delete := []string{}
-	for key, _ in c.partitions {
-		if key.starts_with('${group_id}:') {
-			to_delete << key
-		}
-	}
-	for key in to_delete {
-		c.partitions.delete(key)
-	}
+	c.partition_manager.delete_partitions_for_group(group_id)
 
 	// Delete sessions
-	mut sessions_to_delete := []string{}
-	for key, _ in c.sessions {
-		if key.starts_with('${group_id}:') {
-			sessions_to_delete << key
-		}
-	}
-	for key in sessions_to_delete {
-		c.sessions.delete(key)
-	}
+	c.session_manager.delete_sessions_for_group(group_id)
 
 	c.groups.delete(group_id)
+}
+
+// list_groups returns all share groups
+pub fn (mut c ShareGroupCoordinator) list_groups() []string {
+	c.lock.rlock()
+	defer { c.lock.runlock() }
+
+	mut groups := []string{}
+	for group_id, _ in c.groups {
+		groups << group_id
+	}
+	return groups
 }
 
 // ============================================================================
@@ -254,11 +250,10 @@ pub fn (mut c ShareGroupCoordinator) leave_group(group_id string, member_id stri
 	}
 
 	// Release any acquired records for this member
-	c.release_member_records_internal(group_id, member_id)
+	c.partition_manager.release_member_records_internal(group_id, member_id)
 
 	// Delete session
-	session_key := '${group_id}:${member_id}'
-	c.sessions.delete(session_key)
+	c.session_manager.delete_session(group_id, member_id)
 }
 
 // remove_expired_members removes members that have timed out
@@ -280,11 +275,10 @@ pub fn (mut c ShareGroupCoordinator) remove_expired_members() {
 		for member_id in expired_members {
 			group.members.delete(member_id)
 			group.target_assignment.delete(member_id)
-			c.release_member_records_internal(group_id, member_id)
+			c.partition_manager.release_member_records_internal(group_id, member_id)
 
 			// Delete session
-			session_key := '${group_id}:${member_id}'
-			c.sessions.delete(session_key)
+			c.session_manager.delete_session(group_id, member_id)
 		}
 
 		if expired_members.len > 0 {
@@ -349,95 +343,43 @@ fn (mut c ShareGroupCoordinator) get_or_create_group_internal(group_id string) &
 }
 
 // ============================================================================
-// Share Partition Management
+// Partition Management (Delegated)
 // ============================================================================
 
 // get_or_create_partition gets or creates a share partition
 pub fn (mut c ShareGroupCoordinator) get_or_create_partition(group_id string, topic_name string, partition i32) &domain.SharePartition {
-	c.lock.@lock()
-	defer { c.lock.unlock() }
-
-	return c.get_or_create_partition_internal(group_id, topic_name, partition)
+	return c.partition_manager.get_or_create_partition(group_id, topic_name, partition)
 }
 
 // get_partition returns a share partition
 pub fn (mut c ShareGroupCoordinator) get_partition(group_id string, topic_name string, partition i32) ?&domain.SharePartition {
-	c.lock.rlock()
-	defer { c.lock.runlock() }
-
-	key := '${group_id}:${topic_name}:${partition}'
-	return c.partitions[key] or { return none }
+	return c.partition_manager.get_partition(group_id, topic_name, partition)
 }
 
 // ============================================================================
-// Record Acquisition
+// Record Acquisition (Delegated)
 // ============================================================================
 
 // acquire_records acquires records for a consumer
 pub fn (mut c ShareGroupCoordinator) acquire_records(group_id string, member_id string, topic_name string, partition i32, max_records int) []domain.AcquiredRecordInfo {
-	c.lock.@lock()
-	defer { c.lock.unlock() }
-
-	group := c.groups[group_id] or { return []domain.AcquiredRecordInfo{} }
-	mut sp := c.get_or_create_partition_internal(group_id, topic_name, partition)
-	now := time.now().unix_milli()
+	c.lock.rlock()
+	group := c.groups[group_id] or {
+		c.lock.runlock()
+		return []domain.AcquiredRecordInfo{}
+	}
 	lock_duration := group.record_lock_duration_ms
+	max_partition_locks := group.max_partition_locks
+	c.lock.runlock()
 
-	mut acquired := []domain.AcquiredRecordInfo{}
-	mut offset := sp.start_offset
-
-	// Find available records to acquire
-	for acquired.len < max_records && offset <= sp.end_offset {
-		state := sp.record_states[offset] or { domain.RecordState.available }
-
-		if state == .available {
-			// Check if we've hit the max partition locks
-			if sp.acquired_records.len >= group.max_partition_locks {
-				break
-			}
-
-			// Get or initialize delivery count
-			mut delivery_count := i32(1)
-			if existing := sp.acquired_records[offset] {
-				delivery_count = existing.delivery_count + 1
-			}
-
-			// Acquire the record
-			sp.record_states[offset] = .acquired
-			sp.acquired_records[offset] = domain.AcquiredRecord{
-				offset:          offset
-				member_id:       member_id
-				delivery_count:  delivery_count
-				acquired_at:     now
-				lock_expires_at: now + lock_duration
-			}
-
-			acquired << domain.AcquiredRecordInfo{
-				offset:         offset
-				delivery_count: delivery_count
-				timestamp:      now
-			}
-
-			sp.total_acquired += 1
-		}
-
-		offset += 1
-	}
-
-	// Advance end offset if needed
-	if offset > sp.end_offset {
-		sp.end_offset = offset
-	}
-
-	return acquired
+	return c.partition_manager.acquire_records(group_id, member_id, topic_name, partition,
+		max_records, lock_duration, max_partition_locks)
 }
 
 // acknowledge_records processes acknowledgements for records
 pub fn (mut c ShareGroupCoordinator) acknowledge_records(group_id string, member_id string, batch domain.AcknowledgementBatch) domain.ShareAcknowledgeResult {
-	c.lock.@lock()
-	defer { c.lock.unlock() }
-
+	c.lock.rlock()
 	group := c.groups[group_id] or {
+		c.lock.runlock()
 		return domain.ShareAcknowledgeResult{
 			topic_name:    batch.topic_name
 			partition:     batch.partition
@@ -445,240 +387,46 @@ pub fn (mut c ShareGroupCoordinator) acknowledge_records(group_id string, member
 			error_message: 'share group not found'
 		}
 	}
+	delivery_attempt_limit := group.delivery_attempt_limit
+	c.lock.runlock()
 
-	mut sp := c.get_or_create_partition_internal(group_id, batch.topic_name, batch.partition)
-
-	// Process each offset in the batch
-	for offset := batch.first_offset; offset <= batch.last_offset; offset++ {
-		// Skip gap offsets
-		if offset in batch.gap_offsets {
-			continue
-		}
-
-		// Check if record is acquired by this member
-		acquired := sp.acquired_records[offset] or { continue }
-
-		if acquired.member_id != member_id {
-			// Record not owned by this member
-			continue
-		}
-
-		match batch.acknowledge_type {
-			.accept {
-				// Successfully processed
-				sp.record_states[offset] = .acknowledged
-				sp.acquired_records.delete(offset)
-				sp.total_acknowledged += 1
-			}
-			.release {
-				// Release for redelivery
-				if acquired.delivery_count < group.delivery_attempt_limit {
-					sp.record_states[offset] = .available
-				} else {
-					// Max attempts reached - archive
-					sp.record_states[offset] = .archived
-				}
-				sp.acquired_records.delete(offset)
-				sp.total_released += 1
-			}
-			.reject {
-				// Rejected as unprocessable
-				sp.record_states[offset] = .archived
-				sp.acquired_records.delete(offset)
-				sp.total_rejected += 1
-			}
-		}
-	}
-
-	// Advance SPSO if possible
-	c.advance_spso_internal(mut sp)
-
-	return domain.ShareAcknowledgeResult{
-		topic_name: batch.topic_name
-		partition:  batch.partition
-		error_code: 0
-	}
+	return c.partition_manager.acknowledge_records(group_id, member_id, batch, delivery_attempt_limit)
 }
 
 // release_expired_locks releases records with expired acquisition locks
 pub fn (mut c ShareGroupCoordinator) release_expired_locks() {
-	c.lock.@lock()
-	defer { c.lock.unlock() }
-
-	now := time.now().unix_milli()
-
-	for _, mut sp in c.partitions {
-		group := c.groups[sp.group_id] or { continue }
-
-		mut expired := []i64{}
-		for offset, acquired in sp.acquired_records {
-			if now > acquired.lock_expires_at {
-				expired << offset
-			}
-		}
-
-		for offset in expired {
-			acquired := sp.acquired_records[offset] or { continue }
-
-			// Check delivery count
-			if acquired.delivery_count >= group.delivery_attempt_limit {
-				// Max attempts reached - archive
-				sp.record_states[offset] = .archived
-			} else {
-				// Release for redelivery
-				sp.record_states[offset] = .available
-			}
-			sp.acquired_records.delete(offset)
-			sp.total_released += 1
-		}
-
-		// Advance SPSO if possible
-		c.advance_spso_internal(mut sp)
+	c.lock.rlock()
+	// Extract delivery attempt limits for each group
+	mut group_limits := map[string]i32{}
+	for k, g in c.groups {
+		group_limits[k] = g.delivery_attempt_limit
 	}
-}
+	c.lock.runlock()
 
-fn (mut c ShareGroupCoordinator) advance_spso_internal(mut sp domain.SharePartition) {
-	// Advance SPSO past all acknowledged/archived records
-	mut new_start := sp.start_offset
-	for new_start <= sp.end_offset {
-		state := sp.record_states[new_start] or { break }
-		if state == .acknowledged || state == .archived {
-			// Clean up state for this offset
-			sp.record_states.delete(new_start)
-			new_start += 1
-		} else {
-			break
-		}
-	}
-	sp.start_offset = new_start
-}
-
-fn (mut c ShareGroupCoordinator) release_member_records_internal(group_id string, member_id string) {
-	for _, mut sp in c.partitions {
-		if sp.group_id != group_id {
-			continue
-		}
-
-		mut to_release := []i64{}
-		for offset, acquired in sp.acquired_records {
-			if acquired.member_id == member_id {
-				to_release << offset
-			}
-		}
-
-		for offset in to_release {
-			sp.record_states[offset] = .available
-			sp.acquired_records.delete(offset)
-		}
-	}
-}
-
-fn (mut c ShareGroupCoordinator) get_or_create_partition_internal(group_id string, topic_name string, partition i32) &domain.SharePartition {
-	key := '${group_id}:${topic_name}:${partition}'
-
-	if sp := c.partitions[key] {
-		return sp
-	}
-
-	mut start_offset := i64(0)
-	if info := c.storage.get_partition_info(topic_name, partition) {
-		start_offset = info.high_watermark
-	}
-
-	mut sp := &domain.SharePartition{
-		...domain.new_share_partition(topic_name, partition, group_id, start_offset)
-	}
-	c.partitions[key] = sp
-	return sp
+	c.partition_manager.release_expired_locks_with_limits(group_limits)
 }
 
 // ============================================================================
-// Share Session Management
+// Session Management (Delegated)
 // ============================================================================
 
 // get_or_create_session gets or creates a share session
 pub fn (mut c ShareGroupCoordinator) get_or_create_session(group_id string, member_id string) &domain.ShareSession {
-	c.lock.@lock()
-	defer { c.lock.unlock() }
-
-	key := '${group_id}:${member_id}'
-
-	if session := c.sessions[key] {
-		return session
-	}
-
-	now := time.now().unix_milli()
-	session := &domain.ShareSession{
-		group_id:       group_id
-		member_id:      member_id
-		session_epoch:  1
-		partitions:     []domain.ShareSessionPartition{}
-		acquired_locks: map[string][]i64{}
-		created_at:     now
-		last_used:      now
-	}
-	c.sessions[key] = session
-	return session
+	return c.session_manager.get_or_create_session(group_id, member_id)
 }
 
 // update_session updates a share session
 pub fn (mut c ShareGroupCoordinator) update_session(group_id string, member_id string, epoch i32, partitions_to_add []domain.ShareSessionPartition, partitions_to_remove []domain.ShareSessionPartition) !&domain.ShareSession {
-	c.lock.@lock()
-	defer { c.lock.unlock() }
-
-	key := '${group_id}:${member_id}'
-	mut session := c.sessions[key] or { return error('session not found') }
-
-	// Check epoch
-	if epoch != session.session_epoch && epoch != -1 {
-		return error('invalid session epoch')
-	}
-
-	now := time.now().unix_milli()
-	session.last_used = now
-
-	// Remove partitions
-	for to_remove in partitions_to_remove {
-		session.partitions = session.partitions.filter(fn [to_remove] (p domain.ShareSessionPartition) bool {
-			return p.topic_name != to_remove.topic_name || p.partition != to_remove.partition
-		})
-	}
-
-	// Add partitions
-	for to_add in partitions_to_add {
-		// Check if already exists
-		mut exists := false
-		for existing in session.partitions {
-			if existing.topic_name == to_add.topic_name && existing.partition == to_add.partition {
-				exists = true
-				break
-			}
-		}
-		if !exists {
-			session.partitions << to_add
-		}
-	}
-
-	// Increment epoch
-	session.session_epoch += 1
-	if session.session_epoch > 2147483647 {
-		session.session_epoch = 1 // Wrap around
-	}
-
-	return session
+	return c.session_manager.update_session(group_id, member_id, epoch, partitions_to_add,
+		partitions_to_remove)
 }
 
 // close_session closes a share session
 pub fn (mut c ShareGroupCoordinator) close_session(group_id string, member_id string) {
-	c.lock.@lock()
-	defer { c.lock.unlock() }
-
-	key := '${group_id}:${member_id}'
-
 	// Release any acquired locks
-	c.release_member_records_internal(group_id, member_id)
+	c.partition_manager.release_member_records(group_id, member_id)
 
-	c.sessions.delete(key)
+	c.session_manager.close_session(group_id, member_id)
 }
 
 // ============================================================================
@@ -700,49 +448,26 @@ pub:
 // get_stats returns statistics for a share group
 pub fn (mut c ShareGroupCoordinator) get_stats(group_id string) ShareGroupStats {
 	c.lock.rlock()
-	defer { c.lock.runlock() }
-
-	group := c.groups[group_id] or { return ShareGroupStats{
-		group_id: group_id
-	} }
-
-	mut partition_count := 0
-	mut total_acquired := i64(0)
-	mut total_acknowledged := i64(0)
-	mut total_released := i64(0)
-	mut total_rejected := i64(0)
-
-	for key, sp in c.partitions {
-		if key.starts_with('${group_id}:') {
-			partition_count += 1
-			total_acquired += sp.total_acquired
-			total_acknowledged += sp.total_acknowledged
-			total_released += sp.total_released
-			total_rejected += sp.total_rejected
+	group := c.groups[group_id] or {
+		c.lock.runlock()
+		return ShareGroupStats{
+			group_id: group_id
 		}
 	}
+	member_count := group.members.len
+	c.lock.runlock()
+
+	partition_count, total_acquired, total_acknowledged, total_released, total_rejected := c.partition_manager.get_partition_stats(group_id)
 
 	return ShareGroupStats{
 		group_id:           group_id
-		member_count:       group.members.len
+		member_count:       member_count
 		partition_count:    partition_count
 		total_acquired:     total_acquired
 		total_acknowledged: total_acknowledged
 		total_released:     total_released
 		total_rejected:     total_rejected
 	}
-}
-
-// list_groups returns all share groups
-pub fn (mut c ShareGroupCoordinator) list_groups() []string {
-	c.lock.rlock()
-	defer { c.lock.runlock() }
-
-	mut groups := []string{}
-	for group_id, _ in c.groups {
-		groups << group_id
-	}
-	return groups
 }
 
 // ============================================================================
@@ -772,155 +497,4 @@ fn arrays_equal(a []string, b []string) bool {
 		}
 	}
 	return true
-}
-
-// ============================================================================
-// SimpleAssignor (KIP-932)
-// ============================================================================
-
-// ShareMemberSubscription contains member's subscription info
-pub struct ShareMemberSubscription {
-pub:
-	member_id string
-	rack_id   string
-	topics    []string
-}
-
-// ShareTopicMetadata contains topic info for assignment
-pub struct ShareTopicMetadata {
-pub:
-	topic_id        []u8
-	topic_name      string
-	partition_count int
-}
-
-// ShareGroupSimpleAssignor implements the SimpleAssignor from KIP-932
-// It balances the number of consumers assigned to each partition
-pub struct ShareGroupSimpleAssignor {}
-
-pub fn new_simple_assignor() &ShareGroupSimpleAssignor {
-	return &ShareGroupSimpleAssignor{}
-}
-
-pub fn (a &ShareGroupSimpleAssignor) name() string {
-	return 'simple'
-}
-
-// assign computes partition assignments for share group members
-// Unlike consumer groups, share groups can assign the same partition to multiple members
-pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, topics map[string]ShareTopicMetadata) map[string][]domain.SharePartitionAssignment {
-	mut assignments := map[string][]domain.SharePartitionAssignment{}
-
-	// Initialize empty assignments
-	for m in members {
-		assignments[m.member_id] = []domain.SharePartitionAssignment{}
-	}
-
-	if members.len == 0 {
-		return assignments
-	}
-
-	// Group members by their subscribed topics
-	mut topic_assignments := map[string][]string{} // topic -> member_ids
-
-	for m in members {
-		for topic in m.topics {
-			if topic !in topic_assignments {
-				topic_assignments[topic] = []string{}
-			}
-			topic_assignments[topic] << m.member_id
-		}
-	}
-
-	// For each topic, assign partitions to subscribed members
-	for topic_name, topic_meta in topics {
-		subscribed := topic_assignments[topic_name] or { continue }
-		if subscribed.len == 0 {
-			continue
-		}
-
-		num_partitions := topic_meta.partition_count
-		num_members := subscribed.len
-
-		// Create partition list for this topic
-		mut partitions := []i32{}
-		for p in 0 .. num_partitions {
-			partitions << p
-		}
-
-		// Assign partitions round-robin
-		mut member_idx := 0
-		for partition in partitions {
-			member_id := subscribed[member_idx % subscribed.len]
-
-			// Find or create topic assignment for this member
-			mut found := false
-			mut member_assignments := assignments[member_id]
-			for i, ta in member_assignments {
-				if ta.topic_name == topic_name {
-					// Create new assignment with added partition
-					mut new_partitions := ta.partitions.clone()
-					new_partitions << partition
-					member_assignments[i] = domain.SharePartitionAssignment{
-						topic_id:   ta.topic_id
-						topic_name: ta.topic_name
-						partitions: new_partitions
-					}
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				member_assignments << domain.SharePartitionAssignment{
-					topic_id:   topic_meta.topic_id
-					topic_name: topic_name
-					partitions: [partition]
-				}
-			}
-			assignments[member_id] = member_assignments
-
-			member_idx += 1
-
-			// For share groups, if we have more members than partitions,
-			// assign each partition to multiple members
-			if num_members > num_partitions && member_idx < num_members {
-				// Continue assigning this partition to more members
-				extra_assignments := (num_members / num_partitions) - 1
-				for _ in 0 .. extra_assignments {
-					extra_member_id := subscribed[member_idx % subscribed.len]
-					member_idx += 1
-
-					mut extra_found := false
-					mut extra_member_assignments := assignments[extra_member_id]
-					for i, ta in extra_member_assignments {
-						if ta.topic_name == topic_name {
-							if partition !in ta.partitions {
-								mut new_partitions := ta.partitions.clone()
-								new_partitions << partition
-								extra_member_assignments[i] = domain.SharePartitionAssignment{
-									topic_id:   ta.topic_id
-									topic_name: ta.topic_name
-									partitions: new_partitions
-								}
-							}
-							extra_found = true
-							break
-						}
-					}
-
-					if !extra_found {
-						extra_member_assignments << domain.SharePartitionAssignment{
-							topic_id:   topic_meta.topic_id
-							topic_name: topic_name
-							partitions: [partition]
-						}
-					}
-					assignments[extra_member_id] = extra_member_assignments
-				}
-			}
-		}
-	}
-
-	return assignments
 }
