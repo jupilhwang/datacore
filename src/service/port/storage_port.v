@@ -36,6 +36,10 @@ mut:
 
 	// Health check
 	health_check() !HealthStatus
+
+	// Multi-broker support
+	get_storage_capability() domain.StorageCapability
+	get_cluster_metadata_port() ?&ClusterMetadataPort
 }
 
 // HealthStatus represents the health status of storage

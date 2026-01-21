@@ -4,6 +4,7 @@ module kafka
 
 import log
 import rand
+import service.cluster
 import service.group
 import service.port
 import service.transaction
@@ -16,6 +17,7 @@ pub struct Handler {
 	cluster_id  string
 mut:
 	storage                 port.StoragePort
+	broker_registry         ?&cluster.BrokerRegistry            // Optional: Broker registry for multi-broker mode
 	auth_manager            ?port.AuthManager                   // Optional: SASL authentication manager
 	acl_manager             ?port.AclManager                    // Optional: ACL manager
 	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
@@ -32,6 +34,7 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		broker_registry:         none
 		auth_manager:            none
 		acl_manager:             none
 		txn_coordinator:         none
@@ -48,6 +51,7 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		broker_registry:         none
 		auth_manager:            auth_manager
 		acl_manager:             none
 		txn_coordinator:         none
@@ -64,6 +68,7 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		broker_registry:         none
 		auth_manager:            auth_manager
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
@@ -80,12 +85,18 @@ pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		broker_registry:         none
 		auth_manager:            auth_manager
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
 		share_group_coordinator: share_coordinator
 		logger:                  log.Log{}
 	}
+}
+
+// set_broker_registry sets the broker registry for multi-broker mode
+pub fn (mut h Handler) set_broker_registry(registry &cluster.BrokerRegistry) {
+	h.broker_registry = registry
 }
 
 // set_share_group_coordinator sets the share group coordinator for the handler

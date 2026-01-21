@@ -130,6 +130,14 @@ fn (m IntegrationMockStorage) health_check() !port.HealthStatus {
 	return .healthy
 }
 
+fn (m &IntegrationMockStorage) get_storage_capability() domain.StorageCapability {
+	return domain.memory_storage_capability
+}
+
+fn (m &IntegrationMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	return none
+}
+
 // ============================================================================
 // Helper Functions
 // ============================================================================

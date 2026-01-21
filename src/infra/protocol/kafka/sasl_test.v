@@ -319,6 +319,14 @@ fn (m MockStorage) health_check() !port.HealthStatus {
 	return .healthy
 }
 
+fn (m &MockStorage) get_storage_capability() domain.StorageCapability {
+	return domain.memory_storage_capability
+}
+
+fn (m &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	return none
+}
+
 fn test_handler_sasl_handshake_success() {
 	mut handler := create_test_handler_with_auth()
 

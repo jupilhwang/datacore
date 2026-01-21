@@ -27,6 +27,16 @@ pub:
 	retention_ms               i64 = 604800000 // 7 days default
 }
 
+// Storage capability for memory adapter
+pub const memory_capability = domain.StorageCapability{
+	name:                  'memory'
+	supports_multi_broker: false
+	supports_transactions: true
+	supports_compaction:   false
+	is_persistent:         false
+	is_distributed:        false
+}
+
 // TopicStore stores topic data
 struct TopicStore {
 pub mut:
@@ -461,6 +471,20 @@ pub fn (mut a MemoryStorageAdapter) fetch_offsets(group_id string, partitions []
 
 pub fn (mut a MemoryStorageAdapter) health_check() !port.HealthStatus {
 	return .healthy
+}
+
+// ============================================================
+// Multi-Broker Support
+// ============================================================
+
+// get_storage_capability returns the storage capability
+pub fn (a &MemoryStorageAdapter) get_storage_capability() domain.StorageCapability {
+	return memory_capability
+}
+
+// get_cluster_metadata_port returns none - memory doesn't support multi-broker
+pub fn (a &MemoryStorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	return none
 }
 
 // ============================================================

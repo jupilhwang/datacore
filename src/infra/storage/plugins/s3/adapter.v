@@ -14,6 +14,16 @@ import net.http
 import sync
 import strconv
 
+// Storage capability for S3 adapter
+pub const s3_capability = domain.StorageCapability{
+	name:                  's3'
+	supports_multi_broker: true
+	supports_transactions: true
+	supports_compaction:   true
+	is_persistent:         true
+	is_distributed:        true
+}
+
 // S3Config holds S3 storage configuration
 pub struct S3Config {
 pub:
@@ -437,7 +447,8 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 			for rec in tp_buffer.records {
 				// Read records that are at or after the requested offset
 				// and haven't been read from S3 segments yet
-				if rec.offset >= offset && rec.offset > highest_offset_read && bytes_read < max_bytes {
+				if rec.offset >= offset && rec.offset > highest_offset_read
+					&& bytes_read < max_bytes {
 					all_records << domain.Record{
 						key:       rec.key
 						value:     rec.value
@@ -693,6 +704,22 @@ pub fn (mut a S3StorageAdapter) health_check() !port.HealthStatus {
 }
 
 // ============================================================
+// Multi-Broker Support
+// ============================================================
+
+// get_storage_capability returns the storage capability
+pub fn (a &S3StorageAdapter) get_storage_capability() domain.StorageCapability {
+	return s3_capability
+}
+
+// get_cluster_metadata_port returns the cluster metadata interface
+// S3 supports multi-broker mode
+pub fn (mut a S3StorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	// Return S3-based cluster metadata implementation
+	return new_s3_cluster_metadata_adapter(a)
+}
+
+// ============================================================
 // S3 Key Helpers
 // ============================================================
 
@@ -889,7 +916,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 		}
 
 		if resp.status_code in [200, 201, 204] {
-			return // Success
+			return
 		}
 
 		// Retry on 503 (Service Unavailable / Throttling) and 500 (Server Error)

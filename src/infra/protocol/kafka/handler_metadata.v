@@ -396,6 +396,35 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
 	mut resp_topics := []MetadataResponseTopic{}
 
+	// Get active brokers for multi-broker mode
+	mut brokers := []MetadataResponseBroker{}
+	mut active_broker_ids := []i32{}
+
+	if mut registry := h.broker_registry {
+		// Multi-broker mode: get all active brokers from registry
+		active_brokers := registry.list_active_brokers() or { []domain.BrokerInfo{} }
+		for broker in active_brokers {
+			brokers << MetadataResponseBroker{
+				node_id: broker.broker_id
+				host:    broker.host
+				port:    broker.port
+				rack:    if broker.rack.len > 0 { broker.rack } else { none }
+			}
+			active_broker_ids << broker.broker_id
+		}
+	}
+
+	// Fallback to single broker if no brokers found or single-broker mode
+	if brokers.len == 0 {
+		brokers << MetadataResponseBroker{
+			node_id: h.broker_id
+			host:    h.host
+			port:    h.broker_port
+			rack:    none
+		}
+		active_broker_ids << h.broker_id
+	}
+
 	if req.topics.len > 0 {
 		for req_topic in req.topics {
 			topic_name := req_topic.name or { '' }
@@ -442,13 +471,20 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 
 			mut partitions := []MetadataResponsePartition{}
 			for p in 0 .. topic.partition_count {
+				// In stateless multi-broker mode, any broker can serve any partition
+				// Use round-robin or hash-based assignment for load balancing
+				leader_id := if active_broker_ids.len > 1 {
+					active_broker_ids[p % active_broker_ids.len]
+				} else {
+					h.broker_id
+				}
 				partitions << MetadataResponsePartition{
 					error_code:       0
 					partition_index:  i32(p)
-					leader_id:        h.broker_id
+					leader_id:        leader_id
 					leader_epoch:     0
-					replica_nodes:    [h.broker_id]
-					isr_nodes:        [h.broker_id]
+					replica_nodes:    active_broker_ids.clone()
+					isr_nodes:        active_broker_ids.clone()
 					offline_replicas: []
 				}
 			}
@@ -467,13 +503,19 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		for topic in topic_list {
 			mut partitions := []MetadataResponsePartition{}
 			for p in 0 .. topic.partition_count {
+				// In stateless multi-broker mode, any broker can serve any partition
+				leader_id := if active_broker_ids.len > 1 {
+					active_broker_ids[p % active_broker_ids.len]
+				} else {
+					h.broker_id
+				}
 				partitions << MetadataResponsePartition{
 					error_code:       0
 					partition_index:  i32(p)
-					leader_id:        h.broker_id
+					leader_id:        leader_id
 					leader_epoch:     0
-					replica_nodes:    [h.broker_id]
-					isr_nodes:        [h.broker_id]
+					replica_nodes:    active_broker_ids.clone()
+					isr_nodes:        active_broker_ids.clone()
 					offline_replicas: []
 				}
 			}
@@ -488,18 +530,14 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		}
 	}
 
+	// Controller is the first active broker in multi-broker mode, or self in single-broker mode
+	controller_id := if active_broker_ids.len > 0 { active_broker_ids[0] } else { h.broker_id }
+
 	return MetadataResponse{
 		throttle_time_ms:       0
-		brokers:                [
-			MetadataResponseBroker{
-				node_id: h.broker_id
-				host:    h.host
-				port:    h.broker_port
-				rack:    none
-			},
-		]
+		brokers:                brokers
 		cluster_id:             h.cluster_id
-		controller_id:          h.broker_id
+		controller_id:          controller_id
 		topics:                 resp_topics
 		cluster_authorized_ops: -2147483648
 	}
@@ -791,21 +829,42 @@ fn (mut h Handler) handle_describe_cluster(body []u8, version i16) ![]u8 {
 }
 
 fn (mut h Handler) process_describe_cluster(req DescribeClusterRequest, version i16) !DescribeClusterResponse {
-	brokers := [
-		DescribeClusterBroker{
+	mut brokers := []DescribeClusterBroker{}
+	mut controller_id := h.broker_id
+
+	if mut registry := h.broker_registry {
+		// Multi-broker mode: get all active brokers from registry
+		active_brokers := registry.list_active_brokers() or { []domain.BrokerInfo{} }
+		for broker in active_brokers {
+			brokers << DescribeClusterBroker{
+				broker_id: broker.broker_id
+				host:      broker.host
+				port:      broker.port
+				rack:      if broker.rack.len > 0 { broker.rack } else { none }
+			}
+		}
+		// Controller is the first active broker
+		if active_brokers.len > 0 {
+			controller_id = active_brokers[0].broker_id
+		}
+	}
+
+	// Fallback to single broker if no brokers found
+	if brokers.len == 0 {
+		brokers << DescribeClusterBroker{
 			broker_id: h.broker_id
 			host:      h.host
 			port:      h.broker_port
 			rack:      none
-		},
-	]
+		}
+	}
 
 	return DescribeClusterResponse{
 		throttle_time_ms:              0
 		error_code:                    0
 		error_message:                 none
 		cluster_id:                    h.cluster_id
-		controller_id:                 h.broker_id
+		controller_id:                 controller_id
 		brokers:                       brokers
 		cluster_authorized_operations: -2147483648
 	}

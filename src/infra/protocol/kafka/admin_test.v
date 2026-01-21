@@ -167,6 +167,14 @@ fn (mut s MockStorage) health_check() !port.HealthStatus {
 	return .healthy
 }
 
+fn (s &MockStorage) get_storage_capability() domain.StorageCapability {
+	return domain.memory_storage_capability
+}
+
+fn (s &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	return none
+}
+
 // Test CreateTopics Request Parsing
 fn test_parse_create_topics_request() {
 	// Build a minimal CreateTopics request (v0)

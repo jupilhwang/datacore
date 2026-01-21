@@ -11,12 +11,14 @@ import os
 import time
 import net.http
 import config as cfg
+import domain
 import interface.server
 import interface.cli
 import infra.protocol.kafka
 import infra.storage.plugins.memory
 import infra.storage.plugins.s3
 import infra.observability
+import service.cluster
 import service.port
 
 fn main() {
@@ -218,6 +220,56 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 		conf.broker.port, conf.broker.cluster_id, storage)
 	cli.print_done()
 
+	// 3. Initialize Broker Registry for multi-broker mode (S3 storage)
+	mut broker_registry_opt := ?&cluster.BrokerRegistry(none)
+	capability := storage.get_storage_capability()
+
+	if capability.supports_multi_broker {
+		cli.print_progress('Initializing multi-broker cluster registry')
+
+		// Get cluster metadata port from storage
+		if mut cluster_port := storage.get_cluster_metadata_port() {
+			registry_config := cluster.BrokerRegistryConfig{
+				broker_id:             conf.broker.broker_id
+				host:                  conf.broker.advertised_host
+				port:                  conf.broker.port
+				rack:                  '' // TODO: Add rack config
+				cluster_id:            conf.broker.cluster_id
+				version:               '0.20.0'
+				heartbeat_interval_ms: 3000
+				session_timeout_ms:    10000
+			}
+
+			mut broker_registry := cluster.new_broker_registry(registry_config, capability,
+				cluster_port)
+
+			// Register this broker with the cluster
+			broker_info := broker_registry.register() or {
+				cli.print_failed('Failed to register broker: ${err}')
+				domain.BrokerInfo{}
+			}
+
+			if broker_info.broker_id > 0 {
+				logger.info('Broker registered with cluster', observability.field_int('broker_id',
+					broker_info.broker_id), observability.field_string('host', broker_info.host),
+					observability.field_int('port', broker_info.port))
+
+				// Start heartbeat worker
+				broker_registry.start_heartbeat_worker()
+
+				// Set broker registry on handler for multi-broker metadata responses
+				protocol_handler.set_broker_registry(broker_registry)
+				broker_registry_opt = broker_registry
+
+				cli.print_done()
+			} else {
+				cli.print_failed('Broker registration returned invalid info')
+			}
+		} else {
+			cli.print_failed('Storage does not provide cluster metadata port')
+		}
+	}
+
 	if conf.schema_registry.enabled {
 		logger.info('Schema Registry initialized', observability.field_string('topic',
 			conf.schema_registry.topic))
@@ -257,6 +309,14 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 	// Start server (blocking)
 	defer {
 		cli.print_shutdown()
+
+		// Deregister broker from cluster if multi-broker mode
+		if mut registry := broker_registry_opt {
+			registry.stop_heartbeat_worker()
+			registry.deregister() or { logger.warn('Failed to deregister broker from cluster') }
+			logger.info('Broker deregistered from cluster')
+		}
+
 		cli.remove_pid(opts.pid_path)
 		logger.info('Broker stopped')
 		cli.print_shutdown_complete()

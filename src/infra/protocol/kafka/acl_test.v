@@ -73,6 +73,14 @@ fn (m AclMockStorage) health_check() !port.HealthStatus {
 	return .healthy
 }
 
+fn (m &AclMockStorage) get_storage_capability() domain.StorageCapability {
+	return domain.memory_storage_capability
+}
+
+fn (m &AclMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	return none
+}
+
 fn test_handler_create_acls() {
 	mut handler := create_test_handler_with_acl()
 

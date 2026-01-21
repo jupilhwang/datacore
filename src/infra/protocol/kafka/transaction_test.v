@@ -75,6 +75,14 @@ fn (m TransactionMockStorage) health_check() !port.HealthStatus {
 	return .healthy
 }
 
+fn (m &TransactionMockStorage) get_storage_capability() domain.StorageCapability {
+	return domain.memory_storage_capability
+}
+
+fn (m &TransactionMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	return none
+}
+
 fn test_handler_init_producer_id_transactional() {
 	mut handler := create_test_handler_with_transaction()
 

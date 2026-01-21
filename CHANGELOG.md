@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.20.0] - 2026-01-21
+
+### Added
+- **Multi-Broker Infrastructure**: S3 스토리지 기반 멀티 브로커 클러스터 지원
+  - `BrokerInfo`, `ClusterMetadata`, `PartitionAssignment` 도메인 모델
+  - `ClusterMetadataPort` 인터페이스 (브로커 등록, 메타데이터, 분산 락)
+  - `BrokerRegistry` 서비스 (브로커 라이프사이클 관리, 하트비트)
+  - `S3ClusterMetadataAdapter` (S3 기반 클러스터 상태 저장)
+- **KIP-932 Share Groups**: 기본 Share Group 지원
+  - `ShareGroupCoordinator` 서비스
+  - `ShareGroupHeartbeat`, `ShareFetch`, `ShareAcknowledge` API 핸들러
+- **Enhanced Schema Registry**: JSON Schema 및 Protobuf 검증 강화
+
+### Changed
+- `StoragePort` 인터페이스에 `get_storage_capability()`, `get_cluster_metadata_port()` 메서드 추가
+- `Handler` 구조체에 `BrokerRegistry` 통합
+- `process_metadata()`, `process_describe_cluster()` 멀티 브로커 지원
+- 스토리지 엔진별 분기: Memory/SQLite (싱글) vs S3/PostgreSQL (멀티)
+
+### Design Principles
+- **Stateless Broker**: 모든 상태는 공유 스토리지(S3)에 저장
+- **Any Broker Access**: 클라이언트가 아무 브로커에나 연결 가능
+- **Automatic Failover**: 하트비트 모니터링을 통한 자동 장애 감지
+
 ## [0.19.1] - 2026-01-21
 
 ### Changed
