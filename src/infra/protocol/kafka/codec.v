@@ -354,6 +354,38 @@ pub fn (mut r BinaryReader) skip_tagged_fields() ! {
 	}
 }
 
+// ============================================================================
+// Flexible Version Helpers
+// ============================================================================
+// These helpers reduce code duplication when parsing flexible vs non-flexible messages
+
+/// read_flex_string reads a string using compact format if flexible, standard format otherwise
+pub fn (mut r BinaryReader) read_flex_string(flexible bool) !string {
+	return if flexible { r.read_compact_string()! } else { r.read_string()! }
+}
+
+/// read_flex_nullable_string reads a nullable string using compact format if flexible
+pub fn (mut r BinaryReader) read_flex_nullable_string(flexible bool) !string {
+	return if flexible { r.read_compact_nullable_string()! } else { r.read_nullable_string()! }
+}
+
+/// read_flex_bytes reads bytes using compact format if flexible, standard format otherwise
+pub fn (mut r BinaryReader) read_flex_bytes(flexible bool) ![]u8 {
+	return if flexible { r.read_compact_bytes()! } else { r.read_bytes()! }
+}
+
+/// read_flex_array_len reads array length using compact format if flexible
+pub fn (mut r BinaryReader) read_flex_array_len(flexible bool) !int {
+	return if flexible { r.read_compact_array_len()! } else { r.read_array_len()! }
+}
+
+/// skip_flex_tagged_fields skips tagged fields only if flexible format
+pub fn (mut r BinaryReader) skip_flex_tagged_fields(flexible bool) ! {
+	if flexible {
+		r.skip_tagged_fields()!
+	}
+}
+
 // Binary Writer
 pub struct BinaryWriter {
 pub mut:
