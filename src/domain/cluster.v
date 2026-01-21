@@ -143,15 +143,6 @@ pub const memory_storage_capability = StorageCapability{
 	is_distributed:        false
 }
 
-pub const sqlite_storage_capability = StorageCapability{
-	name:                  'sqlite'
-	supports_multi_broker: false
-	supports_transactions: true
-	supports_compaction:   true
-	is_persistent:         true
-	is_distributed:        false
-}
-
 pub const s3_storage_capability = StorageCapability{
 	name:                  's3'
 	supports_multi_broker: true
