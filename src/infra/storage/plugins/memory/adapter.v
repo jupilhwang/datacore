@@ -13,10 +13,11 @@ pub struct MemoryStorageAdapter {
 pub mut:
 	config MemoryConfig
 mut:
-	topics      map[string]&TopicStore
-	groups      map[string]domain.ConsumerGroup
-	offsets     map[string]map[string]i64
-	global_lock sync.RwMutex
+	topics         map[string]&TopicStore
+	topic_id_index map[string]string // topic_id (hex) -> topic_name for O(1) lookup
+	groups         map[string]domain.ConsumerGroup
+	offsets        map[string]map[string]i64
+	global_lock    sync.RwMutex
 }
 
 // MemoryConfig holds memory storage configuration
@@ -63,10 +64,11 @@ pub fn new_memory_adapter() &MemoryStorageAdapter {
 // new_memory_adapter_with_config creates adapter with custom config
 pub fn new_memory_adapter_with_config(config MemoryConfig) &MemoryStorageAdapter {
 	return &MemoryStorageAdapter{
-		config:  config
-		topics:  map[string]&TopicStore{}
-		groups:  map[string]domain.ConsumerGroup{}
-		offsets: map[string]map[string]i64{}
+		config:         config
+		topics:         map[string]&TopicStore{}
+		topic_id_index: map[string]string{}
+		groups:         map[string]domain.ConsumerGroup{}
+		offsets:        map[string]map[string]i64{}
 	}
 }
 
@@ -115,6 +117,9 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 		partitions: partition_stores
 	}
 
+	// Cache topic_id -> name mapping for O(1) lookup
+	a.topic_id_index[topic_id.hex()] = name
+
 	return metadata
 }
 
@@ -122,9 +127,11 @@ pub fn (mut a MemoryStorageAdapter) delete_topic(name string) ! {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
 
-	if name !in a.topics {
-		return error('topic not found')
-	}
+	topic := a.topics[name] or { return error('topic not found') }
+
+	// Remove from topic_id_index cache
+	a.topic_id_index.delete(topic.metadata.topic_id.hex())
+
 	a.topics.delete(name)
 }
 
@@ -149,15 +156,19 @@ pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata
 	return error('topic not found')
 }
 
+// get_topic_by_id retrieves topic by ID using O(1) cache lookup
 pub fn (mut a MemoryStorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
 
-	for _, topic in a.topics {
-		if topic.metadata.topic_id == topic_id {
+	// O(1) lookup using topic_id_index cache
+	topic_id_hex := topic_id.hex()
+	if topic_name := a.topic_id_index[topic_id_hex] {
+		if topic := a.topics[topic_name] {
 			return topic.metadata
 		}
 	}
+
 	return error('topic not found')
 }
 
@@ -535,6 +546,7 @@ pub fn (mut a MemoryStorageAdapter) clear() {
 	defer { a.global_lock.unlock() }
 
 	a.topics.clear()
+	a.topic_id_index.clear()
 	a.groups.clear()
 	a.offsets.clear()
 }

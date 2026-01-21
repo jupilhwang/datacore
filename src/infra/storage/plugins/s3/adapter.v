@@ -54,6 +54,7 @@ mut:
 	config S3Config
 	// Local caches with TTL
 	topic_cache       map[string]CachedTopic
+	topic_id_cache    map[string]string // topic_id (hex) -> topic_name for O(1) lookup
 	group_cache       map[string]CachedGroup
 	offset_cache      map[string]map[string]i64
 	topic_index_cache map[string]CachedPartitionIndex // Added index cache
@@ -158,6 +159,8 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 		etag:      ''
 		cached_at: time.now()
 	}
+	// Also cache topic_id -> name mapping for O(1) lookup
+	a.topic_id_cache[meta.topic_id.hex()] = name
 	a.topic_lock.unlock()
 
 	return meta
@@ -165,6 +168,13 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 
 // delete_topic deletes a topic from S3
 pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
+	// Get topic metadata to remove from id cache
+	if cached := a.topic_cache[name] {
+		a.topic_lock.@lock()
+		a.topic_id_cache.delete(cached.meta.topic_id.hex())
+		a.topic_lock.unlock()
+	}
+
 	// List and delete all objects with topic prefix
 	prefix := '${a.config.prefix}topics/${name}/'
 	a.delete_objects_with_prefix(prefix)!
@@ -243,10 +253,29 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	return meta
 }
 
-// get_topic_by_id retrieves topic by ID
+// get_topic_by_id retrieves topic by ID using O(1) cache lookup
 pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+	// Convert topic_id to hex string for map lookup
+	topic_id_hex := topic_id.hex()
+
+	// Check cache first (O(1) lookup)
+	a.topic_lock.rlock()
+	if topic_name := a.topic_id_cache[topic_id_hex] {
+		if cached := a.topic_cache[topic_name] {
+			a.topic_lock.runlock()
+			return cached.meta
+		}
+	}
+	a.topic_lock.runlock()
+
+	// Cache miss - fetch from S3 and populate cache
 	topics := a.list_topics()!
 	for t in topics {
+		// Populate topic_id_cache for future lookups
+		a.topic_lock.@lock()
+		a.topic_id_cache[t.topic_id.hex()] = t.name
+		a.topic_lock.unlock()
+
 		if t.topic_id == topic_id {
 			return t
 		}

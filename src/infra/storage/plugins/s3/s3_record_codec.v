@@ -14,8 +14,20 @@ struct StoredRecord {
 }
 
 // encode_stored_records encodes a list of StoredRecord to binary format
+// Pre-allocates buffer capacity to avoid repeated reallocations
 fn encode_stored_records(records []StoredRecord) []u8 {
-	mut buf := []u8{}
+	// Estimate buffer size: 4 (count) + records * (8 offset + 8 ts + 4 key_len + 4 val_len + 4 headers_count + avg data)
+	mut estimated_size := 4
+	for rec in records {
+		// Fixed overhead: 8 (offset) + 8 (timestamp) + 4 (key_len) + 4 (value_len) + 4 (headers_count) = 28
+		estimated_size += 28 + rec.key.len + rec.value.len
+		// Headers: 2 (key_len) + key + 2 (val_len) + val per header
+		for h_key, h_val in rec.headers {
+			estimated_size += 4 + h_key.len + h_val.len
+		}
+	}
+
+	mut buf := []u8{cap: estimated_size}
 	record_count := records.len
 	buf << u8(record_count >> 24)
 	buf << u8(record_count >> 16)
