@@ -43,6 +43,11 @@ test-perf:
 	@echo "Running performance tests..."
 	cd $(SRC_DIR) && v -d use_openssl -enable-globals test infra/performance/core/ infra/performance/engines/ infra/performance/io/
 
+## Run benchmark tests (requires -enable-globals)
+test-bench:
+	@echo "Running benchmark tests..."
+	cd $(SRC_DIR) && v -d use_openssl -enable-globals test infra/performance/benchmarks/
+
 ## Run compatibility tests (requires Kafka CLI tools)
 test-compat:
 	@echo "Running compatibility tests..."
@@ -139,6 +144,10 @@ help:
 	@echo "  build       Build production binary"
 	@echo "  build-dev   Build development binary"
 	@echo "  test        Run unit tests"
+	@echo "  test-perf   Run performance tests (requires -enable-globals)"
+	@echo "  test-bench  Run benchmark tests (requires -enable-globals)"
+	@echo "  test-compat Run compatibility tests (requires Kafka CLI)"
+	@echo "  test-all    Run all tests (unit + compat)"
 	@echo "  fmt         Format code"
 	@echo "  lint        Check format and run vet"
 	@echo "  clean       Clean build artifacts"
