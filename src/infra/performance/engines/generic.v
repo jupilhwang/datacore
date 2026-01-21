@@ -2,7 +2,6 @@ module engines
 
 import os
 import infra.performance.core
-import infra.performance
 
 pub struct GenericPerformanceEngine {
 pub mut:
@@ -10,14 +9,14 @@ pub mut:
 	record_pool  &core.RecordPool      = unsafe { nil }
 	batch_pool   &core.RecordBatchPool = unsafe { nil }
 	request_pool &core.RequestPool     = unsafe { nil }
-	config       performance.PerformanceConfig
+	config       core.PerformanceConfig
 }
 
 pub fn (e GenericPerformanceEngine) name() string {
 	return 'Generic'
 }
 
-pub fn (mut e GenericPerformanceEngine) init(config performance.PerformanceConfig) ! {
+pub fn (mut e GenericPerformanceEngine) init(config core.PerformanceConfig) ! {
 	e.config = config
 
 	pool_config := core.PoolConfig{
@@ -87,9 +86,9 @@ pub fn (mut e GenericPerformanceEngine) write_file_at(path string, offset i64, d
 	f.write(data)!
 }
 
-pub fn (mut e GenericPerformanceEngine) get_stats() performance.PerformanceStats {
+pub fn (mut e GenericPerformanceEngine) get_stats() core.PerformanceStats {
 	buf_stats := e.buffer_pool.get_stats()
-	return performance.PerformanceStats{
+	return core.PerformanceStats{
 		engine_name:   e.name()
 		buffer_hits:   buf_stats.total_hits()
 		buffer_misses: buf_stats.total_misses()

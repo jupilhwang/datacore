@@ -5,6 +5,70 @@ module kafka
 import domain
 import time
 
+// ByteView - Zero-copy view into a byte array (lightweight alternative to full ByteSlice)
+// Used internally for high-performance parsing without memory allocation
+pub struct ByteView {
+pub:
+	data   []u8 // Reference to underlying data (NOT owned)
+	offset int  // Start offset in the original array
+	length int  // Length of this view
+}
+
+// Creates a ByteView from a byte array
+pub fn ByteView.new(data []u8) ByteView {
+	return ByteView{
+		data:   data
+		offset: 0
+		length: data.len
+	}
+}
+
+// Creates a sub-view without copying data
+pub fn (v ByteView) slice(start int, end int) !ByteView {
+	if start < 0 || end > v.length || start > end {
+		return error('slice bounds out of range')
+	}
+	return ByteView{
+		data:   v.data
+		offset: v.offset + start
+		length: end - start
+	}
+}
+
+// Returns the actual bytes (zero-copy when offset is 0)
+pub fn (v ByteView) bytes() []u8 {
+	if v.length == 0 {
+		return []u8{}
+	}
+	return v.data[v.offset..v.offset + v.length]
+}
+
+// Returns a copy of the data (when ownership is needed)
+pub fn (v ByteView) to_owned() []u8 {
+	if v.length == 0 {
+		return []u8{}
+	}
+	return v.data[v.offset..v.offset + v.length].clone()
+}
+
+// Converts to string (zero-copy when possible)
+pub fn (v ByteView) to_string() string {
+	if v.length == 0 {
+		return ''
+	}
+	return v.data[v.offset..v.offset + v.length].bytestr()
+}
+
+// Returns length of the view
+pub fn (v ByteView) len() int {
+	return v.length
+}
+
+// Checks if view is empty
+pub fn (v ByteView) is_empty() bool {
+	return v.length == 0
+}
+
 // Binary Reader
 pub struct BinaryReader {
 pub mut:
@@ -213,6 +277,64 @@ pub fn (mut r BinaryReader) skip(n int) ! {
 		return error('not enough data to skip')
 	}
 	r.pos += n
+}
+
+// ============================================================
+// Zero-Copy View Methods (for high-performance parsing)
+// ============================================================
+
+// Read bytes as a zero-copy view (no memory allocation)
+pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
+	if len < 0 {
+		return ByteView{}
+	}
+	if r.remaining() < len {
+		return error('not enough data for bytes view')
+	}
+	view := ByteView{
+		data:   r.data
+		offset: r.pos
+		length: len
+	}
+	r.pos += len
+	return view
+}
+
+// Read bytes with i32 length prefix as a zero-copy view
+pub fn (mut r BinaryReader) read_bytes_as_view() !ByteView {
+	len := r.read_i32()!
+	return r.read_bytes_view(int(len))!
+}
+
+// Read compact bytes as a zero-copy view
+pub fn (mut r BinaryReader) read_compact_bytes_view() !ByteView {
+	len := r.read_uvarint()!
+	if len == 0 {
+		return ByteView{}
+	}
+	actual_len := int(len) - 1
+	return r.read_bytes_view(actual_len)!
+}
+
+// Peek at upcoming bytes without advancing position (zero-copy)
+pub fn (r &BinaryReader) peek_bytes_view(len int) !ByteView {
+	if r.remaining() < len {
+		return error('not enough data to peek')
+	}
+	return ByteView{
+		data:   r.data
+		offset: r.pos
+		length: len
+	}
+}
+
+// Get remaining data as a view
+pub fn (r &BinaryReader) remaining_view() ByteView {
+	return ByteView{
+		data:   r.data
+		offset: r.pos
+		length: r.remaining()
+	}
 }
 
 pub fn (mut r BinaryReader) read_i32_bytes() ![]u8 {
@@ -519,32 +641,27 @@ fn parse_message_set(data []u8) !ParsedRecordBatch {
 }
 
 // parse_record parses a single Record from RecordBatch v2
+// Optimized: Uses ByteView for zero-copy parsing where possible
 fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 	_ = reader.read_varint()! // length (already included in batch)
 	_ = reader.read_i8()! // attributes (unused in v2)
 	timestamp_delta := reader.read_varint()!
 	_ = reader.read_varint()! // offset_delta
 
-	// Key
+	// Key - use view then convert to owned only when storing
 	key_length := reader.read_varint()!
 	mut key := []u8{}
 	if key_length > 0 {
-		if reader.remaining() < int(key_length) {
-			return error('not enough data for key')
-		}
-		key = reader.data[reader.pos..reader.pos + int(key_length)].clone()
-		reader.pos += int(key_length)
+		key_view := reader.read_bytes_view(int(key_length))!
+		key = key_view.to_owned()
 	}
 
-	// Value
+	// Value - use view then convert to owned only when storing
 	value_length := reader.read_varint()!
 	mut value := []u8{}
 	if value_length > 0 {
-		if reader.remaining() < int(value_length) {
-			return error('not enough data for value')
-		}
-		value = reader.data[reader.pos..reader.pos + int(value_length)].clone()
-		reader.pos += int(value_length)
+		value_view := reader.read_bytes_view(int(value_length))!
+		value = value_view.to_owned()
 	}
 
 	// Headers
@@ -555,21 +672,15 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 		header_key_len := reader.read_varint()!
 		mut header_key := ''
 		if header_key_len > 0 {
-			if reader.remaining() < int(header_key_len) {
-				return error('not enough data for header key')
-			}
-			header_key = reader.data[reader.pos..reader.pos + int(header_key_len)].bytestr()
-			reader.pos += int(header_key_len)
+			key_view := reader.read_bytes_view(int(header_key_len))!
+			header_key = key_view.to_string()
 		}
 
 		header_value_len := reader.read_varint()!
 		mut header_value := []u8{}
 		if header_value_len > 0 {
-			if reader.remaining() < int(header_value_len) {
-				return error('not enough data for header value')
-			}
-			header_value = reader.data[reader.pos..reader.pos + int(header_value_len)].clone()
-			reader.pos += int(header_value_len)
+			val_view := reader.read_bytes_view(int(header_value_len))!
+			header_value = val_view.to_owned()
 		}
 
 		if header_key.len > 0 {

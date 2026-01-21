@@ -35,7 +35,13 @@ build-dev:
 ## Run unit tests
 test:
 	@echo "Running tests..."
-	cd $(SRC_DIR) && v -d use_openssl test service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/
+	cd $(SRC_DIR) && v -d use_openssl test service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/ infra/storage/
+
+## Run performance module tests (requires -enable-globals)
+## Note: benchmarks/ is excluded as it contains performance benchmark tools, not unit tests
+test-perf:
+	@echo "Running performance tests..."
+	cd $(SRC_DIR) && v -d use_openssl -enable-globals test infra/performance/core/ infra/performance/engines/ infra/performance/io/
 
 ## Run compatibility tests (requires Kafka CLI tools)
 test-compat:

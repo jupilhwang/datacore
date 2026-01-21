@@ -1310,9 +1310,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 		// Key
 		if record.key.len > 0 {
 			record_writer.write_varint(i64(record.key.len))
-			for b in record.key {
-				record_writer.write_i8(i8(b))
-			}
+			record_writer.write_raw(record.key)
 		} else {
 			record_writer.write_varint(-1)
 		}
@@ -1320,9 +1318,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 		// Value
 		if record.value.len > 0 {
 			record_writer.write_varint(i64(record.value.len))
-			for b in record.value {
-				record_writer.write_i8(i8(b))
-			}
+			record_writer.write_raw(record.value)
 		} else {
 			record_writer.write_varint(-1)
 		}
@@ -1343,9 +1339,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 		// Key
 		if record.key.len > 0 {
 			writer.write_varint(i64(record.key.len))
-			for b in record.key {
-				writer.write_i8(i8(b))
-			}
+			writer.write_raw(record.key)
 		} else {
 			writer.write_varint(-1)
 		}
@@ -1353,9 +1347,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 		// Value
 		if record.value.len > 0 {
 			writer.write_varint(i64(record.value.len))
-			for b in record.value {
-				writer.write_i8(i8(b))
-			}
+			writer.write_raw(record.value)
 		} else {
 			writer.write_varint(-1)
 		}

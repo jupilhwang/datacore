@@ -15,7 +15,7 @@ pub mut:
 }
 
 // new_performance_manager creates a performance manager with the best available engine
-pub fn new_performance_manager(config PerformanceConfig) &PerformanceManager {
+pub fn new_performance_manager(config core.PerformanceConfig) &PerformanceManager {
 	mut engine := PerformanceEngine(engines.GenericPerformanceEngine{})
 
 	$if linux {
@@ -105,7 +105,7 @@ __global (
 )
 
 // init_global_performance initializes the global performance manager
-pub fn init_global_performance(config PerformanceConfig) {
+pub fn init_global_performance(config core.PerformanceConfig) {
 	unsafe {
 		g_performance = new_performance_manager(config)
 	}
@@ -115,11 +115,11 @@ pub fn init_global_performance(config PerformanceConfig) {
 pub fn get_global_performance() &PerformanceManager {
 	if unsafe { g_performance == nil } {
 		// Safe default if not initialized
-		init_global_performance(PerformanceConfig{})
+		init_global_performance(core.PerformanceConfig{})
 	}
 	return unsafe { g_performance }
 }
 
-pub fn (mut m PerformanceManager) get_stats() PerformanceStats {
+pub fn (mut m PerformanceManager) get_stats() core.PerformanceStats {
 	return m.engine.get_stats()
 }
