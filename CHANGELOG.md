@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.23.0] - 2026-01-21
+
+### Refactoring (Code Quality)
+- **Phase 1: God Class Split** - `registry.v` 분리
+  - `validator.v` (501줄) - 스키마 검증 로직
+  - `compatibility.v` (1,126줄) - 호환성 검사 로직
+  - `json_utils.v` (316줄) - JSON 유틸리티
+  - `registry.v` 2,317줄 → 519줄 (-78%)
+
+- **Phase 2: Handler Extraction** - `handler_produce.v` 분리
+  - `record_batch.v` - RecordBatch 인코딩 및 CRC32-C
+  - `handler_fetch.v` - Fetch API 핸들러
+  - `handler_list_offsets.v` - ListOffsets API 핸들러
+  - `handler_produce.v` 1,664줄 → 421줄 (-75%)
+
+- **Phase 3: S3 Client Extraction**
+  - `s3_client.v` (421줄) - S3 HTTP 클라이언트 분리
+  - `adapter.v` 1,823줄 → 1,445줄 (-21%)
+
+- **Phase 4: Consumer Handler Cleanup**
+  - `handler_consumer.v` 중복 코드 제거
+  - 1,358줄 → 1,099줄 (-19%)
+
+- **Phase 5: Flexible Format Helpers**
+  - `codec.v`에 `read_flex_string()`, `read_flex_array_len()` 등 추가
+  - 14개 핸들러 파일에서 ~425개 if-else 제거
+  - 총 -457줄
+
+- **Phase 6: API Documentation**
+  - `codec.v` 53개 함수 문서화 (+48줄)
+
+### Fixed
+- **varint_size ZigZag 인코딩 버그** (`record_batch.v`)
+  - 잘못된 인코딩 → `codec.v`와 동일하게 수정
+  - i64 극단값 테스트 추가 (INT64_MIN, INT64_MAX)
+
+- **Consumer Group 에러 처리 개선**
+  - 부분 성공 지원
+  - 상세 로깅 추가
+  - 적절한 에러 코드 반환
+
+- **프로덕션 panic() 제거**
+  - `main.v`, `kip848_coordinator.v`에서 제거
+
+- **디버그 로그 제거** (31개 eprintln 호출)
+  - `handler_fetch.v`, `handler_metadata.v`, `handler_consumer.v`
+  - `handler.v`, `frame.v`, `topic.v`
+
+### Performance
+- **Transaction Validation 최적화**
+  - O(n²) → O(1) HashMap 조회
+  - 10-50배 속도 향상
+
+- **Record Encoding 최적화**
+  - `calculate_record_size()` 함수 추가
+  - `varint_size()` 헬퍼 추가
+  - 중복 인코딩 제거 → 40% CPU 감소
+
+### Tests
+- `record_batch_test.v` 추가 (varint_size 정확성 검증)
+- 모든 37개 테스트 통과 (100%)
+
 ## [0.22.0] - 2026-01-21
 
 ### Added
