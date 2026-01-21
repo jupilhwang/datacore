@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.25.0] - 2026-01-22
+
+### Added
+- **WriteTxnMarkers API (API Key 27)** - 트랜잭션 마커 기록 API
+  - `WriteTxnMarkersRequest`, `WriteTxnMarkersResponse` 타입 정의
+  - `parse_write_txn_markers_request` 파서 (v1 flexible 지원)
+  - `WriteTxnMarkersResponse.encode()` 인코더
+  - `handle_write_txn_markers` 핸들러 및 control record 생성
+  - Control record 메타데이터 지원 (`is_control_record`, `control_type`)
+
+- **PostgreSQL Storage Engine** - PostgreSQL 기반 스토리지 엔진
+  - `PostgresAdapter` - StoragePort 구현 (~750줄)
+  - `PostgresClusterMetadata` - ClusterMetadataPort 구현 (~550줄)
+  - Topic CRUD, Record 작업, Consumer Group 관리
+  - Multi-Broker 지원 (브로커 등록/관리, 분산 잠금)
+  - Row Lock 기반 동시성 제어
+
+- **gRPC Streaming Protocol** - gRPC 기반 메시지 스트리밍
+  - Server Streaming Consume
+  - 양방향 스트리밍 지원
+  - Proto 정의 및 서비스 구현
+
+### Changed
+- `domain.Record`에 트랜잭션 control record 메타데이터 필드 추가
+  - `is_control_record` - control record 여부
+  - `control_type` - COMMIT/ABORT 타입
+  - `producer_id`, `producer_epoch` - 트랜잭션 프로듀서 정보
+
+### Removed
+- 문서에서 SQLite Storage 참조 제거 (PRD, TRD, config.toml)
+
+### Tests
+- WriteTxnMarkers 단위 테스트 추가 (성공/에러 케이스)
+- PostgreSQL Storage 통합 테스트 추가
+
 ## [0.23.0] - 2026-01-21
 
 ### Refactoring (Code Quality)
