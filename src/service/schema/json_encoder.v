@@ -405,103 +405,11 @@ fn parse_schema_properties(props_json string) map[string]&JsonSchema {
 	return result
 }
 
-fn extract_json_object_value(s string, start int) string {
-	mut pos := start
-
-	// Skip to opening brace
-	for pos < s.len && s[pos] != `{` {
-		pos += 1
-	}
-
-	if pos >= s.len {
-		return ''
-	}
-
-	mut depth := 1
-	mut end := pos + 1
-	mut in_string := false
-	mut escaped := false
-
-	for end < s.len && depth > 0 {
-		if escaped {
-			escaped = false
-			end += 1
-			continue
-		}
-		if s[end] == `\\` && in_string {
-			escaped = true
-			end += 1
-			continue
-		}
-		if s[end] == `"` {
-			in_string = !in_string
-		} else if !in_string {
-			if s[end] == `{` {
-				depth += 1
-			} else if s[end] == `}` {
-				depth -= 1
-			}
-		}
-		end += 1
-	}
-
-	return s[pos..end]
-}
-
-fn extract_json_number(s string, key string) ?int {
-	pattern := '"${key}"'
-	idx := s.index(pattern) or { return none }
-
-	mut pos := idx + pattern.len
-	for pos < s.len && (s[pos] == `:` || s[pos] == ` ` || s[pos] == `\t`) {
-		pos += 1
-	}
-
-	if pos >= s.len {
-		return none
-	}
-
-	mut end := pos
-	for end < s.len && ((s[end] >= `0` && s[end] <= `9`) || s[end] == `-`) {
-		end += 1
-	}
-
-	if end == pos {
-		return none
-	}
-
-	return s[pos..end].int()
-}
-
-fn extract_json_float(s string, key string) ?f64 {
-	pattern := '"${key}"'
-	idx := s.index(pattern) or { return none }
-
-	mut pos := idx + pattern.len
-	for pos < s.len && (s[pos] == `:` || s[pos] == ` ` || s[pos] == `\t`) {
-		pos += 1
-	}
-
-	if pos >= s.len {
-		return none
-	}
-
-	mut end := pos
-	for end < s.len && ((s[end] >= `0` && s[end] <= `9`) || s[end] == `-`
-		|| s[end] == `.` || s[end] == `e` || s[end] == `E` || s[end] == `+`) {
-		end += 1
-	}
-
-	if end == pos {
-		return none
-	}
-
-	return s[pos..end].f64()
-}
-
 // ============================================================================
 // JSON Utility Functions
 // ============================================================================
+// Note: extract_json_object_value, extract_json_number, extract_json_float
+// are defined in json_utils.v to avoid duplication
 
 fn detect_json_type(s string) string {
 	trimmed := s.trim_space()
