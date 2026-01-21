@@ -47,51 +47,29 @@ pub:
 
 fn parse_share_group_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !ShareGroupHeartbeatRequest {
 	// GroupId
-	group_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	group_id := reader.read_flex_string(is_flexible)!
 
 	// MemberId
-	member_id := if is_flexible {
-		reader.read_compact_string()!
-	} else {
-		reader.read_string()!
-	}
+	member_id := reader.read_flex_string(is_flexible)!
 
 	// MemberEpoch
 	member_epoch := reader.read_i32()!
 
 	// RackId (nullable)
-	rack_id := if is_flexible {
-		reader.read_compact_nullable_string() or { '' }
-	} else {
-		reader.read_nullable_string() or { '' }
-	}
+	rack_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
 	// SubscribedTopicNames (nullable array)
 	mut subscribed_topic_names := []string{}
-	topic_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topic_count := reader.read_flex_array_len(is_flexible)!
 	if topic_count >= 0 {
 		for _ in 0 .. topic_count {
-			topic := if is_flexible {
-				reader.read_compact_string()!
-			} else {
-				reader.read_string()!
-			}
+			topic := reader.read_flex_string(is_flexible)!
 			subscribed_topic_names << topic
 		}
 	}
 
 	// Skip tagged fields if flexible
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return ShareGroupHeartbeatRequest{
 		group_id:               group_id
@@ -289,18 +267,10 @@ pub:
 
 fn parse_share_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !ShareFetchRequest {
 	// GroupId (nullable)
-	group_id := if is_flexible {
-		reader.read_compact_nullable_string() or { '' }
-	} else {
-		reader.read_nullable_string() or { '' }
-	}
+	group_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
 	// MemberId (nullable)
-	member_id := if is_flexible {
-		reader.read_compact_nullable_string() or { '' }
-	} else {
-		reader.read_nullable_string() or { '' }
-	}
+	member_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
 	// ShareSessionEpoch
 	share_session_epoch := reader.read_i32()!
@@ -328,66 +298,44 @@ fn parse_share_fetch_request(mut reader BinaryReader, version i16, is_flexible b
 
 	// Topics array
 	mut topics := []ShareFetchTopic{}
-	topics_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topics_count := reader.read_flex_array_len(is_flexible)!
 	for _ in 0 .. topics_count {
 		// TopicId (UUID)
 		topic_id := reader.read_uuid()!
 
 		// Partitions array
 		mut partitions := []ShareFetchPartition{}
-		partitions_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		partitions_count := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. partitions_count {
 			partition_index := reader.read_i32()!
 
 			// AcknowledgementBatches array
 			mut ack_batches := []ShareAcknowledgementBatch{}
-			ack_count := if is_flexible {
-				reader.read_compact_array_len()!
-			} else {
-				reader.read_array_len()!
-			}
+			ack_count := reader.read_flex_array_len(is_flexible)!
 			for _ in 0 .. ack_count {
 				first_offset := reader.read_i64()!
 				last_offset := reader.read_i64()!
 
 				// AcknowledgeTypes array
 				mut ack_types := []u8{}
-				ack_types_count := if is_flexible {
-					reader.read_compact_array_len()!
-				} else {
-					reader.read_array_len()!
-				}
+				ack_types_count := reader.read_flex_array_len(is_flexible)!
 				for _ in 0 .. ack_types_count {
 					ack_types << u8(reader.read_i8()!)
 				}
-				if is_flexible {
-					reader.skip_tagged_fields()!
-				}
+				reader.skip_flex_tagged_fields(is_flexible)!
 				ack_batches << ShareAcknowledgementBatch{
 					first_offset:      first_offset
 					last_offset:       last_offset
 					acknowledge_types: ack_types
 				}
 			}
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 			partitions << ShareFetchPartition{
 				partition_index:         partition_index
 				acknowledgement_batches: ack_batches
 			}
 		}
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 		topics << ShareFetchTopic{
 			topic_id:   topic_id
 			partitions: partitions
@@ -396,34 +344,22 @@ fn parse_share_fetch_request(mut reader BinaryReader, version i16, is_flexible b
 
 	// ForgottenTopicsData array
 	mut forgotten_topics := []ShareForgottenTopic{}
-	forgotten_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	forgotten_count := reader.read_flex_array_len(is_flexible)!
 	for _ in 0 .. forgotten_count {
 		topic_id := reader.read_uuid()!
 		mut parts := []i32{}
-		parts_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		parts_count := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. parts_count {
 			parts << reader.read_i32()!
 		}
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 		forgotten_topics << ShareForgottenTopic{
 			topic_id:   topic_id
 			partitions: parts
 		}
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return ShareFetchRequest{
 		group_id:            group_id
@@ -636,90 +572,58 @@ pub:
 
 fn parse_share_acknowledge_request(mut reader BinaryReader, version i16, is_flexible bool) !ShareAcknowledgeRequest {
 	// GroupId (nullable)
-	group_id := if is_flexible {
-		reader.read_compact_nullable_string() or { '' }
-	} else {
-		reader.read_nullable_string() or { '' }
-	}
+	group_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
 	// MemberId (nullable)
-	member_id := if is_flexible {
-		reader.read_compact_nullable_string() or { '' }
-	} else {
-		reader.read_nullable_string() or { '' }
-	}
+	member_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
 	// ShareSessionEpoch
 	share_session_epoch := reader.read_i32()!
 
 	// Topics array
 	mut topics := []ShareAcknowledgeTopic{}
-	topics_count := if is_flexible {
-		reader.read_compact_array_len()!
-	} else {
-		reader.read_array_len()!
-	}
+	topics_count := reader.read_flex_array_len(is_flexible)!
 	for _ in 0 .. topics_count {
 		topic_id := reader.read_uuid()!
 
 		// Partitions array
 		mut partitions := []ShareAcknowledgePartition{}
-		parts_count := if is_flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+		parts_count := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. parts_count {
 			partition_index := reader.read_i32()!
 
 			// AcknowledgementBatches
 			mut ack_batches := []ShareAcknowledgementBatch{}
-			ack_count := if is_flexible {
-				reader.read_compact_array_len()!
-			} else {
-				reader.read_array_len()!
-			}
+			ack_count := reader.read_flex_array_len(is_flexible)!
 			for _ in 0 .. ack_count {
 				first_offset := reader.read_i64()!
 				last_offset := reader.read_i64()!
 				mut ack_types := []u8{}
-				ack_types_count := if is_flexible {
-					reader.read_compact_array_len()!
-				} else {
-					reader.read_array_len()!
-				}
+				ack_types_count := reader.read_flex_array_len(is_flexible)!
 				for _ in 0 .. ack_types_count {
 					ack_types << u8(reader.read_i8()!)
 				}
-				if is_flexible {
-					reader.skip_tagged_fields()!
-				}
+				reader.skip_flex_tagged_fields(is_flexible)!
 				ack_batches << ShareAcknowledgementBatch{
 					first_offset:      first_offset
 					last_offset:       last_offset
 					acknowledge_types: ack_types
 				}
 			}
-			if is_flexible {
-				reader.skip_tagged_fields()!
-			}
+			reader.skip_flex_tagged_fields(is_flexible)!
 			partitions << ShareAcknowledgePartition{
 				partition_index:         partition_index
 				acknowledgement_batches: ack_batches
 			}
 		}
-		if is_flexible {
-			reader.skip_tagged_fields()!
-		}
+		reader.skip_flex_tagged_fields(is_flexible)!
 		topics << ShareAcknowledgeTopic{
 			topic_id:   topic_id
 			partitions: partitions
 		}
 	}
 
-	if is_flexible {
-		reader.skip_tagged_fields()!
-	}
+	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return ShareAcknowledgeRequest{
 		group_id:            group_id
