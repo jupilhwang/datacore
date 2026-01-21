@@ -32,7 +32,7 @@ fn test_postgres_adapter_creation() {
 		return
 	}
 
-	adapter := new_postgres_adapter(config) or {
+	mut adapter := new_postgres_adapter(config) or {
 		assert false, 'Failed to create adapter: ${err}'
 		return
 	}

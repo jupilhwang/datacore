@@ -82,8 +82,11 @@ fn get_row_str(row &pg.Row, idx int, default_val string) string {
 	if idx >= row.vals.len {
 		return default_val
 	}
-	val := row.vals[idx] or { return default_val }
-	return val
+	val_opt := row.vals[idx]
+	if val_opt == none {
+		return default_val
+	}
+	return val_opt or { default_val }
 }
 
 // Helper function to safely get int from row value
@@ -91,7 +94,11 @@ fn get_row_int(row &pg.Row, idx int, default_val int) int {
 	if idx >= row.vals.len {
 		return default_val
 	}
-	val := row.vals[idx] or { return default_val }
+	val_opt := row.vals[idx]
+	if val_opt == none {
+		return default_val
+	}
+	val := val_opt or { return default_val }
 	return val.int()
 }
 
@@ -100,7 +107,11 @@ fn get_row_i64(row &pg.Row, idx int, default_val i64) i64 {
 	if idx >= row.vals.len {
 		return default_val
 	}
-	val := row.vals[idx] or { return default_val }
+	val_opt := row.vals[idx]
+	if val_opt == none {
+		return default_val
+	}
+	val := val_opt or { return default_val }
 	return val.i64()
 }
 
