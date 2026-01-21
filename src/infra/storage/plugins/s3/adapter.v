@@ -52,6 +52,7 @@ mut:
 	// Flushing buffer for batched S3 writes
 	topic_partition_buffers map[string]TopicPartitionBuffer // Key: "topic:partition"
 	buffer_lock             sync.Mutex
+	index_update_lock       sync.Mutex // Lock for S3 index updates to prevent race conditions
 	is_flushing             bool
 	// Compaction settings
 	min_segment_count_to_compact int = 5
@@ -367,26 +368,19 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 
 // fetch retrieves records from a partition
 pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	partition_key := '${topic}:${partition}'
+
+	// Get S3 index for segments info
 	index := a.get_partition_index(topic, partition)!
 
 	if offset < index.earliest_offset {
 		return error('Offset out of range (too old): ${offset} < ${index.earliest_offset}')
 	}
 
-	if offset >= index.high_watermark {
-		// No new records
-		return domain.FetchResult{
-			records:            []
-			high_watermark:     index.high_watermark
-			last_stable_offset: index.high_watermark
-			log_start_offset:   index.earliest_offset
-		}
-	}
-
 	// Find relevant segments
 	mut all_records := []domain.Record{}
 	mut bytes_read := 0
-	partition_key := '${topic}:${partition}'
+	mut highest_offset_read := offset - 1
 
 	// 1. First, try to read from S3 segments
 	for seg in index.log_segments {
@@ -401,20 +395,10 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		// Optimization: If reading from start of segment, use Range Request
 		mut data := []u8{}
 		if offset == seg.start_offset && max_bytes > 0 {
-			// Fetch max_bytes + overhead (header 4 bytes + safety buffer)
-			// We don't know exact size, but fetching a bit more is safe.
-			// If segment is smaller than max_bytes, get_object handles it (S3 ignores range > size usually, or returns what it has)
-			// Actually S3 returns 416 if range is invalid, but standard says return satisfiable range.
-			// Let's try to fetch up to max_bytes * 2 to be safe for overhead, or full segment if smaller.
 			mut fetch_size := i64(max_bytes) * 2
 			if fetch_size > seg.size_bytes {
 				fetch_size = -1 // Read full
 			}
-
-			// Start index is 0 (beginning of file)
-			// But wait, the file structure is [Count:4][Rec1][Rec2]...
-			// If we want records starting at offset X, and X == start_offset, we want the beginning.
-
 			range_end := if fetch_size > 0 { fetch_size } else { -1 }
 			data, _ = a.get_object(seg.key, 0, range_end) or { continue }
 		} else {
@@ -434,6 +418,9 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 					timestamp: rec.timestamp
 				}
 				bytes_read += rec.value.len + rec.key.len
+				if rec.offset > highest_offset_read {
+					highest_offset_read = rec.offset
+				}
 			}
 		}
 
@@ -443,11 +430,14 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 	}
 
 	// 2. Also read from in-memory buffer (not yet flushed to S3)
+	// This is critical for data that hasn't been persisted yet
 	if bytes_read < max_bytes {
 		a.buffer_lock.lock()
 		if tp_buffer := a.topic_partition_buffers[partition_key] {
 			for rec in tp_buffer.records {
-				if rec.offset >= offset && bytes_read < max_bytes {
+				// Read records that are at or after the requested offset
+				// and haven't been read from S3 segments yet
+				if rec.offset >= offset && rec.offset > highest_offset_read && bytes_read < max_bytes {
 					all_records << domain.Record{
 						key:       rec.key
 						value:     rec.value
@@ -455,6 +445,9 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 						timestamp: rec.timestamp
 					}
 					bytes_read += rec.value.len + rec.key.len
+					if rec.offset > highest_offset_read {
+						highest_offset_read = rec.offset
+					}
 				}
 			}
 		}
@@ -1315,9 +1308,12 @@ fn (mut a S3StorageAdapter) flush_worker() {
 	for a.compactor_running { // Use compactor_running flag to stop both workers
 		time.sleep(a.config.batch_timeout_ms)
 
+		// Process each partition's buffer while holding the lock
+		// This prevents race conditions where append modifies the buffer
+		// between collecting keys and flushing
 		a.buffer_lock.lock()
 
-		// Collect all keys to flush
+		// Collect all partition keys that have data
 		mut keys_to_flush := []string{}
 		for key, tp_buffer in a.topic_partition_buffers {
 			if tp_buffer.records.len > 0 {
@@ -1325,15 +1321,165 @@ fn (mut a S3StorageAdapter) flush_worker() {
 			}
 		}
 
-		a.buffer_lock.unlock()
-
-		// Process flushes sequentially to avoid index conflicts
-		// This ensures that each partition's index is updated atomically
+		// For each key, extract buffer data while still holding the lock
+		mut flush_batches := map[string][]StoredRecord{}
 		for key in keys_to_flush {
-			a.async_flush_partition(key) or {
-				eprintln('[S3] Flush failed for ${key}: ${err}')
+			if mut tp_buffer := a.topic_partition_buffers[key] {
+				if tp_buffer.records.len > 0 {
+					// Clone and clear the buffer atomically
+					flush_batches[key] = tp_buffer.records.clone()
+					tp_buffer.records.clear()
+					tp_buffer.current_size_bytes = 0
+					a.topic_partition_buffers[key] = tp_buffer
+				}
 			}
 		}
+
+		a.buffer_lock.unlock()
+
+		// Now flush each batch to S3 (without holding the lock)
+		for key, buffer_data in flush_batches {
+			if buffer_data.len == 0 {
+				continue
+			}
+			a.flush_buffer_to_s3(key, buffer_data) or {
+				eprintln('[S3] Flush failed for ${key}: ${err}')
+				// On failure, restore the buffer data to prevent data loss
+				a.buffer_lock.lock()
+				if mut tp_buffer := a.topic_partition_buffers[key] {
+					// Prepend the failed data to the existing buffer
+					mut restored := buffer_data.clone()
+					restored << tp_buffer.records
+					tp_buffer.records = restored
+					// Recalculate size
+					mut size := i64(0)
+					for rec in tp_buffer.records {
+						size += i64(rec.value.len + rec.key.len + 30)
+					}
+					tp_buffer.current_size_bytes = size
+					a.topic_partition_buffers[key] = tp_buffer
+				} else {
+					// Buffer was deleted, recreate it
+					mut size := i64(0)
+					for rec in buffer_data {
+						size += i64(rec.value.len + rec.key.len + 30)
+					}
+					a.topic_partition_buffers[key] = TopicPartitionBuffer{
+						records:            buffer_data.clone()
+						current_size_bytes: size
+					}
+				}
+				a.buffer_lock.unlock()
+				eprintln('[S3] Buffer restored for ${key} with ${buffer_data.len} records')
+			}
+		}
+	}
+}
+
+// flush_buffer_to_s3 flushes a specific buffer batch to S3
+fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data []StoredRecord) ! {
+	parts := partition_key.split(':')
+	if parts.len != 2 {
+		return error('Invalid partition key for flush: ${partition_key}')
+	}
+	topic := parts[0]
+	partition_i64 := strconv.atoi64(parts[1]) or {
+		return error('Invalid partition number in key: ${parts[1]}')
+	}
+	partition := int(partition_i64)
+
+	// Calculate offsets for batch
+	base_offset := buffer_data[0].offset
+	end_offset := buffer_data[buffer_data.len - 1].offset
+
+	// Encode and Write segment to S3
+	segment_data := encode_stored_records(buffer_data)
+	segment_key := a.log_segment_key(topic, partition, base_offset, end_offset)
+
+	// Write segment to S3
+	a.put_object(segment_key, segment_data) or {
+		eprintln('[S3] FLUSH FAILED for ${partition_key}: Segment put failed: ${err}')
+		return error('Segment put failed during flush: ${err}')
+	}
+
+	// Update partition index with new segment
+	// Use lock to prevent concurrent index updates from corrupting the index
+	a.index_update_lock.lock()
+	defer {
+		a.index_update_lock.unlock()
+	}
+
+	// Get the current index from S3 directly (bypass cache)
+	index_key := a.partition_index_key(topic, partition)
+	mut index := PartitionIndex{
+		topic:           topic
+		partition:       partition
+		earliest_offset: 0
+		high_watermark:  0
+		log_segments:    []
+	}
+
+	if data, _ := a.get_object(index_key, -1, -1) {
+		if decoded := json.decode(PartitionIndex, data.bytestr()) {
+			index = decoded
+		}
+	}
+
+	// Always add the segment if it doesn't already exist
+	// Check for duplicate by comparing segment key
+	mut segment_exists := false
+	for seg in index.log_segments {
+		if seg.key == segment_key {
+			segment_exists = true
+			break
+		}
+	}
+
+	if !segment_exists {
+		index.log_segments << LogSegment{
+			start_offset: base_offset
+			end_offset:   end_offset
+			key:          segment_key
+			size_bytes:   i64(segment_data.len)
+			created_at:   time.now()
+		}
+
+		// Sort segments by start_offset to maintain order
+		index.log_segments.sort(a.start_offset < b.start_offset)
+
+		// Update high_watermark to the maximum end_offset + 1
+		for seg in index.log_segments {
+			if seg.end_offset + 1 > index.high_watermark {
+				index.high_watermark = seg.end_offset + 1
+			}
+		}
+
+		// Write updated index to S3
+		a.put_object(index_key, json.encode(index).bytes()) or {
+			eprintln('[S3] FLUSH FAILED for ${partition_key}: Index put failed: ${err}')
+			return error('Index put failed during flush: ${err}')
+		}
+
+		// Update local cache
+		cache_key := '${topic}:${partition}'
+		a.topic_lock.@lock()
+		if cached := a.topic_index_cache[cache_key] {
+			// Keep the higher high_watermark between cache and S3
+			mut final_index := index
+			if cached.index.high_watermark > index.high_watermark {
+				final_index.high_watermark = cached.index.high_watermark
+			}
+			a.topic_index_cache[cache_key] = CachedPartitionIndex{
+				index:     final_index
+				cached_at: time.now()
+			}
+		} else {
+			a.topic_index_cache[cache_key] = CachedPartitionIndex{
+				index:     index
+				cached_at: time.now()
+			}
+		}
+		a.topic_lock.unlock()
 	}
 }
 
