@@ -3,11 +3,13 @@
 module rest
 
 import domain
+import infra.observability
 import infra.protocol.http as proto_http
 import io
 import net
 import os
 import service.port
+import time
 
 // ============================================================================
 // REST API Server
@@ -40,7 +42,10 @@ mut:
 	storage     port.StoragePort
 	sse_handler &proto_http.SSEHandler
 	ws_handler  &proto_http.WebSocketHandler
+	metrics     observability.DataCoreMetrics
+	start_time  time.Time
 	running     bool
+	ready       bool // Indicates if server is ready to serve traffic
 }
 
 // new_rest_server creates a new REST API server
@@ -50,7 +55,10 @@ pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestS
 		storage:     storage
 		sse_handler: proto_http.new_sse_handler(storage, config.sse_config)
 		ws_handler:  proto_http.new_websocket_handler(storage, config.ws_config)
+		metrics:     observability.new_datacore_metrics()
+		start_time:  time.now()
 		running:     false
+		ready:       false
 	}
 }
 
@@ -58,12 +66,16 @@ pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestS
 pub fn (mut s RestServer) start() ! {
 	mut listener := net.listen_tcp(.ip, '${s.config.host}:${s.config.port}')!
 	s.running = true
+	s.ready = true
+	s.start_time = time.now()
 
 	println('╔═══════════════════════════════════════════════════════════╗')
 	println('║             DataCore REST API Server                      ║')
 	println('╠═══════════════════════════════════════════════════════════╣')
 	println('║  HTTP Listening: ${s.config.host}:${s.config.port}                          ║')
 	println('║  Test Client: http://localhost:${s.config.port}/                   ║')
+	println('║  Health: /health, /ready, /live                          ║')
+	println('║  Metrics: /metrics                                       ║')
 	println('║  SSE Endpoint: /v1/topics/{topic}/sse                     ║')
 	println('║  WebSocket Endpoint: /v1/ws                               ║')
 	println('║  Max Connections: ${s.config.max_connections}                                  ║')
@@ -179,10 +191,25 @@ fn (mut s RestServer) route_request(method string, path string, query map[string
 		return
 	}
 
-	// Health check
+	// Health endpoints (Kubernetes compatible)
 	if path == '/health' || path == '/healthz' {
-		s.send_json(mut conn, 200, '{"status":"healthy"}')
-		conn.close() or {}
+		s.handle_health(mut conn)
+		return
+	}
+
+	if path == '/ready' || path == '/readyz' {
+		s.handle_ready(mut conn)
+		return
+	}
+
+	if path == '/live' || path == '/livez' {
+		s.handle_live(mut conn)
+		return
+	}
+
+	// Metrics endpoint (Prometheus format)
+	if path == '/metrics' {
+		s.handle_metrics(mut conn)
 		return
 	}
 
@@ -301,6 +328,91 @@ fn (mut s RestServer) handle_sse_stats(mut conn net.TcpConn) {
 		',"connections_created":${stats.connections_created}' +
 		',"connections_closed":${stats.connections_closed}' + '}'
 	s.send_json(mut conn, 200, json)
+	conn.close() or {}
+}
+
+// ============================================================================
+// Health & Metrics Handlers
+// ============================================================================
+
+// handle_health handles the /health endpoint
+// Returns overall health status including storage health
+fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
+	// Check storage health
+	storage_status := s.storage.health_check() or {
+		s.send_json(mut conn, 503, '{"status":"unhealthy","storage":"error","error":"${err}"}')
+		conn.close() or {}
+		return
+	}
+
+	status := match storage_status {
+		.healthy { 'healthy' }
+		.degraded { 'degraded' }
+		.unhealthy { 'unhealthy' }
+	}
+
+	http_status := match storage_status {
+		.healthy { 200 }
+		.degraded { 200 }
+		.unhealthy { 503 }
+	}
+
+	uptime_seconds := time.since(s.start_time) / time.second
+
+	json := '{' + '"status":"${status}"' + ',"storage":"${status}"' +
+		',"uptime_seconds":${uptime_seconds}' + ',"version":"0.26.0"' + '}'
+
+	s.send_json(mut conn, http_status, json)
+	conn.close() or {}
+}
+
+// handle_ready handles the /ready endpoint
+// Returns whether the server is ready to accept traffic
+fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
+	if s.ready {
+		// Additional readiness checks can be added here
+		storage_status := s.storage.health_check() or {
+			s.send_json(mut conn, 503, '{"ready":false,"reason":"storage_unavailable"}')
+			conn.close() or {}
+			return
+		}
+
+		if storage_status == .unhealthy {
+			s.send_json(mut conn, 503, '{"ready":false,"reason":"storage_unhealthy"}')
+			conn.close() or {}
+			return
+		}
+
+		s.send_json(mut conn, 200, '{"ready":true}')
+	} else {
+		s.send_json(mut conn, 503, '{"ready":false,"reason":"server_not_ready"}')
+	}
+	conn.close() or {}
+}
+
+// handle_live handles the /live endpoint
+// Returns whether the server process is alive
+fn (mut s RestServer) handle_live(mut conn net.TcpConn) {
+	// Liveness check - just verify the server is running
+	if s.running {
+		s.send_json(mut conn, 200, '{"alive":true}')
+	} else {
+		s.send_json(mut conn, 503, '{"alive":false}')
+	}
+	conn.close() or {}
+}
+
+// handle_metrics handles the /metrics endpoint (Prometheus format)
+fn (s &RestServer) handle_metrics(mut conn net.TcpConn) {
+	registry := observability.get_registry()
+	metrics_output := registry.export_prometheus()
+
+	response := 'HTTP/1.1 200 OK\r\n' +
+		'Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n' +
+		'Content-Length: ${metrics_output.len}\r\n' + 'Connection: close\r\n' + '\r\n' +
+		metrics_output
+
+	conn.write_string(response) or {}
 	conn.close() or {}
 }
 
