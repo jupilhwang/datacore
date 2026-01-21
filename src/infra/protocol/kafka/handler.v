@@ -4,6 +4,7 @@ module kafka
 
 import log
 import rand
+import service.group
 import service.port
 import service.transaction
 
@@ -14,57 +15,82 @@ pub struct Handler {
 	broker_port i32
 	cluster_id  string
 mut:
-	storage         port.StoragePort
-	auth_manager    ?port.AuthManager                   // Optional: SASL authentication manager
-	acl_manager     ?port.AclManager                    // Optional: ACL manager
-	txn_coordinator ?transaction.TransactionCoordinator // Optional: Transaction coordinator
-	logger          log.Log
+	storage                 port.StoragePort
+	auth_manager            ?port.AuthManager                   // Optional: SASL authentication manager
+	acl_manager             ?port.AclManager                    // Optional: ACL manager
+	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
+	share_group_coordinator ?&group.ShareGroupCoordinator       // Optional: Share group coordinator (KIP-932)
+	logger                  log.Log
 }
 
 // new_handler creates a new Kafka protocol handler with storage
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
 	eprintln('[DEBUG] new_handler: broker_id=${broker_id} host="${host}" (len=${host.len}) broker_port=${broker_port} cluster_id="${cluster_id}"')
 	return Handler{
-		broker_id:       broker_id
-		host:            host
-		broker_port:     broker_port
-		cluster_id:      cluster_id
-		storage:         storage
-		auth_manager:    none
-		acl_manager:     none
-		txn_coordinator: none
-		logger:          log.Log{}
+		broker_id:               broker_id
+		host:                    host
+		broker_port:             broker_port
+		cluster_id:              cluster_id
+		storage:                 storage
+		auth_manager:            none
+		acl_manager:             none
+		txn_coordinator:         none
+		share_group_coordinator: none
+		logger:                  log.Log{}
 	}
 }
 
 // new_handler_with_auth creates a new Kafka protocol handler with storage and authentication
 pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager) Handler {
 	return Handler{
-		broker_id:       broker_id
-		host:            host
-		broker_port:     broker_port
-		cluster_id:      cluster_id
-		storage:         storage
-		auth_manager:    auth_manager
-		acl_manager:     none
-		txn_coordinator: none
-		logger:          log.Log{}
+		broker_id:               broker_id
+		host:                    host
+		broker_port:             broker_port
+		cluster_id:              cluster_id
+		storage:                 storage
+		auth_manager:            auth_manager
+		acl_manager:             none
+		txn_coordinator:         none
+		share_group_coordinator: none
+		logger:                  log.Log{}
 	}
 }
 
 // new_handler_full creates a new Kafka protocol handler with all components
 pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator) Handler {
 	return Handler{
-		broker_id:       broker_id
-		host:            host
-		broker_port:     broker_port
-		cluster_id:      cluster_id
-		storage:         storage
-		auth_manager:    auth_manager
-		acl_manager:     acl_manager
-		txn_coordinator: txn_coordinator
-		logger:          log.Log{}
+		broker_id:               broker_id
+		host:                    host
+		broker_port:             broker_port
+		cluster_id:              cluster_id
+		storage:                 storage
+		auth_manager:            auth_manager
+		acl_manager:             acl_manager
+		txn_coordinator:         txn_coordinator
+		share_group_coordinator: none
+		logger:                  log.Log{}
 	}
+}
+
+// new_handler_with_share_groups creates a new Kafka protocol handler with share group support (KIP-932)
+pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator) Handler {
+	return Handler{
+		broker_id:               broker_id
+		host:                    host
+		broker_port:             broker_port
+		cluster_id:              cluster_id
+		storage:                 storage
+		auth_manager:            auth_manager
+		acl_manager:             acl_manager
+		txn_coordinator:         txn_coordinator
+		share_group_coordinator: share_coordinator
+		logger:                  log.Log{}
+	}
+}
+
+// set_share_group_coordinator sets the share group coordinator for the handler
+pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroupCoordinator) {
+	h.share_group_coordinator = coordinator
 }
 
 // Handle incoming request and return response bytes (legacy method)
@@ -173,6 +199,15 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		}
 		.delete_records {
 			h.handle_delete_records(req.body, version)!
+		}
+		.share_group_heartbeat {
+			h.handle_share_group_heartbeat(req.body, version)!
+		}
+		.share_fetch {
+			h.handle_share_fetch(req.body, version)!
+		}
+		.share_acknowledge {
+			h.handle_share_acknowledge(req.body, version)!
 		}
 		else {
 			return error('unsupported API key: ${int(api_key)}')
