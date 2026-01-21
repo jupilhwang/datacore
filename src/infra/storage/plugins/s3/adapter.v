@@ -1149,15 +1149,10 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	// Re-fetch the latest index from S3 to ensure we don't overwrite concurrent changes
 	mut index := a.get_partition_index(topic, partition)!
 
-	// Verify that the high_watermark has not advanced past our segment
-	if index.high_watermark > base_offset {
-		// This should not happen if the `append` function only updates in-memory high_watermark for response
-		// and the async flush is the only process updating the S3 index.
-		// For now, assume it's safe to append if the current index doesn't overlap our range.
-
-		// NOTE: In a multi-writer environment, optimistic locking (If-Match: ETag) is needed here.
-		// Given single-node DataCore, simple read-update-write is acceptable for now.
-
+	// Update index with new segment
+	// The condition checks if the new segment is after or at the current high_watermark
+	// This prevents duplicate segments from being added
+	if base_offset >= index.high_watermark {
 		// High watermark is calculated based on the data that has been successfully stored to S3.
 		index.high_watermark = end_offset + 1 // New high watermark
 		index.log_segments << LogSegment{
@@ -1174,9 +1169,16 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 			eprintln('[S3] ASYNC FLUSH FAILED for ${partition_key}: Index put failed: ${err}')
 			return error('Index put failed during async flush: ${err}')
 		}
+
+		// Update local cache with new index
+		cache_key := '${topic}:${partition}'
+		a.topic_index_cache[cache_key] = CachedPartitionIndex{
+			index:     index
+			cached_at: time.now()
+		}
 	} else {
-		// This should not happen, but if it did, we log a warning.
-		eprintln('[S3] ASYNC FLUSH WARNING: Index high_watermark was already ${index.high_watermark} > ${base_offset}. Index not updated.')
+		// This segment overlaps with already stored data, skip updating index
+		eprintln('[S3] ASYNC FLUSH WARNING: Segment base_offset ${base_offset} < high_watermark ${index.high_watermark}. Index not updated.')
 	}
 }
 
@@ -1213,6 +1215,7 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 		return
 	}
 	a.compactor_running = true
+	go a.flush_worker()
 	go a.compaction_worker()
 }
 
