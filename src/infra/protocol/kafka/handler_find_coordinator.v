@@ -2,6 +2,9 @@
 // Request/Response types, parsing, encoding, and handlers
 module kafka
 
+import infra.observability
+import time
+
 // ============================================================================
 // FindCoordinator (API Key 10)
 // ============================================================================
@@ -133,15 +136,29 @@ pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-fn (h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
+fn (mut h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_find_coordinator_request(mut reader, version, is_flexible_version(.find_coordinator,
 		version))!
+
+	key_type_str := if req.key_type == 0 { 'GROUP' } else { 'TRANSACTION' }
+	h.logger.debug('Processing find coordinator',
+		observability.field_string('key', req.key),
+		observability.field_string('key_type', key_type_str),
+		observability.field_int('coordinator_keys', req.coordinator_keys.len))
+
 	resp := h.process_find_coordinator(req, version)!
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Find coordinator completed',
+		observability.field_int('node_id', h.broker_id),
+		observability.field_duration('latency', elapsed))
+
 	return resp.encode(version)
 }
 
-fn (h Handler) process_find_coordinator(req FindCoordinatorRequest, version i16) !FindCoordinatorResponse {
+fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version i16) !FindCoordinatorResponse {
 	if version >= 4 {
 		mut keys := req.coordinator_keys.clone()
 		if keys.len == 0 && req.key.len > 0 {

@@ -2,6 +2,9 @@
 // Request/Response types, parsing, encoding, and handlers
 module kafka
 
+import infra.observability
+import time
+
 // ============================================================================
 // ListOffsets (API Key 2)
 // ============================================================================
@@ -134,6 +137,12 @@ pub fn (r ListOffsetsResponse) encode(version i16) []u8 {
 
 // Process list offsets request (Frame-based)
 fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !ListOffsetsResponse {
+	start_time := time.now()
+
+	h.logger.debug('Processing list offsets',
+		observability.field_int('topics', req.topics.len),
+		observability.field_int('isolation_level', req.isolation_level))
+
 	mut topics := []ListOffsetsResponseTopic{}
 	for t in req.topics {
 		mut partitions := []ListOffsetsResponsePartition{}
@@ -168,6 +177,11 @@ fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !Li
 			partitions: partitions
 		}
 	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('List offsets completed',
+		observability.field_int('topics', topics.len),
+		observability.field_duration('latency', elapsed))
 
 	return ListOffsetsResponse{
 		throttle_time_ms: 0

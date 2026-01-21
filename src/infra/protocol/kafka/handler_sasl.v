@@ -3,6 +3,9 @@
 // Request/Response types, parsing, encoding, and handlers
 module kafka
 
+import infra.observability
+import time
+
 // ============================================================================
 // SaslHandshake Request (API Key 17)
 // ============================================================================
@@ -132,10 +135,14 @@ pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
 // Handle SaslHandshake (API Key 17)
 // Handles SASL mechanism negotiation
 fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	is_flexible := is_flexible_version(.sasl_handshake, version)
 
 	req := parse_sasl_handshake_request(mut reader, version, is_flexible)!
+
+	h.logger.info('SASL handshake request',
+		observability.field_string('mechanism', req.mechanism))
 
 	// Get supported mechanisms from auth manager
 	mut supported_mechanisms := []string{}
@@ -165,16 +172,26 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 		mechanisms: supported_mechanisms
 	}
 
+	elapsed := time.since(start_time)
+	h.logger.info('SASL handshake completed',
+		observability.field_string('mechanism', req.mechanism),
+		observability.field_int('error_code', error_code),
+		observability.field_duration('latency', elapsed))
+
 	return response.encode(version)
 }
 
 // Handle SaslAuthenticate (API Key 36)
 // Handles SASL authentication
 fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	is_flexible := is_flexible_version(.sasl_authenticate, version)
 
 	req := parse_sasl_authenticate_request(mut reader, version, is_flexible)!
+
+	h.logger.debug('SASL authenticate request',
+		observability.field_bytes('auth_bytes_len', req.auth_bytes.len))
 
 	// Perform authentication
 	if mut auth_mgr := h.auth_manager {
@@ -211,6 +228,10 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 	} else {
 		// No auth manager - authentication not configured
 		// Return error to indicate auth is required but not available
+		elapsed := time.since(start_time)
+		h.logger.warn('SASL authentication not configured',
+			observability.field_duration('latency', elapsed))
+
 		response := SaslAuthenticateResponse{
 			error_code:          i16(ErrorCode.illegal_sasl_state)
 			error_message:       'SASL authentication not configured'

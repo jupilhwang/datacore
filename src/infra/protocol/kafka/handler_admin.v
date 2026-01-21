@@ -3,6 +3,9 @@
 // Moved from admin_api.v to handlers/admin.v for better organization
 module kafka
 
+import infra.observability
+import time
+
 // ============================================================================
 // AlterConfigs Request/Response (API Key 33)
 // ============================================================================
@@ -382,9 +385,14 @@ pub fn (r DeleteRecordsResponse) encode(version i16) []u8 {
 
 // handle_alter_configs - handles AlterConfigs API (Key 33)
 pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	is_flexible := version >= 2
 	mut reader := new_reader(body)
 	req := parse_alter_configs_request(mut reader, version, is_flexible)!
+
+	h.logger.debug('Processing alter configs',
+		observability.field_int('resources', req.resources.len),
+		observability.field_bool('validate_only', req.validate_only))
 
 	mut results := []AlterConfigsResult{}
 
@@ -460,14 +468,24 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 		results:          results
 	}
 
+	elapsed := time.since(start_time)
+	h.logger.debug('Alter configs completed',
+		observability.field_int('results', results.len),
+		observability.field_duration('latency', elapsed))
+
 	return resp.encode(version)
 }
 
 // handle_create_partitions - handles CreatePartitions API (Key 37)
 pub fn (mut h Handler) handle_create_partitions(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	is_flexible := version >= 2
 	mut reader := new_reader(body)
 	req := parse_create_partitions_request(mut reader, version, is_flexible)!
+
+	h.logger.debug('Processing create partitions',
+		observability.field_int('topics', req.topics.len),
+		observability.field_bool('validate_only', req.validate_only))
 
 	mut results := []CreatePartitionsResult{}
 
@@ -524,14 +542,24 @@ pub fn (mut h Handler) handle_create_partitions(body []u8, version i16) ![]u8 {
 		results:          results
 	}
 
+	elapsed := time.since(start_time)
+	h.logger.debug('Create partitions completed',
+		observability.field_int('results', results.len),
+		observability.field_duration('latency', elapsed))
+
 	return resp.encode(version)
 }
 
 // handle_delete_records - handles DeleteRecords API (Key 21)
 pub fn (mut h Handler) handle_delete_records(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	is_flexible := version >= 2
 	mut reader := new_reader(body)
 	req := parse_delete_records_request(mut reader, version, is_flexible)!
+
+	h.logger.debug('Processing delete records',
+		observability.field_int('topics', req.topics.len),
+		observability.field_int('timeout_ms', req.timeout_ms))
 
 	mut resp_topics := []DeleteRecordsResponseTopic{}
 
@@ -584,6 +612,11 @@ pub fn (mut h Handler) handle_delete_records(body []u8, version i16) ![]u8 {
 		throttle_time_ms: 0
 		topics:           resp_topics
 	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Delete records completed',
+		observability.field_int('topics', resp_topics.len),
+		observability.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

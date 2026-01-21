@@ -4,6 +4,8 @@
 module kafka
 
 import domain
+import infra.observability
+import time
 
 // ============================================================================
 // DescribeAcls (API Key 29)
@@ -381,9 +383,14 @@ pub fn (r DeleteAclsResponse) encode(version i16) []u8 {
 
 // DescribeAcls handler
 fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_describe_acls_request(mut reader, version, is_flexible_version(.describe_acls,
 		version))!
+
+	h.logger.debug('Processing describe ACLs',
+		observability.field_int('resource_type', req.resource_type),
+		observability.field_int('operation', req.operation))
 
 	// Check if ACL manager is configured
 	if mut acl_mgr := h.acl_manager {
@@ -447,10 +454,20 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 			error_message:    none
 			resources:        resources
 		}
+
+		elapsed := time.since(start_time)
+		h.logger.debug('Describe ACLs completed',
+			observability.field_int('resources', resources.len),
+			observability.field_duration('latency', elapsed))
+
 		return resp.encode(version)
 	}
 
 	// ACL not supported/configured
+	elapsed := time.since(start_time)
+	h.logger.debug('Describe ACLs: security disabled',
+		observability.field_duration('latency', elapsed))
+
 	resp := DescribeAclsResponse{
 		throttle_time_ms: 0
 		error_code:       i16(ErrorCode.security_disabled)
@@ -462,9 +479,13 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 
 // CreateAcls handler
 fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_create_acls_request(mut reader, version, is_flexible_version(.create_acls,
 		version))!
+
+	h.logger.debug('Processing create ACLs',
+		observability.field_int('creations', req.creations.len))
 
 	if mut acl_mgr := h.acl_manager {
 		mut bindings := []domain.AclBinding{}
@@ -514,6 +535,10 @@ fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 	}
 
 	// ACL not supported
+	elapsed := time.since(start_time)
+	h.logger.debug('Create ACLs: security disabled',
+		observability.field_duration('latency', elapsed))
+
 	mut results := []CreateAclsResult{}
 	for _ in req.creations {
 		results << CreateAclsResult{
@@ -529,9 +554,13 @@ fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 
 // DeleteAcls handler
 fn (mut h Handler) handle_delete_acls(body []u8, version i16) ![]u8 {
+	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_delete_acls_request(mut reader, version, is_flexible_version(.delete_acls,
 		version))!
+
+	h.logger.debug('Processing delete ACLs',
+		observability.field_int('filters', req.filters.len))
 
 	if mut acl_mgr := h.acl_manager {
 		mut filters := []domain.AclBindingFilter{}
@@ -598,6 +627,10 @@ fn (mut h Handler) handle_delete_acls(body []u8, version i16) ![]u8 {
 	}
 
 	// ACL not supported
+	elapsed := time.since(start_time)
+	h.logger.debug('Delete ACLs: security disabled',
+		observability.field_duration('latency', elapsed))
+
 	mut results := []DeleteAclsResult{}
 	for _ in req.filters {
 		results << DeleteAclsResult{
