@@ -14,6 +14,7 @@ import config as cfg
 import domain
 import interface.server
 import interface.cli
+import interface.rest
 import infra.protocol.kafka
 import infra.storage.plugins.memory
 import infra.storage.plugins.s3
@@ -288,7 +289,31 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 		logger.warn('Failed to write PID file', observability.field_string('path', opts.pid_path))
 	}
 
-	// 5. Create and start TCP Server
+	// 5. Start REST API Server (SSE/WebSocket) if enabled
+	if conf.rest.enabled {
+		cli.print_progress('Starting REST API server (SSE/WebSocket)')
+		rest_config := rest.RestServerConfig{
+			host:            conf.rest.host
+			port:            conf.rest.port
+			max_connections: conf.rest.max_connections
+			static_dir:      conf.rest.static_dir
+			sse_config:      domain.SSEConfig{
+				heartbeat_interval_ms: conf.rest.sse_heartbeat_interval_ms
+				connection_timeout_ms: conf.rest.sse_connection_timeout_ms
+			}
+			ws_config:       domain.WebSocketConfig{
+				max_message_size: conf.rest.ws_max_message_size
+				ping_interval_ms: conf.rest.ws_ping_interval_ms
+			}
+		}
+		mut rest_server := rest.new_rest_server(rest_config, storage)
+		rest_server.start_background()
+		cli.print_done()
+		logger.info('REST API server started', observability.field_string('host', conf.rest.host),
+			observability.field_int('port', conf.rest.port))
+	}
+
+	// 6. Create and start TCP Server
 	server_config := server.ServerConfig{
 		host:       conf.broker.host
 		port:       conf.broker.port

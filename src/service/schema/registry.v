@@ -588,8 +588,8 @@ fn validate_json_schema_syntax(schema_str string) ! {
 			'https://json-schema.org/draft/2020-12/schema',
 		]
 		mut supported := false
-		for draft in supported_drafts {
-			if schema_version.contains('draft') {
+		for d in supported_drafts {
+			if schema_version.contains(d) {
 				supported = true
 				break
 			}
@@ -886,7 +886,7 @@ fn validate_protobuf_fields(body string) ! {
 				}
 
 				// Check duplicates
-				if existing := field_numbers[field_num] {
+				if _ := field_numbers[field_num] {
 					return error('invalid Protobuf schema: duplicate field number ${field_num}')
 				}
 
@@ -1693,7 +1693,7 @@ fn check_json_backward_compatible(old_schema string, new_schema string) bool {
 	for prop in new_info.required {
 		if prop !in old_info.required {
 			// New required property
-			if old_prop := old_info.properties[prop] {
+			if _ := old_info.properties[prop] {
 				// Property existed as optional - OK
 				continue
 			} else {

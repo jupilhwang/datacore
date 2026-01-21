@@ -49,6 +49,38 @@ request_timeout_ms = 30000
 idle_timeout_ms = 600000
 
 # -----------------------------------------------------------------------------
+# [rest] - REST API 서버 설정 (SSE/WebSocket 포함)
+# -----------------------------------------------------------------------------
+[rest]
+
+# REST API 활성화 여부
+enabled = true
+
+# REST API 호스트
+host = "0.0.0.0"
+
+# REST API 포트
+port = 8080
+
+# 최대 연결 수
+max_connections = 1000
+
+# 정적 파일 디렉토리 (테스트 클라이언트용)
+static_dir = "tests/web"
+
+# SSE 하트비트 간격 (밀리초)
+sse_heartbeat_interval_ms = 15000
+
+# SSE 연결 타임아웃 (밀리초)
+sse_connection_timeout_ms = 3600000
+
+# WebSocket 최대 메시지 크기 (바이트)
+ws_max_message_size = 1048576
+
+# WebSocket 핑 간격 (밀리초)
+ws_ping_interval_ms = 30000
+
+# -----------------------------------------------------------------------------
 # [storage] - 스토리지 엔진 설정
 # -----------------------------------------------------------------------------
 [storage]

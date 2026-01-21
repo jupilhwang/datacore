@@ -7,6 +7,7 @@ import toml
 pub struct Config {
 pub:
 	broker          BrokerConfig
+	rest            RestConfig
 	storage         StorageConfig
 	schema_registry SchemaRegistryConfig
 	observability   ObservabilityConfig
@@ -23,6 +24,19 @@ pub:
 	request_timeout_ms int    = 30000
 	idle_timeout_ms    int    = 600000
 	advertised_host    string = '127.0.0.1'
+}
+
+pub struct RestConfig {
+pub:
+	enabled                   bool   = true
+	host                      string = '0.0.0.0'
+	port                      int    = 8080
+	max_connections           int    = 1000
+	static_dir                string = 'tests/web'
+	sse_heartbeat_interval_ms int    = 15000
+	sse_connection_timeout_ms int    = 3600000
+	ws_max_message_size       int    = 1048576
+	ws_ping_interval_ms       int    = 30000
 }
 
 pub struct StorageConfig {
@@ -159,6 +173,19 @@ pub fn load_config(path string) !Config {
 		idle_timeout_ms:    get_int(doc, 'broker.idle_timeout_ms', 600000)
 		advertised_host:    get_string(doc, 'broker.advertised_host', get_string(doc,
 			'broker.host', '127.0.0.1'))
+	}
+
+	// Parse REST config
+	rest := RestConfig{
+		enabled:                   get_bool(doc, 'rest.enabled', true)
+		host:                      get_string(doc, 'rest.host', '0.0.0.0')
+		port:                      get_int(doc, 'rest.port', 8080)
+		max_connections:           get_int(doc, 'rest.max_connections', 1000)
+		static_dir:                get_string(doc, 'rest.static_dir', 'tests/web')
+		sse_heartbeat_interval_ms: get_int(doc, 'rest.sse_heartbeat_interval_ms', 15000)
+		sse_connection_timeout_ms: get_int(doc, 'rest.sse_connection_timeout_ms', 3600000)
+		ws_max_message_size:       get_int(doc, 'rest.ws_max_message_size', 1048576)
+		ws_ping_interval_ms:       get_int(doc, 'rest.ws_ping_interval_ms', 30000)
 	}
 
 	// Parse storage config
@@ -317,6 +344,7 @@ pub fn load_config(path string) !Config {
 
 	mut cfg := Config{
 		broker:          broker
+		rest:            rest
 		storage:         storage
 		schema_registry: schema_registry
 		observability:   observability

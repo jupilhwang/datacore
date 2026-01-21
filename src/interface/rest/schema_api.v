@@ -263,7 +263,7 @@ fn (mut api SchemaAPI) register_schema(subject string, body string) (int, string
 }
 
 fn (mut api SchemaAPI) get_schema_by_version(subject string, version int) (int, string) {
-	schema := api.registry.get_schema_by_subject(subject, version) or {
+	schema_data := api.registry.get_schema_by_subject(subject, version) or {
 		return api.error_response(404, 40402, 'Version not found: ${subject}/${version}')
 	}
 
@@ -273,10 +273,10 @@ fn (mut api SchemaAPI) get_schema_by_version(subject string, version int) (int, 
 
 	resp := VersionResponse{
 		subject:     subject
-		id:          schema.id
+		id:          schema_data.id
 		version:     actual_version
-		schema:      schema.schema_str
-		schema_type: schema.schema_type.str()
+		schema:      schema_data.schema_str
+		schema_type: schema_data.schema_type.str()
 	}
 	return 200, json.encode(resp)
 }
@@ -289,29 +289,29 @@ fn (mut api SchemaAPI) delete_version(subject string, version int) (int, string)
 }
 
 fn (mut api SchemaAPI) get_raw_schema(subject string, version int) (int, string) {
-	schema := api.registry.get_schema_by_subject(subject, version) or {
+	schema_data := api.registry.get_schema_by_subject(subject, version) or {
 		return api.error_response(404, 40402, 'Version not found')
 	}
-	return 200, schema.schema_str
+	return 200, schema_data.schema_str
 }
 
 fn (mut api SchemaAPI) get_schema_by_id(schema_id int) (int, string) {
-	schema := api.registry.get_schema(schema_id) or {
+	schema_data := api.registry.get_schema(schema_id) or {
 		return api.error_response(404, 40403, 'Schema not found')
 	}
 
 	resp := SchemaResponse{
-		schema:      schema.schema_str
-		schema_type: schema.schema_type.str()
+		schema:      schema_data.schema_str
+		schema_type: schema_data.schema_type.str()
 	}
 	return 200, json.encode(resp)
 }
 
 fn (mut api SchemaAPI) get_raw_schema_by_id(schema_id int) (int, string) {
-	schema := api.registry.get_schema(schema_id) or {
+	schema_data := api.registry.get_schema(schema_id) or {
 		return api.error_response(404, 40403, 'Schema not found')
 	}
-	return 200, schema.schema_str
+	return 200, schema_data.schema_str
 }
 
 fn (mut api SchemaAPI) get_global_config() (int, string) {

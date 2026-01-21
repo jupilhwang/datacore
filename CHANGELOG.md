@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.22.0] - 2026-01-21
+
+### Added
+- **WebSocket Protocol Support**: 양방향 실시간 메시지 통신
+  - `WebSocketConnection`, `WebSocketConnectionState` 연결 관리 모델
+  - `WebSocketConfig` 설정 (ping 간격, 타임아웃, 최대 연결 수 등)
+  - `WebSocketResponse` JSON 응답 모델 및 `to_json()` 메서드
+  - `WebSocketService` 연결/구독/메시지 관리 서비스 (`src/service/streaming/websocket_service.v`)
+  - `WebSocketHandler` HTTP Upgrade 및 프레임 처리 (`src/infra/protocol/http/websocket_handler.v`)
+- **WebSocket Endpoints**:
+  - `GET /v1/ws` - WebSocket 연결 (HTTP Upgrade)
+  - `GET /v1/ws/stats` - WebSocket 연결 통계
+- **WebSocket Actions (Client → Server)**:
+  - `subscribe` - 토픽/파티션 구독
+  - `unsubscribe` - 구독 해제
+  - `produce` - 메시지 발행
+  - `commit` - 오프셋 커밋
+  - `ping` - 연결 확인
+- **WebSocket Responses (Server → Client)**:
+  - `message` - 토픽 메시지
+  - `subscribed` - 구독 확인
+  - `produced` - 발행 확인
+  - `committed` - 커밋 확인
+  - `pong` - ping 응답
+  - `error` - 에러 알림
+- **WebSocket Features**:
+  - RFC 6455 표준 프레임 처리 (text, binary, ping, pong, close)
+  - Sec-WebSocket-Accept 키 생성 (SHA-1 + Base64)
+  - 마스킹된 클라이언트 프레임 디코딩
+  - 30초 간격 Ping/Pong 연결 유지
+  - 10초 Pong 타임아웃
+  - 최대 메시지 크기 제한 (기본 1MB)
+
+### Changed
+- `RestServer`에 `WebSocketHandler` 통합
+- `RestServerConfig`에 `ws_config` 추가
+
+### Tests
+- WebSocket 도메인 모델 단위 테스트 추가 (`src/domain/streaming_test.v`)
+
+## [0.21.0] - 2026-01-21
+
+### Added
+- **SSE (Server-Sent Events) Protocol Support**: 웹 브라우저용 실시간 메시지 스트리밍
+  - `SSEEvent`, `SSEEventType`, `SSEConfig` 도메인 모델 (`src/domain/streaming.v`)
+  - `Subscription`, `SubscriptionOffset`, `SSEConnection` 구독 관리 모델
+  - `StreamingPort`, `SSEWriterPort`, `MessageConsumerPort` 인터페이스 (`src/service/port/streaming_port.v`)
+  - `SSEService` 연결 및 구독 관리 서비스 (`src/service/streaming/sse_service.v`)
+  - `SSEHandler`, `SSEResponseWriter` HTTP 핸들러 (`src/infra/protocol/http/sse_handler.v`)
+  - `RestServer` HTTP REST API 서버 (`src/interface/rest/server.v`)
+- **SSE Endpoints**:
+  - `GET /v1/topics/{topic}/sse` - 토픽 전체 구독
+  - `GET /v1/topics/{topic}/partitions/{partition}/sse` - 특정 파티션 구독
+  - `GET /v1/sse/stats` - SSE 연결 통계
+- **SSE Features**:
+  - `Last-Event-ID` 헤더를 통한 재연결 지원
+  - 30초 간격 하트비트 (설정 가능)
+  - 연결 타임아웃 관리 (기본 5분)
+  - 최대 연결 수 제한 (기본 10,000)
+  - 구독당 최대 구독 수 제한 (기본 100)
+- **WebSocket 도메인 모델** (Phase 2 준비):
+  - `WebSocketAction`, `WebSocketMessage`, `WebSocketResponse` 타입
+
+### Changed
+- `domain.Record.headers` 타입이 `map[string][]u8`로 통일됨
+- `SubscriptionFilter.matches()` 함수가 새로운 헤더 타입 지원
+
+### Tests
+- SSE 도메인 모델 단위 테스트 (`src/domain/streaming_test.v`)
+- SSE 서비스 단위 테스트 (`src/service/streaming/sse_service_test.v`)
+
 ## [0.20.0] - 2026-01-21
 
 ### Added
