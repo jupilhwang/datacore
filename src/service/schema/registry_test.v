@@ -711,3 +711,399 @@ fn test_full_compatibility() {
 	assert backward == true, 'Should be backward compatible (new field has default)'
 	assert forward == true, 'Should be forward compatible (old reader ignores new field)'
 }
+
+// ============================================================================
+// JSON Schema Validation Tests
+// ============================================================================
+
+fn test_json_schema_validation_basic() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Valid JSON Schema
+	valid_schema := '{"type":"object","properties":{"id":{"type":"integer"},"name":{"type":"string"}},"required":["id"]}'
+
+	schema_id := registry.register('json-test', valid_schema, .json) or {
+		assert false, 'Valid JSON Schema should be accepted: ${err}'
+		return
+	}
+
+	assert schema_id > 0
+}
+
+fn test_json_schema_validation_invalid_json() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Invalid JSON - unclosed brace
+	invalid_schema := '{"type":"object", "properties":'
+
+	registry.register('json-invalid', invalid_schema, .json) or {
+		assert err.str().contains('invalid') || err.str().contains('JSON')
+		return
+	}
+	assert false, 'Invalid JSON should be rejected'
+}
+
+fn test_json_schema_validation_invalid_type() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Invalid type
+	invalid_type := '{"type":"unknown_type"}'
+
+	registry.register('json-bad-type', invalid_type, .json) or {
+		assert err.str().contains('unknown type')
+		return
+	}
+	assert false, 'Invalid type should be rejected'
+}
+
+fn test_json_schema_validation_min_max_constraints() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Invalid: minimum > maximum
+	invalid_minmax := '{"type":"number","minimum":100,"maximum":50}'
+
+	registry.register('json-bad-minmax', invalid_minmax, .json) or {
+		assert err.str().contains('minimum')
+		return
+	}
+	assert false, 'Invalid min/max should be rejected'
+}
+
+fn test_json_schema_validation_length_constraints() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Invalid: minLength > maxLength
+	invalid_len := '{"type":"string","minLength":10,"maxLength":5}'
+
+	registry.register('json-bad-len', invalid_len, .json) or {
+		assert err.str().contains('minLength')
+		return
+	}
+	assert false, 'Invalid min/max length should be rejected'
+}
+
+fn test_json_schema_boolean_schema() {
+	// JSON Schema can be boolean (true = allow all, false = deny all)
+	validate_json_schema_syntax('true') or {
+		assert false, 'Boolean true schema should be valid'
+		return
+	}
+
+	validate_json_schema_syntax('false') or {
+		assert false, 'Boolean false schema should be valid'
+		return
+	}
+}
+
+// ============================================================================
+// JSON Schema Compatibility Tests
+// ============================================================================
+
+fn test_json_schema_backward_compat_add_optional_property() {
+	old_schema := '{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}'
+	new_schema := '{"type":"object","properties":{"id":{"type":"integer"},"name":{"type":"string"}},"required":["id"]}'
+
+	result := check_json_backward_compatible(old_schema, new_schema)
+	assert result == true, 'Adding optional property should be backward compatible'
+}
+
+fn test_json_schema_backward_compat_add_required_property_with_default() {
+	old_schema := '{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}'
+	new_schema := '{"type":"object","properties":{"id":{"type":"integer"},"name":{"type":"string","default":"unknown"}},"required":["id","name"]}'
+
+	result := check_json_backward_compatible(old_schema, new_schema)
+	assert result == true, 'Adding required property with default should be backward compatible'
+}
+
+fn test_json_schema_backward_compat_type_widening() {
+	// integer -> number is OK (number accepts integers)
+	old_schema := '{"type":"object","properties":{"value":{"type":"integer"}}}'
+	new_schema := '{"type":"object","properties":{"value":{"type":"number"}}}'
+
+	result := check_json_backward_compatible(old_schema, new_schema)
+	assert result == true, 'Widening integer to number should be backward compatible'
+}
+
+fn test_json_schema_forward_compat_remove_optional_property() {
+	old_schema := '{"type":"object","properties":{"id":{"type":"integer"},"name":{"type":"string"}},"required":["id"]}'
+	new_schema := '{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}'
+
+	result := check_json_forward_compatible(old_schema, new_schema)
+	assert result == true, 'Removing optional property should be forward compatible'
+}
+
+fn test_json_schema_forward_compat_type_narrowing() {
+	// number -> integer is OK for forward (if new data is always integers)
+	old_schema := '{"type":"object","properties":{"value":{"type":"number"}}}'
+	new_schema := '{"type":"object","properties":{"value":{"type":"integer"}}}'
+
+	result := check_json_forward_compatible(old_schema, new_schema)
+	assert result == true, 'Narrowing number to integer should be forward compatible'
+}
+
+// ============================================================================
+// Protobuf Schema Validation Tests
+// ============================================================================
+
+fn test_protobuf_schema_validation_basic() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	proto_schema := 'syntax = "proto3";
+message User {
+  int32 id = 1;
+  string name = 2;
+}'
+
+	schema_id := registry.register('proto-test', proto_schema, .protobuf) or {
+		assert false, 'Valid Protobuf schema should be accepted: ${err}'
+		return
+	}
+
+	assert schema_id > 0
+}
+
+fn test_protobuf_schema_validation_no_message() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Invalid: no message or enum
+	invalid_schema := 'syntax = "proto3";'
+
+	registry.register('proto-invalid', invalid_schema, .protobuf) or {
+		assert err.str().contains('message') || err.str().contains('enum')
+		return
+	}
+	assert false, 'Protobuf without message/enum should be rejected'
+}
+
+fn test_protobuf_schema_validation_unmatched_braces() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Invalid: unmatched braces
+	invalid_schema := 'message User { int32 id = 1;'
+
+	registry.register('proto-bad-braces', invalid_schema, .protobuf) or {
+		assert err.str().contains('brace')
+		return
+	}
+	assert false, 'Unmatched braces should be rejected'
+}
+
+fn test_protobuf_schema_validation_invalid_field_number() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Invalid: reserved field number range
+	invalid_schema := 'message User { int32 id = 19000; }'
+
+	registry.register('proto-reserved-num', invalid_schema, .protobuf) or {
+		assert err.str().contains('reserved') || err.str().contains('19000')
+		return
+	}
+	assert false, 'Reserved field numbers should be rejected'
+}
+
+fn test_protobuf_schema_validation_enum() {
+	storage := new_mock_storage()
+	mut registry := new_registry(storage, RegistryConfig{})
+
+	// Valid enum
+	proto_schema := 'enum Status { UNKNOWN = 0; ACTIVE = 1; DELETED = 2; }'
+
+	schema_id := registry.register('proto-enum', proto_schema, .protobuf) or {
+		assert false, 'Valid Protobuf enum should be accepted: ${err}'
+		return
+	}
+
+	assert schema_id > 0
+}
+
+// ============================================================================
+// Protobuf Schema Compatibility Tests
+// ============================================================================
+
+fn test_protobuf_backward_compat_add_field() {
+	old_schema := 'message User { int32 id = 1; }'
+	new_schema := 'message User { int32 id = 1; string name = 2; }'
+
+	result := check_protobuf_backward_compatible(old_schema, new_schema)
+	assert result == true, 'Adding new field should be backward compatible'
+}
+
+fn test_protobuf_backward_compat_remove_field() {
+	old_schema := 'message User { int32 id = 1; string name = 2; }'
+	new_schema := 'message User { int32 id = 1; }'
+
+	result := check_protobuf_backward_compatible(old_schema, new_schema)
+	assert result == true, 'Removing field should be backward compatible'
+}
+
+fn test_protobuf_backward_compat_type_change_compatible() {
+	// int32 -> int64 is compatible (same wire type)
+	old_schema := 'message Data { int32 value = 1; }'
+	new_schema := 'message Data { int64 value = 1; }'
+
+	result := check_protobuf_backward_compatible(old_schema, new_schema)
+	assert result == true, 'int32 to int64 should be compatible'
+}
+
+fn test_protobuf_forward_compat_add_field() {
+	old_schema := 'message User { int32 id = 1; }'
+	new_schema := 'message User { int32 id = 1; string name = 2; }'
+
+	result := check_protobuf_forward_compatible(old_schema, new_schema)
+	assert result == true, 'Adding field should be forward compatible (old reader ignores)'
+}
+
+fn test_protobuf_reserved_field_check() {
+	old_schema := 'message User { int32 id = 1; string name = 2; reserved 3; }'
+	new_schema := 'message User { int32 id = 1; string name = 2; string email = 3; }'
+
+	result := check_protobuf_backward_compatible(old_schema, new_schema)
+	assert result == false, 'Reusing reserved field number should NOT be compatible'
+}
+
+fn test_protobuf_compatible_wire_types() {
+	// Test various wire type compatible changes
+
+	// sint32 to sint64 (both zigzag)
+	old1 := 'message Data { sint32 value = 1; }'
+	new1 := 'message Data { sint64 value = 1; }'
+	assert check_protobuf_backward_compatible(old1, new1) == true
+
+	// fixed32 to sfixed32 (both 32-bit wire type)
+	old2 := 'message Data { fixed32 value = 1; }'
+	new2 := 'message Data { sfixed32 value = 1; }'
+	assert check_protobuf_backward_compatible(old2, new2) == true
+
+	// string to bytes (both length-delimited)
+	old3 := 'message Data { string value = 1; }'
+	new3 := 'message Data { bytes value = 1; }'
+	assert check_protobuf_backward_compatible(old3, new3) == true
+}
+
+fn test_protobuf_schema_info_parsing() {
+	schema := 'syntax = "proto3";
+message User {
+  int32 id = 1;
+  string name = 2;
+  repeated string tags = 3;
+  reserved 10, 11, 12;
+  reserved "old_field";
+}'
+
+	info := parse_protobuf_schema_info(schema)
+
+	assert info.syntax == 'proto3'
+	assert info.message_name == 'User'
+	assert info.fields.len == 3
+
+	// Check field 1
+	field1 := info.fields[1] or {
+		assert false, 'Field 1 should exist'
+		return
+	}
+	assert field1.name == 'id'
+	assert field1.field_type == 'int32'
+	assert field1.is_optional == true // proto3 default
+
+	// Check field 3 (repeated)
+	field3 := info.fields[3] or {
+		assert false, 'Field 3 should exist'
+		return
+	}
+	assert field3.is_repeated == true
+
+	// Check reserved
+	assert 10 in info.reserved_nums
+	assert 11 in info.reserved_nums
+	assert 12 in info.reserved_nums
+	assert 'old_field' in info.reserved_names
+}
+
+// ============================================================================
+// Avro Schema Enhanced Validation Tests
+// ============================================================================
+
+fn test_avro_schema_validation_primitive_string() {
+	// Primitive type as string
+	validate_avro_schema_syntax('"string"') or {
+		assert false, 'Primitive string should be valid'
+		return
+	}
+}
+
+fn test_avro_schema_validation_invalid_primitive() {
+	validate_avro_schema_syntax('"invalid_type"') or {
+		assert err.str().contains('unknown primitive')
+		return
+	}
+	assert false, 'Invalid primitive should be rejected'
+}
+
+fn test_avro_schema_validation_record_missing_name() {
+	schema := '{"type":"record","fields":[]}'
+
+	validate_avro_schema_syntax(schema) or {
+		assert err.str().contains('name')
+		return
+	}
+	assert false, 'Record without name should be rejected'
+}
+
+fn test_avro_schema_validation_record_missing_fields() {
+	schema := '{"type":"record","name":"Test"}'
+
+	validate_avro_schema_syntax(schema) or {
+		assert err.str().contains('fields')
+		return
+	}
+	assert false, 'Record without fields should be rejected'
+}
+
+fn test_avro_schema_validation_enum_empty_symbols() {
+	schema := '{"type":"enum","name":"Status","symbols":[]}'
+
+	validate_avro_schema_syntax(schema) or {
+		assert err.str().contains('empty')
+		return
+	}
+	assert false, 'Enum with empty symbols should be rejected'
+}
+
+fn test_avro_schema_validation_array_missing_items() {
+	schema := '{"type":"array"}'
+
+	validate_avro_schema_syntax(schema) or {
+		assert err.str().contains('items')
+		return
+	}
+	assert false, 'Array without items should be rejected'
+}
+
+fn test_avro_schema_validation_map_missing_values() {
+	schema := '{"type":"map"}'
+
+	validate_avro_schema_syntax(schema) or {
+		assert err.str().contains('values')
+		return
+	}
+	assert false, 'Map without values should be rejected'
+}
+
+fn test_avro_schema_validation_fixed_missing_size() {
+	schema := '{"type":"fixed","name":"MD5"}'
+
+	validate_avro_schema_syntax(schema) or {
+		assert err.str().contains('size')
+		return
+	}
+	assert false, 'Fixed without size should be rejected'
+}

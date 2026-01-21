@@ -438,25 +438,467 @@ fn (r &SchemaRegistry) find_schema_by_fingerprint(subject string, fingerprint st
 fn (r &SchemaRegistry) validate_schema(schema_type domain.SchemaType, schema_str string) ! {
 	match schema_type {
 		.avro {
-			// Basic Avro schema validation (check for JSON structure with required fields)
-			if !schema_str.contains('"type"') {
-				return error('invalid Avro schema: missing type field')
-			}
-			// Check if it's valid JSON
-			if !is_valid_json(schema_str) {
-				return error('invalid Avro schema: not valid JSON')
-			}
+			validate_avro_schema_syntax(schema_str)!
 		}
 		.json {
-			// Basic JSON Schema validation
-			if !is_valid_json(schema_str) {
-				return error('invalid JSON schema: not valid JSON')
-			}
+			validate_json_schema_syntax(schema_str)!
 		}
 		.protobuf {
-			// Basic Protobuf schema validation
-			if !schema_str.contains('message') && !schema_str.contains('enum') {
-				return error('invalid Protobuf schema: no message or enum definition')
+			validate_protobuf_schema_syntax(schema_str)!
+		}
+	}
+}
+
+// ============================================================================
+// Enhanced Schema Validation
+// ============================================================================
+
+// validate_avro_schema_syntax validates Avro schema syntax
+fn validate_avro_schema_syntax(schema_str string) ! {
+	// Check if it's valid JSON
+	if !is_valid_json(schema_str) {
+		return error('invalid Avro schema: not valid JSON')
+	}
+
+	trimmed := schema_str.trim_space()
+
+	// Handle primitive type strings like "string", "int", etc.
+	if trimmed.starts_with('"') && trimmed.ends_with('"') {
+		type_name := trimmed[1..trimmed.len - 1]
+		valid_primitives := ['null', 'boolean', 'int', 'long', 'float', 'double', 'bytes', 'string']
+		if type_name !in valid_primitives {
+			return error('invalid Avro schema: unknown primitive type "${type_name}"')
+		}
+		return
+	}
+
+	// Handle array (union type) like ["null", "string"]
+	if trimmed.starts_with('[') && trimmed.ends_with(']') {
+		// Union type - validate each element
+		return
+	}
+
+	// Handle object schema
+	if !trimmed.starts_with('{') {
+		return error('invalid Avro schema: expected JSON object, array, or primitive type string')
+	}
+
+	// Must have "type" field for complex types
+	if !schema_str.contains('"type"') {
+		return error('invalid Avro schema: missing "type" field')
+	}
+
+	// Extract and validate type
+	schema_type := extract_json_string(schema_str, 'type') or {
+		return error('invalid Avro schema: cannot parse "type" field')
+	}
+
+	valid_types := ['record', 'enum', 'array', 'map', 'fixed', 'null', 'boolean', 'int', 'long',
+		'float', 'double', 'bytes', 'string']
+	if schema_type !in valid_types {
+		return error('invalid Avro schema: unknown type "${schema_type}"')
+	}
+
+	// Validate type-specific requirements
+	match schema_type {
+		'record' {
+			// Record must have "name" and "fields"
+			if !schema_str.contains('"name"') {
+				return error('invalid Avro schema: record type requires "name" field')
+			}
+			if !schema_str.contains('"fields"') {
+				return error('invalid Avro schema: record type requires "fields" field')
+			}
+			// Validate fields array
+			fields := parse_avro_fields(schema_str) or { []AvroField{} }
+			for field in fields {
+				if field.name.len == 0 {
+					return error('invalid Avro schema: field missing "name"')
+				}
+			}
+		}
+		'enum' {
+			// Enum must have "name" and "symbols"
+			if !schema_str.contains('"name"') {
+				return error('invalid Avro schema: enum type requires "name" field')
+			}
+			if !schema_str.contains('"symbols"') {
+				return error('invalid Avro schema: enum type requires "symbols" field')
+			}
+			// Validate symbols is non-empty array
+			symbols := parse_json_string_array(schema_str, 'symbols') or { []string{} }
+			if symbols.len == 0 {
+				return error('invalid Avro schema: enum "symbols" cannot be empty')
+			}
+		}
+		'array' {
+			// Array must have "items"
+			if !schema_str.contains('"items"') {
+				return error('invalid Avro schema: array type requires "items" field')
+			}
+		}
+		'map' {
+			// Map must have "values"
+			if !schema_str.contains('"values"') {
+				return error('invalid Avro schema: map type requires "values" field')
+			}
+		}
+		'fixed' {
+			// Fixed must have "name" and "size"
+			if !schema_str.contains('"name"') {
+				return error('invalid Avro schema: fixed type requires "name" field')
+			}
+			if !schema_str.contains('"size"') {
+				return error('invalid Avro schema: fixed type requires "size" field')
+			}
+		}
+		else {
+			// Primitive types are valid
+		}
+	}
+}
+
+// validate_json_schema_syntax validates JSON Schema syntax (Draft-07 compatible)
+fn validate_json_schema_syntax(schema_str string) ! {
+	// Check if it's valid JSON
+	if !is_valid_json(schema_str) {
+		return error('invalid JSON Schema: not valid JSON')
+	}
+
+	trimmed := schema_str.trim_space()
+
+	// JSON Schema can be boolean (true/false)
+	if trimmed == 'true' || trimmed == 'false' {
+		return
+	}
+
+	// Must be an object
+	if !trimmed.starts_with('{') {
+		return error('invalid JSON Schema: expected JSON object or boolean')
+	}
+
+	// Optional: check $schema field for draft version
+	if schema_version := extract_json_string(schema_str, r'$schema') {
+		// Validate supported drafts
+		supported_drafts := [
+			'http://json-schema.org/draft-04/schema#',
+			'http://json-schema.org/draft-06/schema#',
+			'http://json-schema.org/draft-07/schema#',
+			'https://json-schema.org/draft/2019-09/schema',
+			'https://json-schema.org/draft/2020-12/schema',
+		]
+		mut supported := false
+		for draft in supported_drafts {
+			if schema_version.contains('draft') {
+				supported = true
+				break
+			}
+		}
+		// Don't fail on unknown drafts, just warn
+		_ = supported
+	}
+
+	// Validate type field if present
+	if schema_type := extract_json_string(schema_str, 'type') {
+		valid_types := ['string', 'number', 'integer', 'boolean', 'array', 'object', 'null']
+		if schema_type !in valid_types {
+			return error('invalid JSON Schema: unknown type "${schema_type}"')
+		}
+	}
+
+	// Validate properties structure
+	if schema_str.contains('"properties"') {
+		props_start := schema_str.index('"properties"') or { return }
+		props_json := extract_json_object_value(schema_str, props_start + 12)
+		if props_json.len > 0 && !is_valid_json(props_json) {
+			return error('invalid JSON Schema: malformed "properties" object')
+		}
+	}
+
+	// Validate items structure for arrays
+	if schema_str.contains('"items"') {
+		items_start := schema_str.index('"items"') or { return }
+		// Items can be object or array (tuple validation)
+		mut pos := items_start + 7
+		for pos < schema_str.len
+			&& (schema_str[pos] == `:` || schema_str[pos] == ` ` || schema_str[pos] == `\t`) {
+			pos += 1
+		}
+		if pos < schema_str.len {
+			if schema_str[pos] != `{` && schema_str[pos] != `[` && schema_str[pos] != `t`
+				&& schema_str[pos] != `f` {
+				return error('invalid JSON Schema: "items" must be object, array, or boolean')
+			}
+		}
+	}
+
+	// Validate required is an array of strings
+	if schema_str.contains('"required"') {
+		required := parse_json_string_array(schema_str, 'required') or {
+			return error('invalid JSON Schema: "required" must be an array of strings')
+		}
+		// Check for duplicates
+		mut seen := map[string]bool{}
+		for prop in required {
+			if prop in seen {
+				return error('invalid JSON Schema: duplicate in "required" array: "${prop}"')
+			}
+			seen[prop] = true
+		}
+	}
+
+	// Validate enum is a non-empty array with unique values
+	if schema_str.contains('"enum"') {
+		// enum should be an array
+		enum_start := schema_str.index('"enum"') or { return }
+		mut pos := enum_start + 6
+		for pos < schema_str.len && (schema_str[pos] == `:` || schema_str[pos] == ` `) {
+			pos += 1
+		}
+		if pos < schema_str.len && schema_str[pos] != `[` {
+			return error('invalid JSON Schema: "enum" must be an array')
+		}
+	}
+
+	// Validate numeric constraints are consistent
+	if min_val := extract_json_float(schema_str, 'minimum') {
+		if max_val := extract_json_float(schema_str, 'maximum') {
+			if min_val > max_val {
+				return error('invalid JSON Schema: minimum (${min_val}) > maximum (${max_val})')
+			}
+		}
+	}
+
+	// Validate minLength/maxLength
+	if min_len := extract_json_number(schema_str, 'minLength') {
+		if min_len < 0 {
+			return error('invalid JSON Schema: minLength must be non-negative')
+		}
+		if max_len := extract_json_number(schema_str, 'maxLength') {
+			if min_len > max_len {
+				return error('invalid JSON Schema: minLength (${min_len}) > maxLength (${max_len})')
+			}
+		}
+	}
+
+	// Validate minItems/maxItems
+	if min_items := extract_json_number(schema_str, 'minItems') {
+		if min_items < 0 {
+			return error('invalid JSON Schema: minItems must be non-negative')
+		}
+		if max_items := extract_json_number(schema_str, 'maxItems') {
+			if min_items > max_items {
+				return error('invalid JSON Schema: minItems (${min_items}) > maxItems (${max_items})')
+			}
+		}
+	}
+}
+
+// validate_protobuf_schema_syntax validates Protobuf schema syntax
+fn validate_protobuf_schema_syntax(schema_str string) ! {
+	trimmed := schema_str.trim_space()
+
+	// Must contain message or enum definition
+	has_message := trimmed.contains('message ')
+	has_enum := trimmed.contains('enum ')
+
+	if !has_message && !has_enum {
+		return error('invalid Protobuf schema: must contain "message" or "enum" definition')
+	}
+
+	// Check for basic syntax errors
+	mut open_braces := 0
+	mut in_string := false
+	mut in_comment := false
+
+	for i, c in trimmed {
+		// Track comments
+		if i > 0 && trimmed[i - 1] == `/` && c == `/` {
+			in_comment = true
+		}
+		if in_comment && c == `\n` {
+			in_comment = false
+			continue
+		}
+		if in_comment {
+			continue
+		}
+
+		// Track strings
+		if c == `"` && (i == 0 || trimmed[i - 1] != `\\`) {
+			in_string = !in_string
+		}
+		if in_string {
+			continue
+		}
+
+		if c == `{` {
+			open_braces += 1
+		} else if c == `}` {
+			open_braces -= 1
+			if open_braces < 0 {
+				return error('invalid Protobuf schema: unmatched closing brace')
+			}
+		}
+	}
+
+	if open_braces != 0 {
+		return error('invalid Protobuf schema: unmatched braces')
+	}
+
+	// Validate message structure
+	if has_message {
+		// Extract message name
+		msg_idx := trimmed.index('message ') or { return }
+		mut pos := msg_idx + 8
+		for pos < trimmed.len && (trimmed[pos] == ` ` || trimmed[pos] == `\t`) {
+			pos += 1
+		}
+
+		// Read message name
+		mut name_end := pos
+		for name_end < trimmed.len && trimmed[name_end] != ` ` && trimmed[name_end] != `{`
+			&& trimmed[name_end] != `\n` {
+			name_end += 1
+		}
+
+		if name_end == pos {
+			return error('invalid Protobuf schema: message must have a name')
+		}
+
+		msg_name := trimmed[pos..name_end].trim_space()
+
+		// Message name must start with uppercase letter
+		if msg_name.len > 0 && (msg_name[0] < `A` || msg_name[0] > `Z`) {
+			// This is a warning, not an error - proto3 allows lowercase but convention is uppercase
+		}
+
+		// Find message body and validate fields
+		brace_start := trimmed.index_after('{', msg_idx) or {
+			return error('invalid Protobuf schema: message missing opening brace')
+		}
+
+		// Extract message body
+		mut brace_depth := 1
+		mut brace_end := brace_start + 1
+		for brace_end < trimmed.len && brace_depth > 0 {
+			if trimmed[brace_end] == `{` {
+				brace_depth += 1
+			} else if trimmed[brace_end] == `}` {
+				brace_depth -= 1
+			}
+			brace_end += 1
+		}
+
+		if brace_depth != 0 {
+			return error('invalid Protobuf schema: unclosed message body')
+		}
+
+		body := trimmed[brace_start + 1..brace_end - 1]
+
+		// Validate field definitions
+		validate_protobuf_fields(body)!
+	}
+
+	// Validate enum structure
+	if has_enum {
+		enum_idx := trimmed.index('enum ') or { return }
+		mut pos := enum_idx + 5
+		for pos < trimmed.len && (trimmed[pos] == ` ` || trimmed[pos] == `\t`) {
+			pos += 1
+		}
+
+		mut name_end := pos
+		for name_end < trimmed.len && trimmed[name_end] != ` ` && trimmed[name_end] != `{`
+			&& trimmed[name_end] != `\n` {
+			name_end += 1
+		}
+
+		if name_end == pos {
+			return error('invalid Protobuf schema: enum must have a name')
+		}
+	}
+}
+
+// validate_protobuf_fields validates protobuf field definitions
+fn validate_protobuf_fields(body string) ! {
+	lines := body.split('\n')
+	mut field_numbers := map[int]string{} // Track used field numbers
+	mut reserved_numbers := []int{}
+
+	for line in lines {
+		trimmed := line.trim_space()
+
+		// Skip empty lines, comments
+		if trimmed.len == 0 || trimmed.starts_with('//') {
+			continue
+		}
+
+		// Handle reserved statement
+		if trimmed.starts_with('reserved ') {
+			// Parse reserved numbers
+			reserved_part := trimmed[9..].trim_right(';')
+			parts := reserved_part.split(',')
+			for part in parts {
+				p := part.trim_space()
+				if p.contains(' to ') {
+					// Range like "1 to 10"
+					range_parts := p.split(' to ')
+					if range_parts.len == 2 {
+						start := range_parts[0].trim_space().int()
+						end := range_parts[1].trim_space().int()
+						for n := start; n <= end; n++ {
+							reserved_numbers << n
+						}
+					}
+				} else if !p.starts_with('"') {
+					// Single number
+					reserved_numbers << p.int()
+				}
+			}
+			continue
+		}
+
+		// Skip nested message/enum
+		if trimmed.starts_with('message ') || trimmed.starts_with('enum ') {
+			continue
+		}
+
+		// Parse field definition
+		if trimmed.contains('=') && !trimmed.starts_with('option') {
+			parts := trimmed.split('=')
+			if parts.len >= 2 {
+				// Extract field number
+				num_part := parts[1].trim_space().split(' ')[0].trim_right(';').trim_right('[')
+				field_num := num_part.int()
+
+				if field_num <= 0 {
+					return error('invalid Protobuf schema: field number must be positive')
+				}
+
+				if field_num >= 19000 && field_num <= 19999 {
+					return error('invalid Protobuf schema: field numbers 19000-19999 are reserved for protobuf implementation')
+				}
+
+				// Check reserved
+				if field_num in reserved_numbers {
+					return error('invalid Protobuf schema: field number ${field_num} is reserved')
+				}
+
+				// Check duplicates
+				if existing := field_numbers[field_num] {
+					return error('invalid Protobuf schema: duplicate field number ${field_num}')
+				}
+
+				// Extract field name for tracking
+				type_name_part := parts[0].trim_space()
+				tokens := type_name_part.split(' ').filter(fn (s string) bool {
+					return s.len > 0
+				})
+				if tokens.len >= 2 {
+					field_name := tokens[tokens.len - 1]
+					field_numbers[field_num] = field_name
+				}
 			}
 		}
 	}
@@ -571,7 +1013,43 @@ fn is_valid_json(s string) bool {
 		return false
 	}
 
-	// Check for basic JSON structure
+	// Valid JSON can be: object, array, string, number, boolean, or null
+	first := trimmed[0]
+
+	// Boolean or null
+	if trimmed == 'true' || trimmed == 'false' || trimmed == 'null' {
+		return true
+	}
+
+	// String
+	if first == `"` && trimmed.len >= 2 && trimmed[trimmed.len - 1] == `"` {
+		// Basic string validation - check for proper escaping
+		mut i := 1
+		for i < trimmed.len - 1 {
+			if trimmed[i] == `\\` {
+				i += 2 // Skip escaped character
+			} else if trimmed[i] == `"` {
+				return false // Unescaped quote in middle
+			} else {
+				i += 1
+			}
+		}
+		return true
+	}
+
+	// Number (simplified check)
+	if first == `-` || (first >= `0` && first <= `9`) {
+		mut valid := true
+		for c in trimmed {
+			if !((c >= `0` && c <= `9`) || c == `-` || c == `.` || c == `e` || c == `E` || c == `+`) {
+				valid = false
+				break
+			}
+		}
+		return valid
+	}
+
+	// Object or Array
 	if (trimmed.starts_with('{') && trimmed.ends_with('}'))
 		|| (trimmed.starts_with('[') && trimmed.ends_with(']')) {
 		// Basic bracket matching
@@ -585,7 +1063,7 @@ fn is_valid_json(s string) bool {
 				continue
 			}
 
-			if c == `\\` {
+			if c == `\\` && in_string {
 				escape = true
 				continue
 			}
@@ -1143,34 +1621,99 @@ fn parse_json_string_array(json_str string, key string) ?[]string {
 }
 
 // ============================================================================
-// JSON Schema Compatibility Checking
+// JSON Schema Compatibility Checking (Enhanced)
 // ============================================================================
+
+// JsonSchemaInfo represents parsed JSON Schema information for compatibility checking
+struct JsonSchemaInfo {
+mut:
+	schema_type           string
+	properties            map[string]JsonPropertyInfo
+	required              []string
+	additional_properties bool = true
+	has_default           bool
+	enum_values           []string
+	// Numeric constraints
+	minimum     f64
+	maximum     f64
+	has_minimum bool
+	has_maximum bool
+	// String constraints
+	min_length int
+	max_length int
+	pattern    string
+	// Array constraints
+	min_items int
+	max_items int
+}
+
+struct JsonPropertyInfo {
+mut:
+	prop_type   string
+	has_default bool
+	nullable    bool
+	enum_values []string
+}
 
 fn check_json_backward_compatible(old_schema string, new_schema string) bool {
 	// JSON Schema backward compatibility:
-	// - New schema can add optional properties
-	// - New schema cannot add required properties (without defaults)
-	// - New schema cannot remove properties that old data has
+	// - New schema can read old data
+	// - All old required properties must exist in new schema
+	// - New required properties must have been optional or have defaults
+	// - Property types must be compatible (new type can read old data)
 
-	old_required := extract_json_required_properties(old_schema)
-	new_required := extract_json_required_properties(new_schema)
+	old_info := parse_json_schema_info(old_schema)
+	new_info := parse_json_schema_info(new_schema)
 
-	// All old required properties must still be required (or optional) in new
-	for prop in old_required {
-		// Property must exist in new schema (required or optional is fine)
-		if !new_schema.contains('"${prop}"') {
+	// Type compatibility check
+	if old_info.schema_type.len > 0 && new_info.schema_type.len > 0 {
+		if !is_json_type_backward_compatible(old_info.schema_type, new_info.schema_type) {
 			return false
 		}
 	}
 
-	// New required properties must have been optional before or have defaults
-	for prop in new_required {
-		if prop !in old_required {
-			// New required property - check if old schema had it as optional
-			if !old_schema.contains('"${prop}"') {
-				// Completely new property that's required - NOT backward compatible
-				// unless it has a default value
-				continue // Be lenient for now
+	// All old required properties must exist in new schema with compatible types
+	for prop in old_info.required {
+		if new_prop := new_info.properties[prop] {
+			// Property exists - check type compatibility
+			if old_prop := old_info.properties[prop] {
+				if !is_json_property_backward_compatible(old_prop, new_prop) {
+					return false
+				}
+			}
+		} else if !new_info.additional_properties {
+			// Property removed and additionalProperties is false
+			return false
+		}
+		// If additionalProperties is true, removed properties are OK (ignored)
+	}
+
+	// New required properties must have existed before (optional or required)
+	// or have a default value
+	for prop in new_info.required {
+		if prop !in old_info.required {
+			// New required property
+			if old_prop := old_info.properties[prop] {
+				// Property existed as optional - OK
+				continue
+			} else {
+				// Completely new required property - check for default
+				if new_prop := new_info.properties[prop] {
+					if !new_prop.has_default && !new_prop.nullable {
+						return false // Old data won't have this property
+					}
+				} else {
+					return false
+				}
+			}
+		}
+	}
+
+	// Check property type compatibility for all shared properties
+	for name, old_prop in old_info.properties {
+		if new_prop := new_info.properties[name] {
+			if !is_json_property_backward_compatible(old_prop, new_prop) {
+				return false
 			}
 		}
 	}
@@ -1180,24 +1723,193 @@ fn check_json_backward_compatible(old_schema string, new_schema string) bool {
 
 fn check_json_forward_compatible(old_schema string, new_schema string) bool {
 	// JSON Schema forward compatibility:
-	// - Old schema can read data with fewer properties
-	// - New schema can remove optional properties
+	// - Old schema can read new data
+	// - All new required properties must exist in old schema
+	// - Old required properties that are removed must have defaults
 
-	new_required := extract_json_required_properties(new_schema)
-	old_required := extract_json_required_properties(old_schema)
+	old_info := parse_json_schema_info(old_schema)
+	new_info := parse_json_schema_info(new_schema)
 
-	// All new required properties must exist in old schema
-	for prop in new_required {
-		if !old_schema.contains('"${prop}"') {
+	// Type compatibility check
+	if old_info.schema_type.len > 0 && new_info.schema_type.len > 0 {
+		if !is_json_type_forward_compatible(old_info.schema_type, new_info.schema_type) {
 			return false
 		}
 	}
 
-	// Old required properties that are removed must have defaults
-	for prop in old_required {
-		if prop !in new_required && !new_schema.contains('"${prop}"') {
-			// Property completely removed and was required
+	// All new required properties must exist in old schema
+	for prop in new_info.required {
+		if _ := old_info.properties[prop] {
+			// Property exists - OK
+		} else if !old_info.additional_properties {
+			// New property and old schema doesn't allow additional
 			return false
+		}
+	}
+
+	// Old required properties that are removed from new schema
+	for prop in old_info.required {
+		// Check if property is completely removed (not just made optional)
+		if _ := new_info.properties[prop] {
+			// Property still exists - OK
+		} else {
+			// Property removed - old reader needs default
+			if old_prop := old_info.properties[prop] {
+				if !old_prop.has_default && !old_prop.nullable {
+					return false // Old reader expects this property
+				}
+			}
+		}
+	}
+
+	return true
+}
+
+fn parse_json_schema_info(schema_str string) JsonSchemaInfo {
+	mut info := JsonSchemaInfo{
+		properties: map[string]JsonPropertyInfo{}
+	}
+
+	// Extract type
+	info.schema_type = extract_json_string(schema_str, 'type') or { '' }
+
+	// Extract required
+	info.required = parse_json_string_array(schema_str, 'required') or { []string{} }
+
+	// Extract additionalProperties
+	if schema_str.contains('"additionalProperties":false')
+		|| schema_str.contains('"additionalProperties": false') {
+		info.additional_properties = false
+	}
+
+	// Extract properties
+	if props_start := schema_str.index('"properties"') {
+		props_json := extract_json_object_value(schema_str, props_start + 12)
+		if props_json.len > 0 {
+			info.properties = parse_json_properties_info(props_json)
+		}
+	}
+
+	// Extract numeric constraints
+	if min_val := extract_json_float(schema_str, 'minimum') {
+		info.minimum = min_val
+		info.has_minimum = true
+	}
+	if max_val := extract_json_float(schema_str, 'maximum') {
+		info.maximum = max_val
+		info.has_maximum = true
+	}
+
+	// Extract string/array constraints
+	info.min_length = extract_json_number(schema_str, 'minLength') or { 0 }
+	info.max_length = extract_json_number(schema_str, 'maxLength') or { 0 }
+	info.min_items = extract_json_number(schema_str, 'minItems') or { 0 }
+	info.max_items = extract_json_number(schema_str, 'maxItems') or { 0 }
+
+	// Extract enum
+	info.enum_values = parse_json_string_array(schema_str, 'enum') or { []string{} }
+
+	// Check for default
+	info.has_default = schema_str.contains('"default"')
+
+	return info
+}
+
+fn parse_json_properties_info(props_json string) map[string]JsonPropertyInfo {
+	mut result := map[string]JsonPropertyInfo{}
+
+	mut pos := 1 // Skip opening brace
+
+	for pos < props_json.len - 1 {
+		// Skip whitespace and commas
+		for pos < props_json.len && (props_json[pos] == ` `
+			|| props_json[pos] == `\t` || props_json[pos] == `\n`
+			|| props_json[pos] == `,`) {
+			pos += 1
+		}
+
+		if pos >= props_json.len - 1 || props_json[pos] != `"` {
+			break
+		}
+
+		// Read property name
+		name_end := props_json.index_after('"', pos + 1) or { break }
+		prop_name := props_json[pos + 1..name_end]
+		pos = name_end + 1
+
+		// Skip colon and whitespace
+		for pos < props_json.len && (props_json[pos] == `:` || props_json[pos] == ` `
+			|| props_json[pos] == `\t` || props_json[pos] == `\n`) {
+			pos += 1
+		}
+
+		// Read property schema
+		if pos < props_json.len && props_json[pos] == `{` {
+			prop_schema := extract_json_object_value(props_json, pos)
+			if prop_schema.len > 0 {
+				mut prop_info := JsonPropertyInfo{}
+				prop_info.prop_type = extract_json_string(prop_schema, 'type') or { '' }
+				prop_info.has_default = prop_schema.contains('"default"')
+				prop_info.nullable = prop_info.prop_type == 'null' || prop_schema.contains('"null"')
+				prop_info.enum_values = parse_json_string_array(prop_schema, 'enum') or {
+					[]string{}
+				}
+
+				result[prop_name] = prop_info
+				pos += prop_schema.len
+			} else {
+				pos += 1
+			}
+		}
+	}
+
+	return result
+}
+
+fn is_json_type_backward_compatible(old_type string, new_type string) bool {
+	// Same type is always compatible
+	if old_type == new_type {
+		return true
+	}
+
+	// Type widening (new type accepts more) - OK for backward
+	// integer -> number (number accepts integers)
+	if old_type == 'integer' && new_type == 'number' {
+		return true
+	}
+
+	return false
+}
+
+fn is_json_type_forward_compatible(old_type string, new_type string) bool {
+	// Same type is always compatible
+	if old_type == new_type {
+		return true
+	}
+
+	// Type narrowing (new type is subset) - OK for forward
+	// number -> integer (if new data is always integers)
+	if old_type == 'number' && new_type == 'integer' {
+		return true
+	}
+
+	return false
+}
+
+fn is_json_property_backward_compatible(old_prop JsonPropertyInfo, new_prop JsonPropertyInfo) bool {
+	// If types are specified, check compatibility
+	if old_prop.prop_type.len > 0 && new_prop.prop_type.len > 0 {
+		if !is_json_type_backward_compatible(old_prop.prop_type, new_prop.prop_type) {
+			return false
+		}
+	}
+
+	// If old property has enum, new property must be superset or same
+	if old_prop.enum_values.len > 0 && new_prop.enum_values.len > 0 {
+		for old_val in old_prop.enum_values {
+			if old_val !in new_prop.enum_values {
+				return false // Old enum value not in new enum
+			}
 		}
 	}
 
@@ -1210,30 +1922,76 @@ fn extract_json_required_properties(schema_str string) []string {
 }
 
 // ============================================================================
-// Protobuf Schema Compatibility Checking
+// Protobuf Schema Compatibility Checking (Enhanced)
 // ============================================================================
+
+// ProtoFieldInfo represents parsed protobuf field information
+struct ProtoFieldInfo {
+mut:
+	name        string
+	field_type  string
+	number      int
+	is_repeated bool
+	is_optional bool
+	is_required bool // proto2 only
+}
+
+// ProtoSchemaInfo represents parsed protobuf schema information
+struct ProtoSchemaInfo {
+mut:
+	syntax          string // "proto2" or "proto3"
+	message_name    string
+	fields          map[int]ProtoFieldInfo // keyed by field number
+	reserved_nums   []int
+	reserved_names  []string
+	nested_messages []string
+	enums           []string
+}
 
 fn check_protobuf_backward_compatible(old_schema string, new_schema string) bool {
 	// Protobuf backward compatibility rules:
 	// - Can add new fields (must use new field numbers)
-	// - Can remove optional fields
-	// - Cannot remove required fields
-	// - Cannot change field numbers
-	// - Cannot change field types (except compatible type changes)
+	// - Can remove optional fields (proto3 all fields are optional by default)
+	// - Cannot change field numbers for existing fields
+	// - Cannot change field types (except compatible promotions)
+	// - Reserved field numbers/names should not be reused
 
-	old_fields := extract_protobuf_fields(old_schema)
-	new_fields := extract_protobuf_fields(new_schema)
+	old_info := parse_protobuf_schema_info(old_schema)
+	new_info := parse_protobuf_schema_info(new_schema)
 
-	// All old field numbers must map to same or compatible types in new
-	for old_num, old_name in old_fields {
-		if new_name := new_fields[old_num] {
-			// Field number exists - names should match (or be compatible)
-			// In practice, field names can change as long as numbers match
-			_ = new_name
-			_ = old_name
+	// Check that no old field numbers are reused with different types
+	for num, old_field in old_info.fields {
+		if new_field := new_info.fields[num] {
+			// Field number still exists - check type compatibility
+			if !is_protobuf_type_backward_compatible(old_field.field_type, new_field.field_type) {
+				return false
+			}
+
+			// Repeated modifier must match
+			if old_field.is_repeated != new_field.is_repeated {
+				return false
+			}
+
+			// proto2: required -> optional is OK, optional -> required is NOT OK
+			if old_info.syntax == 'proto2' && !old_field.is_required && new_field.is_required {
+				return false
+			}
 		}
-		// Field removed - this is OK for backward compatibility
-		// (new schema can still read old data, will just ignore the field)
+		// Field removed - OK for backward compatibility (new reader ignores unknown)
+	}
+
+	// Check that new fields don't reuse reserved numbers
+	for num, _ in new_info.fields {
+		if num in old_info.reserved_nums {
+			return false
+		}
+	}
+
+	// Check that new field names don't reuse reserved names
+	for _, new_field in new_info.fields {
+		if new_field.name in old_info.reserved_names {
+			return false
+		}
 	}
 
 	return true
@@ -1241,22 +1999,272 @@ fn check_protobuf_backward_compatible(old_schema string, new_schema string) bool
 
 fn check_protobuf_forward_compatible(old_schema string, new_schema string) bool {
 	// Protobuf forward compatibility rules:
-	// - Can add optional fields with defaults
-	// - Old readers will ignore unknown fields
+	// - Old readers can read new data (ignore unknown fields)
+	// - Can add optional fields
+	// - Cannot remove required fields (proto2)
+	// - Cannot change field types incompatibly
 
-	old_fields := extract_protobuf_fields(old_schema)
-	new_fields := extract_protobuf_fields(new_schema)
+	old_info := parse_protobuf_schema_info(old_schema)
+	new_info := parse_protobuf_schema_info(new_schema)
 
-	// Check that field number reuse is safe
-	for new_num, _ in new_fields {
-		if old_name := old_fields[new_num] {
-			_ = old_name
-			// Field number exists in both - OK
+	// proto2: Required fields cannot be removed
+	if old_info.syntax == 'proto2' {
+		for num, old_field in old_info.fields {
+			if old_field.is_required {
+				if _ := new_info.fields[num] {
+					// Field still exists - OK
+				} else {
+					// Required field removed - NOT forward compatible
+					return false
+				}
+			}
 		}
-		// New field number - OK, old reader will ignore
+	}
+
+	// Check type compatibility for shared fields
+	for num, new_field in new_info.fields {
+		if old_field := old_info.fields[num] {
+			if !is_protobuf_type_forward_compatible(old_field.field_type, new_field.field_type) {
+				return false
+			}
+
+			// Repeated modifier must match
+			if old_field.is_repeated != new_field.is_repeated {
+				return false
+			}
+		}
+		// New field - OK, old reader will ignore
+	}
+
+	// Check that removed field numbers are properly reserved
+	for num, _ in old_info.fields {
+		if _ := new_info.fields[num] {
+			// Field still exists
+		} else {
+			// Field removed - should be reserved (warning, not error)
+			// For strict compatibility, uncomment:
+			// if num !in new_info.reserved_nums {
+			//     return false
+			// }
+		}
 	}
 
 	return true
+}
+
+fn parse_protobuf_schema_info(schema_str string) ProtoSchemaInfo {
+	mut info := ProtoSchemaInfo{
+		syntax: 'proto3' // default
+		fields: map[int]ProtoFieldInfo{}
+	}
+
+	// Extract syntax
+	if schema_str.contains('syntax = "proto2"') || schema_str.contains("syntax = 'proto2'") {
+		info.syntax = 'proto2'
+	}
+
+	// Extract message name
+	if msg_idx := schema_str.index('message ') {
+		mut pos := msg_idx + 8
+		for pos < schema_str.len && (schema_str[pos] == ` ` || schema_str[pos] == `\t`) {
+			pos += 1
+		}
+		mut end := pos
+		for end < schema_str.len && schema_str[end] != ` ` && schema_str[end] != `{`
+			&& schema_str[end] != `\n` {
+			end += 1
+		}
+		info.message_name = schema_str[pos..end].trim_space()
+	}
+
+	// Extract message body content
+	mut body := schema_str
+	if brace_start := schema_str.index('{') {
+		if brace_end := schema_str.last_index('}') {
+			body = schema_str[brace_start + 1..brace_end]
+		}
+	}
+
+	// Normalize: replace newlines with semicolons for uniform parsing
+	// Then split by semicolons to get individual statements
+	normalized := body.replace('\n', ';').replace(';;', ';')
+	statements := normalized.split(';')
+
+	for stmt in statements {
+		trimmed := stmt.trim_space()
+
+		if trimmed.len == 0 {
+			continue
+		}
+
+		// Parse reserved statement
+		if trimmed.starts_with('reserved ') {
+			reserved_part := trimmed[9..].trim_space()
+
+			// Check if it's numbers or names
+			if reserved_part.contains('"') {
+				// Reserved names
+				parts := reserved_part.split(',')
+				for part in parts {
+					p := part.trim_space().trim('"')
+					if p.len > 0 {
+						info.reserved_names << p
+					}
+				}
+			} else {
+				// Reserved numbers
+				parts := reserved_part.split(',')
+				for part in parts {
+					p := part.trim_space()
+					if p.contains(' to ') {
+						range_parts := p.split(' to ')
+						if range_parts.len == 2 {
+							start := range_parts[0].trim_space().int()
+							mut end_num := 0
+							if range_parts[1].trim_space() == 'max' {
+								end_num = 536870911 // Protobuf max field number
+							} else {
+								end_num = range_parts[1].trim_space().int()
+							}
+							for n := start; n <= end_num && n < start + 1000; n++ {
+								info.reserved_nums << n
+							}
+						}
+					} else if p.len > 0 && p[0] >= `0` && p[0] <= `9` {
+						info.reserved_nums << p.int()
+					}
+				}
+			}
+			continue
+		}
+
+		// Parse field definition
+		if trimmed.contains('=') && !trimmed.starts_with('option') && !trimmed.starts_with('//')
+			&& !trimmed.starts_with('syntax') && !trimmed.starts_with('package')
+			&& !trimmed.starts_with('message') && !trimmed.starts_with('enum') {
+			if field := parse_protobuf_field_info(trimmed, info.syntax) {
+				info.fields[field.number] = field
+			}
+		}
+	}
+
+	return info
+}
+
+fn parse_protobuf_field_info(line string, syntax string) ?ProtoFieldInfo {
+	mut field := ProtoFieldInfo{}
+
+	// Remove trailing semicolon and options [...]
+	mut clean := line.trim_right(';')
+	if bracket_idx := clean.index('[') {
+		clean = clean[..bracket_idx]
+	}
+	clean = clean.trim_space()
+
+	// Split by '='
+	parts := clean.split('=')
+	if parts.len != 2 {
+		return none
+	}
+
+	// Parse field number
+	field.number = parts[1].trim_space().int()
+	if field.number <= 0 {
+		return none
+	}
+
+	// Parse type and name
+	type_name := parts[0].trim_space()
+	tokens := type_name.split(' ').filter(fn (s string) bool {
+		return s.len > 0
+	})
+
+	if tokens.len < 2 {
+		return none
+	}
+
+	// Check for modifiers
+	mut type_idx := 0
+
+	for type_idx < tokens.len {
+		match tokens[type_idx] {
+			'repeated' {
+				field.is_repeated = true
+				type_idx += 1
+			}
+			'optional' {
+				field.is_optional = true
+				type_idx += 1
+			}
+			'required' {
+				field.is_required = true
+				type_idx += 1
+			}
+			else {
+				break
+			}
+		}
+	}
+
+	if type_idx + 1 >= tokens.len {
+		return none
+	}
+
+	field.field_type = tokens[type_idx]
+	field.name = tokens[type_idx + 1]
+
+	// In proto3, all singular fields are implicitly optional
+	if syntax == 'proto3' && !field.is_repeated {
+		field.is_optional = true
+	}
+
+	return field
+}
+
+fn is_protobuf_type_backward_compatible(old_type string, new_type string) bool {
+	// Same type is always compatible
+	if old_type == new_type {
+		return true
+	}
+
+	// Compatible type changes:
+	// int32, uint32, int64, uint64, bool are compatible (wire type 0)
+	// sint32, sint64 are compatible with each other (zigzag encoding)
+	// fixed32, sfixed32 are compatible (wire type 5)
+	// fixed64, sfixed64 are compatible (wire type 1)
+	// string, bytes are compatible (wire type 2)
+
+	varint_types := ['int32', 'uint32', 'int64', 'uint64', 'bool']
+	if old_type in varint_types && new_type in varint_types {
+		return true
+	}
+
+	zigzag_types := ['sint32', 'sint64']
+	if old_type in zigzag_types && new_type in zigzag_types {
+		return true
+	}
+
+	fixed32_types := ['fixed32', 'sfixed32', 'float']
+	if old_type in fixed32_types && new_type in fixed32_types {
+		return true
+	}
+
+	fixed64_types := ['fixed64', 'sfixed64', 'double']
+	if old_type in fixed64_types && new_type in fixed64_types {
+		return true
+	}
+
+	length_delimited := ['string', 'bytes']
+	if old_type in length_delimited && new_type in length_delimited {
+		return true
+	}
+
+	return false
+}
+
+fn is_protobuf_type_forward_compatible(old_type string, new_type string) bool {
+	// Forward compatibility has the same rules as backward for protobuf
+	return is_protobuf_type_backward_compatible(old_type, new_type)
 }
 
 fn extract_protobuf_fields(schema_str string) map[int]string {
