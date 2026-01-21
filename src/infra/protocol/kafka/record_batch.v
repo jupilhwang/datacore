@@ -5,6 +5,59 @@ module kafka
 import domain
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+// varint_size calculates the encoded size of a varint
+fn varint_size(val i64) int {
+	mut v := u64(if val < 0 { u64(-val) * 2 - 1 } else { u64(val) * 2 })
+	mut size := 0
+	for {
+		size++
+		v >>= 7
+		if v == 0 {
+			break
+		}
+	}
+	return size
+}
+
+// calculate_record_size calculates the size of an encoded record without actually encoding it
+fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.Record) int {
+	mut size := 0
+	
+	// attributes (1 byte)
+	size += 1
+	
+	// timestamp_delta (varint)
+	size += varint_size(timestamp_delta)
+	
+	// offset_delta (varint)
+	size += varint_size(i64(offset_delta))
+	
+	// key length + key
+	if record.key.len > 0 {
+		size += varint_size(i64(record.key.len))
+		size += record.key.len
+	} else {
+		size += varint_size(-1)
+	}
+	
+	// value length + value
+	if record.value.len > 0 {
+		size += varint_size(i64(record.value.len))
+		size += record.value.len
+	} else {
+		size += varint_size(-1)
+	}
+	
+	// headers count (varint, 0 for no headers)
+	size += varint_size(0)
+	
+	return size
+}
+
+// ============================================================================
 // RecordBatch Encoding
 // ============================================================================
 
@@ -88,37 +141,10 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 		offset_delta := i32(i)
 		timestamp_delta := record.timestamp.unix_milli() - first_timestamp
 
-		// Calculate record size first
-		mut record_writer := new_writer()
-		record_writer.write_varint(i64(0)) // length placeholder
-		record_writer.write_i8(0) // attributes
-		record_writer.write_varint(timestamp_delta)
-		record_writer.write_varint(i64(offset_delta))
+		// Calculate record size without full encoding
+		record_size := calculate_record_size(timestamp_delta, offset_delta, record)
 
-		// Key
-		if record.key.len > 0 {
-			record_writer.write_varint(i64(record.key.len))
-			record_writer.write_raw(record.key)
-		} else {
-			record_writer.write_varint(-1)
-		}
-
-		// Value
-		if record.value.len > 0 {
-			record_writer.write_varint(i64(record.value.len))
-			record_writer.write_raw(record.value)
-		} else {
-			record_writer.write_varint(-1)
-		}
-
-		// Headers (none)
-		record_writer.write_varint(0)
-
-		// Calculate actual record size (without length field)
-		record_data := record_writer.bytes()
-		record_size := record_data.len - 1 // -1 for the placeholder
-
-		// Write actual record with correct length
+		// Write record once
 		writer.write_varint(i64(record_size))
 		writer.write_i8(0) // attributes
 		writer.write_varint(timestamp_delta)

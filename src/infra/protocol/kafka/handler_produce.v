@@ -200,6 +200,13 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
 				}
 
+				// Build partition lookup map for O(1) access
+				mut partition_set := map[string]bool{}
+				for tp in meta.topic_partitions {
+					key := '${tp.topic}:${tp.partition}'
+					partition_set[key] = true
+				}
+
 				for t in req.topic_data {
 					topic_name := if t.name.len > 0 {
 						t.name
@@ -211,15 +218,10 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						}
 					}
 
+					// O(1) lookup instead of O(n) nested loop
 					for p in t.partition_data {
-						mut found := false
-						for tp in meta.topic_partitions {
-							if tp.topic == topic_name && tp.partition == int(p.index) {
-								found = true
-								break
-							}
-						}
-						if !found {
+						key := '${topic_name}:${int(p.index)}'
+						if key !in partition_set {
 							return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
 						}
 					}
