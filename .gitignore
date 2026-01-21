@@ -6,11 +6,13 @@
 *.exe
 *.out
 /datacore
+/src/src
 
 # Build outputs
 /build/
 /dist/
 /target/
+/bin/
 
 # IDE
 .idea/

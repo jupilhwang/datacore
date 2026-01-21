@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.26.0] - 2026-01-22
+
+### Added
+- **Config Hot-Reload** - 런타임 설정 리로드 기능
+  - `ConfigWatcher` - 파일 변경 감지 및 자동 리로드
+  - 리로드 가능 설정: `max_connections`, `timeout`, `logging.level` 등
+  - 리로드 불가 설정 경고: `port`, `storage.engine` 등
+  - 콜백 메커니즘으로 컴포넌트 알림
+  - Thread-safe 구현 (mutex 기반)
+
+- **Kubernetes Health Endpoints** - K8s 호환 헬스 체크
+  - `GET /health`, `/healthz` - 상세 헬스 체크 (storage 상태 포함)
+  - `GET /ready`, `/readyz` - Readiness probe
+  - `GET /live`, `/livez` - Liveness probe
+  - `GET /metrics` - Prometheus 포맷 메트릭
+
+- **Build System Improvements**
+  - `make test-bench` - 벤치마크 테스트 타겟 추가
+  - `make test-bench-io` - IO 벤치마크 타겟 추가
+
+### Fixed
+- **ConfigWatcher Data Race** - 동시성 버그 수정
+  - `running` 플래그 mutex 보호
+  - `get_config()` thread-safe 구현
+  - `last_modified` 필드 보호
+
+- **PostgreSQL Adapter** - `mut` 키워드 누락 수정
+
+### Changed
+- `detect_config_changes()` 함수가 문서화된 설정 목록과 일치하도록 업데이트
+
 ## [0.25.0] - 2026-01-22
 
 ### Added
