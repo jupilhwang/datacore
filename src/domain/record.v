@@ -10,6 +10,22 @@ pub:
 	value     []u8
 	headers   map[string][]u8
 	timestamp time.Time
+	// Transaction control record metadata
+	// When is_control_record is true, this record is a transaction marker (commit/abort)
+	is_control_record bool
+	// For control records: true = COMMIT, false = ABORT
+	control_type ControlRecordType = .none
+	// Producer ID for transactional records
+	producer_id i64 = -1
+	// Producer epoch for transactional records
+	producer_epoch i16 = -1
+}
+
+// ControlRecordType represents the type of control record
+pub enum ControlRecordType {
+	none   = 0 // Not a control record
+	abort  = 1 // Transaction abort marker
+	commit = 2 // Transaction commit marker
 }
 
 // RecordBatch represents a batch of records

@@ -174,6 +174,9 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		.end_txn {
 			h.handle_end_txn(req.body, version)!
 		}
+		.write_txn_markers {
+			h.handle_write_txn_markers(req.body, version)!
+		}
 		.txn_offset_commit {
 			h.handle_txn_offset_commit(req.body, version)!
 		}

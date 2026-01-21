@@ -99,6 +99,62 @@ pub fn (r EndTxnResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
+// encode encodes WriteTxnMarkersResponse (API Key 27)
+pub fn (r WriteTxnMarkersResponse) encode(version i16) []u8 {
+	// v1 is always flexible
+	is_flexible := version >= 1
+	mut writer := new_writer()
+
+	if is_flexible {
+		writer.write_compact_array_len(r.markers.len)
+	} else {
+		writer.write_array_len(r.markers.len)
+	}
+
+	for marker in r.markers {
+		writer.write_i64(marker.producer_id)
+
+		if is_flexible {
+			writer.write_compact_array_len(marker.topics.len)
+		} else {
+			writer.write_array_len(marker.topics.len)
+		}
+
+		for t in marker.topics {
+			if is_flexible {
+				writer.write_compact_string(t.name)
+				writer.write_compact_array_len(t.partitions.len)
+			} else {
+				writer.write_string(t.name)
+				writer.write_array_len(t.partitions.len)
+			}
+
+			for p in t.partitions {
+				writer.write_i32(p.partition_index)
+				writer.write_i16(p.error_code)
+
+				if is_flexible {
+					writer.write_tagged_fields()
+				}
+			}
+
+			if is_flexible {
+				writer.write_tagged_fields()
+			}
+		}
+
+		if is_flexible {
+			writer.write_tagged_fields()
+		}
+	}
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}
+
 // encode encodes TxnOffsetCommitResponse (API Key 28)
 pub fn (r TxnOffsetCommitResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3

@@ -103,6 +103,57 @@ fn parse_end_txn_request(mut reader BinaryReader, version i16, is_flexible bool)
 	}
 }
 
+// parse_write_txn_markers_request parses WriteTxnMarkers request (API Key 27)
+fn parse_write_txn_markers_request(mut reader BinaryReader, version i16, is_flexible bool) !WriteTxnMarkersRequest {
+	marker_count := reader.read_flex_array_len(is_flexible)!
+
+	mut markers := []WriteTxnMarker{}
+	for _ in 0 .. marker_count {
+		producer_id := reader.read_i64()!
+		producer_epoch := reader.read_i16()!
+		transaction_result := reader.read_i8()! != 0
+
+		topic_count := reader.read_flex_array_len(is_flexible)!
+
+		mut topics := []WriteTxnMarkerTopic{}
+		for _ in 0 .. topic_count {
+			name := reader.read_flex_string(is_flexible)!
+
+			partition_count := reader.read_flex_array_len(is_flexible)!
+
+			mut partition_indexes := []i32{}
+			for _ in 0 .. partition_count {
+				partition_indexes << reader.read_i32()!
+			}
+
+			topics << WriteTxnMarkerTopic{
+				name:              name
+				partition_indexes: partition_indexes
+			}
+
+			reader.skip_flex_tagged_fields(is_flexible)!
+		}
+
+		coordinator_epoch := reader.read_i32()!
+
+		markers << WriteTxnMarker{
+			producer_id:        producer_id
+			producer_epoch:     producer_epoch
+			transaction_result: transaction_result
+			topics:             topics
+			coordinator_epoch:  coordinator_epoch
+		}
+
+		reader.skip_flex_tagged_fields(is_flexible)!
+	}
+
+	reader.skip_flex_tagged_fields(is_flexible)!
+
+	return WriteTxnMarkersRequest{
+		markers: markers
+	}
+}
+
 // parse_txn_offset_commit_request parses TxnOffsetCommit request (API Key 28)
 fn parse_txn_offset_commit_request(mut reader BinaryReader, version i16, is_flexible bool) !TxnOffsetCommitRequest {
 	transactional_id := reader.read_flex_string(is_flexible)!

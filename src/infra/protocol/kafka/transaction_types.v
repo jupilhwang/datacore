@@ -145,3 +145,58 @@ pub:
 	partition_index i32
 	error_code      i16
 }
+
+// ============================================================================
+// WriteTxnMarkers (API Key 27)
+// ============================================================================
+
+// WriteTxnMarkersRequest is sent by the transaction coordinator to write txn markers
+// to partition leaders. This is an inter-broker communication API.
+pub struct WriteTxnMarkersRequest {
+pub:
+	markers []WriteTxnMarker
+}
+
+// WriteTxnMarker represents a single transaction marker to be written
+pub struct WriteTxnMarker {
+pub:
+	producer_id        i64                   // The current producer ID
+	producer_epoch     i16                   // The current epoch associated with the producer ID
+	transaction_result bool                  // The result of the transaction (false=ABORT, true=COMMIT)
+	topics             []WriteTxnMarkerTopic // Topics to write markers for
+	coordinator_epoch  i32                   // Epoch of the transaction coordinator
+}
+
+// WriteTxnMarkerTopic represents a topic in the WriteTxnMarkers request
+pub struct WriteTxnMarkerTopic {
+pub:
+	name              string // The topic name
+	partition_indexes []i32  // The partition indexes to write markers for
+}
+
+// WriteTxnMarkersResponse is the response for WriteTxnMarkers
+pub struct WriteTxnMarkersResponse {
+pub:
+	markers []WriteTxnMarkerResult
+}
+
+// WriteTxnMarkerResult represents the result for a single producer ID
+pub struct WriteTxnMarkerResult {
+pub:
+	producer_id i64                         // The current producer ID
+	topics      []WriteTxnMarkerTopicResult // Results by topic
+}
+
+// WriteTxnMarkerTopicResult represents the result for a topic
+pub struct WriteTxnMarkerTopicResult {
+pub:
+	name       string // The topic name
+	partitions []WriteTxnMarkerPartitionResult // Results by partition
+}
+
+// WriteTxnMarkerPartitionResult represents the result for a partition
+pub struct WriteTxnMarkerPartitionResult {
+pub:
+	partition_index i32 // The partition index
+	error_code      i16 // The error code, or 0 if there was no error
+}

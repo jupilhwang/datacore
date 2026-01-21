@@ -298,3 +298,217 @@ fn test_handler_end_txn_commit() {
 	// Skip tagged fields
 	reader.skip_tagged_fields()!
 }
+
+fn test_handler_write_txn_markers() {
+	// Create a handler with a mock storage that supports topics
+	mut handler := create_test_handler_with_write_txn_markers_storage()
+
+	// WriteTxnMarkers (API Key 27) v1 is flexible
+	mut request := kafka.new_writer()
+	request.write_i32(0) // size placeholder
+	request.write_i16(27) // WriteTxnMarkers
+	request.write_i16(1) // version 1 (flexible)
+	request.write_i32(1) // correlation_id
+	request.write_nullable_string('test-client')
+	request.write_tagged_fields() // Header tagged fields (v2 header)
+
+	// Body: markers array
+	request.write_compact_array_len(1) // 1 marker
+
+	// Marker 1:
+	request.write_i64(12345) // producer_id
+	request.write_i16(0) // producer_epoch
+	request.write_i8(1) // transaction_result: true (COMMIT)
+
+	// topics array
+	request.write_compact_array_len(1)
+	request.write_compact_string('test-topic')
+	// partition_indexes array
+	request.write_compact_array_len(1)
+	request.write_i32(0) // partition 0
+	request.write_tagged_fields() // topic tagged fields
+
+	request.write_i32(1) // coordinator_epoch
+	request.write_tagged_fields() // marker tagged fields
+
+	request.write_tagged_fields() // request tagged fields
+
+	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+
+	mut reader := kafka.new_reader(response)
+	_ = reader.read_i32()! // size
+	_ = reader.read_i32()! // correlation_id
+	_ = reader.read_uvarint()! // tag_buffer (header v1)
+
+	// Body: markers array
+	markers_count := reader.read_compact_array_len()!
+	assert markers_count == 1
+
+	// Marker result
+	producer_id := reader.read_i64()!
+	assert producer_id == 12345
+
+	// topics array
+	topics_count := reader.read_compact_array_len()!
+	assert topics_count == 1
+
+	topic_name := reader.read_compact_string()!
+	assert topic_name == 'test-topic'
+
+	// partitions array
+	partitions_count := reader.read_compact_array_len()!
+	assert partitions_count == 1
+
+	partition_index := reader.read_i32()!
+	assert partition_index == 0
+
+	error_code := reader.read_i16()!
+	assert error_code == 0 // Success
+
+	// Skip tagged fields
+	reader.skip_tagged_fields()! // partition
+	reader.skip_tagged_fields()! // topic
+	reader.skip_tagged_fields()! // marker
+	reader.skip_tagged_fields()! // response
+}
+
+fn test_write_txn_markers_unknown_topic() {
+	// Use the original mock storage that returns topic not found
+	mut handler := create_test_handler_with_transaction()
+
+	mut request := kafka.new_writer()
+	request.write_i32(0)
+	request.write_i16(27)
+	request.write_i16(1)
+	request.write_i32(1)
+	request.write_nullable_string('test-client')
+	request.write_tagged_fields()
+
+	request.write_compact_array_len(1)
+	request.write_i64(12345)
+	request.write_i16(0)
+	request.write_i8(1)
+	request.write_compact_array_len(1)
+	request.write_compact_string('nonexistent-topic')
+	request.write_compact_array_len(1)
+	request.write_i32(0)
+	request.write_tagged_fields()
+	request.write_i32(1)
+	request.write_tagged_fields()
+	request.write_tagged_fields()
+
+	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+
+	mut reader := kafka.new_reader(response)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_uvarint()!
+
+	markers_count := reader.read_compact_array_len()!
+	assert markers_count == 1
+
+	producer_id := reader.read_i64()!
+	assert producer_id == 12345
+
+	topics_count := reader.read_compact_array_len()!
+	assert topics_count == 1
+
+	topic_name := reader.read_compact_string()!
+	assert topic_name == 'nonexistent-topic'
+
+	partitions_count := reader.read_compact_array_len()!
+	assert partitions_count == 1
+
+	partition_index := reader.read_i32()!
+	assert partition_index == 0
+
+	error_code := reader.read_i16()!
+	assert error_code == 3 // UNKNOWN_TOPIC_OR_PARTITION
+}
+
+// Helper: Create handler with WriteTxnMarkers-capable mock storage
+fn create_test_handler_with_write_txn_markers_storage() kafka.Handler {
+	storage := WriteTxnMarkersMockStorage{}
+	txn_store := infra_txn.new_memory_transaction_store()
+	txn_coordinator := transaction.new_transaction_coordinator(txn_store)
+	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
+		none, *txn_coordinator)
+}
+
+// Mock storage that supports topics for WriteTxnMarkers tests
+struct WriteTxnMarkersMockStorage {}
+
+fn (m WriteTxnMarkersMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+	return domain.TopicMetadata{}
+}
+
+fn (m WriteTxnMarkersMockStorage) delete_topic(name string) ! {}
+
+fn (m WriteTxnMarkersMockStorage) list_topics() ![]domain.TopicMetadata {
+	return []domain.TopicMetadata{}
+}
+
+fn (m WriteTxnMarkersMockStorage) get_topic(name string) !domain.TopicMetadata {
+	if name == 'test-topic' {
+		return domain.TopicMetadata{
+			name:            'test-topic'
+			partition_count: 3
+		}
+	}
+	return error('topic not found')
+}
+
+fn (m WriteTxnMarkersMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+	return error('topic not found')
+}
+
+fn (m WriteTxnMarkersMockStorage) add_partitions(name string, new_count int) ! {}
+
+fn (m WriteTxnMarkersMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+	return domain.AppendResult{
+		base_offset:      0
+		log_append_time:  0
+		log_start_offset: 0
+		record_count:     records.len
+	}
+}
+
+fn (m WriteTxnMarkersMockStorage) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	return domain.FetchResult{}
+}
+
+fn (m WriteTxnMarkersMockStorage) delete_records(topic string, partition int, before_offset i64) ! {}
+
+fn (m WriteTxnMarkersMockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo {
+	return domain.PartitionInfo{}
+}
+
+fn (m WriteTxnMarkersMockStorage) save_group(group domain.ConsumerGroup) ! {}
+
+fn (m WriteTxnMarkersMockStorage) load_group(group_id string) !domain.ConsumerGroup {
+	return error('group not found')
+}
+
+fn (m WriteTxnMarkersMockStorage) delete_group(group_id string) ! {}
+
+fn (m WriteTxnMarkersMockStorage) list_groups() ![]domain.GroupInfo {
+	return []domain.GroupInfo{}
+}
+
+fn (m WriteTxnMarkersMockStorage) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {}
+
+fn (m WriteTxnMarkersMockStorage) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+	return []domain.OffsetFetchResult{}
+}
+
+fn (m WriteTxnMarkersMockStorage) health_check() !port.HealthStatus {
+	return .healthy
+}
+
+fn (m &WriteTxnMarkersMockStorage) get_storage_capability() domain.StorageCapability {
+	return domain.memory_storage_capability
+}
+
+fn (m &WriteTxnMarkersMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
+	return none
+}

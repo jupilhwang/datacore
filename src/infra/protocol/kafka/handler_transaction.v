@@ -1,10 +1,11 @@
 // Kafka Protocol - Transaction Handlers
 // Handler methods for transaction-related operations:
-// InitProducerId, AddPartitionsToTxn, AddOffsetsToTxn, EndTxn, TxnOffsetCommit
+// InitProducerId, AddPartitionsToTxn, AddOffsetsToTxn, EndTxn, TxnOffsetCommit, WriteTxnMarkers
 module kafka
 
 import domain
 import rand
+import time
 
 // Handle InitProducerId (API Key 22)
 // Returns a producer ID for idempotent/transactional producers
@@ -216,6 +217,117 @@ fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 		throttle_time_ms: 0
 		error_code:       i16(ErrorCode.coordinator_not_available)
 	}.encode(version)
+}
+
+// Handle WriteTxnMarkers (API Key 27)
+// This API is used by the transaction coordinator to write commit/abort markers
+// to partition leaders. It is an inter-broker communication API.
+fn (mut h Handler) handle_write_txn_markers(body []u8, version i16) ![]u8 {
+	is_flexible := is_flexible_version(.write_txn_markers, version)
+	mut reader := new_reader(body)
+	req := parse_write_txn_markers_request(mut reader, version, is_flexible)!
+
+	mut results := []WriteTxnMarkerResult{}
+
+	for marker in req.markers {
+		mut topic_results := []WriteTxnMarkerTopicResult{}
+
+		for topic in marker.topics {
+			mut partition_results := []WriteTxnMarkerPartitionResult{}
+
+			for partition_index in topic.partition_indexes {
+				// Write the transaction marker (commit/abort) to the partition
+				error_code := h.write_txn_marker_to_partition(topic.name, partition_index,
+					marker.producer_id, marker.producer_epoch, marker.transaction_result,
+					marker.coordinator_epoch)
+
+				partition_results << WriteTxnMarkerPartitionResult{
+					partition_index: partition_index
+					error_code:      error_code
+				}
+			}
+
+			topic_results << WriteTxnMarkerTopicResult{
+				name:       topic.name
+				partitions: partition_results
+			}
+		}
+
+		results << WriteTxnMarkerResult{
+			producer_id: marker.producer_id
+			topics:      topic_results
+		}
+	}
+
+	return WriteTxnMarkersResponse{
+		markers: results
+	}.encode(version)
+}
+
+// write_txn_marker_to_partition writes a transaction marker to a specific partition
+fn (mut h Handler) write_txn_marker_to_partition(topic string, partition_index i32, producer_id i64, producer_epoch i16, committed bool, coordinator_epoch i32) i16 {
+	// Check if topic exists
+	topic_meta := h.storage.get_topic(topic) or { return i16(ErrorCode.unknown_topic_or_partition) }
+
+	// Check if partition exists
+	if partition_index < 0 || partition_index >= i32(topic_meta.partition_count) {
+		return i16(ErrorCode.unknown_topic_or_partition)
+	}
+
+	// Write control record (transaction marker) to the partition
+	// Control records have special attributes to indicate commit/abort
+	control_records := build_txn_control_records(producer_id, producer_epoch, committed)
+
+	// Append the control record to storage
+	h.storage.append(topic, int(partition_index), control_records) or {
+		return i16(ErrorCode.unknown_server_error)
+	}
+
+	return i16(ErrorCode.none)
+}
+
+// build_txn_control_records builds a control record for transaction commit/abort
+// Kafka Control Record Format:
+// - Key: version (INT16) + type (INT16) where type is 0=ABORT, 1=COMMIT
+// - Value: version (INT16) + type (INT16) + coordinator_epoch (INT32)
+// - The record is marked with is_control_record=true and appropriate control_type
+// - producer_id and producer_epoch are stored in the Record metadata for RecordBatch attributes
+fn build_txn_control_records(producer_id i64, producer_epoch i16, committed bool) []domain.Record {
+	control_type := if committed {
+		domain.ControlRecordType.commit
+	} else {
+		domain.ControlRecordType.abort
+	}
+	marker_type := if committed { i16(1) } else { i16(0) }
+
+	// Control record key format (Kafka standard):
+	// - version: INT16 (0)
+	// - type: INT16 (0=ABORT, 1=COMMIT)
+	mut key_writer := new_writer()
+	key_writer.write_i16(0) // version
+	key_writer.write_i16(marker_type)
+
+	// Control record value format (Kafka standard):
+	// - version: INT16 (0)
+	// - type: INT16 (0=ABORT, 1=COMMIT)
+	// - coordinator_epoch: INT32 (optional, set to 0)
+	mut value_writer := new_writer()
+	value_writer.write_i16(0) // version
+	value_writer.write_i16(marker_type)
+	value_writer.write_i32(0) // coordinator_epoch
+
+	return [
+		domain.Record{
+			key:               key_writer.bytes()
+			value:             value_writer.bytes()
+			headers:           map[string][]u8{}
+			timestamp:         time.now()
+			is_control_record: true
+			control_type:      control_type
+			producer_id:       producer_id
+			producer_epoch:    producer_epoch
+		},
+	]
 }
 
 // Handle TxnOffsetCommit (API Key 28)
