@@ -36,8 +36,29 @@ $if linux {
 	const ioring_op_write_fixed = u8(5)
 	const ioring_op_poll_add = u8(6)
 	const ioring_op_poll_remove = u8(7)
+	const ioring_op_accept = u8(13) // 소켓 accept
+	const ioring_op_connect = u8(16) // 소켓 connect
+	const ioring_op_send = u8(18) // 소켓 send (버퍼 직접 지정)
+	const ioring_op_recv = u8(19) // 소켓 recv (버퍼 직접 지정)
 	const ioring_op_read = u8(22)
 	const ioring_op_write = u8(23)
+
+	// 소켓 관련 C 함수
+	fn C.socket(domain int, typ int, protocol int) int
+	fn C.bind(sockfd int, addr voidptr, addrlen u32) int
+	fn C.listen(sockfd int, backlog int) int
+	fn C.setsockopt(sockfd int, level int, optname int, optval voidptr, optlen u32) int
+	fn C.close(fd int) int
+	fn C.htonl(hostlong u32) u32
+	fn C.htons(hostshort u16) u16
+	fn C.inet_pton(af int, src &char, dst voidptr) int
+
+	// 소켓 상수
+	const af_inet = 2
+	const sock_stream = 1
+	const sol_socket = 1
+	const so_reuseaddr = 2
+	const so_reuseport = 15
 
 	// 시스템 호출 번호 (x86_64)
 	const sys_io_uring_setup = 425
@@ -159,8 +180,8 @@ pub mut:
 pub struct IoUringConfig {
 pub:
 	queue_depth    u32 = 256  // 큐 깊이
-	flags          u32 = 0    // 플래그
-	sq_thread_cpu  u32 = 0    // SQ 스레드 CPU
+	flags          u32       // 플래그
+	sq_thread_cpu  u32       // SQ 스레드 CPU
 	sq_thread_idle u32 = 1000 // SQ 스레드 유휴 시간 (ms)
 }
 
@@ -174,6 +195,27 @@ pub:
 	user_data u64  // 사용자 데이터
 	result    i32  // 결과
 	success   bool // 성공 여부
+}
+
+// ============================================================================
+// 네트워크 관련 구조체
+// ============================================================================
+
+/// SockaddrIn은 IPv4 소켓 주소 구조체입니다.
+struct SockaddrIn {
+mut:
+	sin_family u16   // 주소 패밀리 (AF_INET)
+	sin_port   u16   // 포트 번호 (네트워크 바이트 순서)
+	sin_addr   u32   // IPv4 주소
+	sin_zero   [8]u8 // 패딩
+}
+
+/// AcceptResult는 accept 연산 결과를 담고 있습니다.
+pub struct AcceptResult {
+pub:
+	client_fd   int    // 클라이언트 파일 디스크립터
+	client_addr string // 클라이언트 주소 문자열
+	success     bool   // 성공 여부
 }
 
 /// IoUringStats는 io_uring 통계를 담고 있습니다.
@@ -482,6 +524,167 @@ pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 		return true
 	} $else {
 		return false
+	}
+}
+
+// ============================================================================
+// 네트워크 연산 (io_uring 기반)
+// ============================================================================
+
+/// prep_accept는 소켓에서 연결 수락을 준비합니다.
+/// listen_fd: 리스닝 소켓 파일 디스크립터
+/// user_data: 완료 시 반환될 사용자 데이터
+pub fn (mut r IoUring) prep_accept(listen_fd int, user_data u64) bool {
+	$if linux {
+		sqe := r.get_sqe() or { return false }
+
+		sqe.opcode = ioring_op_accept
+		sqe.fd = i32(listen_fd)
+		sqe.off = 0 // addr (null = 주소 정보 불필요)
+		sqe.addr = 0 // addrlen (null)
+		sqe.len = 0 // flags
+		sqe.user_data = user_data
+
+		r.submit_sqe()
+		return true
+	} $else {
+		return false
+	}
+}
+
+/// prep_accept_with_addr는 클라이언트 주소 정보와 함께 연결 수락을 준비합니다.
+/// listen_fd: 리스닝 소켓 파일 디스크립터
+/// addr: 클라이언트 주소를 저장할 버퍼
+/// addrlen: 주소 길이를 저장할 포인터
+/// user_data: 완료 시 반환될 사용자 데이터
+pub fn (mut r IoUring) prep_accept_with_addr(listen_fd int, addr &SockaddrIn, addrlen &u32, user_data u64) bool {
+	$if linux {
+		sqe := r.get_sqe() or { return false }
+
+		sqe.opcode = ioring_op_accept
+		sqe.fd = i32(listen_fd)
+		sqe.off = u64(usize(addrlen)) // addrlen 포인터
+		sqe.addr = u64(usize(addr)) // addr 포인터
+		sqe.len = 0 // flags
+		sqe.user_data = user_data
+
+		r.submit_sqe()
+		return true
+	} $else {
+		return false
+	}
+}
+
+/// prep_recv는 소켓에서 데이터 수신을 준비합니다.
+/// fd: 소켓 파일 디스크립터
+/// buf: 데이터를 수신할 버퍼
+/// flags: recv 플래그 (일반적으로 0)
+/// user_data: 완료 시 반환될 사용자 데이터
+pub fn (mut r IoUring) prep_recv(fd int, buf []u8, flags u32, user_data u64) bool {
+	$if linux {
+		sqe := r.get_sqe() or { return false }
+
+		sqe.opcode = ioring_op_recv
+		sqe.fd = i32(fd)
+		sqe.addr = u64(usize(buf.data))
+		sqe.len = u32(buf.len)
+		sqe.rw_flags = flags
+		sqe.user_data = user_data
+
+		r.submit_sqe()
+		return true
+	} $else {
+		return false
+	}
+}
+
+/// prep_send는 소켓으로 데이터 송신을 준비합니다.
+/// fd: 소켓 파일 디스크립터
+/// buf: 전송할 데이터 버퍼
+/// flags: send 플래그 (일반적으로 0)
+/// user_data: 완료 시 반환될 사용자 데이터
+pub fn (mut r IoUring) prep_send(fd int, buf []u8, flags u32, user_data u64) bool {
+	$if linux {
+		sqe := r.get_sqe() or { return false }
+
+		sqe.opcode = ioring_op_send
+		sqe.fd = i32(fd)
+		sqe.addr = u64(usize(buf.data))
+		sqe.len = u32(buf.len)
+		sqe.rw_flags = flags
+		sqe.user_data = user_data
+
+		r.submit_sqe()
+		return true
+	} $else {
+		return false
+	}
+}
+
+/// create_listen_socket은 리스닝 소켓을 생성합니다.
+/// host: 바인딩할 호스트 (예: "0.0.0.0")
+/// port: 바인딩할 포트
+/// backlog: listen 백로그 크기
+pub fn create_listen_socket(host string, port int, backlog int) !int {
+	$if linux {
+		// 소켓 생성
+		fd := C.socket(af_inet, sock_stream, 0)
+		if fd < 0 {
+			return error('socket() failed')
+		}
+
+		// SO_REUSEADDR 설정
+		opt := int(1)
+		if C.setsockopt(fd, sol_socket, so_reuseaddr, &opt, sizeof(int)) < 0 {
+			C.close(fd)
+			return error('setsockopt(SO_REUSEADDR) failed')
+		}
+
+		// SO_REUSEPORT 설정
+		if C.setsockopt(fd, sol_socket, so_reuseport, &opt, sizeof(int)) < 0 {
+			C.close(fd)
+			return error('setsockopt(SO_REUSEPORT) failed')
+		}
+
+		// 주소 설정
+		mut addr := SockaddrIn{
+			sin_family: u16(af_inet)
+			sin_port:   C.htons(u16(port))
+			sin_addr:   0
+		}
+
+		// 호스트 주소 파싱
+		if host == '0.0.0.0' || host == '' {
+			addr.sin_addr = C.htonl(0) // INADDR_ANY
+		} else {
+			if C.inet_pton(af_inet, host.str, &addr.sin_addr) != 1 {
+				C.close(fd)
+				return error('inet_pton() failed for host: ${host}')
+			}
+		}
+
+		// 바인드
+		if C.bind(fd, &addr, sizeof(SockaddrIn)) < 0 {
+			C.close(fd)
+			return error('bind() failed')
+		}
+
+		// 리슨
+		if C.listen(fd, backlog) < 0 {
+			C.close(fd)
+			return error('listen() failed')
+		}
+
+		return fd
+	} $else {
+		return error('create_listen_socket is only available on Linux')
+	}
+}
+
+/// close_socket은 소켓을 닫습니다.
+pub fn close_socket(fd int) {
+	$if linux {
+		C.close(fd)
 	}
 }
 

@@ -35,6 +35,10 @@ pub:
 	// 워커 풀 설정 (v0.28.0)
 	max_concurrent_handlers int = 1000 // 최대 동시 연결 핸들러 수
 	handler_acquire_timeout int = 5000 // 핸들러 슬롯 획득 타임아웃 (ms)
+	// io_uring 설정 (v0.32.0)
+	use_io_uring         bool = true // io_uring 사용 여부 (Linux 전용)
+	io_uring_queue_depth u32  = 256  // io_uring 큐 깊이
+	io_uring_sqpoll      bool        // SQ 폴링 모드 사용 여부
 }
 
 /// RequestHandler는 프로토콜 요청을 처리하는 인터페이스입니다.
