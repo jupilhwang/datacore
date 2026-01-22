@@ -292,6 +292,8 @@ pub fn cpu_supports_hw_crc32c() bool {
 }
 
 // 호환성을 위한 별칭
+/// cpu_supports_sse42는 SSE4.2 CRC32-C 지원 여부를 반환합니다.
+/// cpu_supports_hw_crc32c의 별칭입니다.
 pub fn cpu_supports_sse42() bool {
 	return cpu_supports_hw_crc32c()
 }
@@ -300,8 +302,8 @@ pub fn cpu_supports_sse42() bool {
 // CRC32-C 구현
 // ============================================================================
 
-/// 소프트웨어 기반 CRC32-C 계산 (테이블 룩업)
-/// 바이트 단위 처리 - 정확하고 안정적인 구현
+/// crc32c_sw는 소프트웨어 기반 CRC32-C 계산 (테이블 룩업)을 수행합니다.
+/// 바이트 단위 처리로 정확하고 안정적인 구현을 제공합니다.
 pub fn crc32c_sw(data []u8) u32 {
 	mut crc := u32(0xFFFFFFFF)
 	for b in data {
@@ -366,12 +368,12 @@ pub fn calculate(data []u8) u32 {
 	return crc32c_sw(data)
 }
 
-/// 증분 CRC32-C 계산을 위한 초기값을 반환합니다.
+/// init은 증분 CRC32-C 계산을 위한 초기값을 반환합니다.
 pub fn init() u32 {
 	return 0xFFFFFFFF
 }
 
-/// 기존 CRC 값에 데이터를 추가하여 업데이트합니다.
+/// update는 기존 CRC 값에 데이터를 추가하여 업데이트합니다.
 /// 스트리밍 데이터의 체크섬 계산에 유용합니다.
 pub fn update(crc u32, data []u8) u32 {
 	if data.len == 0 {
@@ -386,12 +388,12 @@ pub fn update(crc u32, data []u8) u32 {
 	return c
 }
 
-/// 증분 CRC 계산을 완료하고 최종 체크섬을 반환합니다.
+/// finalize는 증분 CRC 계산을 완료하고 최종 체크섬을 반환합니다.
 pub fn finalize(crc u32) u32 {
 	return crc ^ 0xFFFFFFFF
 }
 
-/// 하드웨어 가속이 사용 가능한지 확인합니다.
+/// is_hardware_accelerated는 하드웨어 가속이 사용 가능한지 확인합니다.
 pub fn is_hardware_accelerated() bool {
 	return cpu_supports_hw_crc32c()
 }
