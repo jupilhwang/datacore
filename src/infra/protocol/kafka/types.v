@@ -193,6 +193,8 @@ pub enum ErrorCode {
 	fetch_session_topic_id_error          = 106
 	ineligible_replica                    = 107
 	new_leader_elected                    = 108
+	// KIP-890: Transactional semantics improvements
+	transaction_abortable = 109 // v5+ FindCoordinator, 트랜잭션이 중단 가능한 상태임을 나타냄
 }
 
 /// API 버전 범위
@@ -212,7 +214,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.metadata, 0, 12}, // v9+ flexible, v10+ topic_id, v12 name is nullable
 		ApiVersionRange{.offset_commit, 0, 9}, // v8+ flexible
 		ApiVersionRange{.offset_fetch, 0, 10}, // v6+ flexible, v8+ groups format, v9+ member_id/epoch
-		ApiVersionRange{.find_coordinator, 0, 5}, // v3+ flexible, v4+ batch support, v5 adds TRANSACTION_ABORTABLE error
+		ApiVersionRange{.find_coordinator, 0, 6}, // v3+ flexible, v4+ batch support, v5 TRANSACTION_ABORTABLE, v6 share groups
 		ApiVersionRange{.join_group, 0, 9}, // v6+ flexible
 		ApiVersionRange{.heartbeat, 0, 4}, // v4+ flexible
 		ApiVersionRange{.leave_group, 0, 5}, // v4+ flexible

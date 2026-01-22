@@ -1,5 +1,14 @@
 // Kafka 프로토콜 - FindCoordinator (API Key 10)
 // 요청/응답 타입, 파싱, 인코딩 및 핸들러
+//
+// 버전 히스토리:
+// - v0: 기본 FindCoordinator
+// - v1: KeyType 추가 (GROUP=0, TRANSACTION=1)
+// - v2: v1과 동일
+// - v3: Flexible 버전
+// - v4: 배치 조회 지원 (CoordinatorKeys, KIP-699)
+// - v5: TRANSACTION_ABORTABLE 에러 코드 지원 (KIP-890)
+// - v6: Share Groups 지원 (KeyType=2, KIP-932)
 module kafka
 
 import infra.observability
@@ -8,6 +17,14 @@ import time
 // ============================================================================
 // FindCoordinator (API Key 10)
 // ============================================================================
+
+/// CoordinatorKeyType은 코디네이터 키 타입을 정의합니다.
+/// v1부터 지원되며, v6에서 SHARE 타입이 추가되었습니다.
+pub enum CoordinatorKeyType as i8 {
+	group       = 0 // 컨슈머 그룹 코디네이터
+	transaction = 1 // 트랜잭션 코디네이터
+	share       = 2 // Share Group 코디네이터 (v6, KIP-932)
+}
 
 pub struct FindCoordinatorRequest {
 pub:
@@ -136,16 +153,26 @@ pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
+/// coordinator_key_type_str은 코디네이터 키 타입을 문자열로 변환합니다.
+fn coordinator_key_type_str(key_type i8) string {
+	return match key_type {
+		0 { 'GROUP' }
+		1 { 'TRANSACTION' }
+		2 { 'SHARE' } // v6, KIP-932
+		else { 'UNKNOWN' }
+	}
+}
+
 fn (mut h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_find_coordinator_request(mut reader, version, is_flexible_version(.find_coordinator,
 		version))!
 
-	key_type_str := if req.key_type == 0 { 'GROUP' } else { 'TRANSACTION' }
+	key_type_str := coordinator_key_type_str(req.key_type)
 	h.logger.debug('Processing find coordinator', observability.field_string('key', req.key),
 		observability.field_string('key_type', key_type_str), observability.field_int('coordinator_keys',
-		req.coordinator_keys.len))
+		req.coordinator_keys.len), observability.field_int('version', version))
 
 	resp := h.process_find_coordinator(req, version)!
 
@@ -157,6 +184,9 @@ fn (mut h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 }
 
 fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version i16) !FindCoordinatorResponse {
+	// v4+: 배치 조회 응답 (v5, v6 포함)
+	// v5는 TRANSACTION_ABORTABLE 에러 코드 지원 추가 (KIP-890)
+	// v6는 Share Groups 지원 추가 (KIP-932)
 	if version >= 4 {
 		mut keys := req.coordinator_keys.clone()
 		if keys.len == 0 && req.key.len > 0 {
@@ -165,6 +195,23 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 
 		mut coordinators := []FindCoordinatorResponseNode{}
 		for key in keys {
+			// Share Group (v6)의 경우 키 형식 검증: "groupId:topicId:partition"
+			if version >= 6 && req.key_type == i8(CoordinatorKeyType.share) {
+				// Share Group 키 형식 검증
+				parts := key.split(':')
+				if parts.len != 3 {
+					coordinators << FindCoordinatorResponseNode{
+						key:           key
+						node_id:       -1
+						host:          ''
+						port:          0
+						error_code:    i16(ErrorCode.invalid_request)
+						error_message: 'Invalid share group key format. Expected: groupId:topicId:partition'
+					}
+					continue
+				}
+			}
+
 			coordinators << FindCoordinatorResponseNode{
 				key:           key
 				node_id:       h.broker_id
@@ -181,6 +228,7 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 		}
 	}
 
+	// v0-v3: 단일 응답
 	return FindCoordinatorResponse{
 		throttle_time_ms: 0
 		error_code:       0
