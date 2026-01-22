@@ -162,6 +162,9 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 		.txn_offset_commit { version >= 3 }
 		.sasl_authenticate { version >= 2 } // v2+는 flexible
 		.delete_groups { version >= 2 }
+		.describe_acls { version >= 2 } // v2+는 flexible
+		.create_acls { version >= 2 } // v2+는 flexible
+		.delete_acls { version >= 2 } // v2+는 flexible
 		.describe_cluster { version >= 0 }
 		.consumer_group_heartbeat { version >= 0 }
 		.consumer_group_describe { version >= 0 }

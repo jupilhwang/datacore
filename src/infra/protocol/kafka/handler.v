@@ -219,6 +219,9 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		.consumer_group_heartbeat {
 			h.handle_consumer_group_heartbeat(req.body, version)!
 		}
+		.consumer_group_describe {
+			h.handle_consumer_group_describe(req.body, version)!
+		}
 		.sasl_handshake {
 			h.handle_sasl_handshake(req.body, version)!
 		}

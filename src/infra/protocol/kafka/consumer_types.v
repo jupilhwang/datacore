@@ -205,3 +205,62 @@ pub:
 	topic_id   []u8  // 토픽 UUID (16바이트)
 	partitions []i32 // 파티션 인덱스 목록
 }
+
+// ============================================================================
+// ConsumerGroupDescribe 요청/응답 타입 (API Key 69) - KIP-848
+// ============================================================================
+// 컨슈머 그룹의 상세 정보를 조회합니다.
+
+/// ConsumerGroupDescribe 요청 - 컨슈머 그룹 상세 정보 조회 요청 (KIP-848)
+pub struct ConsumerGroupDescribeRequest {
+pub:
+	group_ids                     []string // 조회할 그룹 ID 목록
+	include_authorized_operations bool     // 권한 있는 작업 포함 여부
+}
+
+/// ConsumerGroupDescribe 응답 - 컨슈머 그룹 상세 정보
+pub struct ConsumerGroupDescribeResponse {
+pub:
+	throttle_time_ms i32 // 스로틀링 시간 (밀리초)
+	groups           []ConsumerGroupDescribeResponseGroup // 그룹 정보 목록
+}
+
+/// ConsumerGroupDescribe 응답 그룹 - 개별 그룹 정보
+pub struct ConsumerGroupDescribeResponseGroup {
+pub:
+	error_code            i16     // 에러 코드
+	error_message         ?string // 에러 메시지
+	group_id              string  // 그룹 ID
+	group_state           string  // 그룹 상태
+	group_epoch           i32     // 그룹 에포크
+	assignment_epoch      i32     // 할당 에포크
+	assignor_name         string  // 할당자 이름
+	members               []ConsumerGroupDescribeResponseMember // 멤버 목록
+	authorized_operations i32 // 권한 있는 작업
+}
+
+/// ConsumerGroupDescribe 응답 멤버 - 멤버 정보
+pub struct ConsumerGroupDescribeResponseMember {
+pub:
+	member_id            string  // 멤버 ID
+	instance_id          ?string // 인스턴스 ID
+	rack_id              ?string // 랙 ID
+	member_epoch         i32     // 멤버 에포크
+	client_id            string  // 클라이언트 ID
+	client_host          string  // 클라이언트 호스트
+	subscribed_topic_ids [][]u8  // 구독 토픽 ID 목록 (UUID)
+	assignment           ?ConsumerGroupDescribeResponseMemberAssignment // 현재 할당
+}
+
+/// ConsumerGroupDescribe 응답 멤버 할당 - 멤버의 파티션 할당
+pub struct ConsumerGroupDescribeResponseMemberAssignment {
+pub:
+	topic_partitions []ConsumerGroupDescribeTopicPartition // 토픽별 파티션 목록
+}
+
+/// ConsumerGroupDescribe 토픽 파티션 - 할당된 파티션
+pub struct ConsumerGroupDescribeTopicPartition {
+pub:
+	topic_id   []u8  // 토픽 UUID (16바이트)
+	partitions []i32 // 파티션 인덱스 목록
+}

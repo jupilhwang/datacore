@@ -236,6 +236,9 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.create_partitions, 0, 3},
 		ApiVersionRange{.sasl_authenticate, 0, 2}, // SASL authentication (v2+ flexible)
 		ApiVersionRange{.delete_groups, 0, 2},
+		ApiVersionRange{.describe_acls, 0, 3}, // ACL 조회 (v2+ flexible)
+		ApiVersionRange{.create_acls, 0, 3}, // ACL 생성 (v2+ flexible)
+		ApiVersionRange{.delete_acls, 0, 3}, // ACL 삭제 (v2+ flexible)
 		ApiVersionRange{.describe_cluster, 0, 0},
 		ApiVersionRange{.consumer_group_heartbeat, 0, 0},
 		ApiVersionRange{.consumer_group_describe, 0, 0},

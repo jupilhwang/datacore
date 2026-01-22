@@ -283,3 +283,29 @@ fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, 
 		topic_partitions:       topic_partitions
 	}
 }
+
+// ============================================================================
+// ConsumerGroupDescribe 요청 파서 (API Key 69) - KIP-848
+// ============================================================================
+
+fn parse_consumer_group_describe_request(mut reader BinaryReader, version i16, is_flexible bool) !ConsumerGroupDescribeRequest {
+	// ConsumerGroupDescribe는 항상 flexible (v0+)
+
+	// group_ids: COMPACT_ARRAY[COMPACT_STRING] - 그룹 ID 목록
+	group_count := reader.read_compact_array_len()!
+	mut group_ids := []string{}
+	for _ in 0 .. group_count {
+		group_ids << reader.read_compact_string()!
+	}
+
+	// include_authorized_operations: BOOLEAN - 권한 있는 작업 포함 여부
+	include_authorized_operations := reader.read_i8()! != 0
+
+	// 태그된 필드 건너뛰기
+	reader.skip_tagged_fields()!
+
+	return ConsumerGroupDescribeRequest{
+		group_ids:                     group_ids
+		include_authorized_operations: include_authorized_operations
+	}
+}

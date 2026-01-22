@@ -65,6 +65,15 @@ fn (mut h Handler) handle_consumer_group_heartbeat(body []u8, version i16) ![]u8
 	return resp.encode(version)
 }
 
+/// ConsumerGroupDescribe 핸들러 (KIP-848) - 컨슈머 그룹 상세 정보를 조회합니다.
+fn (mut h Handler) handle_consumer_group_describe(body []u8, version i16) ![]u8 {
+	mut reader := new_reader(body)
+	req := parse_consumer_group_describe_request(mut reader, version, true)!
+
+	resp := h.process_consumer_group_describe(req, version)!
+	return resp.encode(version)
+}
+
 // ============================================================================
 // 프로세스 함수 - 비즈니스 로직 처리
 // ============================================================================
@@ -562,5 +571,89 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		throttle_time_ms: 0
 		error_code:       0
 		members:          removed_members
+	}
+}
+
+/// ConsumerGroupDescribe 요청을 처리합니다 (KIP-848).
+/// 컨슈머 그룹의 상세 정보를 조회합니다.
+fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequest, version i16) !ConsumerGroupDescribeResponse {
+	start_time := time.now()
+
+	h.logger.debug('Processing consumer group describe', observability.field_int('group_ids',
+		req.group_ids.len))
+
+	mut groups := []ConsumerGroupDescribeResponseGroup{}
+
+	for group_id in req.group_ids {
+		// 그룹 로드 시도
+		group := h.storage.load_group(group_id) or {
+			// 그룹을 찾을 수 없음
+			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
+			groups << ConsumerGroupDescribeResponseGroup{
+				error_code:            i16(ErrorCode.group_id_not_found)
+				error_message:         'Group not found: ${group_id}'
+				group_id:              group_id
+				group_state:           ''
+				group_epoch:           0
+				assignment_epoch:      0
+				assignor_name:         ''
+				members:               []
+				authorized_operations: 0
+			}
+			continue
+		}
+
+		// 그룹 상태 문자열 변환
+		state_str := match group.state {
+			.empty { 'Empty' }
+			.stable { 'Stable' }
+			.preparing_rebalance { 'PreparingRebalance' }
+			.completing_rebalance { 'CompletingRebalance' }
+			.dead { 'Dead' }
+		}
+
+		// 멤버 목록 생성
+		mut response_members := []ConsumerGroupDescribeResponseMember{}
+		for m in group.members {
+			response_members << ConsumerGroupDescribeResponseMember{
+				member_id:            m.member_id
+				instance_id:          if m.group_instance_id.len > 0 {
+					m.group_instance_id
+				} else {
+					none
+				}
+				rack_id:              none
+				member_epoch:         group.generation_id
+				client_id:            m.client_id
+				client_host:          m.client_host
+				subscribed_topic_ids: []
+				assignment:           none
+			}
+		}
+
+		h.logger.trace('Describing consumer group', observability.field_string('group_id',
+			group_id), observability.field_string('state', state_str), observability.field_int('members',
+			response_members.len))
+
+		groups << ConsumerGroupDescribeResponseGroup{
+			error_code:            0
+			error_message:         none
+			group_id:              group_id
+			group_state:           state_str
+			group_epoch:           group.generation_id
+			assignment_epoch:      group.generation_id
+			assignor_name:         group.protocol
+			members:               response_members
+			authorized_operations: if req.include_authorized_operations { -2147483648 } else { 0 }
+		}
+	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Consumer group describe completed', observability.field_int('groups',
+		groups.len), observability.field_duration('latency', elapsed))
+
+	return ConsumerGroupDescribeResponse{
+		throttle_time_ms: 0
+		groups:           groups
 	}
 }
