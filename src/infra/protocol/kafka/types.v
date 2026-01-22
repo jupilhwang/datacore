@@ -212,7 +212,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.metadata, 0, 12}, // v9+ flexible, v10+ topic_id, v12 name is nullable
 		ApiVersionRange{.offset_commit, 0, 9}, // v8+ flexible
 		ApiVersionRange{.offset_fetch, 0, 10}, // v6+ flexible, v8+ groups format, v9+ member_id/epoch
-		ApiVersionRange{.find_coordinator, 0, 4}, // v3 is flexible but simple. v4+ adds batches which might be complex. Downgrade to v3 for safety.
+		ApiVersionRange{.find_coordinator, 0, 5}, // v3+ flexible, v4+ batch support, v5 adds TRANSACTION_ABORTABLE error
 		ApiVersionRange{.join_group, 0, 9}, // v6+ flexible
 		ApiVersionRange{.heartbeat, 0, 4}, // v4+ flexible
 		ApiVersionRange{.leave_group, 0, 5}, // v4+ flexible
@@ -224,7 +224,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.create_topics, 0, 7},
 		ApiVersionRange{.delete_topics, 0, 6},
 		ApiVersionRange{.delete_records, 0, 2},
-		ApiVersionRange{.init_producer_id, 0, 4},
+		ApiVersionRange{.init_producer_id, 0, 5},
 		ApiVersionRange{.add_partitions_to_txn, 0, 4},
 		ApiVersionRange{.add_offsets_to_txn, 0, 3},
 		ApiVersionRange{.end_txn, 0, 3},

@@ -577,6 +577,12 @@ pub fn (mut w BinaryWriter) write_tagged_fields() {
 	w.write_uvarint(0)
 }
 
+/// write_tagged_field_header는 태그 필드 헤더를 씁니다 (tag와 size).
+pub fn (mut w BinaryWriter) write_tagged_field_header(tag int, size int) {
+	w.write_uvarint(u64(tag))
+	w.write_uvarint(u64(size))
+}
+
 pub fn (mut w BinaryWriter) write_raw(b []u8) {
 	w.data << b
 }
