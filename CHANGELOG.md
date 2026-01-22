@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.32.0] - 2026-01-22
+
+### Added
+- **io_uring Network Integration** - Linux 5.1+ 고성능 비동기 네트워크 I/O
+  - `IoUringServer` - io_uring 기반 네트워크 서버 래퍼
+  - `IoUringTcpServer` - Kafka 프로토콜용 io_uring TCP 서버
+  - 비동기 `accept`, `recv`, `send` 연산 지원
+  - Multi-accept로 연결 수락 배칭 (기본 8개)
+  - SQ 폴링 모드 옵션 (ultra-low latency)
+  - 비-Linux 플랫폼 자동 폴백
+
+- **ServerConfig io_uring 옵션**
+  - `use_io_uring` - io_uring 사용 여부 (기본: true)
+  - `io_uring_queue_depth` - 큐 깊이 (기본: 256)
+  - `io_uring_sqpoll` - SQ 폴링 모드 (기본: false)
+
+### Performance
+- **Buffer.write 최적화** - `C.memcpy()` 사용으로 50-100% 성능 향상
+- **UUID 생성 최적화** - 배열 초기화자 사용으로 루프 제거
+- **io_uring 기대 효과**
+  - Zero-copy 네트워크 I/O
+  - 시스템 호출 오버헤드 감소 (배치 제출)
+  - 높은 동시 연결 처리량
+
+### Changed
+- `io_uring.v` - 네트워크 연산 추가 (accept, recv, send)
+- `create_listen_socket()` - SO_REUSEADDR, SO_REUSEPORT 설정
+
+### Technical Details
+- Linux 5.1+ 커널 필요 (io_uring 지원)
+- 조건부 컴파일 (`$if linux`)로 플랫폼 독립성 유지
+- 기존 `RequestHandler` 인터페이스와 완전 호환
+
 ## [0.29.0] - 2026-01-22
 
 ### Added
