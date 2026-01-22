@@ -56,8 +56,13 @@ mut:
 	lock     sync.Mutex
 }
 
+// Global singleton registry holder
+__global g_registry_holder = RegistryHolder{
+	registry: unsafe { nil }
+}
+
 fn get_registry_holder() &RegistryHolder {
-	return &RegistryHolder{}
+	return &g_registry_holder
 }
 
 /// get_registry는 전역 메트릭 레지스트리를 반환합니다.
