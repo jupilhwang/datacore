@@ -4,6 +4,7 @@ module kafka
 
 import domain
 import time
+import infra.protocol.kafka.crc32c
 
 /// ByteView - 바이트 배열에 대한 Zero-copy 뷰 (경량 대안)
 /// 메모리 할당 없이 고성능 파싱을 위해 내부적으로 사용됩니다.
@@ -450,35 +451,26 @@ pub fn (mut w BinaryWriter) write_i8(val i8) {
 
 /// write_i16은 빅 엔디안 형식의 부호 있는 16비트 정수를 씁니다.
 pub fn (mut w BinaryWriter) write_i16(val i16) {
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (2번의 << 대신 1번)
+	w.data << [u8(val >> 8), u8(val)]
 }
 
 /// write_i32는 빅 엔디안 형식의 부호 있는 32비트 정수를 씁니다.
 pub fn (mut w BinaryWriter) write_i32(val i32) {
-	w.data << u8(val >> 24)
-	w.data << u8(val >> 16)
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (4번의 << 대신 1번)
+	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
 pub fn (mut w BinaryWriter) write_u32(val u32) {
-	w.data << u8(val >> 24)
-	w.data << u8(val >> 16)
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (4번의 << 대신 1번)
+	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
 /// write_i64는 빅 엔디안 형식의 부호 있는 64비트 정수를 씁니다.
 pub fn (mut w BinaryWriter) write_i64(val i64) {
-	w.data << u8(val >> 56)
-	w.data << u8(val >> 48)
-	w.data << u8(val >> 40)
-	w.data << u8(val >> 32)
-	w.data << u8(val >> 24)
-	w.data << u8(val >> 16)
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (8번의 << 대신 1번)
+	w.data << [u8(val >> 56), u8(val >> 48), u8(val >> 40), u8(val >> 32), u8(val >> 24),
+		u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
 /// write_uvarint는 부호 없는 가변 길이 정수를 씁니다.
@@ -637,7 +629,7 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	stored_crc := u32(reader.read_i32()!)
 	crc_start_pos := reader.pos
 	crc_data := data[crc_start_pos..12 + int(batch_length)]
-	calculated_crc := crc32c(crc_data)
+	calculated_crc := crc32c_checksum(crc_data)
 	if stored_crc != calculated_crc {
 		return error('CRC32-C 검증 실패: 저장된 값=${stored_crc}, 계산된 값=${calculated_crc}')
 	}
@@ -796,20 +788,10 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 // RecordBatch 인코딩 (Fetch 응답용)
 // ============================================================
 
-/// crc32c는 CRC-32C (Castagnoli) 체크섬을 계산합니다.
-fn crc32c(data []u8) u32 {
-	mut crc := u32(0xffffffff)
-	for b in data {
-		crc ^= u32(b)
-		for _ in 0 .. 8 {
-			if (crc & 1) == 1 {
-				crc = (crc >> 1) ^ 0x82f63b78
-			} else {
-				crc >>= 1
-			}
-		}
-	}
-	return ~crc
+/// crc32c_checksum은 CRC-32C (Castagnoli) 체크섬을 계산합니다.
+/// 최적화된 crc32c 모듈을 사용합니다.
+fn crc32c_checksum(data []u8) u32 {
+	return crc32c.calculate(data)
 }
 
 /// encode_record_batch는 레코드들을 Kafka RecordBatch v2 형식으로 인코딩합니다.
@@ -864,7 +846,7 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 
 	crc_bytes := crc_data.bytes()
 	// crc_data에 대한 CRC-32C (Castagnoli)
-	crc := crc32c(crc_bytes)
+	crc := crc32c_checksum(crc_bytes)
 
 	// RecordBatch 헤더 필드
 	// batchLength = partitionLeaderEpoch부터 끝까지
