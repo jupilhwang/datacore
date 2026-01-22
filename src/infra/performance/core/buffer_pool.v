@@ -26,15 +26,17 @@ pub fn (mut b Buffer) write(data []u8) int {
 		if available <= 0 {
 			return 0
 		}
-		for i := 0; i < available; i++ {
-			b.data[b.len + i] = data[i]
+		// 배열 슬라이스 복사로 최적화 (바이트 단위 루프 대신)
+		unsafe {
+			C.memcpy(&b.data[b.len], data.data, usize(available))
 		}
 		b.len += available
 		return available
 	}
 
-	for i, byte in data {
-		b.data[b.len + i] = byte
+	// 배열 슬라이스 복사로 최적화 (바이트 단위 루프 대신)
+	unsafe {
+		C.memcpy(&b.data[b.len], data.data, usize(data.len))
 	}
 	b.len += data.len
 	return data.len

@@ -397,10 +397,8 @@ fn parse_config_int(configs map[string]string, key string, default_val int) int 
 
 // 랜덤 UUID v4를 생성합니다 (16바이트).
 fn generate_uuid() []u8 {
-	mut uuid := []u8{len: 16}
-	for i in 0 .. 16 {
-		uuid[i] = u8(rand.int_in_range(0, 256) or { 0 })
-	}
+	// 배열 초기화와 함께 랜덤 값 생성 최적화
+	mut uuid := []u8{len: 16, init: u8(rand.int_in_range(0, 256) or { 0 })}
 	// 버전 (4) 및 변형 (RFC 4122) 설정
 	uuid[6] = (uuid[6] & 0x0f) | 0x40 // 버전 4
 	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 변형
