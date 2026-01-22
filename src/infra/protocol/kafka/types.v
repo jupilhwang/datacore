@@ -235,7 +235,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.alter_configs, 0, 2},
 		ApiVersionRange{.create_partitions, 0, 3},
 		ApiVersionRange{.sasl_authenticate, 0, 2}, // SASL authentication (v2+ flexible)
-		// ApiVersionRange{.delete_groups, 0, 2},
+		ApiVersionRange{.delete_groups, 0, 2},
 		ApiVersionRange{.describe_cluster, 0, 0},
 		ApiVersionRange{.consumer_group_heartbeat, 0, 0},
 		ApiVersionRange{.consumer_group_describe, 0, 0},

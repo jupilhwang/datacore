@@ -53,8 +53,8 @@ pub:
 	topic_name    string
 	partition     int
 	base_dir      string
-	segment_size  i64  = 1073741824 // 1GB
-	sync_on_write bool = false
+	segment_size  i64 = 1073741824 // 1GB
+	sync_on_write bool // 기본 false
 }
 
 /// new_mmap_partition은 새 mmap 파티션 스토어를 생성합니다.

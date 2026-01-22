@@ -38,10 +38,10 @@ pub:
 	// io_uring 설정 (v0.32.0)
 	use_io_uring         bool = true // io_uring 사용 여부 (Linux 전용)
 	io_uring_queue_depth u32  = 256  // io_uring 큐 깊이
-	io_uring_sqpoll      bool // SQ 폴링 모드 사용 여부
+	io_uring_sqpoll      bool // SQ 폴링 모드 사용 여부 (기본 false)
 	// NUMA 설정 (v0.33.0)
-	numa_enabled      bool = false // NUMA 인식 모드 활성화 (Linux 전용)
-	numa_bind_workers bool = true  // 워커를 NUMA 노드에 바인딩
+	numa_enabled      bool // NUMA 인식 모드 활성화 (Linux 전용, 기본 false)
+	numa_bind_workers bool = true // 워커를 NUMA 노드에 바인딩
 }
 
 /// RequestHandler는 프로토콜 요청을 처리하는 인터페이스입니다.

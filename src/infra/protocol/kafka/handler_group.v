@@ -393,3 +393,226 @@ fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i1
 		groups:           groups
 	}
 }
+
+// ============================================================================
+// DeleteGroups Request/Response (API Key 42) v0-v2
+// ============================================================================
+
+/// DeleteGroups 요청
+pub struct DeleteGroupsRequest {
+pub:
+	groups_names []string // 삭제할 그룹 ID 목록
+}
+
+/// DeleteGroups 요청 파싱
+fn parse_delete_groups_request(mut reader BinaryReader, version i16, is_flexible bool) !DeleteGroupsRequest {
+	count := reader.read_flex_array_len(is_flexible)!
+	mut groups_names := []string{}
+	for _ in 0 .. count {
+		groups_names << reader.read_flex_string(is_flexible)!
+	}
+
+	if is_flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return DeleteGroupsRequest{
+		groups_names: groups_names
+	}
+}
+
+/// DeleteGroups 응답
+pub struct DeleteGroupsResponse {
+pub:
+	throttle_time_ms i32
+	results          []DeletableGroupResult
+}
+
+/// 개별 그룹 삭제 결과
+pub struct DeletableGroupResult {
+pub:
+	group_id   string
+	error_code i16
+}
+
+/// DeleteGroups 응답 인코딩
+pub fn (r DeleteGroupsResponse) encode(version i16) []u8 {
+	is_flexible := version >= 2
+	mut writer := new_writer()
+
+	// throttle_time_ms (v0+)
+	writer.write_i32(r.throttle_time_ms)
+
+	// results 배열
+	if is_flexible {
+		writer.write_compact_array_len(r.results.len)
+	} else {
+		writer.write_array_len(r.results.len)
+	}
+
+	for result in r.results {
+		if is_flexible {
+			writer.write_compact_string(result.group_id)
+		} else {
+			writer.write_string(result.group_id)
+		}
+		writer.write_i16(result.error_code)
+
+		if is_flexible {
+			writer.write_tagged_fields()
+		}
+	}
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+
+	return writer.bytes()
+}
+
+/// DeleteGroups 핸들러 - 컨슈머 그룹 삭제
+fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
+	start_time := time.now()
+	mut reader := new_reader(body)
+	is_flexible := version >= 2
+	req := parse_delete_groups_request(mut reader, version, is_flexible)!
+
+	h.logger.debug('Processing delete groups request', observability.field_int('groups',
+		req.groups_names.len))
+
+	mut results := []DeletableGroupResult{}
+	mut deleted_count := 0
+	mut error_count := 0
+
+	for group_id in req.groups_names {
+		// 그룹 ID 유효성 검사
+		if group_id.len == 0 {
+			h.logger.trace('Invalid group id (empty)', observability.field_string('group_id',
+				group_id))
+			error_count += 1
+			results << DeletableGroupResult{
+				group_id:   group_id
+				error_code: i16(ErrorCode.invalid_group_id)
+			}
+			continue
+		}
+
+		// 그룹 존재 여부 확인
+		group := h.storage.load_group(group_id) or {
+			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
+			error_count += 1
+			results << DeletableGroupResult{
+				group_id:   group_id
+				error_code: i16(ErrorCode.group_id_not_found)
+			}
+			continue
+		}
+
+		// 그룹 상태 확인 - Empty 또는 Dead 상태만 삭제 가능
+		match group.state {
+			.empty, .dead {
+				// 삭제 가능
+			}
+			else {
+				// 활성 멤버가 있는 그룹은 삭제 불가
+				h.logger.trace('Cannot delete non-empty group', observability.field_string('group_id',
+					group_id), observability.field_int('members', group.members.len))
+				error_count += 1
+				results << DeletableGroupResult{
+					group_id:   group_id
+					error_code: i16(ErrorCode.non_empty_group)
+				}
+				continue
+			}
+		}
+
+		// 그룹 삭제
+		h.storage.delete_group(group_id) or {
+			h.logger.error('Failed to delete group', observability.field_string('group_id',
+				group_id), observability.field_string('error', err.str()))
+			error_count += 1
+			results << DeletableGroupResult{
+				group_id:   group_id
+				error_code: i16(ErrorCode.unknown_server_error)
+			}
+			continue
+		}
+
+		h.logger.trace('Group deleted', observability.field_string('group_id', group_id))
+		deleted_count += 1
+		results << DeletableGroupResult{
+			group_id:   group_id
+			error_code: i16(ErrorCode.none)
+		}
+	}
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Delete groups completed', observability.field_int('deleted', deleted_count),
+		observability.field_int('errors', error_count), observability.field_duration('latency',
+		elapsed))
+
+	resp := DeleteGroupsResponse{
+		throttle_time_ms: 0
+		results:          results
+	}
+
+	return resp.encode(version)
+}
+
+/// DeleteGroups 요청 처리 (Frame 기반)
+fn (mut h Handler) process_delete_groups(req DeleteGroupsRequest, version i16) !DeleteGroupsResponse {
+	mut results := []DeletableGroupResult{}
+
+	for group_id in req.groups_names {
+		// 그룹 ID 유효성 검사
+		if group_id.len == 0 {
+			results << DeletableGroupResult{
+				group_id:   group_id
+				error_code: i16(ErrorCode.invalid_group_id)
+			}
+			continue
+		}
+
+		// 그룹 존재 여부 확인
+		group := h.storage.load_group(group_id) or {
+			results << DeletableGroupResult{
+				group_id:   group_id
+				error_code: i16(ErrorCode.group_id_not_found)
+			}
+			continue
+		}
+
+		// 그룹 상태 확인 - Empty 또는 Dead 상태만 삭제 가능
+		match group.state {
+			.empty, .dead {
+				// 삭제 가능
+			}
+			else {
+				results << DeletableGroupResult{
+					group_id:   group_id
+					error_code: i16(ErrorCode.non_empty_group)
+				}
+				continue
+			}
+		}
+
+		// 그룹 삭제
+		h.storage.delete_group(group_id) or {
+			results << DeletableGroupResult{
+				group_id:   group_id
+				error_code: i16(ErrorCode.unknown_server_error)
+			}
+			continue
+		}
+
+		results << DeletableGroupResult{
+			group_id:   group_id
+			error_code: i16(ErrorCode.none)
+		}
+	}
+
+	return DeleteGroupsResponse{
+		throttle_time_ms: 0
+		results:          results
+	}
+}

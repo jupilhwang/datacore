@@ -21,8 +21,8 @@ pub:
 	acquire_timeout  int = 5000 // 워커 슬롯 획득 타임아웃 (ms)
 	metrics_interval int = 60   // 메트릭 로깅 간격 (초)
 	// NUMA 설정 (v0.33.0)
-	numa_aware        bool = false // NUMA 인식 모드 (Linux 전용)
-	numa_bind_workers bool = true  // 워커를 NUMA 노드에 라운드로빈 바인딩
+	numa_aware        bool // NUMA 인식 모드 (Linux 전용, 기본 false)
+	numa_bind_workers bool = true // 워커를 NUMA 노드에 라운드로빈 바인딩
 }
 
 /// WorkerPoolMetrics는 워커 풀 통계를 추적하는 구조체입니다.

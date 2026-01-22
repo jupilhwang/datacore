@@ -189,6 +189,9 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		.describe_groups {
 			h.handle_describe_groups(req.body, version)!
 		}
+		.delete_groups {
+			h.handle_delete_groups(req.body, version)!
+		}
 		.create_topics {
 			h.handle_create_topics(req.body, version)!
 		}
