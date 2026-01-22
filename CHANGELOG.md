@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.28.0] - 2026-01-22
+
+### Added
+- **Controller Election** - 분산 락 기반 컨트롤러 선출 (v0.28.0 핵심 기능)
+  - `ControllerElector` - distributed lock 기반 선출 서비스
+  - `try_become_controller()`, `resign_controller()` - 선출/사임
+  - `refresh_controller_lock()` - 락 갱신
+  - `ControllerTaskRunner` - 컨트롤러 전용 태스크 실행기
+  - 콜백 지원: `on_become_controller`, `on_lose_controller`
+
+- **Worker Pool** - TCP 서버 고루틴 풀 구현 (안정성 개선)
+  - `WorkerPool` - 동시 연결 핸들러 수 제한
+  - `WorkerPoolConfig` - `max_workers`, `acquire_timeout` 설정
+  - `WorkerGuard` - RAII 스타일 슬롯 관리
+  - 메트릭: `active_workers`, `peak_workers`, `total_timeouts`
+  - 고부하 시 spawn 폭증 방지 → 브로커 안정성 향상
+
+- **Failure Recovery Tests** - E2E 장애 복구 테스트 스크립트
+  - `failure_recovery_test.sh` - 4가지 복구 시나리오
+  - 단일 브로커 재시작, 그레이스풀 셧다운
+  - Consumer Group 복구, 멀티 브로커 페일오버
+
+### Performance
+- **Fetch Parallel Timeout** - 병렬 Fetch에 타임아웃 추가
+  - `parallel_fetch_timeout_ms` - 기본 30초
+  - 타임아웃 시 부분 응답 반환 (완료된 파티션만)
+  - 요청 블로킹 방지 → 응답성 향상
+
+- **OTLP Buffer Limit** - 버퍼 최대 크기 제한
+  - `max_log_buffer_size` - 기본 10,000 항목
+  - `max_span_buffer_size` - 기본 5,000 항목
+  - 초과 시 오래된 항목 10% 삭제 (LRU 방식)
+  - 메모리 누수 방지 (OTLP 엔드포인트 지연 시)
+
+### Changed
+- `ServerConfig`에 `max_concurrent_handlers`, `handler_acquire_timeout` 필드 추가
+- `OTLPConfig`에 `max_log_buffer_size`, `max_span_buffer_size` 필드 추가
+- OTLP Exporter 버전 0.28.0으로 업데이트
+
+### Documentation
+- `BENCHMARK.md`에 Storage Engine 비교 결과 추가 (Memory vs S3)
+- Multi-Broker Setup Guide 추가
+- 벤치마크 결과 업데이트 (v0.27.0 → v0.28.0)
+
 ## [0.27.0] - 2026-01-22
 
 ### Added

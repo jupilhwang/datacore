@@ -15,7 +15,7 @@ pub struct OTLPConfig {
 pub:
 	endpoint         string = 'http://localhost:4318' // OTLP HTTP endpoint
 	service_name     string = 'datacore'
-	service_version  string = '0.27.0'
+	service_version  string = '0.28.0'
 	instance_id      string
 	environment      string = 'development'
 	timeout_ms       int    = 5000
@@ -23,6 +23,9 @@ pub:
 	flush_interval_ms int   = 1000
 	retry_count      int    = 3
 	retry_delay_ms   int    = 1000
+	// Buffer limits (v0.28.0) - prevent unbounded memory growth
+	max_log_buffer_size  int = 10000 // Max buffered log entries
+	max_span_buffer_size int = 5000  // Max buffered spans
 }
 
 // ============================================================
@@ -33,11 +36,14 @@ pub:
 pub struct OTLPExporter {
 	config OTLPConfig
 mut:
-	log_buffer   []LogEntry
-	span_buffer  []&Span
-	buffer_lock  sync.Mutex
-	running      bool
-	flush_lock   sync.Mutex
+	log_buffer    []LogEntry
+	span_buffer   []&Span
+	buffer_lock   sync.Mutex
+	running       bool
+	flush_lock    sync.Mutex
+	// Buffer overflow stats (v0.28.0)
+	logs_dropped  u64
+	spans_dropped u64
 }
 
 // new_otlp_exporter creates a new OTLP exporter
@@ -110,6 +116,15 @@ pub fn (mut e OTLPExporter) flush() {
 // add_log adds a log entry to the buffer
 pub fn (mut e OTLPExporter) add_log(entry LogEntry) {
 	e.buffer_lock.@lock()
+
+	// Check buffer limit (v0.28.0) - prevent unbounded memory growth
+	if e.log_buffer.len >= e.config.max_log_buffer_size {
+		// Drop oldest entries (keep most recent)
+		drop_count := e.log_buffer.len / 10 // Drop 10%
+		e.log_buffer = e.log_buffer[drop_count..]
+		e.logs_dropped += u64(drop_count)
+	}
+
 	e.log_buffer << entry
 	should_flush := e.log_buffer.len >= e.config.batch_size
 	e.buffer_lock.unlock()
@@ -200,6 +215,15 @@ fn (e &OTLPExporter) build_log_record(entry LogEntry) string {
 // add_span adds a span to the buffer
 pub fn (mut e OTLPExporter) add_span(span &Span) {
 	e.buffer_lock.@lock()
+
+	// Check buffer limit (v0.28.0) - prevent unbounded memory growth
+	if e.span_buffer.len >= e.config.max_span_buffer_size {
+		// Drop oldest entries (keep most recent)
+		drop_count := e.span_buffer.len / 10 // Drop 10%
+		e.span_buffer = e.span_buffer[drop_count..]
+		e.spans_dropped += u64(drop_count)
+	}
+
 	e.span_buffer << span
 	should_flush := e.span_buffer.len >= e.config.batch_size
 	e.buffer_lock.unlock()

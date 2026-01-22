@@ -20,6 +20,9 @@ pub:
 	max_request_size       int    = 104857600 // 100MB
 	max_pending_requests   int    = 100       // Request pipelining limit
 	shutdown_timeout_ms    int    = 30000     // Graceful shutdown timeout
+	// Worker pool settings (v0.28.0)
+	max_concurrent_handlers int = 1000 // Maximum concurrent connection handlers
+	handler_acquire_timeout int = 5000 // Timeout (ms) to acquire handler slot
 }
 
 // RequestHandler interface for handling protocol requests
@@ -45,16 +48,24 @@ mut:
 	handler       RequestHandler
 	shutdown_chan chan bool
 	state_lock    sync.Mutex
+	worker_pool   &WorkerPool // Worker pool for connection handlers (v0.28.0)
 }
 
 // new_server creates a new TCP server
 pub fn new_server(config ServerConfig, handler RequestHandler) &Server {
+	// Create worker pool with config
+	pool_config := WorkerPoolConfig{
+		max_workers:     config.max_concurrent_handlers
+		acquire_timeout: config.handler_acquire_timeout
+	}
+
 	return &Server{
 		config:        config
 		state:         .stopped
 		conn_mgr:      new_connection_manager(config)
 		handler:       handler
 		shutdown_chan: chan bool{cap: 1}
+		worker_pool:   new_worker_pool(pool_config)
 	}
 }
 
@@ -82,6 +93,7 @@ pub fn (mut s Server) start() ! {
 	println('║  Broker ID: ${s.config.broker_id}                                          ║')
 	println('║  Cluster:   ${s.config.cluster_id}                         ║')
 	println('║  Max Connections: ${s.config.max_connections}                                  ║')
+	println('║  Max Handlers: ${s.config.max_concurrent_handlers}                                     ║')
 	println('╚═══════════════════════════════════════════════════════════╝')
 
 	// Start background tasks
@@ -99,8 +111,18 @@ pub fn (mut s Server) start() ! {
 			continue
 		}
 
+		// Try to acquire a worker slot (with timeout)
+		// This prevents goroutine explosion under high load
+		if !s.worker_pool.acquire() {
+			// Could not acquire slot - reject connection
+			eprintln('[Connection] Rejected: worker pool exhausted (${s.worker_pool.active_count()}/${s.config.max_concurrent_handlers} active)')
+			conn.close() or {}
+			continue
+		}
+
 		// Handle each connection in a separate coroutine (non-blocking)
-		spawn s.handle_connection(mut conn)
+		// Worker slot will be released when handle_connection returns
+		spawn s.handle_connection_with_pool(mut conn)
 	}
 
 	listener.close() or {}
@@ -123,6 +145,9 @@ pub fn (mut s Server) stop() {
 		s.shutdown_chan <- true {}
 		else {}
 	}
+
+	// Shutdown worker pool
+	s.worker_pool.shutdown()
 
 	// Wait for existing connections to drain (with timeout)
 	start_time := time.now()
@@ -149,11 +174,14 @@ pub fn (mut s Server) stop() {
 
 	// Print final stats
 	metrics := s.conn_mgr.get_metrics()
+	pool_metrics := s.worker_pool.get_metrics()
 	println('[DataCore] Server stopped')
 	println('  Total connections: ${metrics.total_connections}')
 	println('  Total requests: ${metrics.total_requests}')
 	println('  Total bytes received: ${format_bytes(metrics.total_bytes_received)}')
 	println('  Total bytes sent: ${format_bytes(metrics.total_bytes_sent)}')
+	println('  Peak workers: ${pool_metrics.peak_workers}')
+	println('  Worker timeouts: ${pool_metrics.total_timeouts}')
 }
 
 // is_running checks if server is in running state
@@ -173,6 +201,20 @@ pub fn (mut s Server) get_state() ServerState {
 // get_metrics returns server metrics
 pub fn (mut s Server) get_metrics() ConnectionMetrics {
 	return s.conn_mgr.get_metrics()
+}
+
+// get_worker_pool_metrics returns worker pool metrics
+pub fn (mut s Server) get_worker_pool_metrics() WorkerPoolMetrics {
+	return s.worker_pool.get_metrics()
+}
+
+// handle_connection_with_pool handles a connection and releases worker slot when done
+fn (mut s Server) handle_connection_with_pool(mut conn net.TcpConn) {
+	// Ensure worker slot is released when done
+	defer {
+		s.worker_pool.release()
+	}
+	s.handle_connection(mut conn)
 }
 
 // handle_connection handles a single client connection

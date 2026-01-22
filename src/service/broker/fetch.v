@@ -3,6 +3,7 @@ module broker
 
 import domain
 import service.port
+import time
 
 // FetchUseCase handles fetch request business logic
 pub struct FetchUseCase {
@@ -58,6 +59,9 @@ pub:
 // Parallelization threshold - use parallel fetch when partition count exceeds this
 const parallel_threshold = 2
 
+// Default timeout for parallel fetch operations (ms)
+const parallel_fetch_timeout_ms = 30000
+
 // Execute processes the fetch request
 pub fn (u &FetchUseCase) execute(req FetchRequest) FetchResponse {
 	// Use parallel fetch for multiple partitions
@@ -82,7 +86,7 @@ fn (u &FetchUseCase) execute_sequential(req FetchRequest) FetchResponse {
 	}
 }
 
-// execute_parallel processes fetch request in parallel using spawn
+// execute_parallel processes fetch request in parallel using spawn with timeout
 fn (u &FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
 	// Create channel for results
 	ch := chan FetchPartitionResponse{cap: req.partitions.len}
@@ -92,10 +96,52 @@ fn (u &FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
 		spawn u.fetch_partition_async(part_req, ch)
 	}
 
-	// Collect results
+	// Calculate timeout based on request max_wait_ms or default
+	timeout_ms := if req.max_wait_ms > 0 {
+		int(req.max_wait_ms)
+	} else {
+		parallel_fetch_timeout_ms
+	}
+
+	// Collect results with timeout
 	mut partition_responses := []FetchPartitionResponse{cap: req.partitions.len}
-	for _ in 0 .. req.partitions.len {
-		partition_responses << <-ch
+	mut received := 0
+	mut timed_out := false
+
+	for received < req.partitions.len && !timed_out {
+		select {
+			response := <-ch {
+				partition_responses << response
+				received += 1
+			}
+			timeout_ms * time.millisecond {
+				// Timeout reached - stop waiting for more responses
+				timed_out = true
+				eprintln('[Fetch] Parallel fetch timeout after ${timeout_ms}ms, received ${received}/${req.partitions.len} responses')
+			}
+		}
+	}
+
+	// If we didn't receive all responses, add error responses for missing partitions
+	if timed_out && received < req.partitions.len {
+		// Build a set of received partitions
+		mut received_parts := map[string]bool{}
+		for resp in partition_responses {
+			key := '${resp.topic}:${resp.partition}'
+			received_parts[key] = true
+		}
+
+		// Add timeout error responses for missing partitions
+		for part_req in req.partitions {
+			key := '${part_req.topic}:${part_req.partition}'
+			if key !in received_parts {
+				partition_responses << FetchPartitionResponse{
+					topic:      part_req.topic
+					partition:  part_req.partition
+					error_code: i16(domain.ErrorCode.request_timed_out)
+				}
+			}
+		}
 	}
 
 	return FetchResponse{
