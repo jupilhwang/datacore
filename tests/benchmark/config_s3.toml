@@ -1,0 +1,51 @@
+# =============================================================================
+# DataCore Benchmark Configuration - S3 Storage Engine
+# =============================================================================
+
+[broker]
+broker_id = 1
+cluster_id = "benchmark-cluster"
+host = "0.0.0.0"
+port = 9092
+advertised_host = "127.0.0.1"
+max_connections = 10000
+max_request_size = 104857600
+request_timeout_ms = 60000
+
+[rest]
+enabled = false
+
+[storage]
+engine = "s3"
+
+[storage.s3]
+endpoint = "https://s3.ap-northeast-2.amazonaws.com"
+bucket = "jhwang-s3"
+region = "ap-northeast-2"
+prefix = "datacore-benchmark/"
+timezone = "UTC"
+
+# Performance tuning
+batch_timeout_ms = 1000
+batch_max_bytes = 10485760
+compaction_interval_ms = 60000
+target_segment_bytes = 104857600
+index_cache_ttl_ms = 86400000
+
+[schema_registry]
+enabled = false
+
+[observability.otel]
+enabled = false
+
+[observability.metrics]
+enabled = false
+
+[observability.logging]
+enabled = true
+level = "warn"
+format = "json"
+console_output = true
+
+[observability.tracing]
+enabled = false

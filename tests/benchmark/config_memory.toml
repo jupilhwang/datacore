@@ -1,0 +1,41 @@
+# =============================================================================
+# DataCore Benchmark Configuration - Memory Storage Engine
+# =============================================================================
+
+[broker]
+broker_id = 1
+cluster_id = "benchmark-cluster"
+host = "0.0.0.0"
+port = 9092
+advertised_host = "127.0.0.1"
+max_connections = 10000
+max_request_size = 104857600
+request_timeout_ms = 30000
+
+[rest]
+enabled = false
+
+[storage]
+engine = "memory"
+
+[storage.memory]
+max_memory_mb = 4096
+segment_size_bytes = 1073741824
+
+[schema_registry]
+enabled = false
+
+[observability.otel]
+enabled = false
+
+[observability.metrics]
+enabled = false
+
+[observability.logging]
+enabled = true
+level = "warn"
+format = "json"
+console_output = true
+
+[observability.tracing]
+enabled = false
