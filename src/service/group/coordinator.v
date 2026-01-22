@@ -85,18 +85,27 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 		metadata:          if req.protocols.len > 0 { req.protocols[0].metadata } else { []u8{} }
 	}
 
-	mut member_exists := false
-	mut updated_members := group.members.clone()
-	for i, m in updated_members {
+	// Find existing member index (avoid clone if possible)
+	mut member_idx := -1
+	for i, m in group.members {
 		if m.member_id == member_id {
-			updated_members[i] = member
-			member_exists = true
+			member_idx = i
 			break
 		}
 	}
 
-	if !member_exists {
-		updated_members << member
+	// Build updated members list efficiently
+	mut updated_members := if member_idx >= 0 {
+		// Update existing member in-place
+		mut members := group.members.clone()
+		members[member_idx] = member
+		members
+	} else {
+		// Append new member (single allocation)
+		mut members := []domain.GroupMember{cap: group.members.len + 1}
+		members << group.members
+		members << member
+		members
 	}
 
 	group = domain.ConsumerGroup{

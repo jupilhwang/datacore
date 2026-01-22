@@ -15,6 +15,8 @@ mut:
 	schemas         map[int]domain.Schema             // schema_id -> Schema
 	subjects        map[string][]domain.SchemaVersion // subject -> versions
 	subject_configs map[string]domain.SubjectConfig   // subject -> config
+	// Version lookup cache (v0.28.0 optimization)
+	version_map     map[string]map[int]int            // subject -> (version -> index in versions array)
 
 	// Global state
 	next_id       int
@@ -58,6 +60,7 @@ pub fn new_registry(storage port.StoragePort, config RegistryConfig) &SchemaRegi
 		schemas:         map[int]domain.Schema{}
 		subjects:        map[string][]domain.SchemaVersion{}
 		subject_configs: map[string]domain.SubjectConfig{}
+		version_map:     map[string]map[int]int{}
 		next_id:         1
 		global_config:   domain.SubjectConfig{
 			compatibility: config.default_compatibility
@@ -227,6 +230,12 @@ pub fn (mut r SchemaRegistry) register(subject string, schema_str string, schema
 		r.subjects[subject] = [version]
 	}
 
+	// Update version_map for O(1) lookup (v0.28.0 optimization)
+	if subject !in r.version_map {
+		r.version_map[subject] = map[int]int{}
+	}
+	r.version_map[subject][version_num] = versions.len  // index in array
+
 	// Persist to storage (unlocked operation)
 	r.persist_schema(subject, schema, version) or {
 		// Log error but don't fail - in-memory state is updated
@@ -260,6 +269,16 @@ pub fn (mut r SchemaRegistry) get_schema_by_subject(subject string, version int)
 		return r.schemas[latest.schema_id] or { return error('schema not found') }
 	}
 
+	// O(1) lookup using version_map (v0.28.0 optimization)
+	if vm := r.version_map[subject] {
+		if idx := vm[version] {
+			if idx < versions.len {
+				return r.schemas[versions[idx].schema_id] or { return error('schema not found') }
+			}
+		}
+	}
+
+	// Fallback to linear search (for backward compatibility)
 	for v in versions {
 		if v.version == version {
 			return r.schemas[v.schema_id] or { return error('schema not found') }
@@ -322,6 +341,7 @@ pub fn (mut r SchemaRegistry) delete_subject(subject string) ![]int {
 
 	r.subjects.delete(subject)
 	r.subject_configs.delete(subject)
+	r.version_map.delete(subject)  // Clean up version_map (v0.28.0)
 
 	return deleted
 }
@@ -337,6 +357,16 @@ pub fn (mut r SchemaRegistry) delete_version(subject string, version int) !int {
 		if v.version == version {
 			versions.delete(i)
 			r.subjects[subject] = versions
+
+			// Rebuild version_map for this subject (v0.28.0)
+			if subject in r.version_map {
+				r.version_map[subject].delete(version)
+				// Update indices for versions after deleted one
+				for j := i; j < versions.len; j++ {
+					r.version_map[subject][versions[j].version] = j
+				}
+			}
+
 			return version
 		}
 	}

@@ -616,8 +616,10 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 	objects := a.list_objects(prefix)!
 
 	mut groups := []domain.GroupInfo{}
+	mut group_ids := []string{}
 	mut seen := map[string]bool{}
 
+	// First pass: collect unique group IDs
 	for obj in objects {
 		if obj.key.ends_with('/state.json') {
 			parts := obj.key.split('/')
@@ -625,14 +627,49 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 				group_id := parts[parts.len - 2]
 				if group_id !in seen {
 					seen[group_id] = true
-					if group := a.load_group(group_id) {
-						groups << domain.GroupInfo{
-							group_id:      group_id
-							protocol_type: group.protocol_type
-							state:         group.state.str()
-						}
-					}
+					group_ids << group_id
 				}
+			}
+		}
+	}
+
+	// Batch load groups (parallel fetch for better performance)
+	if group_ids.len <= 3 {
+		// Small batch: sequential load
+		for group_id in group_ids {
+			if group := a.load_group(group_id) {
+				groups << domain.GroupInfo{
+					group_id:      group_id
+					protocol_type: group.protocol_type
+					state:         group.state.str()
+				}
+			}
+		}
+	} else {
+		// Large batch: parallel load using channels
+		// Use domain.GroupInfo directly as channel doesn't support optional types
+		ch := chan domain.GroupInfo{cap: group_ids.len}
+
+		for group_id in group_ids {
+			spawn fn [mut a, group_id, ch] () {
+				if group := a.load_group(group_id) {
+					ch <- domain.GroupInfo{
+						group_id:      group.group_id
+						protocol_type: group.protocol_type
+						state:         group.state.str()
+					}
+				} else {
+					// Send empty GroupInfo for failed loads (will be filtered)
+					ch <- domain.GroupInfo{group_id: ''}
+				}
+			}()
+		}
+
+		// Collect results
+		for _ in 0 .. group_ids.len {
+			info := <-ch
+			if info.group_id.len > 0 {
+				groups << info
 			}
 		}
 	}
