@@ -229,8 +229,9 @@ enabled = true
 exporter = "prometheus"
 
 # Prometheus 스크래핑 엔드포인트 (exporter=prometheus 시 사용)
+# REST API 서버(8080)의 /metrics 엔드포인트에서 제공됨
 prometheus_endpoint = "/metrics"
-prometheus_port = 9093
+prometheus_port = 9093  # Deprecated: REST API(8080)에서 /metrics 제공
 
 # OTLP 엔드포인트 (exporter=otlp 시 사용, 비어있으면 공통 설정 사용)
 # otlp_endpoint = ""
