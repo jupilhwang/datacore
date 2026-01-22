@@ -451,35 +451,26 @@ pub fn (mut w BinaryWriter) write_i8(val i8) {
 
 /// write_i16은 빅 엔디안 형식의 부호 있는 16비트 정수를 씁니다.
 pub fn (mut w BinaryWriter) write_i16(val i16) {
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (2번의 << 대신 1번)
+	w.data << [u8(val >> 8), u8(val)]
 }
 
 /// write_i32는 빅 엔디안 형식의 부호 있는 32비트 정수를 씁니다.
 pub fn (mut w BinaryWriter) write_i32(val i32) {
-	w.data << u8(val >> 24)
-	w.data << u8(val >> 16)
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (4번의 << 대신 1번)
+	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
 pub fn (mut w BinaryWriter) write_u32(val u32) {
-	w.data << u8(val >> 24)
-	w.data << u8(val >> 16)
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (4번의 << 대신 1번)
+	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
 /// write_i64는 빅 엔디안 형식의 부호 있는 64비트 정수를 씁니다.
 pub fn (mut w BinaryWriter) write_i64(val i64) {
-	w.data << u8(val >> 56)
-	w.data << u8(val >> 48)
-	w.data << u8(val >> 40)
-	w.data << u8(val >> 32)
-	w.data << u8(val >> 24)
-	w.data << u8(val >> 16)
-	w.data << u8(val >> 8)
-	w.data << u8(val)
+	// bulk 쓰기로 최적화 (8번의 << 대신 1번)
+	w.data << [u8(val >> 56), u8(val >> 48), u8(val >> 40), u8(val >> 32), u8(val >> 24),
+		u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
 /// write_uvarint는 부호 없는 가변 길이 정수를 씁니다.
