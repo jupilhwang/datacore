@@ -59,6 +59,7 @@ pub:
 	error_code       i16                  // 최상위 에러 코드
 	session_id       i32                  // 세션 ID (v7+)
 	topics           []FetchResponseTopic // 응답 토픽 목록
+	node_endpoints   []NodeEndpoint       // 노드 엔드포인트 목록 (v16+)
 }
 
 /// Fetch 응답 토픽 - 토픽별 조회 결과
@@ -78,6 +79,15 @@ pub:
 	last_stable_offset i64  // 마지막 안정 오프셋 (트랜잭션 완료된 오프셋)
 	log_start_offset   i64  // 로그 시작 오프셋
 	records            []u8 // 레코드 배치 데이터
+}
+
+/// 노드 엔드포인트 - 브로커 노드 정보 (v16+)
+pub struct NodeEndpoint {
+pub:
+	node_id i32    // 노드 ID
+	host    string // 호스트명
+	port    i32    // 포트 번호
+	rack    string // 랙 정보 (nullable)
 }
 
 // Fetch 요청을 파싱합니다.
@@ -389,6 +399,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 		error_code:       0
 		session_id:       0
 		topics:           topics
+		node_endpoints:   []NodeEndpoint{} // v16+에서 사용, 현재는 빈 배열
 	}
 }
 

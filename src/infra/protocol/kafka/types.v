@@ -207,7 +207,7 @@ pub:
 pub fn get_supported_api_versions() []ApiVersionRange {
 	return [
 		ApiVersionRange{.produce, 0, 13}, // v9+ flexible, v13+ TopicId support
-		ApiVersionRange{.fetch, 0, 13}, // v12+ flexible, v13 TopicId support
+		ApiVersionRange{.fetch, 0, 16}, // v12+ flexible, v13 TopicId, v15 ReplicaState, v16 NodeEndpoints
 		ApiVersionRange{.list_offsets, 0, 8}, // v6+ flexible, v7-8 identical structure
 		ApiVersionRange{.metadata, 0, 12}, // v9+ flexible, v10+ topic_id, v12 name is nullable
 		ApiVersionRange{.offset_commit, 0, 9}, // v8+ flexible
