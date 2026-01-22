@@ -5,6 +5,7 @@ module kafka
 
 import domain
 import infra.observability
+import service.offset
 import time
 
 // OffsetCommit 요청
@@ -409,7 +410,8 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	h.logger.debug('Processing offset commit', observability.field_string('group_id',
 		req.group_id), observability.field_int('topics', req.topics.len))
 
-	mut all_offsets := []domain.PartitionOffset{}
+	// 프로토콜 요청을 서비스 요청으로 변환
+	mut all_offsets := []domain.PartitionOffset{cap: req.topics.len * 4}
 	mut total_partitions := 0
 	for t in req.topics {
 		for p in t.partitions {
@@ -424,12 +426,18 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 		}
 	}
 
-	h.storage.commit_offsets(req.group_id, all_offsets) or {
+	// OffsetManager를 통해 오프셋 커밋
+	service_resp := h.offset_manager.commit_offsets(offset.OffsetCommitRequest{
+		group_id: req.group_id
+		offsets:  all_offsets
+	}) or {
 		h.logger.error('Offset commit failed', observability.field_string('group_id',
 			req.group_id), observability.field_string('error', err.str()))
-		mut topics := []OffsetCommitResponseTopic{}
+
+		// 에러 응답 생성
+		mut topics := []OffsetCommitResponseTopic{cap: req.topics.len}
 		for t in req.topics {
-			mut partitions := []OffsetCommitResponsePartition{}
+			mut partitions := []OffsetCommitResponsePartition{cap: t.partitions.len}
 			for p in t.partitions {
 				partitions << OffsetCommitResponsePartition{
 					partition_index: p.partition_index
@@ -447,17 +455,22 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 		}.encode(version)
 	}
 
-	mut topics := []OffsetCommitResponseTopic{}
-	for t in req.topics {
-		mut partitions := []OffsetCommitResponsePartition{}
-		for p in t.partitions {
-			partitions << OffsetCommitResponsePartition{
-				partition_index: p.partition_index
-				error_code:      0
-			}
+	// 서비스 응답을 프로토콜 응답으로 변환
+	mut topics_map := map[string][]OffsetCommitResponsePartition{}
+	for result in service_resp.results {
+		if result.topic !in topics_map {
+			topics_map[result.topic] = []OffsetCommitResponsePartition{}
 		}
+		topics_map[result.topic] << OffsetCommitResponsePartition{
+			partition_index: i32(result.partition)
+			error_code:      result.error_code
+		}
+	}
+
+	mut topics := []OffsetCommitResponseTopic{cap: topics_map.len}
+	for topic_name, partitions in topics_map {
 		topics << OffsetCommitResponseTopic{
-			name:       t.name
+			name:       topic_name
 			partitions: partitions
 		}
 	}
@@ -507,7 +520,8 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}
 
 		for g in req_groups {
-			mut partitions_to_fetch := []domain.TopicPartition{}
+			// 프로토콜 요청을 서비스 요청으로 변환
+			mut partitions_to_fetch := []domain.TopicPartition{cap: g.topics.len * 4}
 			for t in g.topics {
 				for p in t.partitions {
 					partitions_to_fetch << domain.TopicPartition{
@@ -517,7 +531,12 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 				}
 			}
 
-			fetched_offsets := h.storage.fetch_offsets(g.group_id, partitions_to_fetch) or {
+			// OffsetManager를 통해 오프셋 조회
+			service_resp := h.offset_manager.fetch_offsets(offset.OffsetFetchRequest{
+				group_id:       g.group_id
+				partitions:     partitions_to_fetch
+				require_stable: req.require_stable
+			}) or {
 				groups << OffsetFetchResponseGroup{
 					group_id:   g.group_id
 					topics:     []
@@ -526,15 +545,16 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 				continue
 			}
 
+			// 서비스 응답을 프로토콜 응답으로 변환
 			mut topics_map := map[string][]OffsetFetchResponsePartition{}
-			for result in fetched_offsets {
+			for result in service_resp.results {
 				if result.topic !in topics_map {
-					topics_map[result.topic] = []
+					topics_map[result.topic] = []OffsetFetchResponsePartition{}
 				}
 				topics_map[result.topic] << OffsetFetchResponsePartition{
 					partition_index:        i32(result.partition)
-					committed_offset:       result.offset
-					committed_leader_epoch: -1
+					committed_offset:       result.committed_offset
+					committed_leader_epoch: result.committed_leader_epoch
 					committed_metadata:     if result.metadata.len > 0 {
 						result.metadata
 					} else {
@@ -544,7 +564,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 				}
 			}
 
-			mut topics := []OffsetFetchResponseGroupTopic{}
+			mut topics := []OffsetFetchResponseGroupTopic{cap: topics_map.len}
 			for name, partitions in topics_map {
 				topics << OffsetFetchResponseGroupTopic{
 					name:       name
@@ -555,7 +575,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 			groups << OffsetFetchResponseGroup{
 				group_id:   g.group_id
 				topics:     topics
-				error_code: 0
+				error_code: service_resp.error_code
 			}
 		}
 
@@ -569,7 +589,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 	}
 
 	// v0-7 behavior
-	mut partitions_to_fetch := []domain.TopicPartition{}
+	mut partitions_to_fetch := []domain.TopicPartition{cap: req.topics.len * 4}
 	for t in req.topics {
 		for p in t.partitions {
 			partitions_to_fetch << domain.TopicPartition{
@@ -579,7 +599,12 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}
 	}
 
-	fetched_offsets := h.storage.fetch_offsets(req.group_id, partitions_to_fetch) or {
+	// OffsetManager를 통해 오프셋 조회
+	service_resp := h.offset_manager.fetch_offsets(offset.OffsetFetchRequest{
+		group_id:       req.group_id
+		partitions:     partitions_to_fetch
+		require_stable: req.require_stable
+	}) or {
 		return OffsetFetchResponse{
 			throttle_time_ms: 0
 			topics:           []
@@ -588,21 +613,22 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}.encode(version)
 	}
 
+	// 서비스 응답을 프로토콜 응답으로 변환
 	mut topics_map := map[string][]OffsetFetchResponsePartition{}
-	for result in fetched_offsets {
+	for result in service_resp.results {
 		if result.topic !in topics_map {
-			topics_map[result.topic] = []
+			topics_map[result.topic] = []OffsetFetchResponsePartition{}
 		}
 		topics_map[result.topic] << OffsetFetchResponsePartition{
 			partition_index:        i32(result.partition)
-			committed_offset:       result.offset
-			committed_leader_epoch: -1
+			committed_offset:       result.committed_offset
+			committed_leader_epoch: result.committed_leader_epoch
 			committed_metadata:     if result.metadata.len > 0 { result.metadata } else { none }
 			error_code:             result.error_code
 		}
 	}
 
-	mut topics := []OffsetFetchResponseTopic{}
+	mut topics := []OffsetFetchResponseTopic{cap: topics_map.len}
 	for name, partitions in topics_map {
 		topics << OffsetFetchResponseTopic{
 			name:       name
@@ -613,7 +639,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 	resp := OffsetFetchResponse{
 		throttle_time_ms: 0
 		topics:           topics
-		error_code:       0
+		error_code:       service_resp.error_code
 		groups:           []
 	}
 

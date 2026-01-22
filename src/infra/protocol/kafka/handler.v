@@ -10,6 +10,7 @@ import infra.observability
 import rand
 import service.cluster
 import service.group
+import service.offset
 import service.port
 import service.transaction
 import time
@@ -25,6 +26,7 @@ pub struct Handler {
 	cluster_id  string
 mut:
 	storage                 port.StoragePort
+	offset_manager          &offset.OffsetManager               // Offset management service
 	broker_registry         ?&cluster.BrokerRegistry            // Optional: Broker registry for multi-broker mode
 	auth_manager            ?port.AuthManager                   // Optional: SASL authentication manager
 	acl_manager             ?port.AclManager                    // Optional: ACL manager
@@ -38,18 +40,22 @@ mut:
 /// 기본 핸들러로, 인증이나 ACL 없이 스토리지만 사용합니다.
 /// 개발/테스트 환경에 적합합니다.
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
+	logger := observability.get_named_logger('kafka.handler')
+	offset_mgr := offset.new_offset_manager(storage, logger)
+
 	return Handler{
 		broker_id:               broker_id
 		host:                    host
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		offset_manager:          offset_mgr
 		broker_registry:         none
 		auth_manager:            none
 		acl_manager:             none
 		txn_coordinator:         none
 		share_group_coordinator: none
-		logger:                  observability.get_named_logger('kafka.handler')
+		logger:                  logger
 	}
 }
 
@@ -57,18 +63,22 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 ///
 /// SASL 인증이 필요한 환경에서 사용합니다.
 pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager) Handler {
+	logger := observability.get_named_logger('kafka.handler')
+	offset_mgr := offset.new_offset_manager(storage, logger)
+
 	return Handler{
 		broker_id:               broker_id
 		host:                    host
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		offset_manager:          offset_mgr
 		broker_registry:         none
 		auth_manager:            auth_manager
 		acl_manager:             none
 		txn_coordinator:         none
 		share_group_coordinator: none
-		logger:                  observability.get_named_logger('kafka.handler')
+		logger:                  logger
 	}
 }
 
@@ -76,38 +86,45 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 ///
 /// 프로덕션 환경에서 인증, ACL, 트랜잭션을 모두 지원할 때 사용합니다.
 pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator) Handler {
+	logger := observability.get_named_logger('kafka.handler')
+	offset_mgr := offset.new_offset_manager(storage, logger)
+
 	return Handler{
 		broker_id:               broker_id
 		host:                    host
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		offset_manager:          offset_mgr
 		broker_registry:         none
 		auth_manager:            auth_manager
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
 		share_group_coordinator: none
-		logger:                  observability.get_named_logger('kafka.handler')
+		logger:                  logger
 	}
 }
 
 /// Share Group 지원을 포함한 Kafka 프로토콜 핸들러를 생성합니다 (KIP-932).
 ///
-/// Share Group은 Kafka 4.0에서 도입된 새로운 컨슈머 그룹 유형으로,
 /// 큐 기반 메시지 소비 패턴을 지원합니다.
 pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator) Handler {
+	logger := observability.get_named_logger('kafka.handler')
+	offset_mgr := offset.new_offset_manager(storage, logger)
+
 	return Handler{
 		broker_id:               broker_id
 		host:                    host
 		broker_port:             broker_port
 		cluster_id:              cluster_id
 		storage:                 storage
+		offset_manager:          offset_mgr
 		broker_registry:         none
 		auth_manager:            auth_manager
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
 		share_group_coordinator: share_coordinator
-		logger:                  observability.get_named_logger('kafka.handler')
+		logger:                  logger
 	}
 }
 
