@@ -1,10 +1,10 @@
 # =============================================================================
-# DataCore Benchmark Configuration - S3 Storage Engine
+# DataCore Multi-Broker Configuration - Broker 1
 # =============================================================================
 
 [broker]
 broker_id = 1
-cluster_id = "benchmark-cluster"
+cluster_id = "multi-broker-cluster"
 host = "0.0.0.0"
 port = 9092
 advertised_host = "127.0.0.1"
@@ -22,10 +22,10 @@ engine = "s3"
 endpoint = "https://s3.ap-northeast-2.amazonaws.com"
 bucket = "jhwang-s3"
 region = "ap-northeast-2"
-prefix = "datacore-benchmark/"
+prefix = "datacore-multi/"
 timezone = "UTC"
 
-# Performance tuning (optimized: 250ms timeout, 8MB batch)
+# Performance tuning
 batch_timeout_ms = 250
 batch_max_bytes = 8388608
 compaction_interval_ms = 60000
@@ -43,7 +43,7 @@ enabled = false
 
 [observability.logging]
 enabled = true
-level = "warn"
+level = "info"
 format = "json"
 console_output = true
 
