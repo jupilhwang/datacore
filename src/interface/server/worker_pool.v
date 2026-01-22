@@ -10,6 +10,8 @@ module server
 
 import sync
 import time
+import os
+import infra.performance.engines
 
 /// WorkerPoolConfig는 워커 풀 설정을 담는 구조체입니다.
 pub struct WorkerPoolConfig {
@@ -18,6 +20,9 @@ pub:
 	queue_size       int = 5000 // 최대 대기 연결 큐 크기
 	acquire_timeout  int = 5000 // 워커 슬롯 획득 타임아웃 (ms)
 	metrics_interval int = 60   // 메트릭 로깅 간격 (초)
+	// NUMA 설정 (v0.33.0)
+	numa_aware        bool = false // NUMA 인식 모드 (Linux 전용)
+	numa_bind_workers bool = true  // 워커를 NUMA 노드에 라운드로빈 바인딩
 }
 
 /// WorkerPoolMetrics는 워커 풀 통계를 추적하는 구조체입니다.
@@ -30,6 +35,9 @@ pub mut:
 	total_released     u64 // 총 슬롯 해제 수
 	total_timeouts     u64 // 총 획득 타임아웃 수
 	total_rejected     u64 // 총 거부 수 (큐 가득 참)
+	// NUMA 통계 (v0.33.0)
+	numa_bindings      u64 // NUMA 바인딩 성공 횟수
+	numa_binding_fails u64 // NUMA 바인딩 실패 횟수
 }
 
 /// WorkerPool은 연결 처리를 위한 고정 크기 워커 슬롯 풀을 관리합니다.
@@ -41,6 +49,9 @@ mut:
 	metrics      WorkerPoolMetrics // 워커 풀 통계
 	metrics_lock sync.Mutex        // 메트릭 동기화용 뮤텍스
 	running      bool              // 풀 실행 상태 플래그
+	// NUMA 관련 (v0.33.0)
+	numa_node_count int // NUMA 노드 수
+	next_numa_node  int // 다음 바인딩할 NUMA 노드 (라운드로빈)
 }
 
 /// new_worker_pool은 새로운 워커 풀을 생성합니다.
@@ -53,10 +64,15 @@ pub fn new_worker_pool(config WorkerPoolConfig) &WorkerPool {
 		sem <- true
 	}
 
+	// NUMA 노드 수 감지 (v0.33.0)
+	numa_nodes := get_numa_node_count()
+
 	return &WorkerPool{
-		config:    config
-		semaphore: sem
-		running:   true // 초기 상태: 실행 중
+		config:          config
+		semaphore:       sem
+		running:         true // 초기 상태: 실행 중
+		numa_node_count: numa_nodes
+		next_numa_node:  0
 	}
 }
 
@@ -205,5 +221,69 @@ pub fn (mut g WorkerGuard) release() {
 	if !g.released {
 		g.pool.release()
 		g.released = true // 중복 해제 방지
+	}
+}
+
+// ============================================================
+// NUMA 지원 (v0.33.0)
+// ============================================================
+
+/// bind_worker_to_numa는 현재 워커를 NUMA 노드에 바인딩합니다.
+/// 라운드로빈 방식으로 워커를 노드에 분배합니다.
+/// NUMA가 비활성화되었거나 지원되지 않으면 아무 작업도 하지 않습니다.
+pub fn (mut wp WorkerPool) bind_worker_to_numa() {
+	if !wp.config.numa_aware || !wp.config.numa_bind_workers {
+		return
+	}
+
+	if wp.numa_node_count <= 1 {
+		return
+	}
+
+	// 다음 노드 선택 (라운드로빈)
+	wp.metrics_lock.@lock()
+	node := wp.next_numa_node
+	wp.next_numa_node = (wp.next_numa_node + 1) % wp.numa_node_count
+	wp.metrics_lock.unlock()
+
+	// NUMA 노드에 바인딩 시도
+	if bind_thread_to_numa_node(node) {
+		wp.metrics_lock.@lock()
+		wp.metrics.numa_bindings++
+		wp.metrics_lock.unlock()
+	} else {
+		wp.metrics_lock.@lock()
+		wp.metrics.numa_binding_fails++
+		wp.metrics_lock.unlock()
+	}
+}
+
+/// get_numa_node_count는 시스템의 NUMA 노드 수를 반환합니다.
+/// Linux에서만 실제 값을 반환하고, 다른 플랫폼에서는 1을 반환합니다.
+fn get_numa_node_count() int {
+	$if linux {
+		// /sys/devices/system/node/node* 디렉토리 수로 판단
+		nodes := os.ls('/sys/devices/system/node') or { return 1 }
+		mut count := 0
+		for node in nodes {
+			if node.starts_with('node') {
+				count++
+			}
+		}
+		return if count > 0 { count } else { 1 }
+	} $else {
+		return 1
+	}
+}
+
+/// bind_thread_to_numa_node는 현재 스레드를 지정된 NUMA 노드에 바인딩합니다.
+/// Linux에서만 동작하며, 다른 플랫폼에서는 항상 false를 반환합니다.
+fn bind_thread_to_numa_node(node int) bool {
+	$if linux {
+		// libnuma가 있으면 사용, 없으면 sched_setaffinity 사용
+		// 여기서는 간단히 numa 모듈의 함수 호출
+		return engines.bind_to_node(node)
+	} $else {
+		return false
 	}
 }

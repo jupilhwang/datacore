@@ -38,7 +38,10 @@ pub:
 	// io_uring 설정 (v0.32.0)
 	use_io_uring         bool = true // io_uring 사용 여부 (Linux 전용)
 	io_uring_queue_depth u32  = 256  // io_uring 큐 깊이
-	io_uring_sqpoll      bool        // SQ 폴링 모드 사용 여부
+	io_uring_sqpoll      bool // SQ 폴링 모드 사용 여부
+	// NUMA 설정 (v0.33.0)
+	numa_enabled      bool = false // NUMA 인식 모드 활성화 (Linux 전용)
+	numa_bind_workers bool = true  // 워커를 NUMA 노드에 바인딩
 }
 
 /// RequestHandler는 프로토콜 요청을 처리하는 인터페이스입니다.
@@ -75,8 +78,10 @@ mut:
 pub fn new_server(config ServerConfig, handler RequestHandler) &Server {
 	// 서버 설정에 따른 워커 풀 구성 생성
 	pool_config := WorkerPoolConfig{
-		max_workers:     config.max_concurrent_handlers
-		acquire_timeout: config.handler_acquire_timeout
+		max_workers:       config.max_concurrent_handlers
+		acquire_timeout:   config.handler_acquire_timeout
+		numa_aware:        config.numa_enabled      // v0.33.0
+		numa_bind_workers: config.numa_bind_workers // v0.33.0
 	}
 
 	return &Server{
@@ -238,6 +243,11 @@ fn (mut s Server) handle_connection_with_pool(mut conn net.TcpConn) {
 	defer {
 		s.worker_pool.release()
 	}
+
+	// NUMA 노드에 워커 바인딩 (v0.33.0)
+	// 라운드로빈 방식으로 워커를 NUMA 노드에 분배
+	s.worker_pool.bind_worker_to_numa()
+
 	s.handle_connection(mut conn)
 }
 

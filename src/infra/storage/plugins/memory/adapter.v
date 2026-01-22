@@ -28,6 +28,11 @@ pub:
 	max_messages_per_partition int = 1000000   // 파티션당 최대 메시지 수 (기본 100만)
 	max_bytes_per_partition    i64 = -1        // 파티션당 최대 바이트 (-1 = 무제한)
 	retention_ms               i64 = 604800000 // 보존 기간 (기본 7일)
+	// mmap 설정 (v0.33.0)
+	use_mmap       bool   = false           // mmap 사용 여부 (파일 기반 영속성)
+	mmap_dir       string = '/tmp/datacore' // mmap 파일 디렉토리
+	segment_size   i64    = 1073741824      // 세그먼트 크기 (기본 1GB)
+	sync_on_append bool   = false           // 매 append 시 sync 여부
 }
 
 /// memory_capability는 메모리 어댑터의 스토리지 기능을 정의합니다.
@@ -43,10 +48,12 @@ pub const memory_capability = domain.StorageCapability{
 /// TopicStore는 토픽 데이터를 저장합니다.
 struct TopicStore {
 pub mut:
-	metadata   domain.TopicMetadata
-	config     domain.TopicConfig
-	partitions []&PartitionStore
-	lock       sync.RwMutex
+	metadata        domain.TopicMetadata
+	config          domain.TopicConfig
+	partitions      []&PartitionStore     // 인메모리 파티션 (use_mmap=false)
+	mmap_partitions []&MmapPartitionStore // mmap 파티션 (use_mmap=true, v0.33.0)
+	use_mmap        bool                  // mmap 모드 여부
+	lock            sync.RwMutex
 }
 
 /// PartitionStore는 파티션 데이터를 저장하며 세밀한 락킹을 지원합니다.
@@ -94,13 +101,34 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 	topic_id[6] = (topic_id[6] & 0x0f) | 0x40
 	topic_id[8] = (topic_id[8] & 0x3f) | 0x80
 
-	// 파티션 스토어 생성
-	mut partition_stores := []&PartitionStore{cap: partitions}
-	for _ in 0 .. partitions {
-		partition_stores << &PartitionStore{
-			records:        []domain.Record{}
-			base_offset:    0
-			high_watermark: 0
+	// 파티션 스토어 생성 (mmap 모드에 따라 다르게)
+	mut partition_stores := []&PartitionStore{}
+	mut mmap_partition_stores := []&MmapPartitionStore{}
+
+	if a.config.use_mmap {
+		// mmap 모드: MmapPartitionStore 생성 (v0.33.0)
+		for i in 0 .. partitions {
+			mmap_config := MmapPartitionConfig{
+				topic_name:    name
+				partition:     i
+				base_dir:      a.config.mmap_dir
+				segment_size:  a.config.segment_size
+				sync_on_write: a.config.sync_on_append
+			}
+			mmap_part := new_mmap_partition(mmap_config) or {
+				return error('failed to create mmap partition: ${err}')
+			}
+			mmap_partition_stores << mmap_part
+		}
+	} else {
+		// 인메모리 모드: PartitionStore 생성
+		partition_stores = []&PartitionStore{cap: partitions}
+		for _ in 0 .. partitions {
+			partition_stores << &PartitionStore{
+				records:        []domain.Record{}
+				base_offset:    0
+				high_watermark: 0
+			}
 		}
 	}
 
@@ -113,9 +141,11 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 	}
 
 	a.topics[name] = &TopicStore{
-		metadata:   metadata
-		config:     config
-		partitions: partition_stores
+		metadata:        metadata
+		config:          config
+		partitions:      partition_stores
+		mmap_partitions: mmap_partition_stores
+		use_mmap:        a.config.use_mmap
 	}
 
 	// topic_id -> name 매핑을 캐시에 저장 (O(1) 조회용)
@@ -184,7 +214,8 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 
 	mut topic := a.topics[name] or { return error('topic not found') }
 
-	current := topic.partitions.len
+	// mmap 모드에 따라 현재 파티션 수 확인
+	current := if topic.use_mmap { topic.mmap_partitions.len } else { topic.partitions.len }
 	if new_count <= current {
 		return error('new partition count must be greater than current')
 	}
@@ -192,11 +223,29 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 	topic.lock.@lock()
 	defer { topic.lock.unlock() }
 
-	for _ in current .. new_count {
-		topic.partitions << &PartitionStore{
-			records:        []domain.Record{}
-			base_offset:    0
-			high_watermark: 0
+	if topic.use_mmap {
+		// mmap 모드: MmapPartitionStore 추가 (v0.33.0)
+		for i in current .. new_count {
+			mmap_config := MmapPartitionConfig{
+				topic_name:    name
+				partition:     i
+				base_dir:      a.config.mmap_dir
+				segment_size:  a.config.segment_size
+				sync_on_write: a.config.sync_on_append
+			}
+			mmap_part := new_mmap_partition(mmap_config) or {
+				return error('failed to create mmap partition: ${err}')
+			}
+			topic.mmap_partitions << mmap_part
+		}
+	} else {
+		// 인메모리 모드
+		for _ in current .. new_count {
+			topic.partitions << &PartitionStore{
+				records:        []domain.Record{}
+				base_offset:    0
+				high_watermark: 0
+			}
 		}
 	}
 
@@ -220,6 +269,11 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 		return error('topic not found')
 	}
 	a.global_lock.runlock()
+
+	// mmap 모드 분기 (v0.33.0)
+	if topic.use_mmap {
+		return a.append_mmap(topic, partition, records)
+	}
 
 	if partition < 0 || partition >= topic.partitions.len {
 		return error('partition out of range')
@@ -264,6 +318,47 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	}
 }
 
+/// append_mmap은 mmap 모드에서 레코드를 추가합니다. (v0.33.0)
+fn (mut a MemoryStorageAdapter) append_mmap(topic &TopicStore, partition int, records []domain.Record) !domain.AppendResult {
+	if partition < 0 || partition >= topic.mmap_partitions.len {
+		return error('partition out of range')
+	}
+
+	mut mmap_part := topic.mmap_partitions[partition]
+	now := time.now()
+
+	// 레코드를 바이트 배열로 변환
+	mut record_bytes := [][]u8{cap: records.len}
+	for record in records {
+		// 간단한 직렬화: key_len(4) + key + value_len(4) + value
+		mut data := []u8{}
+		// key length
+		key_len := record.key.len
+		data << u8(key_len >> 24)
+		data << u8(key_len >> 16)
+		data << u8(key_len >> 8)
+		data << u8(key_len)
+		data << record.key
+		// value length
+		value_len := record.value.len
+		data << u8(value_len >> 24)
+		data << u8(value_len >> 16)
+		data << u8(value_len >> 8)
+		data << u8(value_len)
+		data << record.value
+		record_bytes << data
+	}
+
+	base_offset, written := mmap_part.append(record_bytes)!
+
+	return domain.AppendResult{
+		base_offset:      base_offset
+		log_append_time:  now.unix()
+		log_start_offset: mmap_part.get_base_offset()
+		record_count:     written
+	}
+}
+
 /// fetch는 파티션에서 레코드를 조회합니다.
 pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
 	// 읽기 락으로 토픽 조회
@@ -273,6 +368,11 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 		return error('topic not found')
 	}
 	a.global_lock.runlock()
+
+	// mmap 모드 분기 (v0.33.0)
+	if topic.use_mmap {
+		return a.fetch_mmap(topic, partition, offset, max_bytes)
+	}
 
 	if partition < 0 || partition >= topic.partitions.len {
 		return error('partition out of range')
@@ -329,6 +429,69 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 	}
 }
 
+/// fetch_mmap은 mmap 모드에서 레코드를 조회합니다. (v0.33.0)
+fn (mut a MemoryStorageAdapter) fetch_mmap(topic &TopicStore, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	if partition < 0 || partition >= topic.mmap_partitions.len {
+		return error('partition out of range')
+	}
+
+	mut mmap_part := topic.mmap_partitions[partition]
+	base_offset := mmap_part.get_base_offset()
+	high_watermark := mmap_part.get_high_watermark()
+
+	// 오프셋이 범위를 벗어나면 빈 결과 반환
+	if offset < base_offset || offset >= high_watermark {
+		return domain.FetchResult{
+			records:            []
+			high_watermark:     high_watermark
+			last_stable_offset: high_watermark
+			log_start_offset:   base_offset
+		}
+	}
+
+	// max_bytes 기반으로 최대 레코드 수 계산
+	max_records := if max_bytes <= 0 { 1000 } else { max_bytes / 100 } // 대략적인 레코드 크기 추정
+	record_bytes := mmap_part.read(offset, max_records)!
+
+	// 바이트 배열을 domain.Record로 변환
+	mut records := []domain.Record{cap: record_bytes.len}
+	for data in record_bytes {
+		if data.len < 8 {
+			continue
+		}
+
+		// key_len(4) + key + value_len(4) + value 역직렬화
+		key_len := int(u32(data[0]) << 24 | u32(data[1]) << 16 | u32(data[2]) << 8 | u32(data[3]))
+		if 4 + key_len + 4 > data.len {
+			continue
+		}
+
+		key := data[4..4 + key_len].clone()
+		value_start := 4 + key_len
+		value_len := int(u32(data[value_start]) << 24 | u32(data[value_start + 1]) << 16 | u32(data[
+			value_start + 2]) << 8 | u32(data[value_start + 3]))
+
+		if value_start + 4 + value_len > data.len {
+			continue
+		}
+
+		value := data[value_start + 4..value_start + 4 + value_len].clone()
+
+		records << domain.Record{
+			key:       key
+			value:     value
+			timestamp: time.now() // 실제로는 세그먼트에서 읽어야 함
+		}
+	}
+
+	return domain.FetchResult{
+		records:            records
+		high_watermark:     high_watermark
+		last_stable_offset: high_watermark
+		log_start_offset:   base_offset
+	}
+}
+
 /// delete_records는 지정된 오프셋 이전의 레코드를 삭제합니다.
 pub fn (mut a MemoryStorageAdapter) delete_records(topic_name string, partition int, before_offset i64) ! {
 	a.global_lock.rlock()
@@ -366,6 +529,22 @@ pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partit
 		return error('topic not found')
 	}
 	a.global_lock.runlock()
+
+	// mmap 모드 분기 (v0.33.0)
+	if topic.use_mmap {
+		if partition < 0 || partition >= topic.mmap_partitions.len {
+			return error('partition out of range')
+		}
+
+		mmap_part := topic.mmap_partitions[partition]
+		return domain.PartitionInfo{
+			topic:           topic_name
+			partition:       partition
+			earliest_offset: mmap_part.get_base_offset()
+			latest_offset:   mmap_part.get_high_watermark()
+			high_watermark:  mmap_part.get_high_watermark()
+		}
+	}
 
 	if partition < 0 || partition >= topic.partitions.len {
 		return error('partition out of range')

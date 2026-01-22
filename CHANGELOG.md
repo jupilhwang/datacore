@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.33.0] - 2026-01-22
+
+### Added
+- **mmap Storage Integration** (Task #57) - Memory Mapped I/O 기반 영속 스토리지
+  - `MmapPartitionStore` - mmap 기반 파티션 스토리지 구현
+  - append-only 로그 세그먼트 + sparse 오프셋 인덱스
+  - 자동 세그먼트 롤오버 지원
+  - OS 페이지 캐시 활용으로 읽기 성능 최적화
+  - `MemoryConfig.use_mmap` - mmap 모드 활성화 옵션
+  - `MemoryConfig.mmap_dir` - mmap 파일 디렉토리
+  - `MemoryConfig.segment_size` - 세그먼트 크기 (기본 1GB)
+  - `MemoryConfig.sync_on_append` - 매 append 시 sync 여부
+
+- **NUMA Worker Binding** (Task #58) - 멀티소켓 시스템 성능 최적화
+  - `WorkerPoolConfig.numa_aware` - NUMA 인식 모드 활성화
+  - `WorkerPoolConfig.numa_bind_workers` - 워커 NUMA 노드 바인딩
+  - 라운드로빈 방식 워커 노드 분배
+  - NUMA 바인딩 통계 (성공/실패 횟수)
+  - `ServerConfig.numa_enabled` - 서버 레벨 NUMA 설정
+  - Linux 전용, 다른 플랫폼은 폴백
+
+### Performance
+- **mmap 기대 효과**
+  - 커널 버퍼 복사 제거로 읽기 성능 향상
+  - 대용량 데이터셋에서 메모리 효율성 증가
+  - OS 페이지 캐시 활용으로 자동 캐싱
+
+- **NUMA 기대 효과**
+  - 멀티소켓 서버에서 메모리 지역성 향상
+  - NUMA 노드 간 메모리 접근 지연 감소
+  - CPU 코어와 메모리 친화도 최적화
+
+### New Files
+- `src/infra/storage/plugins/memory/mmap_partition.v` - mmap 파티션 스토어
+
+### Changed
+- `src/infra/storage/plugins/memory/adapter.v` - mmap 모드 지원 추가
+- `src/interface/server/worker_pool.v` - NUMA 바인딩 기능 추가
+- `src/interface/server/tcp.v` - NUMA 설정 옵션 추가
+
+### Technical Details
+- mmap: 시뮬레이션 기반 구현 (실제 mmap syscall은 향후 추가)
+- NUMA: Linux libnuma 연동 (조건부 컴파일)
+- 기존 API 완전 호환 (새 옵션은 기본값으로 비활성화)
+
 ## [0.32.0] - 2026-01-22
 
 ### Added
