@@ -1,0 +1,2 @@
+memory,baseline,producer,10000 records sent, 32258.1 records/sec (31.50 MB/sec), 55.82 ms avg latency, 195.00 ms max latency, 62 ms 50th, 77 ms 95th, 79 ms 99th, 79 ms 99.9th.
+memory,throughput,producer,50000 records sent, 124069.5 records/sec (121.16 MB/sec), 40.80 ms avg latency, 192.00 ms max latency, 40 ms 50th, 64 ms 95th, 65 ms 99th, 65 ms 99.9th.

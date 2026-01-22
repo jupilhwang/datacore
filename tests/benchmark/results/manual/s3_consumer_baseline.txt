@@ -1,0 +1,4 @@
+start.time, end.time, data.consumed.in.MB, MB.sec, data.consumed.in.nMsg, nMsg.sec, rebalance.time.ms, fetch.time.ms, fetch.MB.sec, fetch.nMsg.sec
+[2026-01-22 08:58:11,535] ERROR [Consumer clientId=perf-consumer-client, groupId=perf-consumer-47173] Offset commit failed on partition bench-s3-baseline-0 at offset 10000: The server experienced an unexpected error when processing the request. (org.apache.kafka.clients.consumer.internals.ConsumerCoordinator)
+[2026-01-22 08:58:11,538] WARN [Consumer clientId=perf-consumer-client, groupId=perf-consumer-47173] Synchronous auto-commit of offsets {bench-s3-baseline-0=OffsetAndMetadata{offset=10000, leaderEpoch=null, metadata=''}} failed: Unexpected error in commit: The server experienced an unexpected error when processing the request. (org.apache.kafka.clients.consumer.internals.ConsumerCoordinator)
+2026-01-22 08:58:07:932, 2026-01-22 08:58:11:496, 9.7656, 2.7401, 10000, 2805.8361, 369, 3195, 3.0565, 3129.8905
