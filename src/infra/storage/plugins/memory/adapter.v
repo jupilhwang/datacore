@@ -29,10 +29,10 @@ pub:
 	max_bytes_per_partition    i64 = -1        // 파티션당 최대 바이트 (-1 = 무제한)
 	retention_ms               i64 = 604800000 // 보존 기간 (기본 7일)
 	// mmap 설정 (v0.33.0)
-	use_mmap       bool   // mmap 사용 여부 (파일 기반 영속성, 기본 false)
+	use_mmap       bool // mmap 사용 여부 (파일 기반 영속성, 기본 false)
 	mmap_dir       string = '/tmp/datacore' // mmap 파일 디렉토리
 	segment_size   i64    = 1073741824      // 세그먼트 크기 (기본 1GB)
-	sync_on_append bool   // 매 append 시 sync 여부 (기본 false)
+	sync_on_append bool // 매 append 시 sync 여부 (기본 false)
 }
 
 /// memory_capability는 메모리 어댑터의 스토리지 기능을 정의합니다.
