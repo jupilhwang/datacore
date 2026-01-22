@@ -10,6 +10,9 @@ import json
 import crypto.md5
 import sync
 
+// Global config storage to work around V struct copy issues
+__global g_s3_config = S3Config{}
+
 // 참고: S3 HTTP 클라이언트 함수들 (sign_request, get_object, put_object 등)은 s3_client.v에 있습니다.
 // 참고: PartitionIndex, LogSegment, CachedPartitionIndex는 partition_index.v에 정의되어 있습니다.
 // 참고: StoredRecord, TopicPartitionBuffer는 s3_record_codec.v와 buffer_manager.v에 정의되어 있습니다.
@@ -28,7 +31,7 @@ pub const s3_capability = domain.StorageCapability{
 
 /// S3Config는 S3 스토리지 설정을 담습니다.
 pub struct S3Config {
-pub:
+pub mut:
 	bucket_name    string = 'datacore-storage' // S3 버킷 이름
 	region         string = 'us-east-1'        // AWS 리전
 	endpoint       string // 선택사항: MinIO/LocalStack용 엔드포인트
@@ -50,7 +53,7 @@ pub:
 
 /// S3StorageAdapter는 S3 스토리지용 StoragePort를 구현합니다.
 pub struct S3StorageAdapter {
-mut:
+pub mut:
 	config S3Config
 	// TTL이 있는 로컬 캐시
 	topic_cache       map[string]CachedTopic
@@ -97,12 +100,15 @@ struct CachedGroup {
 
 /// new_s3_adapter는 새로운 S3 스토리지 어댑터를 생성합니다.
 pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
+	// Store config in global to work around V struct copy issues
+	g_s3_config = config
+	
 	return &S3StorageAdapter{
-		config:                  config
+		config:                  g_s3_config
 		topic_cache:             map[string]CachedTopic{}
 		group_cache:             map[string]CachedGroup{}
 		offset_cache:            map[string]map[string]i64{}
-		topic_index_cache:       map[string]CachedPartitionIndex{} // 캐시 초기화
+		topic_index_cache:       map[string]CachedPartitionIndex{}
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
 	}
 }
@@ -178,7 +184,7 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 	}
 
 	// 토픽 접두사로 시작하는 모든 객체 삭제
-	prefix := '${a.config.prefix}topics/${name}/'
+	prefix := '${g_s3_config.prefix}topics/${name}/'
 	a.delete_objects_with_prefix(prefix)!
 
 	// 캐시에서 제거
@@ -189,7 +195,7 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 
 /// list_topics는 S3에서 모든 토픽 목록을 조회합니다.
 pub fn (mut a S3StorageAdapter) list_topics() ![]domain.TopicMetadata {
-	prefix := '${a.config.prefix}topics/'
+	prefix := '${g_s3_config.prefix}topics/'
 	objects := a.list_objects(prefix)!
 
 	mut topics := []domain.TopicMetadata{}
@@ -375,7 +381,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	tp_buffer.records << stored_records
 	tp_buffer.current_size_bytes += bytes_to_add
 
-	if tp_buffer.current_size_bytes >= a.config.batch_max_bytes {
+	if tp_buffer.current_size_bytes >= g_s3_config.batch_max_bytes {
 		should_flush = true
 	}
 
@@ -608,7 +614,7 @@ pub fn (mut a S3StorageAdapter) delete_group(group_id string) ! {
 	a.delete_object(key)!
 
 	// 오프셋도 삭제
-	offsets_prefix := '${a.config.prefix}offsets/${group_id}/'
+	offsets_prefix := '${g_s3_config.prefix}offsets/${group_id}/'
 	a.delete_objects_with_prefix(offsets_prefix)!
 
 	// 캐시에서 제거
@@ -619,7 +625,7 @@ pub fn (mut a S3StorageAdapter) delete_group(group_id string) ! {
 
 /// list_groups는 모든 컨슈머 그룹 목록을 반환합니다.
 pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
-	prefix := '${a.config.prefix}groups/'
+	prefix := '${g_s3_config.prefix}groups/'
 	objects := a.list_objects(prefix)!
 
 	mut groups := []domain.GroupInfo{}
@@ -801,7 +807,7 @@ pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []doma
 /// health_check는 스토리지 상태를 확인합니다.
 pub fn (mut a S3StorageAdapter) health_check() !port.HealthStatus {
 	// 소수의 객체 목록 조회 시도
-	_ := a.list_objects(a.config.prefix) or { return .unhealthy }
+	_ := a.list_objects(g_s3_config.prefix) or { return .unhealthy }
 	return .healthy
 }
 
@@ -818,7 +824,8 @@ pub fn (a &S3StorageAdapter) get_storage_capability() domain.StorageCapability {
 /// S3는 멀티 브로커 모드를 지원합니다.
 pub fn (mut a S3StorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	// S3 기반 클러스터 메타데이터 구현 반환
-	return new_s3_cluster_metadata_adapter(a)
+	// Note: &a를 전달하여 원본 adapter의 포인터를 사용
+	return new_s3_cluster_metadata_adapter(&a)
 }
 
 // ============================================================
@@ -827,27 +834,27 @@ pub fn (mut a S3StorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetada
 
 /// topic_metadata_key는 토픽 메타데이터의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) topic_metadata_key(name string) string {
-	return '${a.config.prefix}topics/${name}/metadata.json'
+	return '${g_s3_config.prefix}topics/${name}/metadata.json'
 }
 
 /// partition_index_key는 파티션 인덱스의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) partition_index_key(topic string, partition int) string {
-	return '${a.config.prefix}topics/${topic}/partitions/${partition}/index.json'
+	return '${g_s3_config.prefix}topics/${topic}/partitions/${partition}/index.json'
 }
 
 /// log_segment_key는 로그 세그먼트의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) log_segment_key(topic string, partition int, start i64, end i64) string {
-	return '${a.config.prefix}topics/${topic}/partitions/${partition}/log-${start:016}-${end:016}.bin'
+	return '${g_s3_config.prefix}topics/${topic}/partitions/${partition}/log-${start:016}-${end:016}.bin'
 }
 
 /// group_key는 컨슈머 그룹의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) group_key(group_id string) string {
-	return '${a.config.prefix}groups/${group_id}/state.json'
+	return '${g_s3_config.prefix}groups/${group_id}/state.json'
 }
 
 /// offset_key는 오프셋의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int) string {
-	return '${a.config.prefix}offsets/${group_id}/${topic}:${partition}.json'
+	return '${g_s3_config.prefix}offsets/${group_id}/${topic}:${partition}.json'
 }
 
 // ============================================================

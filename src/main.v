@@ -182,6 +182,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 			access_key:             conf.storage.s3.access_key
 			secret_key:             conf.storage.s3.secret_key
 			prefix:                 conf.storage.s3.prefix
+			use_path_style:         true // AWS S3 path-style URLs
 			timezone:               conf.storage.s3.timezone
 			batch_timeout_ms:       conf.storage.s3.batch_timeout_ms
 			batch_max_bytes:        conf.storage.s3.batch_max_bytes

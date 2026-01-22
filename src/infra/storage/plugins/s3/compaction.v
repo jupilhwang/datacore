@@ -8,7 +8,7 @@ import time
 /// compaction_worker는 주기적으로 병합할 세그먼트를 확인하고 컴팩션을 수행합니다.
 fn (mut a S3StorageAdapter) compaction_worker() {
 	for a.compactor_running {
-		time.sleep(a.config.compaction_interval_ms)
+		time.sleep(g_s3_config.compaction_interval_ms)
 
 		a.compact_all_partitions() or {
 			// 프로덕션에서는 여기에 구조화된 로깅 사용
@@ -42,12 +42,12 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 	mut total_size := i64(0)
 
 	for seg in index.log_segments {
-		if total_size >= a.config.target_segment_bytes {
+		if total_size >= g_s3_config.target_segment_bytes {
 			break
 		}
 
 		// 목표 크기보다 작은 세그먼트만 고려
-		if seg.size_bytes < a.config.target_segment_bytes {
+		if seg.size_bytes < g_s3_config.target_segment_bytes {
 			segments_to_compact << seg
 			total_size += seg.size_bytes
 		}
@@ -55,7 +55,7 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 
 	// 충분한 작은 세그먼트가 있는지 확인
 	if segments_to_compact.len < a.min_segment_count_to_compact
-		|| total_size < a.config.target_segment_bytes / 2 {
+		|| total_size < g_s3_config.target_segment_bytes / 2 {
 		return
 	}
 

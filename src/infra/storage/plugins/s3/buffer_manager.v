@@ -131,7 +131,7 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 /// batch_timeout_ms 간격으로 실행되며, compactor_running이 false가 되면 종료됩니다.
 fn (mut a S3StorageAdapter) flush_worker() {
 	for a.compactor_running { // compactor_running 플래그를 사용하여 두 워커 모두 중지
-		time.sleep(a.config.batch_timeout_ms)
+		time.sleep(g_s3_config.batch_timeout_ms)
 
 		// 락을 유지한 채 각 파티션의 버퍼 처리
 		// 키 수집과 플러시 사이에 append가 버퍼를 수정하는 경쟁 조건 방지

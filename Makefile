@@ -7,8 +7,8 @@ BUILD_DIR = bin
 SRC_DIR = src
 
 # Build flags
-V_FLAGS = -prod
-V_FLAGS_DEV =
+V_FLAGS = -prod -enable-globals
+V_FLAGS_DEV = -enable-globals
 
 # Platforms
 PLATFORMS = linux-amd64 linux-arm64 darwin-amd64 darwin-arm64

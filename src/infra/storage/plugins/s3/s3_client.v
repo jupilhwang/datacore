@@ -28,8 +28,9 @@ pub:
 /// start가 음수이면 전체 객체를 조회합니다.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
 	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
+	// Use global config to work around V struct copy issues
+	url := if g_s3_config.use_path_style {
+		'${endpoint}/${g_s3_config.bucket_name}/${key}'
 	} else {
 		'${endpoint}/${key}'
 	}
@@ -72,8 +73,9 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 /// 지터(jitter)를 추가하여 동시 재시도로 인한 충돌을 방지합니다.
 fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries int) ! {
 	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
+	// Use global config to work around V struct copy issues
+	url := if g_s3_config.use_path_style {
+		'${endpoint}/${g_s3_config.bucket_name}/${key}'
 	} else {
 		'${endpoint}/${key}'
 	}
@@ -120,8 +122,9 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 /// 객체가 이미 존재하면 412 Precondition Failed 에러를 반환합니다.
 fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
+	// Use global config to work around V struct copy issues
+	url := if g_s3_config.use_path_style {
+		'${endpoint}/${g_s3_config.bucket_name}/${key}'
 	} else {
 		'${endpoint}/${key}'
 	}
@@ -148,7 +151,8 @@ fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 /// 삭제 성공 시 200 또는 204 상태 코드를 반환합니다.
 fn (mut a S3StorageAdapter) delete_object(key string) ! {
 	endpoint := a.get_endpoint()
-	url := '${endpoint}/${a.config.bucket_name}/${key}'
+	// Use global config to work around V struct copy issues
+	url := '${endpoint}/${g_s3_config.bucket_name}/${key}'
 
 	headers := a.sign_request('DELETE', key, '', []u8{})
 
@@ -177,7 +181,8 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 	endpoint := a.get_endpoint()
 	query := 'prefix=${prefix}&list-type=2'
-	url := '${endpoint}/${a.config.bucket_name}?${query}'
+	// Use global config to work around V struct copy issues
+	url := '${endpoint}/${g_s3_config.bucket_name}?${query}'
 
 	headers := a.sign_request('GET', '', query, []u8{})
 
@@ -224,17 +229,18 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 		h.add_custom('Content-Length', body.len.str()) or {}
 	}
 
-	if a.config.access_key.len == 0 || a.config.secret_key.len == 0 {
+	// Use global config to work around V struct copy issues
+	if g_s3_config.access_key.len == 0 || g_s3_config.secret_key.len == 0 {
 		return h
 	}
 
 	// Canonical Request
 	canonical_uri := if key == '' {
-		'/${a.config.bucket_name}'
+		'/${g_s3_config.bucket_name}'
 	} else if key.starts_with('/') {
-		'/${a.config.bucket_name}${key}'
+		'/${g_s3_config.bucket_name}${key}'
 	} else {
-		'/${a.config.bucket_name}/${key}'
+		'/${g_s3_config.bucket_name}/${key}'
 	}
 	canonical_querystring := a.canonicalize_query(query)
 
@@ -245,22 +251,22 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 
 	// String to Sign
 	algorithm := 'AWS4-HMAC-SHA256'
-	credential_scope := '${date_day}/${a.config.region}/s3/aws4_request'
+	credential_scope := '${date_day}/${g_s3_config.region}/s3/aws4_request'
 	canonical_request_hash := sha256.sum(canonical_request.bytes()).hex()
 
 	string_to_sign := '${algorithm}\n${date_str}\n${credential_scope}\n${canonical_request_hash}'
 
 	// Signing Key
-	k_date := hmac.new(('AWS4' + a.config.secret_key).bytes(), date_day.bytes(), sha256.sum,
+	k_date := hmac.new(('AWS4' + g_s3_config.secret_key).bytes(), date_day.bytes(), sha256.sum,
 		64)
-	k_region := hmac.new(k_date, a.config.region.bytes(), sha256.sum, 64)
+	k_region := hmac.new(k_date, g_s3_config.region.bytes(), sha256.sum, 64)
 	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, 64)
 	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, 64)
 
 	// Signature
 	signature := hmac.new(k_signing, string_to_sign.bytes(), sha256.sum, 64).hex()
 
-	auth_header := '${algorithm} Credential=${a.config.access_key}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}'
+	auth_header := '${algorithm} Credential=${g_s3_config.access_key}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}'
 	h.add_custom('Authorization', auth_header) or {}
 
 	return h
@@ -270,23 +276,25 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 /// 사용자 정의 엔드포인트(MinIO/LocalStack)가 설정되면 해당 값을 사용합니다.
 /// 그렇지 않으면 AWS S3 엔드포인트를 경로 스타일 또는 가상 호스트 스타일로 반환합니다.
 fn (a &S3StorageAdapter) get_endpoint() string {
-	if a.config.endpoint.len > 0 {
-		return a.config.endpoint
+	// Use global config to work around V struct copy issues
+	if g_s3_config.endpoint.len > 0 {
+		return g_s3_config.endpoint
 	}
-	if a.config.use_path_style {
-		return 'https://s3.${a.config.region}.amazonaws.com'
+	if g_s3_config.use_path_style {
+		return 'https://s3.${g_s3_config.region}.amazonaws.com'
 	} else {
-		return 'https://${a.config.bucket_name}.s3.${a.config.region}.amazonaws.com'
+		return 'https://${g_s3_config.bucket_name}.s3.${g_s3_config.region}.amazonaws.com'
 	}
 }
 
 /// get_host는 S3 요청의 Host 헤더 값을 반환합니다.
 /// SigV4 서명에서 Host 헤더는 필수 서명 헤더입니다.
 fn (a &S3StorageAdapter) get_host() string {
-	if a.config.endpoint.len > 0 {
-		return a.config.endpoint.replace('http://', '').replace('https://', '').split('/')[0]
+	// Use global config to work around V struct copy issues
+	if g_s3_config.endpoint.len > 0 {
+		return g_s3_config.endpoint.replace('http://', '').replace('https://', '').split('/')[0]
 	}
-	return 's3.${a.config.region}.amazonaws.com'
+	return 's3.${g_s3_config.region}.amazonaws.com'
 }
 
 /// canonicalize_query는 AWS SigV4를 위해 쿼리 파라미터를 정렬하고 인코딩합니다.

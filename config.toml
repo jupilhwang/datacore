@@ -88,7 +88,7 @@ ws_ping_interval_ms = 30000
 # 사용할 스토리지 엔진
 # 지원값: "memory", "s3", "postgres" (P2)
 # 현재 구현됨: "memory", "s3"
-engine = "memory"
+engine = "s3"
 
 # -----------------------------------------------------------------------------
 # [storage.memory] - 인메모리 스토리지 설정 (기본값)
@@ -111,7 +111,7 @@ segment_size_bytes = 1073741824
 # S3 호환 엔드포인트 URL
 # AWS S3: 비워두면 AWS 기본 엔드포인트 사용
 # MinIO: "http://localhost:9000"
-endpoint = "https://s3.ap-northeast-2.amazonaws.com"
+endpoint = ""
 
 # S3 버킷 이름
 bucket = "jhwang-s3"

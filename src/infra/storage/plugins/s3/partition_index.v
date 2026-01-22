@@ -43,7 +43,7 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 		cached := a.topic_index_cache[key]
 		cached_index = cached.index
 		cached_etag = cached.etag
-		if time.since(cached.cached_at).milliseconds() < a.config.index_cache_ttl_ms {
+		if time.since(cached.cached_at).milliseconds() < g_s3_config.index_cache_ttl_ms {
 			a.topic_lock.runlock()
 			return cached.index
 		}
