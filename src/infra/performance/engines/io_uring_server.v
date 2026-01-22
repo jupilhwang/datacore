@@ -25,7 +25,7 @@ pub:
 	max_connections  int    = 10000 // 최대 동시 연결 수
 	recv_buffer_size int    = 65536 // 수신 버퍼 크기
 	multi_accept     int    = 8     // 한 번에 준비할 accept 수
-	use_sqpoll       bool          // SQ 폴링 모드 사용 여부
+	use_sqpoll       bool // SQ 폴링 모드 사용 여부
 }
 
 /// IoUringServer는 io_uring 기반 네트워크 서버입니다.

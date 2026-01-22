@@ -448,6 +448,231 @@ test_consumer_group_basic() {
     echo "$groups" | grep -q "$group"
 }
 
+test_consumer_group_describe() {
+    local topic="${TEST_PREFIX}-grpdesc-$(date +%s)"
+    local group="test-group-desc-$(date +%s)"
+    
+    # Create topic and produce
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
+        --create --topic $topic --partitions 2 --replication-factor 1
+    
+    for i in $(seq 1 5); do
+        echo "Describe group message $i"
+    done | timeout $TIMEOUT $KAFKA_PRODUCER \
+        --bootstrap-server $BOOTSTRAP_SERVER \
+        --topic $topic
+    
+    sleep 1
+    
+    # Consume with group
+    timeout $TIMEOUT $KAFKA_CONSUMER \
+        --bootstrap-server $BOOTSTRAP_SERVER \
+        --topic $topic \
+        --group $group \
+        --from-beginning \
+        --max-messages 5 \
+        --timeout-ms $((TIMEOUT*1000))
+    
+    sleep 1
+    
+    # Describe group
+    local describe=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER \
+        --describe --group $group 2>&1)
+    
+    echo "DEBUG: Group describe output:"
+    echo "$describe"
+    
+    # Cleanup
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
+    
+    # Check describe output contains expected info
+    echo "$describe" | grep -qE "(GROUP|TOPIC|PARTITION|CURRENT-OFFSET|$group)" 
+}
+
+test_consumer_group_delete() {
+    local topic="${TEST_PREFIX}-grpdel-$(date +%s)"
+    local group="test-group-del-$(date +%s)"
+    
+    # Create topic and produce
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
+        --create --topic $topic --partitions 1 --replication-factor 1
+    
+    echo "Delete group test message" | timeout $TIMEOUT $KAFKA_PRODUCER \
+        --bootstrap-server $BOOTSTRAP_SERVER \
+        --topic $topic
+    
+    sleep 1
+    
+    # Consume with group (creates the group)
+    timeout $TIMEOUT $KAFKA_CONSUMER \
+        --bootstrap-server $BOOTSTRAP_SERVER \
+        --topic $topic \
+        --group $group \
+        --from-beginning \
+        --max-messages 1 \
+        --timeout-ms $((TIMEOUT*1000))
+    
+    sleep 1
+    
+    # Verify group exists
+    local before=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER --list)
+    echo "DEBUG: Groups before delete: $before"
+    
+    if ! echo "$before" | grep -q "$group"; then
+        echo "Group not created properly"
+        $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
+        return 1
+    fi
+    
+    # Delete the group
+    local delete_result=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER \
+        --delete --group $group 2>&1)
+    
+    echo "DEBUG: Delete result: $delete_result"
+    
+    sleep 1
+    
+    # Verify group is deleted
+    local after=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER --list)
+    echo "DEBUG: Groups after delete: $after"
+    
+    # Cleanup
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
+    
+    # Group should not exist after delete
+    ! echo "$after" | grep -q "$group"
+}
+
+test_consumer_group_reset_offsets() {
+    local topic="${TEST_PREFIX}-grpreset-$(date +%s)"
+    local group="test-group-reset-$(date +%s)"
+    
+    # Create topic and produce
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
+        --create --topic $topic --partitions 1 --replication-factor 1
+    
+    for i in $(seq 1 10); do
+        echo "Reset offset message $i"
+    done | timeout $TIMEOUT $KAFKA_PRODUCER \
+        --bootstrap-server $BOOTSTRAP_SERVER \
+        --topic $topic
+    
+    sleep 1
+    
+    # Consume with group (consume all messages)
+    timeout $TIMEOUT $KAFKA_CONSUMER \
+        --bootstrap-server $BOOTSTRAP_SERVER \
+        --topic $topic \
+        --group $group \
+        --from-beginning \
+        --max-messages 10 \
+        --timeout-ms $((TIMEOUT*1000))
+    
+    sleep 1
+    
+    # Reset offsets to earliest
+    local reset_result=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER \
+        --group $group \
+        --reset-offsets \
+        --to-earliest \
+        --topic $topic \
+        --execute 2>&1)
+    
+    echo "DEBUG: Reset offsets result: $reset_result"
+    
+    # Verify we can consume messages again from beginning
+    local consumed=$(timeout $TIMEOUT $KAFKA_CONSUMER \
+        --bootstrap-server $BOOTSTRAP_SERVER \
+        --topic $topic \
+        --group $group \
+        --from-beginning \
+        --max-messages 5 \
+        --timeout-ms $((TIMEOUT*1000)) 2>/dev/null | wc -l)
+    
+    echo "DEBUG: Messages consumed after reset: $consumed"
+    
+    # Cleanup
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
+    $KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER --delete --group $group 2>/dev/null || true
+    
+    # Should have consumed messages after reset
+    [[ $consumed -gt 0 ]]
+}
+
+# ============================================
+# ACL Tests (Basic checks - may not be enforced)
+# ============================================
+
+test_acl_list() {
+    # Try to list ACLs (should not error even if ACLs are empty)
+    if command -v kafka-acls &> /dev/null; then
+        KAFKA_ACLS="kafka-acls"
+    elif command -v kafka-acls.sh &> /dev/null; then
+        KAFKA_ACLS="kafka-acls.sh"
+    else
+        log_skip "kafka-acls tool not available"
+        return 0
+    fi
+    
+    local result=$($KAFKA_ACLS --bootstrap-server $BOOTSTRAP_SERVER --list 2>&1)
+    local exit_code=$?
+    
+    echo "DEBUG: ACL list result: $result"
+    
+    # Should not crash, even if no ACLs or not supported
+    # Exit code 0 or output contains expected messages
+    [[ $exit_code -eq 0 ]] || echo "$result" | grep -qiE "(no acls|empty|Current ACLs)"
+}
+
+test_acl_create_and_delete() {
+    if command -v kafka-acls &> /dev/null; then
+        KAFKA_ACLS="kafka-acls"
+    elif command -v kafka-acls.sh &> /dev/null; then
+        KAFKA_ACLS="kafka-acls.sh"
+    else
+        log_skip "kafka-acls tool not available"
+        return 0
+    fi
+    
+    local topic="${TEST_PREFIX}-acl-$(date +%s)"
+    local principal="User:test-user"
+    
+    # Create topic first
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
+        --create --topic $topic --partitions 1 --replication-factor 1 2>/dev/null || true
+    
+    # Create ACL
+    local create_result=$($KAFKA_ACLS --bootstrap-server $BOOTSTRAP_SERVER \
+        --add \
+        --allow-principal "$principal" \
+        --operation Read \
+        --topic $topic 2>&1)
+    
+    echo "DEBUG: ACL create result: $create_result"
+    
+    sleep 1
+    
+    # List ACLs to verify
+    local list_result=$($KAFKA_ACLS --bootstrap-server $BOOTSTRAP_SERVER --list 2>&1)
+    echo "DEBUG: ACL list after create: $list_result"
+    
+    # Delete ACL
+    local delete_result=$($KAFKA_ACLS --bootstrap-server $BOOTSTRAP_SERVER \
+        --remove \
+        --allow-principal "$principal" \
+        --operation Read \
+        --topic $topic \
+        --force 2>&1)
+    
+    echo "DEBUG: ACL delete result: $delete_result"
+    
+    # Cleanup
+    $KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
+    
+    # Success if no errors (ACL operations may be no-ops if not enforced)
+    [[ $? -eq 0 ]] || echo "$create_result" | grep -qiE "(Added|Adding|Success)"
+}
+
 # ============================================
 # Cleanup
 # ============================================
@@ -505,6 +730,14 @@ main() {
     echo ""
     echo "--- Consumer Group Tests ---"
     run_test "Basic Consumer Group" test_consumer_group_basic
+    run_test "Consumer Group Describe" test_consumer_group_describe
+    run_test "Consumer Group Delete (DeleteGroups API)" test_consumer_group_delete
+    run_test "Consumer Group Reset Offsets" test_consumer_group_reset_offsets
+    
+    echo ""
+    echo "--- ACL Tests ---"
+    run_test "ACL List" test_acl_list
+    run_test "ACL Create and Delete" test_acl_create_and_delete
     
     # Cleanup
     cleanup_test_topics

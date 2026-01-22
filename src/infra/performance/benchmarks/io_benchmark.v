@@ -9,6 +9,9 @@ module benchmarks
 /// - NUMA 인식 할당
 import os
 import time
+import infra.performance.engines
+import infra.performance.io
+import infra.performance.core
 
 // ============================================================================
 // I/O 벤치마크 설정
@@ -96,9 +99,9 @@ pub fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
 
 /// detect_system_capabilities는 시스템 기능을 감지합니다.
 fn detect_system_capabilities() SystemInfo {
-	topology := get_numa_topology()
-	io_caps := get_async_io_capabilities()
-	dma_caps := get_platform_capabilities()
+	topology := engines.get_numa_topology()
+	io_caps := engines.get_async_io_capabilities()
+	dma_caps := io.get_platform_capabilities()
 
 	mut detected_os := 'Unknown'
 	$if linux {
@@ -109,6 +112,8 @@ fn detect_system_capabilities() SystemInfo {
 		detected_os = 'Windows'
 	}
 
+	total_mem := if topology.nodes.len > 0 { topology.nodes[0].total_mem } else { i64(0) }
+
 	return SystemInfo{
 		os_name:            detected_os
 		numa_nodes:         topology.node_count
@@ -116,7 +121,7 @@ fn detect_system_capabilities() SystemInfo {
 		io_uring_available: io_caps.has_io_uring
 		mmap_available:     true // 폴백을 통해 항상 사용 가능
 		dma_available:      dma_caps.has_scatter_gather
-		total_memory:       topology.nodes[0].total_mem
+		total_memory:       total_mem
 	}
 }
 
@@ -207,7 +212,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_read(path string) {
 
 	// 워밍업
 	for _ in 0 .. s.config.warmup_runs {
-		if mut mm := MmapFile.open(path, true) {
+		if mut mm := io.MmapFile.open(path, true) {
 			if region := mm.map_region(0, int(s.config.data_size)) {
 				mm.unmap_region(region) or {}
 			}
@@ -218,7 +223,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_read(path string) {
 	// 벤치마크
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		if mut mm := MmapFile.open(path, true) {
+		if mut mm := io.MmapFile.open(path, true) {
 			if region := mm.map_region(0, int(s.config.data_size)) {
 				mm.unmap_region(region) or {}
 			}
@@ -241,7 +246,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_write(path string) {
 	// 벤치마크
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		if mut mm := MmapFile.open(test_path, false) {
+		if mut mm := io.MmapFile.open(test_path, false) {
 			if region := mm.map_region(0, int(s.config.data_size)) {
 				mm.sync_region(region) or {}
 				mm.unmap_region(region) or {}
@@ -258,7 +263,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_write(path string) {
 /// bench_dma_read는 DMA scatter 읽기를 벤치마크합니다.
 fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 	mut times := []i64{cap: s.config.iterations}
-	caps := get_platform_capabilities()
+	caps := io.get_platform_capabilities()
 
 	if !caps.has_scatter_gather {
 		s.results << IoBenchmarkResults{
@@ -269,10 +274,10 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 
 	// scatter 버퍼 준비
 	mut bufs := [
-		new_sg_buffer(1024),
-		new_sg_buffer(1024),
-		new_sg_buffer(1024),
-		new_sg_buffer(1024),
+		io.new_sg_buffer(1024),
+		io.new_sg_buffer(1024),
+		io.new_sg_buffer(1024),
+		io.new_sg_buffer(1024),
 	]
 
 	mut file := os.open_file(path, 'r') or { return }
@@ -283,7 +288,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 	// 벤치마크
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		_ = scatter_read_native(file.fd, mut bufs)
+		_ = io.scatter_read_native(file.fd, mut bufs)
 		times << time.since(start).nanoseconds()
 	}
 
@@ -293,7 +298,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 /// bench_dma_write는 DMA gather 쓰기를 벤치마크합니다.
 fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 	mut times := []i64{cap: s.config.iterations}
-	caps := get_platform_capabilities()
+	caps := io.get_platform_capabilities()
 	test_path := '${path}.dma_write'
 
 	if !caps.has_scatter_gather {
@@ -305,10 +310,10 @@ fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 
 	// gather 버퍼 준비
 	bufs := [
-		new_sg_buffer_from([]u8{len: 1024, init: 0xAA}),
-		new_sg_buffer_from([]u8{len: 1024, init: 0xBB}),
-		new_sg_buffer_from([]u8{len: 1024, init: 0xCC}),
-		new_sg_buffer_from([]u8{len: 1024, init: 0xDD}),
+		io.new_sg_buffer_from([]u8{len: 1024, init: 0xAA}),
+		io.new_sg_buffer_from([]u8{len: 1024, init: 0xBB}),
+		io.new_sg_buffer_from([]u8{len: 1024, init: 0xCC}),
+		io.new_sg_buffer_from([]u8{len: 1024, init: 0xDD}),
 	]
 
 	// 벤치마크
@@ -316,7 +321,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 		mut fd := os.open_file(test_path, 'w') or { continue }
 
 		start := time.now()
-		_ = gather_write_native(fd.fd, bufs)
+		_ = io.gather_write_native(fd.fd, bufs)
 		times << time.since(start).nanoseconds()
 
 		fd.close()
@@ -331,7 +336,7 @@ fn (mut s IoBenchmarkSuite) bench_io_uring(path string) {
 	mut times := []i64{cap: s.config.iterations}
 
 	// 먼저 io_uring 기능 확인
-	caps := get_async_io_capabilities()
+	caps := engines.get_async_io_capabilities()
 	if !caps.has_io_uring {
 		s.results << IoBenchmarkResults{
 			test_name: 'io_uring (skipped - not available)'
@@ -339,11 +344,11 @@ fn (mut s IoBenchmarkSuite) bench_io_uring(path string) {
 		return
 	}
 
-	config := IoUringConfig{
+	config := engines.IoUringConfig{
 		queue_depth: 32
 	}
 
-	mut ring := new_io_uring(config) or {
+	mut ring := engines.new_io_uring(config) or {
 		s.results << IoBenchmarkResults{
 			test_name: 'io_uring (skipped - init failed)'
 		}
@@ -379,12 +384,12 @@ fn (mut s IoBenchmarkSuite) bench_numa_allocation() {
 	// NUMA 로컬 할당 벤치마크
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		mem := numa_alloc_local(size)
+		mem := engines.numa_alloc_local(size)
 		// 메모리가 실제로 할당되었는지 확인하기 위해 터치
 		unsafe {
 			C.memset(mem.ptr, 0, size)
 		}
-		numa_free(mem)
+		engines.numa_free(mem)
 		times << time.since(start).nanoseconds()
 	}
 
@@ -394,11 +399,11 @@ fn (mut s IoBenchmarkSuite) bench_numa_allocation() {
 	mut times2 := []i64{cap: s.config.iterations}
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		mem := numa_alloc_interleaved(size)
+		mem := engines.numa_alloc_interleaved(size)
 		unsafe {
 			C.memset(mem.ptr, 0, size)
 		}
-		numa_free(mem)
+		engines.numa_free(mem)
 		times2 << time.since(start).nanoseconds()
 	}
 
@@ -410,7 +415,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 	// 버퍼 풀 벤치마크
 	mut times := []i64{cap: s.config.iterations}
 
-	mut pool := new_default_pool()
+	mut pool := core.new_buffer_pool(core.PoolConfig{})
 
 	// 워밍업
 	for _ in 0 .. s.config.warmup_runs {
@@ -437,7 +442,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 	// NUMA 버퍼 풀 벤치마크
 	mut numa_times := []i64{cap: s.config.iterations}
 
-	mut numa_pool := new_numa_buffer_pool(NumaBufferConfig{
+	mut numa_pool := engines.new_numa_buffer_pool(engines.NumaBufferConfig{
 		buffer_size:      s.config.data_size
 		buffers_per_node: 100
 	})
@@ -462,7 +467,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 	// 레코드 풀 벤치마크 (객체 풀)
 	mut obj_times := []i64{cap: s.config.iterations}
 
-	mut rec_pool := new_record_pool(100)
+	mut rec_pool := core.new_record_pool(100)
 
 	for _ in 0 .. s.config.iterations {
 		start := time.now()

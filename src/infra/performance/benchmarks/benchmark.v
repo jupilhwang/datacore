@@ -122,11 +122,11 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
 		times << time.sys_mono_now() - start
 	}
 
-	stats := s.manager.buffer_pool.get_stats()
+	stats := s.manager.get_stats()
 	mut result := s.calculate_result('BufferPool Hit Rate Test', times)
 	result = BenchmarkResult{
 		...result
-		memory_saved: i64(stats.bytes_reused) // 재사용으로 절약된 바이트
+		memory_saved: i64(stats.buffer_hits) // 버퍼 히트 수로 대체
 	}
 
 	return result
@@ -365,16 +365,16 @@ pub fn (mut s BenchmarkSuite) print_results() {
 	stats := s.manager.get_stats()
 	println('')
 	println('Pool Statistics:')
+	println('  Engine: ${stats.engine_name}')
 	println('  Buffer Pool:')
-	println('    - Hits: ${stats.buffer_pool_stats.total_hits()}, Misses: ${stats.buffer_pool_stats.total_misses()}')
-	println('    - Hit Rate: ${stats.buffer_pool_stats.hit_rate() * 100.0:.2f}%')
-	println('    - Bytes Reused: ${stats.buffer_pool_stats.bytes_reused}')
-	println('  Record Pool:')
-	println('    - Hits: ${stats.record_pool_stats.hits}, Misses: ${stats.record_pool_stats.misses}')
-	println('  Batch Pool:')
-	println('    - Hits: ${stats.batch_pool_stats.hits}, Misses: ${stats.batch_pool_stats.misses}')
-	println('  Request Pool:')
-	println('    - Hits: ${stats.request_pool_stats.hits}, Misses: ${stats.request_pool_stats.misses}')
+	println('    - Hits: ${stats.buffer_hits}, Misses: ${stats.buffer_misses}')
+	hit_rate := if stats.buffer_hits + stats.buffer_misses > 0 {
+		f64(stats.buffer_hits) / f64(stats.buffer_hits + stats.buffer_misses) * 100.0
+	} else {
+		0.0
+	}
+	println('    - Hit Rate: ${hit_rate:.2f}%')
+	println('  Operations: ${stats.ops_count}')
 }
 
 // ============================================================================

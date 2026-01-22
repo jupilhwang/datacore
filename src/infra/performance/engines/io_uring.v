@@ -179,9 +179,9 @@ pub mut:
 /// IoUringConfig는 io_uring 설정을 담고 있습니다.
 pub struct IoUringConfig {
 pub:
-	queue_depth    u32 = 256  // 큐 깊이
-	flags          u32       // 플래그
-	sq_thread_cpu  u32       // SQ 스레드 CPU
+	queue_depth    u32 = 256 // 큐 깊이
+	flags          u32 // 플래그
+	sq_thread_cpu  u32 // SQ 스레드 CPU
 	sq_thread_idle u32 = 1000 // SQ 스레드 유휴 시간 (ms)
 }
 

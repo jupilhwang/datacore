@@ -1,13 +1,15 @@
 /// 성능 모듈 통합 테스트
 module benchmarks
 
+import infra.performance
+
 // ============================================================================
 // 통합 테스트
 // ============================================================================
 
 /// 전역 성능 관리자 초기화 테스트
 fn test_global_performance_manager_init() {
-	init_global_performance(PerformanceConfig{
+	init_global_performance(performance.PerformanceConfig{
 		buffer_pool_max_tiny:  100
 		buffer_pool_max_small: 50
 		record_pool_max_size:  1000
@@ -20,7 +22,7 @@ fn test_global_performance_manager_init() {
 
 /// 요청 버퍼 생명주기 테스트
 fn test_request_buffer_lifecycle() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	// 할당
 	mut buf := new_request_buffer(1024)
@@ -41,7 +43,7 @@ fn test_request_buffer_lifecycle() {
 
 /// 응답 버퍼 쓰기 테스트
 fn test_response_buffer_write() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	mut buf := new_response_buffer(256)
 
@@ -70,7 +72,7 @@ fn test_response_buffer_write() {
 
 /// 응답 버퍼 확장 테스트
 fn test_response_buffer_grow() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	mut buf := new_response_buffer(16) // 작은 초기 크기
 
@@ -87,7 +89,7 @@ fn test_response_buffer_grow() {
 
 /// 연결 버퍼 테스트
 fn test_connection_buffers() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	mut bufs := new_connection_buffers(4096, 8192)
 
@@ -107,7 +109,7 @@ fn test_connection_buffers() {
 
 /// 스토리지 레코드 풀 테스트
 fn test_storage_record_pool() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	mut pool := new_storage_record_pool()
 
@@ -124,7 +126,7 @@ fn test_storage_record_pool() {
 
 /// Fetch 버퍼 제로카피 테스트
 fn test_fetch_buffer_zero_copy() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	mut buf := new_fetch_buffer(4096)
 	assert !buf.has_zero_copy()
@@ -141,7 +143,7 @@ fn test_fetch_buffer_zero_copy() {
 
 /// 요청 버퍼 콜백 테스트
 fn test_with_request_buffer_callback() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	// 콜백이 유효한 버퍼로 호출되는지 테스트
 	// 클로저 캡처 대신 직접 버퍼 작업 사용
@@ -153,7 +155,7 @@ fn test_with_request_buffer_callback() {
 
 /// 응답 버퍼 콜백 테스트
 fn test_with_response_buffer_callback() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	// 응답 버퍼가 올바르게 작동하는지 테스트
 	mut buf := new_response_buffer(512)
@@ -164,7 +166,7 @@ fn test_with_response_buffer_callback() {
 
 /// 통합 통계 테스트
 fn test_integration_stats() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	// 일부 작업 수행
 	mut req := allocate_request_buffer(1024)
@@ -176,12 +178,12 @@ fn test_integration_stats() {
 	// 통계 획득 - 크래시 없이 동작하는지 확인
 	stats := get_integration_stats()
 	// 통계 구조체가 유효해야 함
-	assert stats.perf_stats.buffer_pool_stats.hit_rate() >= 0.0
+	assert stats.perf_stats.buffer_hits >= 0 || stats.perf_stats.buffer_misses >= 0
 }
 
 /// 벤치마크 스위트 생성 테스트
 fn test_benchmark_suite_creation() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	suite := new_benchmark_suite(BenchmarkConfig{
 		warmup_iterations:    10
@@ -194,7 +196,7 @@ fn test_benchmark_suite_creation() {
 
 /// 벤치마크 버퍼 할당 테스트
 fn test_benchmark_buffer_allocation() {
-	init_global_performance(PerformanceConfig{
+	init_global_performance(performance.PerformanceConfig{
 		buffer_pool_prewarm: true
 	})
 
@@ -211,7 +213,7 @@ fn test_benchmark_buffer_allocation() {
 
 /// 벤치마크 레코드 풀 테스트
 fn test_benchmark_record_pool() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	mut suite := new_benchmark_suite(BenchmarkConfig{
 		warmup_iterations:    10
@@ -225,7 +227,7 @@ fn test_benchmark_record_pool() {
 
 /// 벤치마크 요청/응답 사이클 테스트
 fn test_benchmark_request_response_cycle() {
-	init_global_performance(PerformanceConfig{})
+	init_global_performance(performance.PerformanceConfig{})
 
 	mut suite := new_benchmark_suite(BenchmarkConfig{
 		warmup_iterations:    5
@@ -239,7 +241,7 @@ fn test_benchmark_request_response_cycle() {
 
 /// 부하 상태에서의 성능 테스트
 fn test_performance_under_load() {
-	init_global_performance(PerformanceConfig{
+	init_global_performance(performance.PerformanceConfig{
 		buffer_pool_max_tiny:  1000
 		buffer_pool_max_small: 500
 		record_pool_max_size:  5000
@@ -263,5 +265,5 @@ fn test_performance_under_load() {
 	stats := mgr.get_stats()
 
 	// 버퍼 반환 후 높은 재사용률이 있어야 함
-	assert stats.buffer_pool_stats.bytes_reused >= 0
+	assert stats.buffer_hits >= 0 || stats.buffer_misses >= 0
 }
