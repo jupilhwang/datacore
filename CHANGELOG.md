@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.34.0] - 2026-01-22
+
+### Added
+- **DeleteGroups API** (Task #50) - Consumer Group 삭제 API (Kafka API Key 42)
+  - DeleteGroups v0-v2 프로토콜 지원
+  - `DeleteGroupsRequest` / `DeleteGroupsResponse` 구조체
+  - 그룹 상태 검증: Empty 또는 Dead 상태만 삭제 가능
+  - 에러 코드: `INVALID_GROUP_ID`, `GROUP_ID_NOT_FOUND`, `NON_EMPTY_GROUP`
+  - `kafka-consumer-groups.sh --delete` 명령어 호환
+
+### Changed
+- `types.v` - DeleteGroups API 버전 등록 (v0-v2)
+- `handler.v` - DeleteGroups 라우팅 추가
+- `handler_group.v` - DeleteGroups 핸들러 및 파서 구현
+
+### Fixed
+- struct default value 경고 수정 (`= false` 제거)
+  - `MemoryConfig.use_mmap`, `sync_on_append`
+  - `MmapPartitionConfig.sync_on_write`
+  - `WorkerPoolConfig.numa_aware`
+  - `ServerConfig.numa_enabled`, `io_uring_sqpoll`
+
+### Tests
+- DeleteGroups API 단위 테스트 8개 추가
+  - v0 요청 파싱 / v0, v2 응답 인코딩
+  - Empty 그룹 삭제 성공 / Non-empty 그룹 삭제 실패
+  - 존재하지 않는 그룹 / 빈 그룹 ID / 다중 그룹 삭제
+
 ## [0.33.0] - 2026-01-22
 
 ### Added
