@@ -146,10 +146,6 @@ pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
 		writer.write_tagged_fields()
 	}
 
-	if is_flexible {
-		writer.write_tagged_fields()
-	}
-
 	return writer.bytes()
 }
 

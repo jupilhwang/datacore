@@ -37,17 +37,18 @@ pub enum ScramState {
 /// RFC 5802 및 RFC 7677을 준수합니다.
 pub struct ScramSha256Authenticator {
 mut:
-	user_store     port.UserStore // 사용자 저장소
-	state          ScramState     // 현재 인증 상태
-	username       string         // 인증 중인 사용자명
-	client_nonce   string         // 클라이언트 nonce
-	server_nonce   string         // 서버 nonce
-	combined_nonce string         // client_nonce + server_nonce
-	salt           []u8           // 사용자별 salt
-	iterations     int            // PBKDF2 iteration 횟수
-	auth_message   string         // 인증 메시지 (서명 검증용)
-	stored_key     []u8           // 저장된 키 (비밀번호에서 파생)
-	server_key     []u8           // 서버 키 (비밀번호에서 파생)
+	user_store      port.UserStore // 사용자 저장소
+	state           ScramState     // 현재 인증 상태
+	username        string         // 인증 중인 사용자명
+	client_nonce    string         // 클라이언트 nonce
+	server_nonce    string         // 서버 nonce
+	combined_nonce  string         // client_nonce + server_nonce
+	salt            []u8           // 사용자별 salt
+	iterations      int            // PBKDF2 iteration 횟수
+	auth_message    string         // 인증 메시지 (서명 검증용)
+	salted_password []u8           // SaltedPassword (ClientKey 계산에 필요)
+	stored_key      []u8           // 저장된 키 (비밀번호에서 파생)
+	server_key      []u8           // 서버 키 (비밀번호에서 파생)
 }
 
 /// new_scram_sha256_authenticator는 새로운 SCRAM-SHA-256 인증자를 생성합니다.
@@ -86,13 +87,15 @@ pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.Au
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
 
-	// SCRAM 자격 증명 생성 또는 로드
-	// 여기서는 비밀번호에서 동적으로 생성합니다 (프로덕션에서는 저장된 값 사용)
-	a.salt = generate_salt()
+	// SCRAM 자격 증명: 사용자 기반 일관된 salt 생성
+	// 프로덕션에서는 ScramCredentials 테이블에서 로드해야 함
+	// 여기서는 사용자명 기반으로 결정적 salt를 생성하여 일관성 유지
+	a.salt = generate_user_salt(a.username)
 	a.iterations = default_iterations
 
 	// 비밀번호에서 키 파생
 	salted_password := pbkdf2_sha256(user.password_hash.bytes(), a.salt, a.iterations)
+	a.salted_password = salted_password // ClientKey 계산을 위해 저장
 	a.stored_key = compute_stored_key(salted_password)
 	a.server_key = compute_server_key(salted_password)
 
@@ -138,11 +141,18 @@ pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 	// auth_message 완성
 	a.auth_message = a.auth_message + ',' + client_final.without_proof
 
-	// 클라이언트 서명 검증
-	client_signature := hmac_sha256(a.stored_key, a.auth_message.bytes())
-	expected_client_proof := xor_bytes(client_signature, compute_client_key(a.stored_key))
+	// ClientKey 계산 (salted_password에서 파생)
+	client_key := compute_client_key_from_salted(a.salted_password)
 
-	// base64 디코딩된 클라이언트 proof와 비교
+	// 클라이언트 서명 검증
+	// ClientSignature = HMAC(StoredKey, AuthMessage)
+	client_signature := hmac_sha256(a.stored_key, a.auth_message.bytes())
+
+	// ClientProof = ClientKey XOR ClientSignature
+	// 따라서 ClientKey = ClientProof XOR ClientSignature
+	// 검증: 수신된 ClientProof XOR ClientSignature == ClientKey
+
+	// base64 디코딩된 클라이언트 proof
 	// V의 base64.decode는 오류를 반환하지 않으므로 결과 길이로 검증
 	client_proof := base64.decode(client_final.proof)
 	if client_proof.len == 0 && client_final.proof.len > 0 {
@@ -150,7 +160,12 @@ pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 		return domain.auth_failure(.sasl_authentication_failed, 'Invalid proof encoding')
 	}
 
-	if !constant_time_compare(client_proof, expected_client_proof) {
+	// 클라이언트가 보낸 proof로부터 ClientKey 복원
+	// RecoveredClientKey = ClientProof XOR ClientSignature
+	recovered_client_key := xor_bytes(client_proof, client_signature)
+
+	// 복원된 ClientKey와 계산된 ClientKey 비교
+	if !constant_time_compare(recovered_client_key, client_key) {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
@@ -309,6 +324,16 @@ fn generate_salt() []u8 {
 	return bytes
 }
 
+/// generate_user_salt는 사용자명 기반으로 결정적 salt를 생성합니다.
+/// 같은 사용자명에 대해 항상 같은 salt를 반환하여 인증 일관성 보장
+/// 프로덕션에서는 사용자 생성 시 랜덤 salt를 생성하고 저장해야 합니다.
+fn generate_user_salt(username string) []u8 {
+	// 사용자명을 SHA-256 해시하여 결정적 salt 생성
+	// 이는 임시 해결책이며, 실제 프로덕션에서는 DB에 저장된 salt 사용
+	hash := sha256.sum256(username.bytes())
+	return hash[0..16].clone()
+}
+
 /// pbkdf2_sha256는 PBKDF2-SHA-256 키 파생 함수를 구현합니다.
 /// RFC 8018에 따른 구현
 fn pbkdf2_sha256(password []u8, salt []u8, iterations int) []u8 {
@@ -362,13 +387,10 @@ fn compute_server_key(salted_password []u8) []u8 {
 	return hmac_sha256(salted_password, 'Server Key'.bytes())
 }
 
-/// compute_client_key는 SCRAM ClientKey를 계산합니다.
+/// compute_client_key_from_salted는 SaltedPassword에서 ClientKey를 계산합니다.
 /// ClientKey = HMAC(SaltedPassword, "Client Key")
-fn compute_client_key(stored_key []u8) []u8 {
-	// ClientKey를 다시 계산해야 하지만, 여기서는 StoredKey에서 역산 불가
-	// 실제로는 salted_password에서 계산해야 함
-	// 이 함수는 검증 로직에서 사용됨
-	return stored_key // 임시: 실제 구현 필요
+fn compute_client_key_from_salted(salted_password []u8) []u8 {
+	return hmac_sha256(salted_password, 'Client Key'.bytes())
 }
 
 /// xor_bytes는 두 바이트 배열을 XOR합니다.
@@ -386,13 +408,20 @@ fn xor_bytes(a []u8, b []u8) []u8 {
 /// constant_time_compare는 두 바이트 배열을 상수 시간에 비교합니다.
 /// 타이밍 공격 방지를 위해 사용
 fn constant_time_compare(a []u8, b []u8) bool {
+	// 길이 차이도 상수 시간에 처리
+	// 길이가 다르면 더 긴 배열 길이만큼 비교하여 타이밍 일정하게 유지
+	mut result := u8(0)
+
+	// 길이 차이를 결과에 반영 (길이가 다르면 0이 아닌 값)
 	if a.len != b.len {
-		return false
+		result = 1
 	}
 
-	mut result := u8(0)
-	for i in 0 .. a.len {
+	// 더 짧은 길이만큼 비교 (둘 다 빈 배열이면 0)
+	min_len := if a.len < b.len { a.len } else { b.len }
+	for i in 0 .. min_len {
 		result |= a[i] ^ b[i]
 	}
+
 	return result == 0
 }
