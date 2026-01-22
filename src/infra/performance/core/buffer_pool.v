@@ -197,14 +197,14 @@ pub fn (s &PoolStats) hit_rate() f64 {
 @[heap]
 pub struct BufferPool {
 mut:
-	tiny_pool   []&Buffer    // tiny 버퍼 풀
-	small_pool  []&Buffer    // small 버퍼 풀
-	medium_pool []&Buffer    // medium 버퍼 풀
-	large_pool  []&Buffer    // large 버퍼 풀
-	huge_pool   []&Buffer    // huge 버퍼 풀
-	config      PoolConfig   // 풀 설정
-	stats       PoolStats    // 풀 통계
-	lock        sync.Mutex   // 동기화를 위한 뮤텍스
+	tiny_pool   []&Buffer  // tiny 버퍼 풀
+	small_pool  []&Buffer  // small 버퍼 풀
+	medium_pool []&Buffer  // medium 버퍼 풀
+	large_pool  []&Buffer  // large 버퍼 풀
+	huge_pool   []&Buffer  // huge 버퍼 풀
+	config      PoolConfig // 풀 설정
+	stats       PoolStats  // 풀 통계
+	lock        sync.Mutex // 동기화를 위한 뮤텍스
 }
 
 /// new_buffer_pool은 주어진 설정으로 새 버퍼 풀을 생성합니다.

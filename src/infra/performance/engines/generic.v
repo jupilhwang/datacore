@@ -12,7 +12,7 @@ pub mut:
 	record_pool  &core.RecordPool      = unsafe { nil } // 레코드 풀
 	batch_pool   &core.RecordBatchPool = unsafe { nil } // 배치 풀
 	request_pool &core.RequestPool     = unsafe { nil } // 요청 풀
-	config       core.PerformanceConfig                 // 성능 설정
+	config       core.PerformanceConfig // 성능 설정
 }
 
 /// name은 엔진 이름을 반환합니다.

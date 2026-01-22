@@ -60,13 +60,13 @@ $if linux {
 /// IoUringParams는 io_uring 설정 파라미터를 담고 있습니다.
 pub struct IoUringParams {
 pub mut:
-	sq_entries     u32          // 제출 큐 항목 수
-	cq_entries     u32          // 완료 큐 항목 수
-	flags          u32          // 플래그
-	sq_thread_cpu  u32          // SQ 스레드 CPU
-	sq_thread_idle u32          // SQ 스레드 유휴 시간
-	features       u32          // 기능 플래그
-	resv           [4]u32       // 예약됨
+	sq_entries     u32           // 제출 큐 항목 수
+	cq_entries     u32           // 완료 큐 항목 수
+	flags          u32           // 플래그
+	sq_thread_cpu  u32           // SQ 스레드 CPU
+	sq_thread_idle u32           // SQ 스레드 유휴 시간
+	features       u32           // 기능 플래그
+	resv           [4]u32        // 예약됨
 	sq_off         SqRingOffsets // SQ 링 오프셋
 	cq_off         CqRingOffsets // CQ 링 오프셋
 }
@@ -141,13 +141,13 @@ pub mut:
 	sqes_size    usize         // SQE 크기
 	params       IoUringParams // 파라미터
 	// 링 상태
-	sq_head  &u32        = unsafe { nil } // SQ 헤드
-	sq_tail  &u32        = unsafe { nil } // SQ 테일
-	sq_mask  u32                          // SQ 마스크
-	sq_array &u32        = unsafe { nil } // SQ 배열
-	cq_head  &u32        = unsafe { nil } // CQ 헤드
-	cq_tail  &u32        = unsafe { nil } // CQ 테일
-	cq_mask  u32                          // CQ 마스크
+	sq_head  &u32 = unsafe { nil } // SQ 헤드
+	sq_tail  &u32 = unsafe { nil } // SQ 테일
+	sq_mask  u32 // SQ 마스크
+	sq_array &u32 = unsafe { nil } // SQ 배열
+	cq_head  &u32 = unsafe { nil } // CQ 헤드
+	cq_tail  &u32 = unsafe { nil } // CQ 테일
+	cq_mask  u32 // CQ 마스크
 	cqes_ptr &IoUringCqe = unsafe { nil } // CQE 포인터
 	// 통계
 	submissions u64 // 제출 수

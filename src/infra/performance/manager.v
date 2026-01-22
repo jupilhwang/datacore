@@ -105,29 +105,38 @@ pub fn (m &PerformanceManager) compute_checksum(data []u8) u32 {
 }
 
 // ============================================================================
-// 전역 성능 관리자
-// 참고: infra/performance/ 테스트에서 -enable-globals 플래그가 필요합니다.
-// Makefile의 메인 테스트 타겟은 의도적으로 이 테스트들을 제외합니다.
+// 전역 성능 관리자 (싱글톤 패턴)
 // ============================================================================
 
-__global (
-	g_performance &PerformanceManager // 전역 성능 관리자 인스턴스
-)
+// 싱글톤 인스턴스를 보유하는 구조체
+struct GlobalPerformanceHolder {
+mut:
+	instance &PerformanceManager = unsafe { nil }
+	is_init  bool
+}
+
+// 모듈 레벨 싱글톤 홀더
+const global_holder = &GlobalPerformanceHolder{}
 
 /// init_global_performance는 전역 성능 관리자를 초기화합니다.
 pub fn init_global_performance(config core.PerformanceConfig) {
-	unsafe {
-		g_performance = new_performance_manager(config)
+	mut holder := unsafe { global_holder }
+	if !holder.is_init {
+		unsafe {
+			holder.instance = new_performance_manager(config)
+			holder.is_init = true
+		}
 	}
 }
 
 /// get_global_performance는 전역 성능 관리자를 반환합니다.
 pub fn get_global_performance() &PerformanceManager {
-	if unsafe { g_performance == nil } {
+	holder := unsafe { global_holder }
+	if !holder.is_init {
 		// 초기화되지 않은 경우 안전한 기본값
 		init_global_performance(core.PerformanceConfig{})
 	}
-	return unsafe { g_performance }
+	return unsafe { holder.instance }
 }
 
 /// get_stats는 성능 통계를 반환합니다.

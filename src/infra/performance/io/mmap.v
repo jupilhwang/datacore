@@ -12,16 +12,16 @@ pub:
 	offset    i64    // 파일 내 오프셋
 	length    int    // 매핑된 영역의 길이
 mut:
-	data      []u8   // 메모리 매핑된 데이터 (시뮬레이션)
-	is_mapped bool   // 영역이 현재 매핑되어 있는지 여부
-	dirty     bool   // 영역이 수정되었는지 여부
+	data      []u8 // 메모리 매핑된 데이터 (시뮬레이션)
+	is_mapped bool // 영역이 현재 매핑되어 있는지 여부
+	dirty     bool // 영역이 수정되었는지 여부
 }
 
 /// MmapFile은 메모리 매핑된 파일 래퍼입니다.
 pub struct MmapFile {
 pub:
-	path      string   // 파일 경로
-	read_only bool     // 읽기 전용 여부
+	path      string // 파일 경로
+	read_only bool   // 읽기 전용 여부
 mut:
 	file      ?os.File     // 파일 핸들
 	size      i64          // 파일 크기
