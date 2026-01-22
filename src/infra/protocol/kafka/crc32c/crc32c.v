@@ -1,11 +1,18 @@
 /// CRC32-C (Castagnoli) 체크섬 모듈
 ///
 /// 이 모듈은 Kafka RecordBatch 검증에 사용되는 CRC32-C 체크섬을 계산합니다.
-/// 최적화된 테이블 룩업 알고리즘을 사용하며, 8바이트 슬라이싱 기법으로
-/// 성능을 향상시킵니다.
+/// Slicing-by-8 알고리즘을 사용하여 최적화된 성능을 제공합니다.
 ///
 /// 다항식: 0x1EDC6F41 (iSCSI/Castagnoli)
 /// 역순 다항식: 0x82F63B78
+///
+/// 성능 특성:
+/// - Slicing-by-8: 한 번에 8바이트 처리, 기본 테이블 대비 ~3-5배 빠름
+/// - 작은 데이터(<8바이트): 바이트 단위 폴백
+///
+/// 향후 개선 계획:
+/// - SSE4.2 하드웨어 가속 (Intel/AMD)
+/// - ARM CRC32 명령어 지원
 module crc32c
 
 // ============================================================================
@@ -290,11 +297,11 @@ pub fn cpu_supports_sse42() bool {
 }
 
 // ============================================================================
-// 최적화된 CRC32-C 구현
+// CRC32-C 구현
 // ============================================================================
 
 /// 소프트웨어 기반 CRC32-C 계산 (테이블 룩업)
-/// 기본 바이트 단위 처리
+/// 바이트 단위 처리 - 정확하고 안정적인 구현
 pub fn crc32c_sw(data []u8) u32 {
 	mut crc := u32(0xFFFFFFFF)
 	for b in data {
@@ -304,26 +311,31 @@ pub fn crc32c_sw(data []u8) u32 {
 	return crc ^ 0xFFFFFFFF
 }
 
-/// 최적화된 CRC32-C 계산
-/// 4바이트 단위로 처리하여 성능 향상
-fn crc32c_optimized(data []u8) u32 {
+/// Slicing-by-8 최적화 CRC32-C 계산
+/// 8바이트 단위로 처리하여 성능 향상 (기본 대비 ~3-5배)
+fn crc32c_slicing8(data []u8) u32 {
 	mut crc := u32(0xFFFFFFFF)
 	mut i := 0
+	len := data.len
 
-	// 4바이트 단위로 처리 (언롤링)
-	for i + 4 <= data.len {
-		crc ^= u32(data[i]) | (u32(data[i + 1]) << 8) | (u32(data[i + 2]) << 16) | (u32(data[i + 3]) << 24)
+	// 8바이트 단위로 처리
+	for i + 8 <= len {
+		// 첫 번째 4바이트 읽기 (리틀 엔디안) + CRC XOR
+		lo := (u32(data[i]) | (u32(data[i + 1]) << 8) | (u32(data[i + 2]) << 16) | (u32(data[i + 3]) << 24)) ^ crc
+		// 두 번째 4바이트 읽기
+		hi := u32(data[i + 4]) | (u32(data[i + 5]) << 8) | (u32(data[i + 6]) << 16) | (u32(data[i +
+			7]) << 24)
 
-		// 4번의 테이블 룩업
-		crc = crc32c_table[(crc >> 0) & 0xFF] ^ crc32c_table[(crc >> 8) & 0xFF] ^ crc32c_table[(crc >> 16) & 0xFF] ^ crc32c_table[(crc >> 24) & 0xFF]
+		// 8개 테이블에서 룩업하여 결합
+		crc = crc32c_tables[7][lo & 0xFF] ^ crc32c_tables[6][(lo >> 8) & 0xFF] ^ crc32c_tables[5][(lo >> 16) & 0xFF] ^ crc32c_tables[4][(lo >> 24) & 0xFF] ^ crc32c_tables[3][hi & 0xFF] ^ crc32c_tables[2][(hi >> 8) & 0xFF] ^ crc32c_tables[1][(hi >> 16) & 0xFF] ^ crc32c_tables[0][(hi >> 24) & 0xFF]
 
-		i += 4
+		i += 8
 	}
 
-	// 나머지 바이트 처리
-	for i < data.len {
+	// 나머지 바이트 처리 (0-7 바이트)
+	for i < len {
 		index := (crc ^ u32(data[i])) & 0xFF
-		crc = (crc >> 8) ^ crc32c_table[index]
+		crc = (crc >> 8) ^ crc32c_tables[0][index]
 		i += 1
 	}
 
@@ -335,7 +347,7 @@ fn crc32c_optimized(data []u8) u32 {
 // ============================================================================
 
 /// CRC32-C 체크섬을 계산합니다.
-/// 최적화된 테이블 룩업 알고리즘을 사용합니다.
+/// 8바이트 이상 데이터에는 Slicing-by-8 알고리즘을 사용합니다.
 ///
 /// 예제:
 /// ```v
@@ -346,6 +358,11 @@ pub fn calculate(data []u8) u32 {
 	if data.len == 0 {
 		return 0
 	}
+	// 8바이트 이상이면 Slicing-by-8 사용
+	if data.len >= 8 {
+		return crc32c_slicing8(data)
+	}
+	// 작은 데이터는 기본 테이블 룩업 사용
 	return crc32c_sw(data)
 }
 
