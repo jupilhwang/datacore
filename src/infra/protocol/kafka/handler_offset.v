@@ -456,24 +456,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	}
 
 	// 서비스 응답을 프로토콜 응답으로 변환
-	mut topics_map := map[string][]OffsetCommitResponsePartition{}
-	for result in service_resp.results {
-		if result.topic !in topics_map {
-			topics_map[result.topic] = []OffsetCommitResponsePartition{}
-		}
-		topics_map[result.topic] << OffsetCommitResponsePartition{
-			partition_index: i32(result.partition)
-			error_code:      result.error_code
-		}
-	}
-
-	mut topics := []OffsetCommitResponseTopic{cap: topics_map.len}
-	for topic_name, partitions in topics_map {
-		topics << OffsetCommitResponseTopic{
-			name:       topic_name
-			partitions: partitions
-		}
-	}
+	topics := build_commit_response_from_results(service_resp.results)
 
 	resp := OffsetCommitResponse{
 		throttle_time_ms: 0
@@ -546,23 +529,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 			}
 
 			// 서비스 응답을 프로토콜 응답으로 변환
-			mut topics_map := map[string][]OffsetFetchResponsePartition{}
-			for result in service_resp.results {
-				if result.topic !in topics_map {
-					topics_map[result.topic] = []OffsetFetchResponsePartition{}
-				}
-				topics_map[result.topic] << OffsetFetchResponsePartition{
-					partition_index:        i32(result.partition)
-					committed_offset:       result.committed_offset
-					committed_leader_epoch: result.committed_leader_epoch
-					committed_metadata:     if result.metadata.len > 0 {
-						result.metadata
-					} else {
-						none
-					}
-					error_code:             result.error_code
-				}
-			}
+			topics_map := group_fetch_partitions_by_topic(service_resp.results)
 
 			mut topics := []OffsetFetchResponseGroupTopic{cap: topics_map.len}
 			for name, partitions in topics_map {
@@ -614,19 +581,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 	}
 
 	// 서비스 응답을 프로토콜 응답으로 변환
-	mut topics_map := map[string][]OffsetFetchResponsePartition{}
-	for result in service_resp.results {
-		if result.topic !in topics_map {
-			topics_map[result.topic] = []OffsetFetchResponsePartition{}
-		}
-		topics_map[result.topic] << OffsetFetchResponsePartition{
-			partition_index:        i32(result.partition)
-			committed_offset:       result.committed_offset
-			committed_leader_epoch: result.committed_leader_epoch
-			committed_metadata:     if result.metadata.len > 0 { result.metadata } else { none }
-			error_code:             result.error_code
-		}
-	}
+	topics_map := group_fetch_partitions_by_topic(service_resp.results)
 
 	mut topics := []OffsetFetchResponseTopic{cap: topics_map.len}
 	for name, partitions in topics_map {
@@ -760,4 +715,72 @@ fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !Of
 		error_code:       0
 		groups:           []
 	}
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// build_commit_response_from_results는 서비스 응답을 OffsetCommit 프로토콜 응답으로 변환합니다.
+fn build_commit_response_from_results(results []offset.OffsetCommitResult) []OffsetCommitResponseTopic {
+	mut topics_map := map[string][]OffsetCommitResponsePartition{}
+	for result in results {
+		if result.topic !in topics_map {
+			topics_map[result.topic] = []OffsetCommitResponsePartition{}
+		}
+		topics_map[result.topic] << OffsetCommitResponsePartition{
+			partition_index: i32(result.partition)
+			error_code:      result.error_code
+		}
+	}
+
+	mut topics := []OffsetCommitResponseTopic{cap: topics_map.len}
+	for topic_name, partitions in topics_map {
+		topics << OffsetCommitResponseTopic{
+			name:       topic_name
+			partitions: partitions
+		}
+	}
+	return topics
+}
+
+/// build_fetch_response_from_results는 서비스 응답을 OffsetFetch 프로토콜 응답으로 변환합니다.
+fn build_fetch_response_from_results(results []offset.OffsetFetchResult) []OffsetFetchResponsePartition {
+	mut partitions := []OffsetFetchResponsePartition{cap: results.len}
+	for result in results {
+		partitions << OffsetFetchResponsePartition{
+			partition_index:        i32(result.partition)
+			committed_offset:       result.committed_offset
+			committed_leader_epoch: result.committed_leader_epoch
+			committed_metadata:     if result.metadata.len > 0 {
+				result.metadata
+			} else {
+				none
+			}
+			error_code:             result.error_code
+		}
+	}
+	return partitions
+}
+
+/// group_fetch_partitions_by_topic는 OffsetFetch 결과를 토픽별로 그룹화합니다.
+fn group_fetch_partitions_by_topic(results []offset.OffsetFetchResult) map[string][]OffsetFetchResponsePartition {
+	mut topics_map := map[string][]OffsetFetchResponsePartition{}
+	for result in results {
+		if result.topic !in topics_map {
+			topics_map[result.topic] = []OffsetFetchResponsePartition{}
+		}
+		topics_map[result.topic] << OffsetFetchResponsePartition{
+			partition_index:        i32(result.partition)
+			committed_offset:       result.committed_offset
+			committed_leader_epoch: result.committed_leader_epoch
+			committed_metadata:     if result.metadata.len > 0 {
+				result.metadata
+			} else {
+				none
+			}
+			error_code:             result.error_code
+		}
+	}
+	return topics_map
 }

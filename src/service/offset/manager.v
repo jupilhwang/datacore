@@ -121,35 +121,19 @@ pub fn (mut m OffsetManager) fetch_offsets(req OffsetFetchRequest) !OffsetFetchR
 	mut results := []OffsetFetchResult{cap: fetched.len}
 	for f in fetched {
 		// TopicId 조회 시도 (v10 지원)
-		mut topic_id := ?[]u8(none)
 		topic_meta := m.storage.get_topic(f.topic) or {
 			// 토픽을 찾을 수 없는 경우에도 결과 반환 (에러 코드 포함)
-			results << OffsetFetchResult{
-				topic:                  f.topic
-				topic_id:               none
-				partition:              f.partition
-				committed_offset:       f.offset
-				committed_leader_epoch: -1
-				metadata:               f.metadata
-				error_code:             i16(domain.ErrorCode.unknown_topic_or_partition)
-			}
+			results << create_fetch_result_with_error(f, i16(domain.ErrorCode.unknown_topic_or_partition))
 			continue
 		}
 
 		// TopicId가 있으면 설정
+		mut topic_id := ?[]u8(none)
 		if topic_meta.topic_id.len > 0 {
 			topic_id = topic_meta.topic_id.clone()
 		}
 
-		results << OffsetFetchResult{
-			topic:                  f.topic
-			topic_id:               topic_id
-			partition:              f.partition
-			committed_offset:       f.offset
-			committed_leader_epoch: -1
-			metadata:               f.metadata
-			error_code:             f.error_code
-		}
+		results << create_fetch_result_with_topic_id(f, topic_id)
 	}
 
 	m.logger.debug('Offsets fetched successfully', observability.field_string('group_id',
@@ -189,4 +173,34 @@ pub fn (mut m OffsetManager) fetch_offsets_by_topic_id(group_id string, topic_id
 		partitions:     topic_partitions
 		require_stable: false
 	})
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// create_fetch_result_with_topic_id는 TopicId를 포함한 OffsetFetchResult를 생성합니다.
+fn create_fetch_result_with_topic_id(f domain.OffsetFetchResult, topic_id ?[]u8) OffsetFetchResult {
+	return OffsetFetchResult{
+		topic:                  f.topic
+		topic_id:               topic_id
+		partition:              f.partition
+		committed_offset:       f.offset
+		committed_leader_epoch: -1
+		metadata:               f.metadata
+		error_code:             f.error_code
+	}
+}
+
+/// create_fetch_result_with_error는 에러 코드를 포함한 OffsetFetchResult를 생성합니다.
+fn create_fetch_result_with_error(f domain.OffsetFetchResult, error_code i16) OffsetFetchResult {
+	return OffsetFetchResult{
+		topic:                  f.topic
+		topic_id:               none
+		partition:              f.partition
+		committed_offset:       f.offset
+		committed_leader_epoch: -1
+		metadata:               f.metadata
+		error_code:             error_code
+	}
 }
