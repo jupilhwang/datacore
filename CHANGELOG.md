@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.29.0] - 2026-01-22
+
+### Added
+- **SCRAM-SHA-256 Authentication** - RFC 5802/7677 기반 Challenge-Response 인증
+  - `ScramSha256Authenticator` - SCRAM-SHA-256 메커니즘 구현
+  - PBKDF2-SHA256 키 파생 함수 지원
+  - Multi-step challenge-response 인증 플로우
+  - Constant-time comparison으로 타이밍 공격 방지
+  - SASL 핸들러에서 메커니즘 자동 감지
+
+- **FindCoordinator API v5-v6** - KIP-890, KIP-932 지원
+  - v5: `TRANSACTION_ABORTABLE` 에러 코드 지원 (KIP-890)
+  - v6: Share Groups 지원 (`KeyType=2`, KIP-932)
+  - Share Group 키 형식 검증 (`groupId:topicId:partition`)
+  - `CoordinatorKeyType` enum 추가 (GROUP, TRANSACTION, SHARE)
+
+- **Fetch API v14-v16** - 최신 Kafka 호환성 개선
+  - v15: `ReplicaState` enum 지원 (KIP-227)
+  - v16: `NodeEndpoints` 필드 지원
+  - Topic ID 기반 페치 지원
+
+- **InitProducerId API v5** - 트랜잭션 기능 개선
+  - Flexible 프로토콜 지원
+  - `ProducerIdBlock` 할당 로직 개선
+
+### Changed
+- **Performance Manager Singleton** - 전역 변수를 싱글톤 패턴으로 변경
+  - `-enable-globals` 컴파일러 플래그 의존성 제거
+  - `GlobalPerformanceHolder` 구조체로 안전한 싱글톤 관리
+  - Buffer Pool, I/O 엔진 모듈 포맷팅 개선
+
+### Fixed
+- `TRANSACTION_ABORTABLE` 에러 코드 (109) 추가 누락 수정
+- API 버전 레지스트리에서 FindCoordinator max_version 업데이트 (5 → 6)
+
+### Security
+- SCRAM-SHA-256으로 PLAIN보다 안전한 인증 방식 제공
+- Salt + Iteration 기반 비밀번호 해싱으로 오프라인 공격 방지
+
 ## [0.28.0] - 2026-01-22
 
 ### Added
