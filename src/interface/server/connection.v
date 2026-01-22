@@ -158,7 +158,8 @@ pub fn (mut cm ConnectionManager) cleanup_idle() int {
 	defer { cm.lock.unlock() }
 
 	now := time.now()
-	mut to_close := []int{}
+	// 일반적으로 소수의 연결만 타임아웃되므로 작은 초기 용량 사용
+	mut to_close := []int{cap: 8}
 
 	for fd, client in cm.connections {
 		idle_ms := (now - client.last_active_at).milliseconds()

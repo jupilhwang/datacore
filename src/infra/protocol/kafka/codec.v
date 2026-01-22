@@ -551,10 +551,8 @@ pub fn (mut w BinaryWriter) write_uuid(uuid []u8) {
 	if uuid.len >= 16 {
 		w.data << uuid[0..16]
 	} else {
-		// zero UUID 쓰기 (16바이트의 0)
-		for _ in 0 .. 16 {
-			w.data << u8(0)
-		}
+		// zero UUID 쓰기 (16바이트의 0) - 배열 한 번에 추가
+		w.data << []u8{len: 16, init: 0}
 	}
 }
 

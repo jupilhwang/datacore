@@ -88,11 +88,8 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 		return error('topic already exists')
 	}
 
-	// topic_id용 UUID 생성
-	mut topic_id := []u8{len: 16}
-	for i in 0 .. 16 {
-		topic_id[i] = u8(rand.intn(256) or { 0 })
-	}
+	// topic_id용 UUID v4 생성 - 배열 한 번에 초기화
+	mut topic_id := []u8{len: 16, init: u8(rand.intn(256) or { 0 })}
 	// UUID 버전 4 (랜덤) 설정
 	topic_id[6] = (topic_id[6] & 0x0f) | 0x40
 	topic_id[8] = (topic_id[8] & 0x3f) | 0x80

@@ -107,12 +107,26 @@ pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	mut ready := []PendingRequest{}
-
-	for p.pending.len > 0 && p.pending[0].completed {
-		ready << p.pending[0]
-		p.pending.delete(0)
+	// 연속으로 완료된 요청 수 계산
+	mut ready_count := 0
+	for i in 0 .. p.pending.len {
+		if p.pending[i].completed {
+			ready_count++
+		} else {
+			break
+		}
 	}
+
+	if ready_count == 0 {
+		return []PendingRequest{}
+	}
+
+	// 완료된 요청들을 복사하고 배열에서 제거
+	// 슬라이싱을 사용하여 O(n) 대신 O(ready_count)로 복사
+	ready := p.pending[0..ready_count].clone()
+
+	// 나머지 요청들만 유지 (배열 재할당 한 번만 발생)
+	p.pending = p.pending[ready_count..].clone()
 
 	return ready
 }

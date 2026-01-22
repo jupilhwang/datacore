@@ -100,17 +100,22 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 	}
 
 	// 멤버 목록 효율적으로 업데이트
-	mut updated_members := if member_idx >= 0 {
-		// 기존 멤버 업데이트
-		mut members := group.members.clone()
-		members[member_idx] = member
-		members
+	mut updated_members := []domain.GroupMember{}
+	if member_idx >= 0 {
+		// 기존 멤버 업데이트 - clone 대신 용량 미리 할당 후 복사
+		updated_members = []domain.GroupMember{cap: group.members.len}
+		for i, m in group.members {
+			if i == member_idx {
+				updated_members << member
+			} else {
+				updated_members << m
+			}
+		}
 	} else {
 		// 새 멤버 추가 (단일 할당)
-		mut members := []domain.GroupMember{cap: group.members.len + 1}
-		members << group.members
-		members << member
-		members
+		updated_members = []domain.GroupMember{cap: group.members.len + 1}
+		updated_members << group.members
+		updated_members << member
 	}
 
 	group = domain.ConsumerGroup{
