@@ -1,5 +1,9 @@
-// Infra Layer - Kafka Protocol Handler
-// Main handler structure and request routing
+// 인프라 레이어 - Kafka 프로토콜 핸들러
+// 메인 핸들러 구조체 및 요청 라우팅
+//
+// 이 모듈은 Kafka 프로토콜의 핵심 핸들러를 구현합니다.
+// 클라이언트 요청을 파싱하고 적절한 API 핸들러로 라우팅하여
+// 응답을 생성합니다.
 module kafka
 
 import infra.observability
@@ -10,7 +14,10 @@ import service.port
 import service.transaction
 import time
 
-// Protocol Handler - processes Kafka requests and generates responses
+/// 프로토콜 핸들러 - Kafka 요청을 처리하고 응답을 생성하는 핵심 구조체
+///
+/// Handler는 브로커의 모든 Kafka API 요청을 처리합니다.
+/// 스토리지, 인증, ACL, 트랜잭션 코디네이터 등 다양한 컴포넌트와 연동됩니다.
 pub struct Handler {
 	broker_id   i32
 	host        string
@@ -26,7 +33,10 @@ mut:
 	logger                  &observability.Logger
 }
 
-// new_handler creates a new Kafka protocol handler with storage
+/// 스토리지와 함께 새로운 Kafka 프로토콜 핸들러를 생성합니다.
+///
+/// 기본 핸들러로, 인증이나 ACL 없이 스토리지만 사용합니다.
+/// 개발/테스트 환경에 적합합니다.
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
 	return Handler{
 		broker_id:               broker_id
@@ -43,7 +53,9 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 	}
 }
 
-// new_handler_with_auth creates a new Kafka protocol handler with storage and authentication
+/// 스토리지와 인증 매니저를 포함한 새로운 Kafka 프로토콜 핸들러를 생성합니다.
+///
+/// SASL 인증이 필요한 환경에서 사용합니다.
 pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager) Handler {
 	return Handler{
 		broker_id:               broker_id
@@ -60,7 +72,9 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 	}
 }
 
-// new_handler_full creates a new Kafka protocol handler with all components
+/// 모든 컴포넌트를 포함한 완전한 Kafka 프로토콜 핸들러를 생성합니다.
+///
+/// 프로덕션 환경에서 인증, ACL, 트랜잭션을 모두 지원할 때 사용합니다.
 pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator) Handler {
 	return Handler{
 		broker_id:               broker_id
@@ -77,7 +91,10 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 	}
 }
 
-// new_handler_with_share_groups creates a new Kafka protocol handler with share group support (KIP-932)
+/// Share Group 지원을 포함한 Kafka 프로토콜 핸들러를 생성합니다 (KIP-932).
+///
+/// Share Group은 Kafka 4.0에서 도입된 새로운 컨슈머 그룹 유형으로,
+/// 큐 기반 메시지 소비 패턴을 지원합니다.
 pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator) Handler {
 	return Handler{
 		broker_id:               broker_id
@@ -94,24 +111,28 @@ pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32
 	}
 }
 
-// set_broker_registry sets the broker registry for multi-broker mode
+/// 멀티 브로커 모드를 위한 브로커 레지스트리를 설정합니다.
+///
+/// 클러스터 환경에서 브로커 간 조정을 위해 사용됩니다.
 pub fn (mut h Handler) set_broker_registry(registry &cluster.BrokerRegistry) {
 	h.broker_registry = registry
 }
 
-// set_share_group_coordinator sets the share group coordinator for the handler
+/// 핸들러에 Share Group 코디네이터를 설정합니다.
 pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroupCoordinator) {
 	h.share_group_coordinator = coordinator
 }
 
-// Handle incoming request and return response bytes (legacy method)
+/// 수신된 요청을 처리하고 응답 바이트를 반환합니다 (레거시 메서드).
+///
+/// 이 메서드는 원시 바이트 데이터를 받아 파싱하고,
+/// 적절한 API 핸들러로 라우팅한 후 응답을 생성합니다.
 pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 	start_time := time.now()
 
-	// Parse request
+	// 요청 파싱
 	req := parse_request(data) or {
-		h.logger.error('Failed to parse request',
-			observability.field_err_str(err.str()),
+		h.logger.error('Failed to parse request', observability.field_err_str(err.str()),
 			observability.field_bytes('request_size', data.len))
 		return err
 	}
@@ -120,13 +141,11 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 	version := req.header.api_version
 	correlation_id := req.header.correlation_id
 
-	h.logger.debug('Processing request',
-		observability.field_string('api', api_key.str()),
-		observability.field_int('version', version),
-		observability.field_int('correlation_id', correlation_id),
-		observability.field_bytes('request_size', data.len))
+	h.logger.debug('Processing request', observability.field_string('api', api_key.str()),
+		observability.field_int('version', version), observability.field_int('correlation_id',
+		correlation_id), observability.field_bytes('request_size', data.len))
 
-	// Handle by API key
+	// API 키에 따라 처리
 	response_body := match api_key {
 		.api_versions {
 			h.handle_api_versions(version)
@@ -237,22 +256,19 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 			h.handle_share_acknowledge(req.body, version)!
 		}
 		else {
-			h.logger.warn('Unsupported API key',
-				observability.field_int('api_key', int(api_key)))
+			h.logger.warn('Unsupported API key', observability.field_int('api_key', int(api_key)))
 			return error('unsupported API key: ${int(api_key)}')
 		}
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Request completed',
-		observability.field_string('api', api_key.str()),
-		observability.field_int('correlation_id', correlation_id),
-		observability.field_bytes('response_size', response_body.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Request completed', observability.field_string('api', api_key.str()),
+		observability.field_int('correlation_id', correlation_id), observability.field_bytes('response_size',
+		response_body.len), observability.field_duration('latency', elapsed))
 
-	// Build response with header
-	// Note: ApiVersions is special - always uses non-flexible header even for v3+
-	// because clients don't know server capabilities yet
+	// 헤더와 함께 응답 빌드
+	// 참고: ApiVersions는 특별함 - v3+에서도 항상 non-flexible 헤더 사용
+	// 클라이언트가 아직 서버 기능을 모르기 때문
 	if api_key == .api_versions {
 		return build_response(correlation_id, response_body)
 	}
@@ -264,10 +280,12 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 	return build_response(correlation_id, response_body)
 }
 
-// Handle incoming Frame and return response Frame
-// This is the recommended way to process requests
+/// 수신된 Frame을 처리하고 응답 Frame을 반환합니다.
+///
+/// 이것이 요청을 처리하는 권장 방법입니다.
+/// Frame 기반 처리는 더 나은 타입 안전성과 구조화된 처리를 제공합니다.
 pub fn (mut h Handler) handle_frame(frame Frame) !Frame {
-	// Extract request header info
+	// 요청 헤더 정보 추출
 	req_header := match frame.header {
 		FrameRequestHeader { frame.header as FrameRequestHeader }
 		else { return error('expected request header') }
@@ -277,14 +295,14 @@ pub fn (mut h Handler) handle_frame(frame Frame) !Frame {
 	version := req_header.api_version
 	correlation_id := req_header.correlation_id
 
-	// Process body based on type and return response body
+	// 타입에 따라 본문 처리 후 응답 본문 반환
 	response_body := h.process_body(frame.body, api_key, version)!
 
-	// Build response frame
+	// 응답 프레임 빌드
 	return frame_response(correlation_id, api_key, version, response_body)
 }
 
-// Process body and return response body
+// 본문을 처리하고 응답 본문을 반환합니다.
 fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
 	return match body {
 		ApiVersionsRequest {
@@ -353,38 +371,38 @@ fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
 	}
 }
 
-// Build a minimal (empty) consumer group assignment payload
+// 최소한의 (빈) 컨슈머 그룹 할당 페이로드를 빌드합니다.
 fn empty_consumer_assignment() []u8 {
 	mut writer := new_writer()
-	// Consumer protocol version
+	// 컨슈머 프로토콜 버전
 	writer.write_i16(0)
-	// assignment array length (0 topics)
+	// 할당 배열 길이 (0개 토픽)
 	writer.write_i32(0)
-	// user data length (0)
+	// 사용자 데이터 길이 (0)
 	writer.write_i32(0)
 	return writer.bytes()
 }
 
-// Helper function to parse config as i64
+// 설정값을 i64로 파싱하는 헬퍼 함수
 fn parse_config_i64(configs map[string]string, key string, default_val i64) i64 {
 	val := configs[key] or { return default_val }
 	return val.i64()
 }
 
-// Helper function to parse config as int
+// 설정값을 int로 파싱하는 헬퍼 함수
 fn parse_config_int(configs map[string]string, key string, default_val int) int {
 	val := configs[key] or { return default_val }
 	return val.int()
 }
 
-// generate_uuid generates a random UUID v4 (16 bytes)
+// 랜덤 UUID v4를 생성합니다 (16바이트).
 fn generate_uuid() []u8 {
 	mut uuid := []u8{len: 16}
 	for i in 0 .. 16 {
 		uuid[i] = u8(rand.int_in_range(0, 256) or { 0 })
 	}
-	// Set version (4) and variant (RFC 4122)
-	uuid[6] = (uuid[6] & 0x0f) | 0x40 // Version 4
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // Variant RFC 4122
+	// 버전 (4) 및 변형 (RFC 4122) 설정
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // 버전 4
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 변형
 	return uuid
 }

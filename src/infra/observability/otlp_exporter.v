@@ -1,5 +1,5 @@
 // Infra Layer - OTLP (OpenTelemetry Protocol) Exporter
-// Exports logs, metrics, and traces to OpenTelemetry Collector
+// 로그, 메트릭, 트레이스를 OpenTelemetry Collector로 내보냄
 module observability
 
 import net.http
@@ -13,16 +13,16 @@ import time
 // OTLPConfig holds OTLP exporter configuration
 pub struct OTLPConfig {
 pub:
-	endpoint         string = 'http://localhost:4318' // OTLP HTTP endpoint
-	service_name     string = 'datacore'
-	service_version  string = '0.28.0'
-	instance_id      string
-	environment      string = 'development'
-	timeout_ms       int    = 5000
-	batch_size       int    = 100
-	flush_interval_ms int   = 1000
-	retry_count      int    = 3
-	retry_delay_ms   int    = 1000
+	endpoint          string = 'http://localhost:4318' // OTLP HTTP endpoint
+	service_name      string = 'datacore'
+	service_version   string = '0.28.0'
+	instance_id       string
+	environment       string = 'development'
+	timeout_ms        int    = 5000
+	batch_size        int    = 100
+	flush_interval_ms int    = 1000
+	retry_count       int    = 3
+	retry_delay_ms    int    = 1000
 	// Buffer limits (v0.28.0) - prevent unbounded memory growth
 	max_log_buffer_size  int = 10000 // Max buffered log entries
 	max_span_buffer_size int = 5000  // Max buffered spans
@@ -36,11 +36,11 @@ pub:
 pub struct OTLPExporter {
 	config OTLPConfig
 mut:
-	log_buffer    []LogEntry
-	span_buffer   []&Span
-	buffer_lock   sync.Mutex
-	running       bool
-	flush_lock    sync.Mutex
+	log_buffer  []LogEntry
+	span_buffer []&Span
+	buffer_lock sync.Mutex
+	running     bool
+	flush_lock  sync.Mutex
 	// Buffer overflow stats (v0.28.0)
 	logs_dropped  u64
 	spans_dropped u64
@@ -142,7 +142,7 @@ fn (mut e OTLPExporter) export_logs(entries []LogEntry) {
 
 	payload := e.build_logs_payload(entries)
 	endpoint := '${e.config.endpoint}/v1/logs'
-	
+
 	e.send_with_retry(endpoint, payload)
 }
 
@@ -199,7 +199,7 @@ fn (e &OTLPExporter) build_log_record(entry LogEntry) string {
 	// Add attributes
 	sb << ',"attributes":['.bytes()
 	sb << '{"key":"logger.name","value":{"stringValue":"${escape_json_string(entry.logger_name)}"}}'.bytes()
-	
+
 	for f in entry.fields {
 		sb << ',{"key":"${escape_json_string(f.key)}","value":{"stringValue":"${escape_json_string(f.value)}"}}'.bytes()
 	}
@@ -241,7 +241,7 @@ fn (mut e OTLPExporter) export_spans(spans []&Span) {
 
 	payload := e.build_spans_payload(spans)
 	endpoint := '${e.config.endpoint}/v1/traces'
-	
+
 	e.send_with_retry(endpoint, payload)
 }
 
@@ -360,19 +360,19 @@ fn (e &OTLPExporter) build_attribute(attr SpanAttribute) string {
 // send_with_retry sends HTTP request with retry logic
 fn (e &OTLPExporter) send_with_retry(endpoint string, payload string) {
 	mut last_err := ''
-	
+
 	for attempt in 0 .. e.config.retry_count {
 		if attempt > 0 {
 			time.sleep(time.millisecond * e.config.retry_delay_ms)
 		}
-		
+
 		result := e.send_http(endpoint, payload)
 		if result {
 			return
 		}
 		last_err = 'attempt ${attempt + 1} failed'
 	}
-	
+
 	// Log failure (avoid recursion by writing directly)
 	eprint('{"level":"WARN","msg":"OTLP export failed","endpoint":"${endpoint}","error":"${last_err}"}\n')
 }
@@ -386,15 +386,13 @@ fn (e &OTLPExporter) send_http(endpoint string, payload string) bool {
 	}
 	req.add_header(.content_type, 'application/json')
 	req.add_header(.accept, 'application/json')
-	
+
 	// Set timeout
 	// Note: V's http client doesn't have direct timeout support
 	// In production, consider using a custom TCP client with timeout
-	
-	resp := req.do() or {
-		return false
-	}
-	
+
+	resp := req.do() or { return false }
+
 	return resp.status_code >= 200 && resp.status_code < 300
 }
 
@@ -416,11 +414,11 @@ pub fn init_otlp_exporter(config OTLPConfig) {
 	mut holder := unsafe { otlp_holder }
 	holder.lock.@lock()
 	defer { holder.lock.unlock() }
-	
+
 	if holder.exporter != unsafe { nil } {
 		holder.exporter.stop()
 	}
-	
+
 	holder.exporter = new_otlp_exporter(config)
 	holder.exporter.start()
 }
@@ -439,7 +437,7 @@ pub fn shutdown_otlp_exporter() {
 	mut holder := unsafe { otlp_holder }
 	holder.lock.@lock()
 	defer { holder.lock.unlock() }
-	
+
 	if holder.exporter != unsafe { nil } {
 		holder.exporter.stop()
 		holder.exporter = unsafe { nil }

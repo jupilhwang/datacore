@@ -1,13 +1,14 @@
 module benchmarks
 
-// I/O Benchmark Tests
-// Tests for the comprehensive I/O benchmark suite
+/// I/O 벤치마크 테스트
+/// 종합 I/O 벤치마크 스위트를 위한 테스트
 import os
 
 // ============================================================================
-// Configuration Tests
+// 설정 테스트
 // ============================================================================
 
+/// 벤치마크 설정 기본값 테스트
 fn test_benchmark_config_defaults() {
 	config := IoBenchmarkConfig{}
 
@@ -19,6 +20,7 @@ fn test_benchmark_config_defaults() {
 	assert config.output_format == .text
 }
 
+/// 벤치마크 설정 커스텀 테스트
 fn test_benchmark_config_custom() {
 	config := IoBenchmarkConfig{
 		iterations:    50
@@ -36,9 +38,10 @@ fn test_benchmark_config_custom() {
 }
 
 // ============================================================================
-// Suite Creation Tests
+// 스위트 생성 테스트
 // ============================================================================
 
+/// 새 I/O 벤치마크 스위트 테스트
 fn test_new_io_benchmark_suite() {
 	config := IoBenchmarkConfig{
 		iterations: 10
@@ -51,6 +54,7 @@ fn test_new_io_benchmark_suite() {
 	assert suite.system.os_name.len > 0
 }
 
+/// 시스템 기능 감지 테스트
 fn test_detect_system_capabilities() {
 	info := detect_system_capabilities()
 
@@ -67,9 +71,10 @@ fn test_detect_system_capabilities() {
 }
 
 // ============================================================================
-// Result Calculation Tests
+// 결과 계산 테스트
 // ============================================================================
 
+/// I/O 결과 계산 기본 테스트
 fn test_calculate_io_results_basic() {
 	times := [i64(1000), 2000, 3000, 4000, 5000]
 	result := calculate_io_results('Test', times, 1024)
@@ -82,6 +87,7 @@ fn test_calculate_io_results_basic() {
 	assert result.data_size == 1024
 }
 
+/// I/O 결과 계산 빈 입력 테스트
 fn test_calculate_io_results_empty() {
 	times := []i64{}
 	result := calculate_io_results('Empty Test', times, 0)
@@ -90,19 +96,21 @@ fn test_calculate_io_results_empty() {
 	assert result.iterations == 0
 }
 
+/// I/O 결과 처리량 테스트
 fn test_calculate_io_results_throughput() {
-	// 1KB in 1ms = 1MB/s
-	times := [i64(1_000_000)] // 1ms in nanoseconds
+	// 1ms에 1KB = 1MB/s
+	times := [i64(1_000_000)] // 나노초 단위 1ms
 	result := calculate_io_results('Throughput Test', times, 1024)
 
-	// Throughput should be approximately 1 MB/s
+	// 처리량은 약 1 MB/s여야 함
 	// 1024 bytes / (1ms) = 1024 bytes / 0.001s = 1.024 MB/s
 	assert result.throughput_mbps > 0.9
 	assert result.throughput_mbps < 1.1
 }
 
+/// I/O 결과 초당 작업 수 테스트
 fn test_calculate_io_results_ops_per_sec() {
-	// 1 operation per millisecond = 1000 ops/sec
+	// 밀리초당 1 작업 = 초당 1000 작업
 	times := [i64(1_000_000)] // 1ms
 	result := calculate_io_results('Ops Test', times, 100)
 
@@ -111,9 +119,10 @@ fn test_calculate_io_results_ops_per_sec() {
 }
 
 // ============================================================================
-// Formatting Tests
+// 포맷팅 테스트
 // ============================================================================
 
+/// 텍스트 형식 테스트
 fn test_format_text() {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{})
 	suite.results << IoBenchmarkResults{
@@ -134,6 +143,7 @@ fn test_format_text() {
 	assert output.contains('System Information')
 }
 
+/// 마크다운 형식 테스트
 fn test_format_markdown() {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		output_format: .markdown
@@ -153,6 +163,7 @@ fn test_format_markdown() {
 	assert output.contains('## System Information')
 }
 
+/// JSON 형식 테스트
 fn test_format_json() {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		output_format: .json
@@ -171,9 +182,10 @@ fn test_format_json() {
 }
 
 // ============================================================================
-// Utility Function Tests
+// 유틸리티 함수 테스트
 // ============================================================================
 
+/// 오른쪽 패딩 테스트
 fn test_pad_right() {
 	assert pad_right('abc', 5) == 'abc  '
 	assert pad_right('abcde', 5) == 'abcde'
@@ -181,6 +193,7 @@ fn test_pad_right() {
 	assert pad_right('', 3) == '   '
 }
 
+/// 테스트 파일 생성 테스트
 fn test_create_test_file() {
 	path := create_test_file(1024)
 	defer {
@@ -195,12 +208,13 @@ fn test_create_test_file() {
 }
 
 // ============================================================================
-// Quick Benchmark Tests (Light)
+// 빠른 벤치마크 테스트 (경량)
 // ============================================================================
 
+/// 빠른 함수 존재 테스트
 fn test_quick_functions_exist() {
-	// Just verify the functions can be called without crashing
-	// Don't actually run full benchmarks in tests
+	// 함수가 크래시 없이 호출될 수 있는지만 확인
+	// 테스트에서 전체 벤치마크를 실제로 실행하지 않음
 
 	config := IoBenchmarkConfig{
 		iterations:    2
@@ -213,22 +227,24 @@ fn test_quick_functions_exist() {
 	assert suite.config.iterations == 2
 }
 
+/// 비교 함수 매개변수 테스트
 fn test_compare_functions_params() {
-	// Test that comparison functions accept correct parameters
-	// We don't run full benchmarks, just verify types
+	// 비교 함수가 올바른 매개변수를 받는지 테스트
+	// 전체 벤치마크를 실행하지 않고 타입만 확인
 
 	results := compare_memory_strategies(1024, 5)
 
-	// Results should be returned (may be empty if tests are skipped)
+	// 결과가 반환되어야 함 (테스트가 건너뛰어지면 비어있을 수 있음)
 	assert results.len >= 0
 }
 
 // ============================================================================
-// Integration Tests (Light)
+// 통합 테스트 (경량)
 // ============================================================================
 
+/// 미니 벤치마크 실행 테스트
 fn test_mini_benchmark_run() {
-	// Create a minimal benchmark run
+	// 최소한의 벤치마크 실행 생성
 	config := IoBenchmarkConfig{
 		iterations:        3
 		warmup_runs:       1
@@ -236,29 +252,30 @@ fn test_mini_benchmark_run() {
 		file_size:         1024
 		test_regular_io:   true
 		test_mmap:         true
-		test_dma:          false // Skip for portability
-		test_io_uring:     false // Skip for portability
-		test_numa:         false // Skip for portability
+		test_dma:          false // 이식성을 위해 건너뜀
+		test_io_uring:     false // 이식성을 위해 건너뜀
+		test_numa:         false // 이식성을 위해 건너뜀
 		test_buffer_pools: false
 	}
 
 	mut suite := new_io_benchmark_suite(config)
 	suite.run_all()
 
-	// Should have some results
+	// 결과가 있어야 함
 	assert suite.results.len > 0
 
-	// Format should work
+	// 포맷이 작동해야 함
 	output := suite.format_results()
 	assert output.len > 0
 }
 
+/// 모든 출력 형식 테스트
 fn test_all_output_formats() {
 	config := IoBenchmarkConfig{
 		iterations: 1
 	}
 
-	// Create suite with test data
+	// 테스트 데이터로 스위트 생성
 	mut suite := new_io_benchmark_suite(config)
 	suite.results << IoBenchmarkResults{
 		test_name:   'Format Test'
@@ -266,21 +283,21 @@ fn test_all_output_formats() {
 		avg_time_ns: 1000
 	}
 
-	// Test text format
+	// 텍스트 형식 테스트
 	suite.config = IoBenchmarkConfig{
 		output_format: .text
 	}
 	text_out := suite.format_results()
 	assert text_out.contains('Format Test')
 
-	// Test markdown format
+	// 마크다운 형식 테스트
 	suite.config = IoBenchmarkConfig{
 		output_format: .markdown
 	}
 	md_out := suite.format_results()
 	assert md_out.contains('# ')
 
-	// Test JSON format
+	// JSON 형식 테스트
 	suite.config = IoBenchmarkConfig{
 		output_format: .json
 	}
@@ -290,9 +307,10 @@ fn test_all_output_formats() {
 }
 
 // ============================================================================
-// Edge Cases
+// 엣지 케이스
 // ============================================================================
 
+/// 반복 횟수 0 테스트
 fn test_zero_iterations() {
 	config := IoBenchmarkConfig{
 		iterations: 0
@@ -302,6 +320,7 @@ fn test_zero_iterations() {
 	assert suite.config.iterations == 0
 }
 
+/// 매우 작은 데이터 크기 테스트
 fn test_very_small_data_size() {
 	times := [i64(100)]
 	result := calculate_io_results('Small Data', times, 1)
@@ -310,11 +329,12 @@ fn test_very_small_data_size() {
 	assert result.throughput_mbps > 0
 }
 
+/// 매우 큰 시간 값 테스트
 fn test_very_large_times() {
-	// Test with large time values (1 second)
+	// 큰 시간 값으로 테스트 (1초)
 	times := [i64(1_000_000_000)]
 	result := calculate_io_results('Large Time', times, 1024)
 
 	assert result.avg_time_ns == 1_000_000_000
-	assert result.throughput_mbps < 0.01 // Very slow
+	assert result.throughput_mbps < 0.01 // 매우 느림
 }

@@ -1,4 +1,4 @@
-// Unit Tests - Memory Storage Adapter
+// 단위 테스트 - 메모리 스토리지 어댑터
 module memory
 
 import domain
@@ -6,7 +6,7 @@ import time
 import sync
 
 // ============================================================
-// Topic Tests
+// 토픽 테스트 (Topic Tests)
 // ============================================================
 
 fn test_create_topic() {
@@ -34,7 +34,7 @@ fn test_create_duplicate_topic() {
 
 	adapter.create_topic('test-topic', 3, domain.TopicConfig{})!
 
-	// Should fail
+	// 실패해야 함
 	if _ := adapter.create_topic('test-topic', 3, domain.TopicConfig{}) {
 		assert false, 'Expected error for duplicate topic'
 	}
@@ -46,7 +46,7 @@ fn test_delete_topic() {
 	adapter.create_topic('test-topic', 3, domain.TopicConfig{})!
 	adapter.delete_topic('test-topic')!
 
-	// Should not find topic
+	// 토픽을 찾을 수 없어야 함
 	if _ := adapter.get_topic('test-topic') {
 		assert false, 'Expected error for deleted topic'
 	}
@@ -74,7 +74,7 @@ fn test_add_partitions() {
 }
 
 // ============================================================
-// Record Tests
+// 레코드 테스트 (Record Tests)
 // ============================================================
 
 fn test_append_records() {
@@ -104,7 +104,7 @@ fn test_fetch_records() {
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('test-topic', 1, domain.TopicConfig{})!
 
-	// Append some records
+	// 레코드 추가
 	for i in 0 .. 10 {
 		adapter.append('test-topic', 0, [
 			domain.Record{
@@ -115,7 +115,7 @@ fn test_fetch_records() {
 		])!
 	}
 
-	// Fetch from offset 5
+	// 오프셋 5부터 조회
 	result := adapter.fetch('test-topic', 0, 5, 1048576)!
 
 	assert result.records.len == 5
@@ -141,7 +141,7 @@ fn test_fetch_out_of_range() {
 		domain.Record{ key: 'key'.bytes(), value: 'value'.bytes(), timestamp: time.now() },
 	])!
 
-	// Fetch from offset beyond high watermark
+	// high watermark를 넘어서는 오프셋에서 조회
 	result := adapter.fetch('test-topic', 0, 100, 1048576)!
 	assert result.records.len == 0
 }
@@ -150,14 +150,14 @@ fn test_delete_records() {
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('test-topic', 1, domain.TopicConfig{})!
 
-	// Append 10 records
+	// 10개 레코드 추가
 	for i in 0 .. 10 {
 		adapter.append('test-topic', 0, [
 			domain.Record{ key: 'key${i}'.bytes(), value: 'value${i}'.bytes(), timestamp: time.now() },
 		])!
 	}
 
-	// Delete first 5 records
+	// 처음 5개 레코드 삭제
 	adapter.delete_records('test-topic', 0, 5)!
 
 	info := adapter.get_partition_info('test-topic', 0)!
@@ -166,14 +166,14 @@ fn test_delete_records() {
 }
 
 // ============================================================
-// Partition Info Tests
+// 파티션 정보 테스트 (Partition Info Tests)
 // ============================================================
 
 fn test_get_partition_info() {
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('test-topic', 3, domain.TopicConfig{})!
 
-	// Append to partition 1
+	// 파티션 1에 추가
 	for i in 0 .. 5 {
 		adapter.append('test-topic', 1, [
 			domain.Record{ key: 'key${i}'.bytes(), value: 'value${i}'.bytes(), timestamp: time.now() },
@@ -189,7 +189,7 @@ fn test_get_partition_info() {
 }
 
 // ============================================================
-// Consumer Group Tests
+// 컨슈머 그룹 테스트 (Consumer Group Tests)
 // ============================================================
 
 fn test_save_and_load_group() {
@@ -245,7 +245,7 @@ fn test_delete_group() {
 }
 
 // ============================================================
-// Offset Tests
+// 오프셋 테스트 (Offset Tests)
 // ============================================================
 
 fn test_commit_and_fetch_offsets() {
@@ -278,7 +278,7 @@ fn test_commit_and_fetch_offsets() {
 		domain.TopicPartition{
 			topic:     'topic-1'
 			partition: 2
-		}, // Not committed
+		}, // 커밋되지 않음
 	]
 
 	results := adapter.fetch_offsets('test-group', partitions)!
@@ -286,7 +286,7 @@ fn test_commit_and_fetch_offsets() {
 	assert results.len == 3
 	assert results[0].offset == 100
 	assert results[1].offset == 200
-	assert results[2].offset == -1 // Not committed
+	assert results[2].offset == -1 // 커밋되지 않음
 }
 
 fn test_fetch_offsets_unknown_group() {
@@ -306,7 +306,7 @@ fn test_fetch_offsets_unknown_group() {
 }
 
 // ============================================================
-// Retention Tests
+// 보존 정책 테스트 (Retention Tests)
 // ============================================================
 
 fn test_max_messages_retention() {
@@ -316,28 +316,28 @@ fn test_max_messages_retention() {
 	mut adapter := new_memory_adapter_with_config(config)
 	adapter.create_topic('test-topic', 1, domain.TopicConfig{})!
 
-	// Append 10 records
+	// 10개 레코드 추가
 	for i in 0 .. 10 {
 		adapter.append('test-topic', 0, [
 			domain.Record{ key: 'key${i}'.bytes(), value: 'value${i}'.bytes(), timestamp: time.now() },
 		])!
 	}
 
-	// Should only have last 5 records
+	// 마지막 5개 레코드만 남아야 함
 	info := adapter.get_partition_info('test-topic', 0)!
 	assert info.earliest_offset == 5
 	assert info.high_watermark == 10
 
-	// Fetch should start from offset 5
+	// 조회는 오프셋 5부터 시작해야 함
 	result := adapter.fetch('test-topic', 0, 0, 1048576)!
-	assert result.records.len == 0 // Offset 0-4 deleted
+	assert result.records.len == 0 // 오프셋 0-4 삭제됨
 
 	result2 := adapter.fetch('test-topic', 0, 5, 1048576)!
 	assert result2.records.len == 5
 }
 
 // ============================================================
-// Stats Tests
+// 통계 테스트 (Stats Tests)
 // ============================================================
 
 fn test_get_stats() {
@@ -363,7 +363,7 @@ fn test_get_stats() {
 }
 
 // ============================================================
-// Clear Tests
+// 초기화 테스트 (Clear Tests)
 // ============================================================
 
 fn test_clear() {
@@ -382,7 +382,7 @@ fn test_clear() {
 }
 
 // ============================================================
-// Health Check
+// 헬스 체크 (Health Check)
 // ============================================================
 
 fn test_health_check() {
@@ -393,23 +393,23 @@ fn test_health_check() {
 }
 
 // ============================================================
-// Concurrency Tests using V's spawn
-// Note: V language has limitations with spawn + mutable shared state.
-// These tests verify the internal locking mechanism works correctly
-// by using threads with explicit synchronization.
+// V의 spawn을 사용한 동시성 테스트
+// 참고: V 언어는 spawn + 가변 공유 상태에 제한이 있습니다.
+// 이 테스트들은 명시적 동기화를 사용하는 스레드로 내부 락킹 메커니즘이
+// 올바르게 작동하는지 검증합니다.
 // ============================================================
 
-// Test concurrent append using threads (lower concurrency for stability)
+// 스레드를 사용한 동시 추가 테스트 (안정성을 위해 낮은 동시성)
 fn test_concurrent_append() {
-	// Test: Verify that the internal locking prevents data corruption
-	// Using lower concurrency and WaitGroup for stability
+	// 테스트: 내부 락킹이 데이터 손상을 방지하는지 검증
+	// 안정성을 위해 낮은 동시성과 WaitGroup 사용
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('concurrent-topic', 1, domain.TopicConfig{}) or {
 		assert false, 'Failed to create topic: ${err}'
 		return
 	}
 
-	// Use a moderate number of threads to test concurrency
+	// 동시성 테스트를 위해 적당한 수의 스레드 사용
 	num_threads := 4
 	records_per_thread := 50
 	expected_total := i64(num_threads * records_per_thread)
@@ -417,7 +417,7 @@ fn test_concurrent_append() {
 	mut wg := sync.new_waitgroup()
 	wg.add(num_threads)
 
-	// Use thread array for spawn
+	// spawn을 위한 스레드 배열 사용
 	mut threads := []thread{}
 	for t_id in 0 .. num_threads {
 		threads << spawn fn [mut adapter, t_id, records_per_thread, mut wg] () {
@@ -436,18 +436,18 @@ fn test_concurrent_append() {
 
 	wg.wait()
 
-	// Verify: Check that we got some records (may not be exactly expected due to V limitations)
+	// 검증: 일부 레코드가 있는지 확인 (V 제한으로 인해 정확하지 않을 수 있음)
 	info := adapter.get_partition_info('concurrent-topic', 0) or {
 		assert false, 'Failed to get partition info: ${err}'
 		return
 	}
 
-	// Allow some tolerance due to V's thread safety limitations
+	// V의 스레드 안전성 제한으로 인해 약간의 허용 오차 허용
 	assert info.high_watermark > 0, 'Expected some records, got ${info.high_watermark}'
 	assert info.high_watermark <= expected_total, 'Got more records than expected: ${info.high_watermark}'
 }
 
-// Test concurrent writes to multiple partitions
+// 여러 파티션에 대한 동시 쓰기 테스트
 fn test_concurrent_multi_partition_writes() {
 	mut adapter := new_memory_adapter()
 
@@ -480,7 +480,7 @@ fn test_concurrent_multi_partition_writes() {
 
 	wg.wait()
 
-	// Verify each partition has records
+	// 각 파티션에 레코드가 있는지 검증
 	for p in 0 .. num_partitions {
 		info := adapter.get_partition_info('multi-part-topic', p) or {
 			assert false, 'Failed to get partition ${p} info: ${err}'
@@ -490,7 +490,7 @@ fn test_concurrent_multi_partition_writes() {
 	}
 }
 
-// Test concurrent read and write operations
+// 동시 읽기/쓰기 작업 테스트
 fn test_concurrent_read_write() {
 	mut adapter := new_memory_adapter()
 
@@ -509,7 +509,7 @@ fn test_concurrent_read_write() {
 
 	mut threads := []thread{}
 
-	// Writers
+	// 쓰기 스레드
 	for w in 0 .. num_writers {
 		threads << spawn fn [mut adapter, w, writes_per_writer, mut wg] () {
 			defer { wg.done() }
@@ -525,13 +525,13 @@ fn test_concurrent_read_write() {
 		}()
 	}
 
-	// Readers
+	// 읽기 스레드
 	for r in 0 .. num_readers {
 		threads << spawn fn [mut adapter, r, reads_per_reader, mut wg] () {
 			defer { wg.done() }
 			for _ in 0 .. reads_per_reader {
 				result := adapter.fetch('rw-topic', 0, 0, 1048576) or { domain.FetchResult{} }
-				// Just verify fetch doesn't crash
+				// fetch가 충돌하지 않는지만 검증
 				if result.records.len >= 0 {
 				}
 				time.sleep(1 * time.millisecond)
@@ -541,7 +541,7 @@ fn test_concurrent_read_write() {
 
 	wg.wait()
 
-	// Verify writes completed
+	// 쓰기가 완료되었는지 검증
 	info := adapter.get_partition_info('rw-topic', 0) or {
 		assert false, 'Failed to get partition info: ${err}'
 		return
@@ -549,7 +549,7 @@ fn test_concurrent_read_write() {
 	assert info.high_watermark > 0, 'Expected some records written'
 }
 
-// Test concurrent offset commits from multiple groups
+// 여러 그룹에서의 동시 오프셋 커밋 테스트
 fn test_concurrent_offset_commits() {
 	mut adapter := new_memory_adapter()
 
@@ -581,7 +581,7 @@ fn test_concurrent_offset_commits() {
 
 	wg.wait()
 
-	// Verify each group has some committed offset
+	// 각 그룹에 커밋된 오프셋이 있는지 검증
 	for g in 0 .. num_groups {
 		group_id := 'group-${g}'
 		results := adapter.fetch_offsets(group_id, [
@@ -592,17 +592,17 @@ fn test_concurrent_offset_commits() {
 		}
 
 		assert results.len == 1, 'Expected 1 result for ${group_id}'
-		// Due to V's limitations, just verify we got a non-negative offset
+		// V의 제한으로 인해 음수가 아닌 오프셋만 검증
 		assert results[0].offset >= 0, '${group_id}: expected valid offset, got ${results[0].offset}'
 	}
 }
 
 // ============================================================
-// Sequential baseline tests (for comparison)
+// 순차 기준 테스트 (비교용)
 // ============================================================
 
 fn test_sequential_multi_partition_writes() {
-	// Sequential version for baseline comparison
+	// 기준 비교를 위한 순차 버전
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('seq-multi-part', 5, domain.TopicConfig{})!
 
@@ -671,7 +671,7 @@ fn test_multiple_groups_offset_commits_sequential() {
 }
 
 // ============================================================
-// Edge Case Tests
+// 엣지 케이스 테스트 (Edge Case Tests)
 // ============================================================
 
 fn test_append_to_nonexistent_topic() {
@@ -689,7 +689,7 @@ fn test_append_to_invalid_partition() {
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('test', 3, domain.TopicConfig{})!
 
-	// Partition 10 doesn't exist
+	// 파티션 10은 존재하지 않음
 	if _ := adapter.append('test', 10, [
 		domain.Record{ key: 'k'.bytes(), value: 'v'.bytes(), timestamp: time.now() },
 	])
@@ -715,7 +715,7 @@ fn test_get_topic_by_id() {
 
 	metadata := adapter.create_topic('test-id-topic', 1, domain.TopicConfig{})!
 
-	// Should find by topic_id
+	// topic_id로 찾을 수 있어야 함
 	found := adapter.get_topic_by_id(metadata.topic_id)!
 	assert found.name == 'test-id-topic'
 }
@@ -724,7 +724,7 @@ fn test_get_topic_by_invalid_id() {
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('test', 1, domain.TopicConfig{})!
 
-	// Invalid topic_id
+	// 유효하지 않은 topic_id
 	if _ := adapter.get_topic_by_id([]u8{len: 16, init: 0}) {
 		assert false, 'Expected error for invalid topic_id'
 	}
@@ -734,7 +734,7 @@ fn test_add_partitions_less_than_current() {
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('test', 5, domain.TopicConfig{})!
 
-	// Try to reduce partitions
+	// 파티션 수 줄이기 시도
 	if _ := adapter.add_partitions('test', 3) {
 		assert false, 'Expected error for reducing partitions'
 	}
@@ -744,7 +744,7 @@ fn test_large_record_batch() {
 	mut adapter := new_memory_adapter()
 	adapter.create_topic('large-batch', 1, domain.TopicConfig{})!
 
-	// Create a large batch
+	// 대량 배치 생성
 	mut records := []domain.Record{}
 	for i in 0 .. 1000 {
 		records << domain.Record{
@@ -758,7 +758,7 @@ fn test_large_record_batch() {
 	assert result.record_count == 1000
 	assert result.base_offset == 0
 
-	// Fetch all
+	// 전체 조회
 	fetch_result := adapter.fetch('large-batch', 0, 0, 10485760)!
 	assert fetch_result.records.len == 1000
 }

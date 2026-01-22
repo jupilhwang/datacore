@@ -1,5 +1,5 @@
-// Service Layer - Protobuf Schema Compatibility Checking
-// Provides compatibility checking for Protobuf schemas
+// Service Layer - Protobuf 스키마 호환성 검사
+// Protobuf 스키마의 호환성 검사를 제공합니다
 module schema
 
 // ============================================================================

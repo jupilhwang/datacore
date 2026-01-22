@@ -23,7 +23,7 @@ mut:
 	running     bool // Service running flag
 }
 
-// WebSocketConnectionState holds the state of a WebSocket connection
+// WebSocketConnectionState는 WebSocket 연결 상태를 보관합니다
 @[heap]
 struct WebSocketConnectionState {
 pub mut:

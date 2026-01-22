@@ -1,7 +1,7 @@
-// Adapter Layer - Kafka Protocol Types
+// 어댑터 레이어 - Kafka 프로토콜 타입
 module kafka
 
-// API Keys - Kafka Protocol
+/// API Keys - Kafka 프로토콜
 pub enum ApiKey {
 	produce                         = 0
 	fetch                           = 1
@@ -81,7 +81,7 @@ pub enum ApiKey {
 	delete_share_group_state        = 86
 }
 
-// Error Codes - Kafka Protocol
+/// Error Codes - Kafka 프로토콜
 pub enum ErrorCode {
 	none                                  = 0
 	unknown_server_error                  = -1
@@ -195,7 +195,7 @@ pub enum ErrorCode {
 	new_leader_elected                    = 108
 }
 
-// API Version Range
+/// API 버전 범위
 pub struct ApiVersionRange {
 pub:
 	api_key     ApiKey
@@ -203,7 +203,7 @@ pub:
 	max_version i16
 }
 
-// Get supported API versions
+/// 지원되는 API 버전을 반환합니다.
 pub fn get_supported_api_versions() []ApiVersionRange {
 	return [
 		ApiVersionRange{.produce, 0, 13}, // v9+ flexible, v13+ TopicId support

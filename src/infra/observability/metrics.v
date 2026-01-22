@@ -1,18 +1,18 @@
-// Infra Layer - Metrics Collection
-// Simple metrics implementation compatible with Prometheus format
+/// 인프라 레이어 - 메트릭 수집
+/// Prometheus 형식과 호환되는 간단한 메트릭 구현
 module observability
 
 import sync
 import time
 
-// MetricType represents the type of metric
+/// MetricType은 메트릭의 유형을 나타냅니다.
 pub enum MetricType {
 	counter
 	gauge
 	histogram
 }
 
-// Metric represents a single metric
+/// Metric은 단일 메트릭을 나타냅니다.
 @[heap]
 pub struct Metric {
 pub:
@@ -22,12 +22,12 @@ pub:
 	labels      map[string]string
 pub mut:
 	value   f64
-	count   u64      // For histogram
-	sum     f64      // For histogram
-	buckets []Bucket // For histogram
+	count   u64      // 히스토그램용
+	sum     f64      // 히스토그램용
+	buckets []Bucket // 히스토그램용
 }
 
-// Bucket represents a histogram bucket
+/// Bucket은 히스토그램 버킷을 나타냅니다.
 pub struct Bucket {
 pub:
 	upper_bound f64
@@ -35,21 +35,21 @@ pub mut:
 	count u64
 }
 
-// MetricsRegistry holds all registered metrics
+/// MetricsRegistry는 등록된 모든 메트릭을 보유합니다.
 pub struct MetricsRegistry {
 mut:
 	metrics map[string]&Metric
 	lock    sync.RwMutex
 }
 
-// new_registry creates a new metrics registry
+/// new_registry는 새 메트릭 레지스트리를 생성합니다.
 pub fn new_registry() &MetricsRegistry {
 	return &MetricsRegistry{
 		metrics: map[string]&Metric{}
 	}
 }
 
-// Singleton registry holder
+/// 싱글톤 레지스트리 홀더
 struct RegistryHolder {
 mut:
 	registry &MetricsRegistry = unsafe { nil }
@@ -60,7 +60,7 @@ fn get_registry_holder() &RegistryHolder {
 	return &RegistryHolder{}
 }
 
-// get_registry returns the global metrics registry
+/// get_registry는 전역 메트릭 레지스트리를 반환합니다.
 pub fn get_registry() &MetricsRegistry {
 	mut holder := get_registry_holder()
 	holder.lock.@lock()
@@ -72,7 +72,7 @@ pub fn get_registry() &MetricsRegistry {
 	return holder.registry
 }
 
-// register registers a new metric
+/// register는 새 메트릭을 등록합니다.
 pub fn (mut r MetricsRegistry) register(name string, help string, metric_type MetricType) &Metric {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -89,7 +89,7 @@ pub fn (mut r MetricsRegistry) register(name string, help string, metric_type Me
 		value:       0
 	}
 
-	// Initialize histogram buckets if needed
+	// 필요한 경우 히스토그램 버킷 초기화
 	if metric_type == .histogram {
 		metric.buckets = [
 			Bucket{0.005, 0},
@@ -110,14 +110,14 @@ pub fn (mut r MetricsRegistry) register(name string, help string, metric_type Me
 	return metric
 }
 
-// get returns a metric by name
+/// get은 이름으로 메트릭을 반환합니다.
 pub fn (mut r MetricsRegistry) get(name string) ?&Metric {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 	return r.metrics[name] or { return none }
 }
 
-// Counter functions
+/// 카운터 함수들
 pub fn (mut m Metric) inc() {
 	if m.metric_type == .counter || m.metric_type == .gauge {
 		m.value += 1
@@ -148,7 +148,7 @@ pub fn (mut m Metric) set(v f64) {
 	}
 }
 
-// Histogram functions
+/// 히스토그램 함수들
 pub fn (mut m Metric) observe(v f64) {
 	if m.metric_type == .histogram {
 		m.sum += v
@@ -161,15 +161,15 @@ pub fn (mut m Metric) observe(v f64) {
 	}
 }
 
-// Export to Prometheus format
+/// Prometheus 형식으로 내보내기
 pub fn (r &MetricsRegistry) export_prometheus() string {
 	mut output := ''
 
 	for name, metric in r.metrics {
-		// Help line
+		// Help 라인
 		output += '# HELP ${name} ${metric.help}\n'
 
-		// Type line
+		// Type 라인
 		type_str := match metric.metric_type {
 			.counter { 'counter' }
 			.gauge { 'gauge' }
@@ -177,7 +177,7 @@ pub fn (r &MetricsRegistry) export_prometheus() string {
 		}
 		output += '# TYPE ${name} ${type_str}\n'
 
-		// Value lines
+		// Value 라인
 		match metric.metric_type {
 			.counter, .gauge {
 				output += '${name} ${metric.value}\n'
@@ -198,136 +198,136 @@ pub fn (r &MetricsRegistry) export_prometheus() string {
 }
 
 // ============================================================================
-// Kafka-Compatible Metrics for DataCore
-// Based on: https://kafka.apache.org/41/operations/monitoring/
+// DataCore용 Kafka 호환 메트릭
+// 참조: https://kafka.apache.org/41/operations/monitoring/
 // ============================================================================
 
-// BrokerTopicMetrics - Per-topic broker metrics (kafka.server:type=BrokerTopicMetrics)
+/// BrokerTopicMetrics - 토픽별 브로커 메트릭 (kafka.server:type=BrokerTopicMetrics)
 pub struct BrokerTopicMetrics {
 pub mut:
-	// Message rates
-	messages_in_per_sec    &Metric // Incoming message rate per topic
-	bytes_in_per_sec       &Metric // Byte in rate from clients per topic
-	bytes_out_per_sec      &Metric // Byte out rate to clients per topic
-	bytes_rejected_per_sec &Metric // Rejected byte rate per topic
+	// 메시지 비율
+	messages_in_per_sec    &Metric // 토픽별 수신 메시지 비율
+	bytes_in_per_sec       &Metric // 토픽별 클라이언트로부터의 바이트 수신 비율
+	bytes_out_per_sec      &Metric // 토픽별 클라이언트로의 바이트 송신 비율
+	bytes_rejected_per_sec &Metric // 토픽별 거부된 바이트 비율
 
-	// Request rates
-	total_produce_requests_per_sec  &Metric // Produce request rate per topic
-	total_fetch_requests_per_sec    &Metric // Fetch request rate per topic
-	failed_produce_requests_per_sec &Metric // Failed produce request rate per topic
-	failed_fetch_requests_per_sec   &Metric // Failed fetch request rate per topic
+	// 요청 비율
+	total_produce_requests_per_sec  &Metric // 토픽별 Produce 요청 비율
+	total_fetch_requests_per_sec    &Metric // 토픽별 Fetch 요청 비율
+	failed_produce_requests_per_sec &Metric // 토픽별 실패한 Produce 요청 비율
+	failed_fetch_requests_per_sec   &Metric // 토픽별 실패한 Fetch 요청 비율
 
-	// Validation failures
+	// 유효성 검사 실패
 	invalid_magic_number_records_per_sec &Metric
 	invalid_message_crc_records_per_sec  &Metric
 	invalid_offset_or_sequence_per_sec   &Metric
 }
 
-// RequestMetrics - Request processing metrics (kafka.network:type=RequestMetrics)
+/// RequestMetrics - 요청 처리 메트릭 (kafka.network:type=RequestMetrics)
 pub struct RequestMetrics {
 pub mut:
-	// Request rates by type
-	requests_per_sec &Metric // Request rate
-	errors_per_sec   &Metric // Error rate
+	// 유형별 요청 비율
+	requests_per_sec &Metric // 요청 비율
+	errors_per_sec   &Metric // 에러 비율
 
-	// Request sizing
-	request_bytes  &Metric // Size of requests
-	response_bytes &Metric // Size of responses
+	// 요청 크기
+	request_bytes  &Metric // 요청 크기
+	response_bytes &Metric // 응답 크기
 
-	// Request timing (all in seconds)
-	total_time_ms          &Metric // Request total time
-	request_queue_time_ms  &Metric // Time waiting in request queue
-	local_time_ms          &Metric // Time processed at leader
-	response_queue_time_ms &Metric // Time waiting in response queue
-	response_send_time_ms  &Metric // Time to send response
+	// 요청 타이밍 (모두 초 단위)
+	total_time_ms          &Metric // 요청 총 시간
+	request_queue_time_ms  &Metric // 요청 큐 대기 시간
+	local_time_ms          &Metric // 리더에서 처리된 시간
+	response_queue_time_ms &Metric // 응답 큐 대기 시간
+	response_send_time_ms  &Metric // 응답 전송 시간
 
-	// Queue
-	request_queue_size &Metric // Size of request queue
+	// 큐
+	request_queue_size &Metric // 요청 큐 크기
 }
 
-// SocketServerMetrics - Network/Socket metrics (kafka.network:type=SocketServer)
+/// SocketServerMetrics - 네트워크/소켓 메트릭 (kafka.network:type=SocketServer)
 pub struct SocketServerMetrics {
 pub mut:
-	// Connection metrics
-	connections_total         &Metric // Total connections created
-	connections_active        &Metric // Current active connections
-	connections_creation_rate &Metric // New connections per second
-	connections_close_rate    &Metric // Closed connections per second
-	connections_rejected      &Metric // Rejected connections (limits)
+	// 연결 메트릭
+	connections_total         &Metric // 생성된 총 연결 수
+	connections_active        &Metric // 현재 활성 연결 수
+	connections_creation_rate &Metric // 초당 새 연결 수
+	connections_close_rate    &Metric // 초당 닫힌 연결 수
+	connections_rejected      &Metric // 거부된 연결 수 (제한)
 
-	// I/O metrics
-	network_processor_avg_idle_percent &Metric // Avg idle time of network processors
-	expired_connections_killed_count   &Metric // Connections killed due to expiration
+	// I/O 메트릭
+	network_processor_avg_idle_percent &Metric // 네트워크 프로세서의 평균 유휴 시간
+	expired_connections_killed_count   &Metric // 만료로 인해 종료된 연결 수
 
-	// Traffic
+	// 트래픽
 	bytes_received_total &Metric
 	bytes_sent_total     &Metric
 }
 
-// GroupCoordinatorMetrics - Consumer group coordinator metrics
+/// GroupCoordinatorMetrics - 컨슈머 그룹 코디네이터 메트릭
 pub struct GroupCoordinatorMetrics {
 pub mut:
-	// Partition state counts
+	// 파티션 상태 수
 	num_partitions_loading &Metric
 	num_partitions_active  &Metric
 	num_partitions_failed  &Metric
 
-	// Loading times
+	// 로딩 시간
 	partition_load_time_max &Metric
 	partition_load_time_avg &Metric
 
-	// Event processing
+	// 이벤트 처리
 	event_queue_size         &Metric
 	event_queue_time_ms      &Metric
 	event_processing_time_ms &Metric
 
-	// Group counts
-	group_count_consumer &Metric // Consumer protocol groups
-	group_count_classic  &Metric // Classic protocol groups
+	// 그룹 수
+	group_count_consumer &Metric // 컨슈머 프로토콜 그룹
+	group_count_classic  &Metric // 클래식 프로토콜 그룹
 
-	// Consumer group states (KIP-848)
+	// 컨슈머 그룹 상태 (KIP-848)
 	consumer_group_count_empty       &Metric
 	consumer_group_count_assigning   &Metric
 	consumer_group_count_reconciling &Metric
 	consumer_group_count_stable      &Metric
 	consumer_group_count_dead        &Metric
 
-	// Classic group states
+	// 클래식 그룹 상태
 	classic_group_count_preparing_rebalance  &Metric
 	classic_group_count_completing_rebalance &Metric
 	classic_group_count_stable               &Metric
 	classic_group_count_dead                 &Metric
 	classic_group_count_empty                &Metric
 
-	// Rebalance metrics
+	// 리밸런스 메트릭
 	consumer_group_rebalance_rate  &Metric
 	consumer_group_rebalance_count &Metric
 	classic_group_rebalance_rate   &Metric
 	classic_group_rebalance_count  &Metric
 
-	// Offset metrics
-	num_offsets             &Metric // Total committed offsets
+	// 오프셋 메트릭
+	num_offsets             &Metric // 총 커밋된 오프셋
 	offset_commit_rate      &Metric
 	offset_commit_count     &Metric
 	offset_expiration_rate  &Metric
 	offset_expiration_count &Metric
 }
 
-// LogMetrics - Log/Partition metrics (kafka.log:type=Log)
+/// LogMetrics - 로그/파티션 메트릭 (kafka.log:type=Log)
 pub struct LogMetrics {
 pub mut:
-	// Per partition
-	log_start_offset &Metric // First offset in partition
-	log_end_offset   &Metric // Last offset in partition
-	size_bytes       &Metric // Size of partition on disk
-	num_log_segments &Metric // Number of log segments
+	// 파티션별
+	log_start_offset &Metric // 파티션의 첫 번째 오프셋
+	log_end_offset   &Metric // 파티션의 마지막 오프셋
+	size_bytes       &Metric // 디스크상 파티션 크기
+	num_log_segments &Metric // 로그 세그먼트 수
 
-	// Log manager
+	// 로그 매니저
 	log_flush_rate_and_time_ms  &Metric
 	offline_log_directory_count &Metric
 }
 
-// AuthenticationMetrics - SASL/Auth metrics
+/// AuthenticationMetrics - SASL/인증 메트릭
 pub struct AuthenticationMetrics {
 pub mut:
 	successful_authentication_total   &Metric
@@ -340,21 +340,21 @@ pub mut:
 	reauthentication_latency_max      &Metric
 }
 
-// StorageMetrics - Storage engine specific metrics (DataCore specific)
+/// StorageMetrics - 스토리지 엔진 특정 메트릭 (DataCore 전용)
 pub struct StorageMetrics {
 pub mut:
-	// Storage operations
+	// 스토리지 작업
 	storage_append_total   &Metric
 	storage_append_latency &Metric
 	storage_fetch_total    &Metric
 	storage_fetch_latency  &Metric
 	storage_delete_total   &Metric
 
-	// Storage size
+	// 스토리지 크기
 	storage_bytes_total   &Metric
 	storage_records_total &Metric
 
-	// For S3 storage plugin
+	// S3 스토리지 플러그인용
 	remote_fetch_bytes_per_sec     &Metric
 	remote_fetch_requests_per_sec  &Metric
 	remote_fetch_errors_per_sec    &Metric
@@ -366,7 +366,7 @@ pub mut:
 	remote_delete_errors_per_sec   &Metric
 }
 
-// SchemaRegistryMetrics - Schema registry metrics (DataCore specific)
+/// SchemaRegistryMetrics - 스키마 레지스트리 메트릭 (DataCore 전용)
 pub struct SchemaRegistryMetrics {
 pub mut:
 	schemas_total               &Metric
@@ -376,10 +376,10 @@ pub mut:
 	schema_validation_errors    &Metric
 }
 
-// DataCoreMetrics - Complete metrics collection
+/// DataCoreMetrics - 완전한 메트릭 컬렉션
 pub struct DataCoreMetrics {
 pub mut:
-	// Legacy metrics (backward compatibility)
+	// 레거시 메트릭 (하위 호환성)
 	messages_produced_total &Metric
 	messages_consumed_total &Metric
 	bytes_produced_total    &Metric
@@ -394,7 +394,7 @@ pub mut:
 	metadata_requests_total &Metric
 	errors_total            &Metric
 
-	// Kafka-compatible metrics
+	// Kafka 호환 메트릭
 	broker_topic      BrokerTopicMetrics
 	request           RequestMetrics
 	socket_server     SocketServerMetrics
@@ -405,12 +405,12 @@ pub mut:
 	schema_registry   SchemaRegistryMetrics
 }
 
-// new_datacore_metrics creates and registers all DataCore metrics
+/// new_datacore_metrics는 모든 DataCore 메트릭을 생성하고 등록합니다.
 pub fn new_datacore_metrics() DataCoreMetrics {
 	mut reg := get_registry()
 
 	return DataCoreMetrics{
-		// Legacy metrics
+		// 레거시 메트릭
 		messages_produced_total: reg.register('datacore_messages_produced_total', 'Total number of messages produced',
 			.counter)
 		messages_consumed_total: reg.register('datacore_messages_consumed_total', 'Total number of messages consumed',
@@ -438,7 +438,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 		errors_total:            reg.register('datacore_errors_total', 'Total errors',
 			.counter)
 
-		// Kafka-compatible: BrokerTopicMetrics
+		// Kafka 호환: BrokerTopicMetrics
 		broker_topic: BrokerTopicMetrics{
 			messages_in_per_sec:                  reg.register('kafka_server_broker_topic_metrics_messages_in_per_sec',
 				'Incoming message rate', .gauge)
@@ -464,7 +464,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 				'Invalid offset/sequence records rate', .gauge)
 		}
 
-		// Kafka-compatible: RequestMetrics
+		// Kafka 호환: RequestMetrics
 		request: RequestMetrics{
 			requests_per_sec:       reg.register('kafka_network_request_metrics_requests_per_sec',
 				'Request rate', .gauge)
@@ -488,7 +488,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 				'Size of request queue', .gauge)
 		}
 
-		// Kafka-compatible: SocketServerMetrics
+		// Kafka 호환: SocketServerMetrics
 		socket_server: SocketServerMetrics{
 			connections_total:                  reg.register('kafka_network_socket_server_connections_total',
 				'Total connections created', .counter)
@@ -510,7 +510,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 				'Total bytes sent', .counter)
 		}
 
-		// Kafka-compatible: GroupCoordinatorMetrics
+		// Kafka 호환: GroupCoordinatorMetrics
 		group_coordinator: GroupCoordinatorMetrics{
 			num_partitions_loading:                   reg.register('kafka_server_group_coordinator_num_partitions_loading',
 				'Number of loading partitions', .gauge)
@@ -572,7 +572,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 				'Offset expiration count', .counter)
 		}
 
-		// Kafka-compatible: LogMetrics
+		// Kafka 호환: LogMetrics
 		log: LogMetrics{
 			log_start_offset:            reg.register('kafka_log_log_start_offset', 'First offset in partition',
 				.gauge)
@@ -588,7 +588,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 				'Offline log directory count', .gauge)
 		}
 
-		// Kafka-compatible: AuthenticationMetrics
+		// Kafka 호환: AuthenticationMetrics
 		auth: AuthenticationMetrics{
 			successful_authentication_total:   reg.register('kafka_server_socket_server_successful_authentication_total',
 				'Successful authentications', .counter)
@@ -608,7 +608,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 				'Max reauthentication latency', .gauge)
 		}
 
-		// DataCore-specific: StorageMetrics (for S3/SQLite/Memory plugins)
+		// DataCore 전용: StorageMetrics (S3/SQLite/Memory 플러그인용)
 		storage: StorageMetrics{
 			storage_append_total:           reg.register('datacore_storage_append_total',
 				'Total storage append operations', .counter)
@@ -644,7 +644,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 				'Remote delete errors rate (S3)', .gauge)
 		}
 
-		// DataCore-specific: SchemaRegistryMetrics
+		// DataCore 전용: SchemaRegistryMetrics
 		schema_registry: SchemaRegistryMetrics{
 			schemas_total:               reg.register('datacore_schema_registry_schemas_total',
 				'Total schemas', .gauge)
@@ -661,10 +661,10 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 }
 
 // ============================================================================
-// Metric Helper Functions for Recording
+// 메트릭 기록용 헬퍼 함수
 // ============================================================================
 
-// record_produce records metrics for a produce request
+/// record_produce는 produce 요청에 대한 메트릭을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_produce(topic string, bytes i64, records int, success bool, latency_ms f64) {
 	m.messages_produced_total.inc_by(records)
 	m.bytes_produced_total.inc_by(bytes)
@@ -683,7 +683,7 @@ pub fn (mut m DataCoreMetrics) record_produce(topic string, bytes i64, records i
 	m.request.local_time_ms.observe(latency_ms)
 }
 
-// record_fetch records metrics for a fetch request
+/// record_fetch는 fetch 요청에 대한 메트릭을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_fetch(topic string, bytes i64, records int, success bool, latency_ms f64) {
 	m.messages_consumed_total.inc_by(records)
 	m.bytes_consumed_total.inc_by(bytes)
@@ -700,7 +700,7 @@ pub fn (mut m DataCoreMetrics) record_fetch(topic string, bytes i64, records int
 	m.request.total_time_ms.observe(latency_ms)
 }
 
-// record_connection records connection events
+/// record_connection_open은 연결 열기 이벤트를 기록합니다.
 pub fn (mut m DataCoreMetrics) record_connection_open() {
 	m.active_connections.inc()
 	m.socket_server.connections_active.inc()
@@ -708,28 +708,31 @@ pub fn (mut m DataCoreMetrics) record_connection_open() {
 	m.socket_server.connections_creation_rate.inc()
 }
 
+/// record_connection_close는 연결 닫기 이벤트를 기록합니다.
 pub fn (mut m DataCoreMetrics) record_connection_close() {
 	m.active_connections.dec()
 	m.socket_server.connections_active.dec()
 	m.socket_server.connections_close_rate.inc()
 }
 
+/// record_connection_rejected는 연결 거부 이벤트를 기록합니다.
 pub fn (mut m DataCoreMetrics) record_connection_rejected() {
 	m.socket_server.connections_rejected.inc()
 }
 
-// record_auth records authentication events
+/// record_auth_success는 인증 성공 이벤트를 기록합니다.
 pub fn (mut m DataCoreMetrics) record_auth_success() {
 	m.auth.successful_authentication_total.inc()
 	m.auth.successful_authentication_rate.inc()
 }
 
+/// record_auth_failure는 인증 실패 이벤트를 기록합니다.
 pub fn (mut m DataCoreMetrics) record_auth_failure() {
 	m.auth.failed_authentication_total.inc()
 	m.auth.failed_authentication_rate.inc()
 }
 
-// record_group_state records consumer group state changes
+/// record_group_state는 컨슈머 그룹 상태 변경을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_group_state(protocol string, state string, delta int) {
 	if protocol == 'consumer' {
 		match state {
@@ -752,24 +755,25 @@ pub fn (mut m DataCoreMetrics) record_group_state(protocol string, state string,
 	}
 }
 
-// record_offset_commit records offset commit
+/// record_offset_commit은 오프셋 커밋을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_offset_commit() {
 	m.group_coordinator.offset_commit_count.inc()
 	m.group_coordinator.offset_commit_rate.inc()
 }
 
-// record_storage_operation records storage engine operations
+/// record_storage_append는 스토리지 엔진 추가 작업을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_storage_append(bytes i64, latency_seconds f64) {
 	m.storage.storage_append_total.inc()
 	m.storage.storage_append_latency.observe(latency_seconds)
 }
 
+/// record_storage_fetch는 스토리지 엔진 조회 작업을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_storage_fetch(bytes i64, latency_seconds f64) {
 	m.storage.storage_fetch_total.inc()
 	m.storage.storage_fetch_latency.observe(latency_seconds)
 }
 
-// record_request_timing records detailed request timing
+/// record_request_timing은 상세한 요청 타이밍을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_request_timing(queue_time_ms f64, local_time_ms f64, response_queue_time_ms f64, send_time_ms f64) {
 	m.request.request_queue_time_ms.observe(queue_time_ms)
 	m.request.local_time_ms.observe(local_time_ms)
@@ -779,7 +783,7 @@ pub fn (mut m DataCoreMetrics) record_request_timing(queue_time_ms f64, local_ti
 	m.request.total_time_ms.observe(total)
 }
 
-// update_gauges updates gauge metrics (call periodically)
+/// update_gauges는 게이지 메트릭을 업데이트합니다 (주기적으로 호출).
 pub fn (mut m DataCoreMetrics) update_gauges(topics int, partitions int, groups int, storage_bytes i64) {
 	m.topic_count.set(topics)
 	m.partition_count.set(partitions)
@@ -787,13 +791,13 @@ pub fn (mut m DataCoreMetrics) update_gauges(topics int, partitions int, groups 
 	m.storage.storage_bytes_total.set(f64(storage_bytes))
 }
 
-// Timer for measuring latency
+/// Timer는 지연 시간 측정을 위한 타이머입니다.
 pub struct Timer {
 	start_time time.Time
 	metric     &Metric
 }
 
-// start_timer starts a new timer for a histogram metric
+/// start_timer는 히스토그램 메트릭에 대한 새 타이머를 시작합니다.
 pub fn (m &Metric) start_timer() Timer {
 	return Timer{
 		start_time: time.now()
@@ -801,7 +805,7 @@ pub fn (m &Metric) start_timer() Timer {
 	}
 }
 
-// observe_duration records the elapsed time
+/// observe_duration은 경과 시간을 기록합니다.
 pub fn (mut t Timer) observe_duration() {
 	elapsed := time.since(t.start_time)
 	seconds := f64(elapsed) / f64(time.second)

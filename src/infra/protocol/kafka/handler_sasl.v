@@ -1,25 +1,25 @@
-// Kafka Protocol - SASL Operations
+// Kafka 프로토콜 - SASL 작업
 // SaslHandshake, SaslAuthenticate
-// Request/Response types, parsing, encoding, and handlers
+// 요청/응답 타입, 파싱, 인코딩 및 핸들러
 module kafka
 
 import infra.observability
 import time
 
 // ============================================================================
-// SaslHandshake Request (API Key 17)
+// SaslHandshake 요청 (API Key 17)
 // ============================================================================
-// Used to negotiate SASL mechanism between client and broker
-// v0: Basic mechanism negotiation
-// v1: Adds mechanism enable/disable flags
+// 클라이언트와 브로커 간 SASL 메커니즘 협상에 사용
+// v0: 기본 메커니즘 협상
+// v1: 메커니즘 활성화/비활성화 플래그 추가
 
 pub struct SaslHandshakeRequest {
 pub:
-	mechanism string // The SASL mechanism chosen by the client
+	mechanism string // 클라이언트가 선택한 SASL 메커니즘
 }
 
 fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslHandshakeRequest {
-	// SaslHandshake is never flexible (v0-v1 only)
+	// SaslHandshake는 flexible 버전이 아님 (v0-v1만 지원)
 	mechanism := reader.read_string()!
 
 	return SaslHandshakeRequest{
@@ -28,16 +28,16 @@ fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexibl
 }
 
 // ============================================================================
-// SaslAuthenticate Request (API Key 36)
+// SaslAuthenticate 요청 (API Key 36)
 // ============================================================================
-// Used to perform SASL authentication after mechanism handshake
-// v0: Basic authentication
-// v1: Adds session lifetime
-// v2: Flexible versions
+// 메커니즘 핸드셰이크 후 SASL 인증 수행에 사용
+// v0: 기본 인증
+// v1: 세션 수명 추가
+// v2: Flexible 버전
 
 pub struct SaslAuthenticateRequest {
 pub:
-	auth_bytes []u8 // The SASL authentication bytes from the client
+	auth_bytes []u8 // 클라이언트의 SASL 인증 바이트
 }
 
 fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslAuthenticateRequest {
@@ -55,18 +55,18 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 }
 
 // ============================================================================
-// SaslHandshake Response (API Key 17)
+// SaslHandshake 응답 (API Key 17)
 // ============================================================================
-// Returns the list of SASL mechanisms supported by the broker
+// 브로커가 지원하는 SASL 메커니즘 목록 반환
 
 pub struct SaslHandshakeResponse {
 pub:
-	error_code i16      // Error code (0 = no error, 33 = unsupported mechanism)
-	mechanisms []string // List of SASL mechanisms enabled by the broker
+	error_code i16      // 에러 코드 (0 = 에러 없음, 33 = 지원하지 않는 메커니즘)
+	mechanisms []string // 브로커가 활성화한 SASL 메커니즘 목록
 }
 
 pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
-	// SaslHandshake is never flexible (v0-v1 only)
+	// SaslHandshake는 flexible 버전이 아님 (v0-v1만 지원)
 	mut writer := new_writer()
 
 	// error_code: INT16
@@ -82,16 +82,16 @@ pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
 }
 
 // ============================================================================
-// SaslAuthenticate Response (API Key 36)
+// SaslAuthenticate 응답 (API Key 36)
 // ============================================================================
-// Returns the result of SASL authentication
+// SASL 인증 결과 반환
 
 pub struct SaslAuthenticateResponse {
 pub:
-	error_code          i16     // Error code (0 = success, 58 = SASL_AUTHENTICATION_FAILED)
-	error_message       ?string // Error message if authentication failed
-	auth_bytes          []u8    // SASL authentication bytes from server (for multi-step)
-	session_lifetime_ms i64     // v1+: Session lifetime in milliseconds (0 = no lifetime)
+	error_code          i16     // 에러 코드 (0 = 성공, 58 = SASL_AUTHENTICATION_FAILED)
+	error_message       ?string // 인증 실패 시 에러 메시지
+	auth_bytes          []u8    // 서버의 SASL 인증 바이트 (다단계 인증용)
+	session_lifetime_ms i64     // v1+: 세션 수명 (밀리초, 0 = 수명 없음)
 }
 
 pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
@@ -141,8 +141,7 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 
 	req := parse_sasl_handshake_request(mut reader, version, is_flexible)!
 
-	h.logger.info('SASL handshake request',
-		observability.field_string('mechanism', req.mechanism))
+	h.logger.info('SASL handshake request', observability.field_string('mechanism', req.mechanism))
 
 	// Get supported mechanisms from auth manager
 	mut supported_mechanisms := []string{}
@@ -173,10 +172,9 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.info('SASL handshake completed',
-		observability.field_string('mechanism', req.mechanism),
-		observability.field_int('error_code', error_code),
-		observability.field_duration('latency', elapsed))
+	h.logger.info('SASL handshake completed', observability.field_string('mechanism',
+		req.mechanism), observability.field_int('error_code', error_code), observability.field_duration('latency',
+		elapsed))
 
 	return response.encode(version)
 }
@@ -190,8 +188,8 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 
 	req := parse_sasl_authenticate_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('SASL authenticate request',
-		observability.field_bytes('auth_bytes_len', req.auth_bytes.len))
+	h.logger.debug('SASL authenticate request', observability.field_bytes('auth_bytes_len',
+		req.auth_bytes.len))
 
 	// Perform authentication
 	if mut auth_mgr := h.auth_manager {
@@ -229,8 +227,8 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 		// No auth manager - authentication not configured
 		// Return error to indicate auth is required but not available
 		elapsed := time.since(start_time)
-		h.logger.warn('SASL authentication not configured',
-			observability.field_duration('latency', elapsed))
+		h.logger.warn('SASL authentication not configured', observability.field_duration('latency',
+			elapsed))
 
 		response := SaslAuthenticateResponse{
 			error_code:          i16(ErrorCode.illegal_sasl_state)

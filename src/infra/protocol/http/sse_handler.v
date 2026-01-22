@@ -1,5 +1,5 @@
-// Infra Layer - SSE Handler
-// HTTP handler for Server-Sent Events streaming
+// 인프라 레이어 - SSE 핸들러
+// Server-Sent Events 스트리밍을 위한 HTTP 핸들러
 module http
 
 import domain
@@ -9,10 +9,10 @@ import net
 import time
 
 // ============================================================================
-// SSE Handler
+// SSE 핸들러
 // ============================================================================
 
-// SSEHandler handles SSE HTTP requests
+/// SSEHandler는 SSE HTTP 요청을 처리합니다.
 pub struct SSEHandler {
 	config domain.SSEConfig
 pub mut:
@@ -20,7 +20,7 @@ pub mut:
 	storage     port.StoragePort
 }
 
-// new_sse_handler creates a new SSE handler
+/// new_sse_handler는 새로운 SSE 핸들러를 생성합니다.
 pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHandler {
 	sse_service := streaming.new_sse_service(storage, config)
 	return &SSEHandler{
@@ -31,16 +31,16 @@ pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHa
 }
 
 // ============================================================================
-// HTTP Request Handling
+// HTTP 요청 처리
 // ============================================================================
 
-// handle_sse_request handles an SSE HTTP request
-// Returns (status_code, headers, should_stream)
+/// handle_sse_request는 SSE HTTP 요청을 처리합니다.
+/// 반환값: (상태 코드, 헤더, 스트리밍 여부)
 pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[string]string, bool) {
-	// Validate topic exists
+	// 토픽 존재 여부 확인
 	_ = h.storage.get_topic(request.topic) or { return 404, map[string]string{}, false }
 
-	// Validate partition if specified
+	// 파티션이 지정된 경우 유효성 검사
 	if partition := request.partition {
 		topic_meta := h.storage.get_topic(request.topic)!
 		if partition < 0 || partition >= topic_meta.partition_count {
@@ -48,26 +48,26 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		}
 	}
 
-	// Create SSE connection
+	// SSE 연결 생성
 	conn := domain.new_sse_connection(request.client_ip, request.user_agent)
 
-	// Register connection
+	// 연결 등록
 	conn_id := h.sse_service.register_connection(conn) or { return 503, map[string]string{}, false }
 
-	// Create subscription
+	// 구독 생성
 	offset_type := domain.subscription_offset_from_str(request.offset_str)
 	offset := if offset_type == .specific { request.offset_str.i64() } else { i64(0) }
 
 	sub := domain.new_subscription(request.topic, request.partition, offset_type, offset,
 		request.group_id, request.client_id)
 
-	// Add subscription
+	// 구독 추가
 	h.sse_service.subscribe(conn_id, sub) or {
 		h.sse_service.unregister_connection(conn_id) or {}
 		return 400, map[string]string{}, false
 	}
 
-	// Return SSE headers
+	// SSE 헤더 반환
 	headers := {
 		'Content-Type':                'text/event-stream'
 		'Cache-Control':               'no-cache'
@@ -80,35 +80,35 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 	return 200, headers, true
 }
 
-// start_streaming starts the SSE streaming loop for a connection
+/// start_streaming은 연결에 대한 SSE 스트리밍 루프를 시작합니다.
 pub fn (mut h SSEHandler) start_streaming(conn_id string, mut writer SSEResponseWriter) {
-	// Set writer on connection
+	// 연결에 writer 설정
 	h.sse_service.set_writer(conn_id, writer) or { return }
 
-	// Get subscriptions
+	// 구독 조회
 	subs := h.sse_service.get_subscriptions(conn_id)
 	if subs.len == 0 {
 		return
 	}
 
-	// Start streaming for each subscription
+	// 각 구독에 대해 스트리밍 시작
 	for sub in subs {
 		h.sse_service.stream_messages(conn_id, sub.id) or { continue }
 	}
 
-	// Main streaming loop
+	// 메인 스트리밍 루프
 	mut last_heartbeat := time.now().unix_milli()
 	mut last_poll := time.now().unix_milli()
 
 	for {
 		now := time.now().unix_milli()
 
-		// Check if connection is still alive
+		// 연결이 여전히 활성 상태인지 확인
 		if !writer.is_alive() {
 			break
 		}
 
-		// Send heartbeat if needed
+		// 필요시 하트비트 전송
 		if now - last_heartbeat >= h.config.heartbeat_interval_ms {
 			heartbeat := domain.new_sse_heartbeat_event()
 			writer.write_event(heartbeat) or { break }
@@ -116,48 +116,48 @@ pub fn (mut h SSEHandler) start_streaming(conn_id string, mut writer SSEResponse
 			last_heartbeat = now
 		}
 
-		// Poll for new messages using service method (handles offset updates correctly)
-		if now - last_poll >= 100 { // Poll every 100ms
+		// 서비스 메서드를 사용하여 새 메시지 폴링 (오프셋 업데이트를 올바르게 처리)
+		if now - last_poll >= 100 { // 100ms마다 폴링
 			h.sse_service.poll_messages_for_connection(conn_id) or { break }
 			writer.flush() or { break }
 			last_poll = now
 		}
 
-		// Small sleep to prevent busy loop
+		// busy loop 방지를 위한 짧은 sleep
 		time.sleep(10 * time.millisecond)
 	}
 
-	// Cleanup
+	// 정리
 	h.sse_service.unregister_connection(conn_id) or {}
 }
 
 // ============================================================================
-// SSE Request/Response Types
+// SSE 요청/응답 타입
 // ============================================================================
 
-// SSERequest represents an SSE HTTP request
+/// SSERequest는 SSE HTTP 요청을 나타냅니다.
 pub struct SSERequest {
 pub:
-	topic         string  // Topic name
-	partition     ?i32    // Partition (optional)
-	offset_str    string  // Offset string (earliest, latest, or number)
-	group_id      ?string // Consumer group ID (optional)
-	client_id     string  // Client identifier
-	client_ip     string  // Client IP address
+	topic         string  // 토픽 이름
+	partition     ?i32    // 파티션 (선택사항)
+	offset_str    string  // 오프셋 문자열 (earliest, latest, 또는 숫자)
+	group_id      ?string // 컨슈머 그룹 ID (선택사항)
+	client_id     string  // 클라이언트 식별자
+	client_ip     string  // 클라이언트 IP 주소
 	user_agent    string  // User agent
-	last_event_id string  // Last-Event-ID header for reconnection
+	last_event_id string  // 재연결을 위한 Last-Event-ID 헤더
 }
 
-// parse_sse_request parses an SSE request from HTTP request data
+/// parse_sse_request는 HTTP 요청 데이터에서 SSE 요청을 파싱합니다.
 pub fn parse_sse_request(path string, query map[string]string, headers map[string]string, client_ip string) !SSERequest {
-	// Parse path: /v1/topics/{topic}/sse or /v1/topics/{topic}/partitions/{partition}/sse
+	// 경로 파싱: /v1/topics/{topic}/sse 또는 /v1/topics/{topic}/partitions/{partition}/sse
 	parts := path.trim_left('/').split('/')
 
 	if parts.len < 4 {
 		return error('Invalid path')
 	}
 
-	// Validate path structure
+	// 경로 구조 검증
 	if parts[0] != 'v1' || parts[1] != 'topics' {
 		return error('Invalid path')
 	}
@@ -165,28 +165,28 @@ pub fn parse_sse_request(path string, query map[string]string, headers map[strin
 	topic := parts[2]
 	mut partition := ?i32(none)
 
-	// Check for partition in path
+	// 경로에서 파티션 확인
 	if parts.len >= 6 && parts[3] == 'partitions' && parts[5] == 'sse' {
 		partition = i32(parts[4].int())
 	} else if parts.len >= 4 && parts[3] == 'sse' {
-		// No partition specified
+		// 파티션 미지정
 	} else {
 		return error('Invalid path')
 	}
 
-	// Parse query parameters
+	// 쿼리 파라미터 파싱
 	offset_str := query['offset'] or { query['from'] or { 'latest' } }
 	group_id := if gid := query['group_id'] { gid } else { none }
 	client_id := query['client_id'] or { 'sse-client' }
 
-	// Parse headers
+	// 헤더 파싱
 	user_agent := headers['User-Agent'] or { headers['user-agent'] or { 'unknown' } }
 	last_event_id := headers['Last-Event-ID'] or { headers['last-event-id'] or { '' } }
 
-	// Handle Last-Event-ID for reconnection
+	// 재연결을 위한 Last-Event-ID 처리
 	mut final_offset := offset_str
 	if last_event_id.len > 0 {
-		// Parse last event ID: topic:partition:offset
+		// 마지막 이벤트 ID 파싱: topic:partition:offset
 		id_parts := last_event_id.split(':')
 		if id_parts.len >= 3 {
 			final_offset = (id_parts[2].i64() + 1).str()
@@ -206,10 +206,10 @@ pub fn parse_sse_request(path string, query map[string]string, headers map[strin
 }
 
 // ============================================================================
-// SSE Response Writer
+// SSE 응답 Writer
 // ============================================================================
 
-// SSEResponseWriter wraps a connection for SSE writing
+/// SSEResponseWriter는 SSE 쓰기를 위해 연결을 래핑합니다.
 pub struct SSEResponseWriter {
 mut:
 	conn   &net.TcpConn
@@ -217,7 +217,7 @@ mut:
 	buffer []u8
 }
 
-// new_sse_response_writer creates a new SSE response writer
+/// new_sse_response_writer는 새로운 SSE 응답 writer를 생성합니다.
 pub fn new_sse_response_writer(conn &net.TcpConn) &SSEResponseWriter {
 	return &SSEResponseWriter{
 		conn:   conn
@@ -226,7 +226,7 @@ pub fn new_sse_response_writer(conn &net.TcpConn) &SSEResponseWriter {
 	}
 }
 
-// write_event writes an SSE event
+/// write_event는 SSE 이벤트를 씁니다.
 pub fn (mut w SSEResponseWriter) write_event(event domain.SSEEvent) ! {
 	if !w.alive {
 		return error('Connection closed')
@@ -236,7 +236,7 @@ pub fn (mut w SSEResponseWriter) write_event(event domain.SSEEvent) ! {
 	w.buffer << data.bytes()
 }
 
-// flush sends buffered data
+/// flush는 버퍼링된 데이터를 전송합니다.
 pub fn (mut w SSEResponseWriter) flush() ! {
 	if !w.alive {
 		return error('Connection closed')
@@ -254,30 +254,30 @@ pub fn (mut w SSEResponseWriter) flush() ! {
 	w.buffer.clear()
 }
 
-// is_alive checks if connection is still alive
+/// is_alive는 연결이 여전히 활성 상태인지 확인합니다.
 pub fn (w &SSEResponseWriter) is_alive() bool {
 	return w.alive
 }
 
-// close closes the connection
+/// close는 연결을 닫습니다.
 pub fn (mut w SSEResponseWriter) close() ! {
 	w.alive = false
-	// Send close event before closing
+	// 닫기 전에 close 이벤트 전송
 	close_event := domain.new_sse_close_event('server shutdown')
 	w.conn.write(close_event.encode().bytes()) or {}
 	w.conn.close() or {}
 }
 
 // ============================================================================
-// Statistics
+// 통계
 // ============================================================================
 
-// get_stats returns SSE service statistics
+/// get_stats는 SSE 서비스 통계를 반환합니다.
 pub fn (mut h SSEHandler) get_stats() port.StreamingStats {
 	return h.sse_service.get_stats()
 }
 
-// get_connections returns all active SSE connections
+/// get_connections는 모든 활성 SSE 연결을 반환합니다.
 pub fn (mut h SSEHandler) get_connections() []domain.SSEConnection {
 	return h.sse_service.list_connections()
 }

@@ -1,5 +1,6 @@
-// S3 Client - Low-level HTTP operations for S3 storage
-// Provides AWS SigV4 signed requests and S3 API operations
+// Infra Layer - S3 클라이언트
+// S3 스토리지를 위한 저수준 HTTP 작업
+// AWS SigV4 서명 요청 및 S3 API 작업 제공
 module s3
 
 import crypto.sha256
@@ -7,20 +8,24 @@ import crypto.hmac
 import net.http
 import time
 
-// S3Object represents an object in S3 listing
+/// S3Object는 S3 목록 조회 결과의 객체를 나타냅니다.
+/// ListObjectsV2 API 응답에서 파싱된 개별 객체 정보를 담습니다.
 pub struct S3Object {
 pub:
-	key           string
-	size          i64
-	last_modified time.Time
-	etag          string
+	key           string    // 객체 키 (S3 버킷 내 경로)
+	size          i64       // 객체 크기 (바이트)
+	last_modified time.Time // 마지막 수정 시간 (UTC)
+	etag          string    // ETag (객체 무결성 검증용 해시)
 }
 
 // ============================================================
-// S3 HTTP Operations
+// S3 HTTP 작업 (S3 HTTP Operations)
 // ============================================================
 
-// get_object retrieves an object from S3
+/// get_object는 S3에서 객체를 조회합니다.
+/// start와 end 파라미터로 Range 요청을 지원합니다.
+/// 반환값: (객체 데이터, ETag)
+/// start가 음수이면 전체 객체를 조회합니다.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -29,10 +34,10 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 		'${endpoint}/${key}'
 	}
 
-	// Prepare headers
+	// 헤더 준비
 	mut headers := a.sign_request('GET', key, '', []u8{})
 
-	// Add Range header if start is non-negative
+	// start가 음수가 아니면 Range 헤더 추가
 	if start >= 0 {
 		range_val := if end > start { 'bytes=${start}-${end}' } else { 'bytes=${start}-' }
 		headers.add_custom('Range', range_val) or {}
@@ -47,7 +52,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 	if resp.status_code == 404 {
 		return error('Object not found: ${key}')
 	}
-	// 206 Partial Content is success for Range requests
+	// Range 요청의 경우 206 Partial Content도 성공
 	if resp.status_code != 200 && resp.status_code != 206 {
 		return error('S3 GET failed with status ${resp.status_code}')
 	}
@@ -56,12 +61,15 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 	return resp.body.bytes(), etag
 }
 
-// put_object writes an object to S3
+/// put_object는 S3에 객체를 씁니다.
+/// 내부적으로 재시도 로직이 포함된 put_object_with_retry를 호출합니다.
 fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 	a.put_object_with_retry(key, data, 3)!
 }
 
-// put_object_with_retry attempts to put an object with exponential backoff retry
+/// put_object_with_retry는 지수 백오프 재시도로 객체 쓰기를 시도합니다.
+/// 500, 503 에러 발생 시 지수 백오프(100ms, 200ms, 400ms...)로 재시도합니다.
+/// 지터(jitter)를 추가하여 동시 재시도로 인한 충돌을 방지합니다.
 fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries int) ! {
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -82,7 +90,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 		}) or {
 			last_err = 'S3 PUT failed: ${err}'
 			if attempt < max_retries - 1 {
-				// Exponential backoff: 100ms, 200ms, 400ms...
+				// 지수 백오프: 100ms, 200ms, 400ms...
 				time.sleep(time.Duration(100 * (1 << attempt)) * time.millisecond)
 				continue
 			}
@@ -93,10 +101,10 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			return
 		}
 
-		// Retry on 503 (Service Unavailable / Throttling) and 500 (Server Error)
+		// 503 (Service Unavailable / 스로틀링) 및 500 (Server Error)에서 재시도
 		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
 			last_err = 'S3 PUT failed with status ${resp.status_code}'
-			// Exponential backoff with jitter
+			// 지터가 있는 지수 백오프
 			backoff_ms := 100 * (1 << attempt) + int(time.now().unix_milli() % 50)
 			time.sleep(time.Duration(backoff_ms) * time.millisecond)
 			continue
@@ -107,7 +115,9 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 	return error(last_err)
 }
 
-// put_object_if_not_exists writes an object only if it doesn't exist (conditional PUT)
+/// put_object_if_not_exists는 객체가 존재하지 않을 때만 씁니다 (조건부 PUT).
+/// If-None-Match: * 헤더를 사용하여 동시 생성을 방지합니다.
+/// 객체가 이미 존재하면 412 Precondition Failed 에러를 반환합니다.
 fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -134,7 +144,8 @@ fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 	}
 }
 
-// delete_object removes an object from S3
+/// delete_object는 S3에서 객체를 삭제합니다.
+/// 삭제 성공 시 200 또는 204 상태 코드를 반환합니다.
 fn (mut a S3StorageAdapter) delete_object(key string) ! {
 	endpoint := a.get_endpoint()
 	url := '${endpoint}/${a.config.bucket_name}/${key}'
@@ -152,7 +163,8 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 	}
 }
 
-// delete_objects_with_prefix removes all objects with a given prefix
+/// delete_objects_with_prefix는 지정된 접두사를 가진 모든 객체를 삭제합니다.
+/// 먼저 접두사로 객체 목록을 조회한 후 각 객체를 개별 삭제합니다.
 fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 	objects := a.list_objects(prefix)!
 	for obj in objects {
@@ -160,7 +172,8 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 	}
 }
 
-// list_objects lists objects in S3 with a given prefix
+/// list_objects는 지정된 접두사로 S3 객체 목록을 조회합니다.
+/// ListObjectsV2 API를 사용하여 객체 목록을 가져옵니다.
 fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 	endpoint := a.get_endpoint()
 	query := 'prefix=${prefix}&list-type=2'
@@ -178,20 +191,22 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		return error('S3 LIST failed with status ${resp.status_code}')
 	}
 
-	// Parse XML response (simplified)
+	// XML 응답 파싱 (단순화)
 	return parse_list_objects_response(resp.body)
 }
 
 // ============================================================
-// AWS SigV4 Signing
+// AWS SigV4 서명 (AWS SigV4 Signing)
 // ============================================================
 
-// sign_request signs an HTTP request using AWS Signature V4
+/// sign_request는 AWS Signature V4를 사용하여 HTTP 요청에 서명합니다.
+/// AWS S3 API 호출에 필요한 인증 헤더를 생성합니다.
+/// 서명 과정: Canonical Request -> String to Sign -> Signing Key -> Signature
 fn (a &S3StorageAdapter) sign_request(method string, key string, query string, body []u8) http.Header {
 	mut h := http.Header{}
 	now := time.now().as_utc()
 
-	// Manual formatting to ensure UTC time
+	// UTC 시간 보장을 위한 수동 포맷팅
 	date_day := now.custom_format('YYYYMMDD')
 	hours := now.hour
 	minutes := now.minute
@@ -251,7 +266,9 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 	return h
 }
 
-// get_endpoint returns the S3 endpoint URL
+/// get_endpoint는 S3 엔드포인트 URL을 반환합니다.
+/// 사용자 정의 엔드포인트(MinIO/LocalStack)가 설정되면 해당 값을 사용합니다.
+/// 그렇지 않으면 AWS S3 엔드포인트를 경로 스타일 또는 가상 호스트 스타일로 반환합니다.
 fn (a &S3StorageAdapter) get_endpoint() string {
 	if a.config.endpoint.len > 0 {
 		return a.config.endpoint
@@ -263,7 +280,8 @@ fn (a &S3StorageAdapter) get_endpoint() string {
 	}
 }
 
-// get_host returns the host header value for S3 requests
+/// get_host는 S3 요청의 Host 헤더 값을 반환합니다.
+/// SigV4 서명에서 Host 헤더는 필수 서명 헤더입니다.
 fn (a &S3StorageAdapter) get_host() string {
 	if a.config.endpoint.len > 0 {
 		return a.config.endpoint.replace('http://', '').replace('https://', '').split('/')[0]
@@ -271,35 +289,36 @@ fn (a &S3StorageAdapter) get_host() string {
 	return 's3.${a.config.region}.amazonaws.com'
 }
 
-// canonicalize_query sorts and encodes query parameters for AWS SigV4
+/// canonicalize_query는 AWS SigV4를 위해 쿼리 파라미터를 정렬하고 인코딩합니다.
+/// 쿼리 파라미터를 알파벳 순으로 정렬하고 URL 인코딩을 적용합니다.
 fn (a &S3StorageAdapter) canonicalize_query(query string) string {
 	if query == '' {
 		return ''
 	}
 
-	// Parse query string into map
+	// 쿼리 문자열을 맵으로 파싱
 	mut params := map[string]string{}
 	for pair in query.split('&') {
 		parts := pair.split_nth('=', 2)
 		if parts.len == 2 {
-			// URL decode key and value, then re-encode properly for AWS SigV4
+			// AWS SigV4를 위해 키와 값을 URL 디코딩 후 재인코딩
 			key := url_decode(parts[0])
 			value := url_decode(parts[1])
 			params[key] = value
 		}
 	}
 
-	// Sort keys alphabetically
+	// 키를 알파벳 순으로 정렬
 	mut keys := []string{}
 	for k in params.keys() {
 		keys << k
 	}
 	keys.sort()
 
-	// Build canonical query string
+	// canonical 쿼리 문자열 생성
 	mut result := []string{}
 	for key in keys {
-		// AWS SigV4 requires specific encoding
+		// AWS SigV4는 특정 인코딩 필요
 		encoded_key := url_encode_for_sigv4(key)
 		encoded_value := url_encode_for_sigv4(params[key])
 		result << '${encoded_key}=${encoded_value}'
@@ -309,10 +328,11 @@ fn (a &S3StorageAdapter) canonicalize_query(query string) string {
 }
 
 // ============================================================
-// URL Encoding Utilities
+// URL 인코딩 유틸리티 (URL Encoding Utilities)
 // ============================================================
 
-// url_decode decodes a percent-encoded string
+/// url_decode는 퍼센트 인코딩된 문자열을 디코딩합니다.
+/// 예: %20 -> 공백, %2F -> /
 fn url_decode(s string) string {
 	mut result := s
 	mut i := 0
@@ -332,12 +352,14 @@ fn url_decode(s string) string {
 	return result
 }
 
-// is_hex_char checks if a character is a valid hex digit
+/// is_hex_char는 문자가 유효한 16진수 숫자인지 확인합니다.
+/// 0-9, A-F, a-f 범위의 문자를 허용합니다.
 fn is_hex_char(c u8) bool {
 	return (c >= `0` && c <= `9`) || (c >= `A` && c <= `F`) || (c >= `a` && c <= `f`)
 }
 
-// hex_to_u8 converts a two-character hex string to a byte
+/// hex_to_u8는 두 문자 16진수 문자열을 바이트로 변환합니다.
+/// 예: "4A" -> 74
 fn hex_to_u8(s string) u8 {
 	mut result := u8(0)
 	for c in s {
@@ -353,7 +375,8 @@ fn hex_to_u8(s string) u8 {
 	return result
 }
 
-// u8_to_hex converts a byte to a two-character uppercase hex string
+/// u8_to_hex는 바이트를 두 문자 대문자 16진수 문자열로 변환합니다.
+/// 예: 74 -> "4A"
 fn u8_to_hex(c u8) string {
 	high := (c >> 4) & 0x0F
 	low := c & 0x0F
@@ -375,7 +398,9 @@ fn u8_to_hex(c u8) string {
 	return high_hex + low_hex
 }
 
-// url_encode_for_sigv4 encodes a string according to AWS SigV4 requirements
+/// url_encode_for_sigv4는 AWS SigV4 요구사항에 따라 문자열을 인코딩합니다.
+/// A-Z, a-z, 0-9, -, ., _, ~ 문자는 인코딩하지 않습니다.
+/// 그 외 문자는 %XX 형식으로 퍼센트 인코딩합니다.
 fn url_encode_for_sigv4(s string) string {
 	mut result := []u8{}
 	for c in s {
@@ -395,12 +420,14 @@ fn url_encode_for_sigv4(s string) string {
 }
 
 // ============================================================
-// XML Response Parsing
+// XML 응답 파싱 (XML Response Parsing)
 // ============================================================
 
-// parse_list_objects_response parses S3 ListObjectsV2 XML response
+/// parse_list_objects_response는 S3 ListObjectsV2 XML 응답을 파싱합니다.
+/// 단순화된 XML 파싱으로 <Key> 태그만 추출합니다.
+/// 프로덕션 환경에서는 적절한 XML 파서 사용을 권장합니다.
 fn parse_list_objects_response(body string) []S3Object {
-	// Simplified XML parsing - in production use proper XML parser
+	// 단순화된 XML 파싱 - 프로덕션에서는 적절한 XML 파서 사용
 	mut objects := []S3Object{}
 
 	mut remaining := body

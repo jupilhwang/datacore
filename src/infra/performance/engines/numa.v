@@ -1,20 +1,19 @@
+/// NUMA 인식 메모리 할당
+/// 멀티 소켓 시스템에서 최적의 성능을 위한 NUMA (Non-Uniform Memory Access) 인식 메모리 관리 제공
+///
+/// 기능:
+/// - NUMA 토폴로지 감지
+/// - 로컬 노드 할당
+/// - 특정 노드에 메모리 바인딩
+/// - 노드 간 인터리브 할당
+///
+/// 참고: 전체 NUMA 지원은 Linux에서만, 다른 플랫폼은 폴백 사용
 module engines
 
-// NUMA-Aware Memory Allocation
-// Provides NUMA (Non-Uniform Memory Access) aware memory management
-// for optimal performance on multi-socket systems
-//
-// Features:
-// - NUMA topology detection
-// - Local node allocation
-// - Memory binding to specific nodes
-// - Interleaved allocation across nodes
-//
-// Note: Full NUMA support only on Linux, other platforms use fallback
 import os
 
 // ============================================================================
-// C Interop - NUMA Library (Linux)
+// C 인터롭 - NUMA 라이브러리 (Linux)
 // ============================================================================
 
 $if linux {
@@ -38,7 +37,7 @@ $if linux {
 	fn C.numa_node_size64(node int, freep &i64) i64
 	fn C.sched_getcpu() int
 
-	// Memory policy constants
+	// 메모리 정책 상수
 	const mpol_default = 0
 	const mpol_preferred = 1
 	const mpol_bind = 2
@@ -47,45 +46,45 @@ $if linux {
 }
 
 // ============================================================================
-// NUMA Topology Structures
+// NUMA 토폴로지 구조체
 // ============================================================================
 
-// NumaNode represents a NUMA node
+/// NumaNode는 NUMA 노드를 나타냅니다.
 pub struct NumaNode {
 pub:
-	id        int
-	total_mem i64 // Total memory in bytes
-	free_mem  i64 // Free memory in bytes
-	cpu_count int
-	cpus      []int
+	id        int   // 노드 ID
+	total_mem i64   // 총 메모리 (바이트)
+	free_mem  i64   // 여유 메모리 (바이트)
+	cpu_count int   // CPU 수
+	cpus      []int // CPU 목록
 }
 
-// NumaTopology represents the system's NUMA topology
+/// NumaTopology는 시스템의 NUMA 토폴로지를 나타냅니다.
 pub struct NumaTopology {
 pub:
-	available  bool
-	node_count int
-	cpu_count  int
-	nodes      []NumaNode
-	local_node int // Node where current thread is running
+	available  bool       // NUMA 사용 가능 여부
+	node_count int        // 노드 수
+	cpu_count  int        // CPU 수
+	nodes      []NumaNode // 노드 목록
+	local_node int        // 현재 스레드가 실행 중인 노드
 }
 
-// NumaCapabilities indicates NUMA support level
+/// NumaCapabilities는 NUMA 지원 수준을 나타냅니다.
 pub struct NumaCapabilities {
 pub:
-	has_numa         bool
-	has_node_binding bool
-	has_cpu_binding  bool
-	has_interleave   bool
-	has_local_alloc  bool
-	platform_name    string
+	has_numa         bool   // NUMA 지원
+	has_node_binding bool   // 노드 바인딩 지원
+	has_cpu_binding  bool   // CPU 바인딩 지원
+	has_interleave   bool   // 인터리브 지원
+	has_local_alloc  bool   // 로컬 할당 지원
+	platform_name    string // 플랫폼 이름
 }
 
 // ============================================================================
-// NUMA Topology Detection
+// NUMA 토폴로지 감지
 // ============================================================================
 
-// get_numa_capabilities returns NUMA capabilities for current platform
+/// get_numa_capabilities는 현재 플랫폼의 NUMA 기능을 반환합니다.
 pub fn get_numa_capabilities() NumaCapabilities {
 	$if linux {
 		available := C.numa_available() >= 0
@@ -108,7 +107,7 @@ pub fn get_numa_capabilities() NumaCapabilities {
 		}
 	} $else $if windows {
 		return NumaCapabilities{
-			has_numa:         false // Windows has NUMA support but different API
+			has_numa:         false // Windows는 NUMA 지원이 있지만 다른 API
 			has_node_binding: false
 			has_cpu_binding:  false
 			has_interleave:   false
@@ -123,7 +122,7 @@ pub fn get_numa_capabilities() NumaCapabilities {
 	}
 }
 
-// get_numa_topology returns the system's NUMA topology
+/// get_numa_topology는 시스템의 NUMA 토폴로지를 반환합니다.
 pub fn get_numa_topology() NumaTopology {
 	$if linux {
 		if C.numa_available() < 0 {
@@ -146,7 +145,7 @@ pub fn get_numa_topology() NumaTopology {
 			mut free_mem := i64(0)
 			total_mem := C.numa_node_size64(node, &free_mem)
 
-			// Get CPUs for this node
+			// 이 노드의 CPU 가져오기
 			mut node_cpus := []int{}
 			for cpu := 0; cpu < cpu_count; cpu++ {
 				if C.numa_node_of_cpu(cpu) == node {
@@ -171,7 +170,7 @@ pub fn get_numa_topology() NumaTopology {
 			local_node: local_node
 		}
 	} $else {
-		// Fallback: single node topology
+		// 폴백: 단일 노드 토폴로지
 		return NumaTopology{
 			available:  false
 			node_count: 1
@@ -190,7 +189,7 @@ pub fn get_numa_topology() NumaTopology {
 	}
 }
 
-// get_current_node returns the NUMA node for current thread
+/// get_current_node는 현재 스레드의 NUMA 노드를 반환합니다.
 pub fn get_current_node() int {
 	$if linux {
 		if C.numa_available() < 0 {
@@ -207,9 +206,10 @@ pub fn get_current_node() int {
 }
 
 // ============================================================================
-// Memory Helpers (Platform Independent)
+// 메모리 헬퍼 (플랫폼 독립적)
 // ============================================================================
 
+/// get_total_memory는 총 메모리를 반환합니다.
 fn get_total_memory() i64 {
 	$if linux {
 		content := os.read_file('/proc/meminfo') or { return 0 }
@@ -224,13 +224,14 @@ fn get_total_memory() i64 {
 		}
 		return 0
 	} $else $if macos {
-		// macOS: use sysctl
-		return 0 // Simplified
+		// macOS: sysctl 사용
+		return 0 // 단순화됨
 	} $else {
 		return 0
 	}
 }
 
+/// get_free_memory는 여유 메모리를 반환합니다.
 fn get_free_memory() i64 {
 	$if linux {
 		content := os.read_file('/proc/meminfo') or { return 0 }
@@ -250,28 +251,29 @@ fn get_free_memory() i64 {
 }
 
 // ============================================================================
-// NUMA Memory Allocation
+// NUMA 메모리 할당
 // ============================================================================
 
-// NumaMemory represents NUMA-allocated memory
+/// NumaMemory는 NUMA 할당된 메모리를 나타냅니다.
 pub struct NumaMemory {
 pub:
-	ptr     voidptr
-	size    usize
-	node    int
-	policy  NumaPolicy
-	is_numa bool // True if actually NUMA-allocated
+	ptr     voidptr    // 메모리 포인터
+	size    usize      // 크기
+	node    int        // NUMA 노드
+	policy  NumaPolicy // 할당 정책
+	is_numa bool       // 실제 NUMA 할당 여부
 }
 
+/// NumaPolicy는 NUMA 할당 정책입니다.
 pub enum NumaPolicy {
-	default_policy // System default
-	local          // Allocate on local node
-	preferred      // Prefer specific node, fallback allowed
-	bind           // Strict binding to node(s)
-	interleaved    // Round-robin across nodes
+	default_policy // 시스템 기본값
+	local          // 로컬 노드에 할당
+	preferred      // 특정 노드 선호, 폴백 허용
+	bind           // 노드에 엄격히 바인딩
+	interleaved    // 노드 간 라운드 로빈
 }
 
-// numa_alloc allocates memory on a specific NUMA node
+/// numa_alloc은 특정 NUMA 노드에 메모리를 할당합니다.
 pub fn numa_alloc(size usize, node int) NumaMemory {
 	$if linux {
 		if C.numa_available() < 0 {
@@ -295,7 +297,7 @@ pub fn numa_alloc(size usize, node int) NumaMemory {
 	}
 }
 
-// numa_alloc_local allocates memory on the local NUMA node
+/// numa_alloc_local은 로컬 NUMA 노드에 메모리를 할당합니다.
 pub fn numa_alloc_local(size usize) NumaMemory {
 	$if linux {
 		if C.numa_available() < 0 {
@@ -319,7 +321,7 @@ pub fn numa_alloc_local(size usize) NumaMemory {
 	}
 }
 
-// numa_alloc_interleaved allocates memory interleaved across all nodes
+/// numa_alloc_interleaved는 모든 노드에 인터리브로 메모리를 할당합니다.
 pub fn numa_alloc_interleaved(size usize) NumaMemory {
 	$if linux {
 		if C.numa_available() < 0 {
@@ -334,7 +336,7 @@ pub fn numa_alloc_interleaved(size usize) NumaMemory {
 		return NumaMemory{
 			ptr:     ptr
 			size:    size
-			node:    -1 // interleaved across all
+			node:    -1 // 모든 노드에 인터리브
 			policy:  .interleaved
 			is_numa: true
 		}
@@ -343,7 +345,7 @@ pub fn numa_alloc_interleaved(size usize) NumaMemory {
 	}
 }
 
-// numa_alloc_fallback provides standard allocation when NUMA not available
+/// numa_alloc_fallback은 NUMA를 사용할 수 없을 때 표준 할당을 제공합니다.
 fn numa_alloc_fallback(size usize) NumaMemory {
 	ptr := unsafe { C.malloc(size) }
 	return NumaMemory{
@@ -355,7 +357,7 @@ fn numa_alloc_fallback(size usize) NumaMemory {
 	}
 }
 
-// numa_free frees NUMA-allocated memory
+/// numa_free는 NUMA 할당된 메모리를 해제합니다.
 pub fn numa_free(mem NumaMemory) {
 	if mem.ptr == unsafe { nil } {
 		return
@@ -372,44 +374,46 @@ pub fn numa_free(mem NumaMemory) {
 }
 
 // ============================================================================
-// NUMA-Aware Buffer Pool
+// NUMA 인식 버퍼 풀
 // ============================================================================
 
-// NumaBufferPool provides NUMA-aware buffer allocation
+/// NumaBufferPool은 NUMA 인식 버퍼 할당을 제공합니다.
 pub struct NumaBufferPool {
 pub mut:
-	node_pools []NodePool
-	topology   NumaTopology
-	stats      NumaPoolStats
+	node_pools []NodePool    // 노드별 풀
+	topology   NumaTopology  // NUMA 토폴로지
+	stats      NumaPoolStats // 풀 통계
 }
 
+/// NodePool은 노드별 버퍼 풀입니다.
 struct NodePool {
 mut:
-	node      int
-	buffers   []NumaMemory
-	available []int // indices of available buffers
-	buf_size  usize
+	node      int          // 노드 ID
+	buffers   []NumaMemory // 버퍼 목록
+	available []int        // 사용 가능한 버퍼 인덱스
+	buf_size  usize        // 버퍼 크기
 }
 
+/// NumaPoolStats는 NUMA 풀 통계를 담고 있습니다.
 pub struct NumaPoolStats {
 pub mut:
-	allocations_total  u64
-	allocations_local  u64
-	allocations_remote u64
-	bytes_allocated    u64
-	cache_hits         u64
-	cache_misses       u64
+	allocations_total  u64 // 총 할당 수
+	allocations_local  u64 // 로컬 할당 수
+	allocations_remote u64 // 원격 할당 수
+	bytes_allocated    u64 // 할당된 바이트
+	cache_hits         u64 // 캐시 히트
+	cache_misses       u64 // 캐시 미스
 }
 
-// NumaBufferConfig configures NUMA buffer pool
+/// NumaBufferConfig는 NUMA 버퍼 풀 설정입니다.
 pub struct NumaBufferConfig {
 pub:
-	buffer_size      usize = 4096
-	buffers_per_node int   = 100
-	prefer_local     bool  = true
+	buffer_size      usize = 4096 // 버퍼 크기
+	buffers_per_node int   = 100  // 노드당 버퍼 수
+	prefer_local     bool  = true // 로컬 선호
 }
 
-// new_numa_buffer_pool creates a NUMA-aware buffer pool
+/// new_numa_buffer_pool은 NUMA 인식 버퍼 풀을 생성합니다.
 pub fn new_numa_buffer_pool(config NumaBufferConfig) NumaBufferPool {
 	topology := get_numa_topology()
 
@@ -423,7 +427,7 @@ pub fn new_numa_buffer_pool(config NumaBufferConfig) NumaBufferPool {
 			buf_size:  config.buffer_size
 		}
 
-		// Pre-allocate buffers
+		// 버퍼 사전 할당
 		for i in 0 .. config.buffers_per_node {
 			mem := numa_alloc(config.buffer_size, node.id)
 			pool.buffers << mem
@@ -439,12 +443,12 @@ pub fn new_numa_buffer_pool(config NumaBufferConfig) NumaBufferPool {
 	}
 }
 
-// get_buffer gets a buffer, preferring local node
+/// get_buffer는 로컬 노드를 선호하여 버퍼를 가져옵니다.
 pub fn (mut p NumaBufferPool) get_buffer() ?NumaMemory {
 	local_node := get_current_node()
 	p.stats.allocations_total++
 
-	// Try local node first
+	// 먼저 로컬 노드 시도
 	if local_node < p.node_pools.len {
 		if buf := p.get_from_node(local_node) {
 			p.stats.allocations_local++
@@ -453,7 +457,7 @@ pub fn (mut p NumaBufferPool) get_buffer() ?NumaMemory {
 		}
 	}
 
-	// Try other nodes
+	// 다른 노드 시도
 	for i, _ in p.node_pools {
 		if i == local_node {
 			continue
@@ -465,12 +469,13 @@ pub fn (mut p NumaBufferPool) get_buffer() ?NumaMemory {
 		}
 	}
 
-	// Allocate new on local node
+	// 로컬 노드에 새로 할당
 	p.stats.cache_misses++
 	p.stats.bytes_allocated += u64(p.node_pools[0].buf_size)
 	return numa_alloc_local(p.node_pools[0].buf_size)
 }
 
+/// get_from_node는 특정 노드에서 버퍼를 가져옵니다.
 fn (mut p NumaBufferPool) get_from_node(node int) ?NumaMemory {
 	if node >= p.node_pools.len {
 		return none
@@ -485,20 +490,20 @@ fn (mut p NumaBufferPool) get_from_node(node int) ?NumaMemory {
 	return pool.buffers[idx]
 }
 
-// put_buffer returns a buffer to the pool
+/// put_buffer는 버퍼를 풀에 반환합니다.
 pub fn (mut p NumaBufferPool) put_buffer(mem NumaMemory) {
-	// Find the node pool
+	// 노드 풀 찾기
 	node := if mem.node >= 0 && mem.node < p.node_pools.len {
 		mem.node
 	} else {
 		0
 	}
 
-	// Check if it's one of our buffers
+	// 우리 버퍼인지 확인
 	mut pool := &p.node_pools[node]
 	for i, buf in pool.buffers {
 		if buf.ptr == mem.ptr {
-			// Clear the buffer
+			// 버퍼 초기화
 			unsafe {
 				C.memset(mem.ptr, 0, mem.size)
 			}
@@ -507,16 +512,16 @@ pub fn (mut p NumaBufferPool) put_buffer(mem NumaMemory) {
 		}
 	}
 
-	// Not our buffer, free it
+	// 우리 버퍼가 아니면 해제
 	numa_free(mem)
 }
 
-// get_stats returns pool statistics
+/// get_stats는 풀 통계를 반환합니다.
 pub fn (p &NumaBufferPool) get_stats() NumaPoolStats {
 	return p.stats
 }
 
-// close releases all pool resources
+/// close는 모든 풀 리소스를 해제합니다.
 pub fn (mut p NumaBufferPool) close() {
 	for mut pool in p.node_pools {
 		for mem in pool.buffers {
@@ -528,10 +533,10 @@ pub fn (mut p NumaBufferPool) close() {
 }
 
 // ============================================================================
-// NUMA Thread Binding
+// NUMA 스레드 바인딩
 // ============================================================================
 
-// bind_to_node binds current thread to a NUMA node
+/// bind_to_node는 현재 스레드를 NUMA 노드에 바인딩합니다.
 pub fn bind_to_node(node int) bool {
 	$if linux {
 		if C.numa_available() < 0 {
@@ -543,7 +548,7 @@ pub fn bind_to_node(node int) bool {
 	}
 }
 
-// set_preferred_node sets preferred NUMA node for allocation
+/// set_preferred_node는 할당을 위한 선호 NUMA 노드를 설정합니다.
 pub fn set_preferred_node(node int) {
 	$if linux {
 		if C.numa_available() >= 0 {
@@ -552,7 +557,7 @@ pub fn set_preferred_node(node int) {
 	}
 }
 
-// set_local_alloc sets thread to allocate from local node
+/// set_local_alloc은 스레드가 로컬 노드에서 할당하도록 설정합니다.
 pub fn set_local_alloc() {
 	$if linux {
 		if C.numa_available() >= 0 {
@@ -562,18 +567,18 @@ pub fn set_local_alloc() {
 }
 
 // ============================================================================
-// NUMA-Aware Data Structures
+// NUMA 인식 데이터 구조
 // ============================================================================
 
-// NumaArray is a NUMA-aware array that keeps data on a specific node
+/// NumaArray는 특정 노드에 데이터를 유지하는 NUMA 인식 배열입니다.
 pub struct NumaArray {
 pub:
-	memory NumaMemory
-	len    int
-	cap    int
+	memory NumaMemory // NUMA 메모리
+	len    int        // 길이
+	cap    int        // 용량
 }
 
-// new_numa_array creates a NUMA-aware array on local node
+/// new_numa_array는 로컬 노드에 NUMA 인식 배열을 생성합니다.
 pub fn new_numa_array(cap int, elem_size int) NumaArray {
 	size := usize(cap * elem_size)
 	mem := numa_alloc_local(size)
@@ -585,7 +590,7 @@ pub fn new_numa_array(cap int, elem_size int) NumaArray {
 	}
 }
 
-// new_numa_array_on_node creates array on specific node
+/// new_numa_array_on_node는 특정 노드에 배열을 생성합니다.
 pub fn new_numa_array_on_node(cap int, elem_size int, node int) NumaArray {
 	size := usize(cap * elem_size)
 	mem := numa_alloc(size, node)
@@ -597,17 +602,17 @@ pub fn new_numa_array_on_node(cap int, elem_size int, node int) NumaArray {
 	}
 }
 
-// close releases the NUMA array
+/// close는 NUMA 배열을 해제합니다.
 pub fn (a &NumaArray) close() {
 	numa_free(a.memory)
 }
 
-// get_ptr returns raw pointer for array operations
+/// get_ptr은 배열 연산을 위한 원시 포인터를 반환합니다.
 pub fn (a &NumaArray) get_ptr() voidptr {
 	return a.memory.ptr
 }
 
-// get_node returns the NUMA node where array is allocated
+/// get_node는 배열이 할당된 NUMA 노드를 반환합니다.
 pub fn (a &NumaArray) get_node() int {
 	return a.memory.node
 }

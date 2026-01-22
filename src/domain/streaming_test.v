@@ -1,4 +1,4 @@
-// SSE Domain Model Tests
+// SSE 도메인 모델 테스트
 module domain
 
 fn test_sse_event_type_str() {
@@ -138,7 +138,7 @@ fn test_websocket_action_from_str() {
 }
 
 // ============================================================================
-// WebSocket Domain Tests
+// WebSocket 도메인 테스트
 // ============================================================================
 
 fn test_new_ws_message_response() {

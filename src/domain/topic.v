@@ -1,7 +1,13 @@
-// Entity Layer - Topic Domain Model
+// 도메인 레이어 - 토픽 도메인 모델
+// Kafka 토픽 관련 데이터 구조를 정의합니다.
 module domain
 
-// Topic represents a Kafka topic
+/// Topic은 Kafka 토픽을 나타냅니다.
+/// name: 토픽 이름
+/// partition_count: 파티션 수
+/// replication_factor: 복제 팩터 (Stateless 모드에서는 항상 1)
+/// config: 토픽 설정
+/// is_internal: 내부 토픽 여부 (__consumer_offsets 등)
 pub struct Topic {
 pub:
 	name               string
@@ -11,22 +17,33 @@ pub:
 	is_internal        bool
 }
 
-// TopicConfig represents topic configuration
+/// TopicConfig는 토픽 설정을 나타냅니다.
+/// retention_ms: 메시지 보관 기간 (밀리초, 기본 7일)
+/// retention_bytes: 최대 보관 크기 (-1 = 무제한)
+/// segment_bytes: 세그먼트 파일 크기 (기본 1GB)
+/// cleanup_policy: 정리 정책 ('delete' 또는 'compact')
+/// min_insync_replicas: 최소 동기화 레플리카 수
+/// max_message_bytes: 최대 메시지 크기
 pub struct TopicConfig {
 pub:
-	retention_ms        i64    = 604800000  // 7 days
-	retention_bytes     i64    = -1         // unlimited
+	retention_ms        i64    = 604800000  // 7일
+	retention_bytes     i64    = -1         // 무제한
 	segment_bytes       i64    = 1073741824 // 1GB
 	cleanup_policy      string = 'delete'
 	min_insync_replicas int    = 1
 	max_message_bytes   int    = 1048576 // 1MB
 }
 
-// TopicMetadata represents topic metadata for API responses
+/// TopicMetadata는 API 응답을 위한 토픽 메타데이터를 나타냅니다.
+/// name: 토픽 이름
+/// topic_id: 토픽 UUID (16바이트)
+/// partition_count: 파티션 수
+/// config: 설정 맵
+/// is_internal: 내부 토픽 여부
 pub struct TopicMetadata {
 pub:
 	name            string
-	topic_id        []u8 // UUID, 16 bytes
+	topic_id        []u8 // UUID, 16바이트
 	partition_count int
 	config          map[string]string
 	is_internal     bool

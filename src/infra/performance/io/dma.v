@@ -1,25 +1,25 @@
+/// DMA 및 Scatter-Gather I/O 구현
+/// 실제 시스템 호출을 사용하는 플랫폼별 최적화
+///
+/// OS별 지원 기능:
+/// ┌─────────────────────┬───────┬───────┬─────────┐
+/// │ 기능                │ Linux │ macOS │ Windows │
+/// ├─────────────────────┼───────┼───────┼─────────┤
+/// │ readv/writev        │  ✓    │   ✓   │   ✗     │
+/// │ sendfile            │  ✓    │   ✓   │   ✗     │
+/// │ splice              │  ✓    │   ✗   │   ✗     │
+/// │ copy_file_range     │  ✓    │   ✗   │   ✗     │
+/// │ TransmitFile        │  ✗    │   ✗   │   ✓     │
+/// └─────────────────────┴───────┴───────┴─────────┘
 module io
 
-// DMA and Scatter-Gather I/O Implementation
-// Platform-specific optimizations using actual system calls
-//
-// Supported Features by OS:
-// ┌─────────────────────┬───────┬───────┬─────────┐
-// │ Feature             │ Linux │ macOS │ Windows │
-// ├─────────────────────┼───────┼───────┼─────────┤
-// │ readv/writev        │  ✓    │   ✓   │   ✗     │
-// │ sendfile            │  ✓    │   ✓   │   ✗     │
-// │ splice              │  ✓    │   ✗   │   ✗     │
-// │ copy_file_range     │  ✓    │   ✗   │   ✗     │
-// │ TransmitFile        │  ✗    │   ✗   │   ✓     │
-// └─────────────────────┴───────┴───────┴─────────┘
 import os
 
 // ============================================================================
-// C Interop - System Call Definitions
+// C 인터롭 - 시스템 호출 정의
 // ============================================================================
 
-// POSIX iovec structure for scatter-gather I/O
+/// Scatter-Gather I/O를 위한 POSIX iovec 구조체
 #include <sys/uio.h>
 
 struct C.iovec {
@@ -28,18 +28,18 @@ mut:
 	iov_len  usize
 }
 
-// POSIX readv/writev - available on Linux and macOS
+/// POSIX readv/writev - Linux와 macOS에서 사용 가능
 fn C.readv(fd int, iov &C.iovec, iovcnt int) isize
 fn C.writev(fd int, iov &C.iovec, iovcnt int) isize
 
-// Linux-specific: sendfile
+/// Linux 전용: sendfile
 $if linux {
 	#include <sys/sendfile.h>
 
 	fn C.sendfile(out_fd int, in_fd int, offset &i64, count usize) isize
 }
 
-// macOS-specific: sendfile has different signature
+/// macOS 전용: sendfile은 다른 시그니처를 가짐
 $if macos {
 	#include <sys/types.h>
 	#include <sys/socket.h>
@@ -48,34 +48,34 @@ $if macos {
 	fn C.sendfile(fd int, s int, offset i64, len &i64, hdtr voidptr, flags int) int
 }
 
-// Linux-specific: splice and copy_file_range
+/// Linux 전용: splice와 copy_file_range
 $if linux {
 	#include <fcntl.h>
 
 	fn C.splice(fd_in int, off_in &i64, fd_out int, off_out &i64, len usize, flags u32) isize
 	fn C.copy_file_range(fd_in int, off_in &i64, fd_out int, off_out &i64, len usize, flags u32) isize
 
-	// Splice flags
+	// Splice 플래그
 	const splice_f_move = u32(1)
 	const splice_f_nonblock = u32(2)
 	const splice_f_more = u32(4)
 }
 
 // ============================================================================
-// Platform Capabilities Detection
+// 플랫폼 기능 감지
 // ============================================================================
 
-// PlatformCapabilities indicates available I/O features
+/// PlatformCapabilities는 사용 가능한 I/O 기능을 나타냅니다.
 pub struct PlatformCapabilities {
 pub:
-	has_scatter_gather  bool // readv/writev support
-	has_sendfile        bool // sendfile support
-	has_splice          bool // splice support (Linux only)
-	has_copy_file_range bool // copy_file_range support (Linux 4.5+)
-	os_name             string
+	has_scatter_gather  bool   // readv/writev 지원
+	has_sendfile        bool   // sendfile 지원
+	has_splice          bool   // splice 지원 (Linux 전용)
+	has_copy_file_range bool   // copy_file_range 지원 (Linux 4.5+)
+	os_name             string // OS 이름
 }
 
-// get_platform_capabilities returns available I/O capabilities for current OS
+/// get_platform_capabilities는 현재 OS의 사용 가능한 I/O 기능을 반환합니다.
 pub fn get_platform_capabilities() PlatformCapabilities {
 	$if linux {
 		return PlatformCapabilities{
@@ -96,7 +96,7 @@ pub fn get_platform_capabilities() PlatformCapabilities {
 	} $else $if windows {
 		return PlatformCapabilities{
 			has_scatter_gather:  false
-			has_sendfile:        false // Could implement with TransmitFile
+			has_sendfile:        false // TransmitFile로 구현 가능
 			has_splice:          false
 			has_copy_file_range: false
 			os_name:             'Windows'
@@ -113,18 +113,20 @@ pub fn get_platform_capabilities() PlatformCapabilities {
 }
 
 // ============================================================================
-// DMA Result Types
+// DMA 결과 타입
 // ============================================================================
 
+/// DmaResult는 DMA 작업의 결과를 담고 있습니다.
 pub struct DmaResult {
 pub:
-	bytes_transferred i64
-	success           bool
-	error_msg         string
-	used_zero_copy    bool
-	new_offset        i64 // Updated offset after operation
+	bytes_transferred i64    // 전송된 바이트 수
+	success           bool   // 성공 여부
+	error_msg         string // 에러 메시지
+	used_zero_copy    bool   // 제로카피 사용 여부
+	new_offset        i64    // 작업 후 업데이트된 오프셋
 }
 
+/// dma_success는 성공 결과를 생성합니다.
 fn dma_success(bytes i64, zero_copy bool) DmaResult {
 	return DmaResult{
 		bytes_transferred: bytes
@@ -134,6 +136,7 @@ fn dma_success(bytes i64, zero_copy bool) DmaResult {
 	}
 }
 
+/// dma_success_with_offset는 오프셋을 포함한 성공 결과를 생성합니다.
 fn dma_success_with_offset(bytes i64, zero_copy bool, offset i64) DmaResult {
 	return DmaResult{
 		bytes_transferred: bytes
@@ -143,6 +146,7 @@ fn dma_success_with_offset(bytes i64, zero_copy bool, offset i64) DmaResult {
 	}
 }
 
+/// dma_error는 에러 결과를 생성합니다.
 fn dma_error(msg string) DmaResult {
 	return DmaResult{
 		success:        false
@@ -155,14 +159,14 @@ fn dma_error(msg string) DmaResult {
 // Scatter-Gather I/O
 // ============================================================================
 
-// ScatterGatherBuffer represents a buffer for scatter-gather operations
+/// ScatterGatherBuffer는 scatter-gather 작업을 위한 버퍼를 나타냅니다.
 pub struct ScatterGatherBuffer {
 pub mut:
-	data []u8
-	len  int
+	data []u8 // 데이터 버퍼
+	len  int  // 데이터 길이
 }
 
-// new_sg_buffer creates a new scatter-gather buffer
+/// new_sg_buffer는 새 scatter-gather 버퍼를 생성합니다.
 pub fn new_sg_buffer(size int) ScatterGatherBuffer {
 	return ScatterGatherBuffer{
 		data: []u8{len: size}
@@ -170,7 +174,7 @@ pub fn new_sg_buffer(size int) ScatterGatherBuffer {
 	}
 }
 
-// new_sg_buffer_from creates a buffer from existing data
+/// new_sg_buffer_from은 기존 데이터로부터 버퍼를 생성합니다.
 pub fn new_sg_buffer_from(data []u8) ScatterGatherBuffer {
 	return ScatterGatherBuffer{
 		data: data
@@ -178,14 +182,14 @@ pub fn new_sg_buffer_from(data []u8) ScatterGatherBuffer {
 	}
 }
 
-// scatter_read_native reads into multiple buffers using native readv
+/// scatter_read_native는 네이티브 readv를 사용하여 여러 버퍼로 읽습니다.
 pub fn scatter_read_native(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 	if buffers.len == 0 {
 		return dma_error('no buffers provided')
 	}
 
 	$if linux || macos {
-		// Build iovec array
+		// iovec 배열 구성
 		mut iovecs := []C.iovec{len: buffers.len}
 		for i, mut buf in buffers {
 			iovecs[i] = C.iovec{
@@ -194,13 +198,13 @@ pub fn scatter_read_native(fd int, mut buffers []ScatterGatherBuffer) DmaResult 
 			}
 		}
 
-		// Call readv
+		// readv 호출
 		result := C.readv(fd, iovecs.data, int(buffers.len))
 		if result < 0 {
 			return dma_error('readv failed with errno')
 		}
 
-		// Update buffer lengths based on bytes read
+		// 읽은 바이트 수에 따라 버퍼 길이 업데이트
 		mut remaining := i64(result)
 		for mut buf in buffers {
 			if remaining <= 0 {
@@ -216,19 +220,19 @@ pub fn scatter_read_native(fd int, mut buffers []ScatterGatherBuffer) DmaResult 
 
 		return dma_success(i64(result), true)
 	} $else {
-		// Fallback: sequential read
+		// 폴백: 순차 읽기
 		return scatter_read_fallback(fd, mut buffers)
 	}
 }
 
-// scatter_read_fallback provides fallback implementation for unsupported platforms
+/// scatter_read_fallback은 지원되지 않는 플랫폼을 위한 폴백 구현을 제공합니다.
 fn scatter_read_fallback(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 	mut total := i64(0)
 
 	for mut buf in buffers {
-		// Use os module for reading
-		// Note: This is a simplified fallback - in real implementation,
-		// would need proper file descriptor handling
+		// os 모듈을 사용하여 읽기
+		// 참고: 이것은 단순화된 폴백입니다 - 실제 구현에서는
+		// 적절한 파일 디스크립터 처리가 필요합니다
 		buf.len = 0
 		total += i64(buf.len)
 	}
@@ -240,14 +244,14 @@ fn scatter_read_fallback(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 	}
 }
 
-// gather_write_native writes from multiple buffers using native writev
+/// gather_write_native는 네이티브 writev를 사용하여 여러 버퍼에서 씁니다.
 pub fn gather_write_native(fd int, buffers []ScatterGatherBuffer) DmaResult {
 	if buffers.len == 0 {
 		return dma_error('no buffers provided')
 	}
 
 	$if linux || macos {
-		// Build iovec array
+		// iovec 배열 구성
 		mut iovecs := []C.iovec{len: buffers.len}
 		for i, buf in buffers {
 			iovecs[i] = C.iovec{
@@ -256,7 +260,7 @@ pub fn gather_write_native(fd int, buffers []ScatterGatherBuffer) DmaResult {
 			}
 		}
 
-		// Call writev
+		// writev 호출
 		result := C.writev(fd, iovecs.data, int(buffers.len))
 		if result < 0 {
 			return dma_error('writev failed with errno')
@@ -264,18 +268,18 @@ pub fn gather_write_native(fd int, buffers []ScatterGatherBuffer) DmaResult {
 
 		return dma_success(i64(result), true)
 	} $else {
-		// Fallback: sequential write
+		// 폴백: 순차 쓰기
 		return gather_write_fallback(fd, buffers)
 	}
 }
 
-// gather_write_fallback provides fallback implementation for unsupported platforms
+/// gather_write_fallback은 지원되지 않는 플랫폼을 위한 폴백 구현을 제공합니다.
 fn gather_write_fallback(fd int, buffers []ScatterGatherBuffer) DmaResult {
 	mut total := i64(0)
 
 	for buf in buffers {
 		if buf.len > 0 {
-			// Simplified fallback
+			// 단순화된 폴백
 			total += i64(buf.len)
 		}
 	}
@@ -288,11 +292,11 @@ fn gather_write_fallback(fd int, buffers []ScatterGatherBuffer) DmaResult {
 }
 
 // ============================================================================
-// Sendfile - Zero-Copy File to Socket Transfer
+// Sendfile - 제로카피 파일-소켓 전송
 // ============================================================================
 
-// sendfile_native transfers data from file to socket without copying to userspace
-// Returns DmaResult with new_offset containing the updated offset position
+/// sendfile_native는 사용자 공간으로 복사하지 않고 파일에서 소켓으로 데이터를 전송합니다.
+/// 업데이트된 오프셋 위치가 포함된 DmaResult를 반환합니다.
 pub fn sendfile_native(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 	$if linux {
 		mut off := offset
@@ -309,15 +313,15 @@ pub fn sendfile_native(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 		}
 		return dma_success_with_offset(len, true, offset + len)
 	} $else {
-		// Fallback: buffered copy
+		// 폴백: 버퍼링된 복사
 		return sendfile_fallback(out_fd, in_fd, offset, count)
 	}
 }
 
-// sendfile_fallback provides buffered copy fallback
+/// sendfile_fallback은 버퍼링된 복사 폴백을 제공합니다.
 fn sendfile_fallback(out_fd int, in_fd int, offset i64, count i64) DmaResult {
-	// This would need actual file descriptor I/O implementation
-	// For now, return indication that fallback was used
+	// 실제 파일 디스크립터 I/O 구현이 필요합니다
+	// 현재는 폴백이 사용되었음을 나타내는 결과 반환
 	return DmaResult{
 		bytes_transferred: 0
 		success:           true
@@ -327,16 +331,16 @@ fn sendfile_fallback(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 }
 
 // ============================================================================
-// Splice - Linux-specific Zero-Copy Pipe Transfer
+// Splice - Linux 전용 제로카피 파이프 전송
 // ============================================================================
 
-// splice_native moves data between file descriptors without copying (Linux only)
+/// splice_native는 복사 없이 파일 디스크립터 간에 데이터를 이동합니다 (Linux 전용).
 pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult {
 	$if linux {
 		flags := splice_f_move | splice_f_more
 
 		if use_pipe {
-			// Direct splice between fd_in and fd_out
+			// fd_in과 fd_out 간의 직접 splice
 			result := C.splice(fd_in, unsafe { nil }, fd_out, unsafe { nil }, usize(count),
 				flags)
 			if result < 0 {
@@ -344,7 +348,7 @@ pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult 
 			}
 			return dma_success(i64(result), true)
 		} else {
-			// Would need to create pipe for non-pipe fds
+			// 파이프가 아닌 fd의 경우 파이프 생성이 필요
 			return dma_error('splice requires at least one pipe fd')
 		}
 	} $else {
@@ -357,11 +361,11 @@ pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult 
 }
 
 // ============================================================================
-// Copy File Range - Linux-specific File-to-File Zero-Copy
+// Copy File Range - Linux 전용 파일-파일 제로카피
 // ============================================================================
 
-// copy_file_range_native copies between files without going through userspace (Linux 4.5+)
-// off_in and off_out are input offsets; new offsets are returned in DmaResult
+/// copy_file_range_native는 사용자 공간을 거치지 않고 파일 간에 복사합니다 (Linux 4.5+).
+/// off_in과 off_out은 입력 오프셋이며, 새 오프셋은 DmaResult에 반환됩니다.
 pub fn copy_file_range_native(fd_in int, off_in i64, fd_out int, off_out i64, count i64) DmaResult {
 	$if linux {
 		mut in_off := off_in
@@ -381,34 +385,35 @@ pub fn copy_file_range_native(fd_in int, off_in i64, fd_out int, off_out i64, co
 }
 
 // ============================================================================
-// High-Level API with Automatic Fallback
+// 자동 폴백을 포함한 고수준 API
 // ============================================================================
 
-// DmaTransfer provides high-level DMA transfer with automatic fallback
+/// DmaTransfer는 자동 폴백을 포함한 고수준 DMA 전송을 제공합니다.
 pub struct DmaTransfer {
 pub:
-	capabilities PlatformCapabilities
+	capabilities PlatformCapabilities // 플랫폼 기능
 pub mut:
-	stats DmaStats
+	stats DmaStats // DMA 통계
 }
 
+/// DmaStats는 DMA 전송 통계를 담고 있습니다.
 pub struct DmaStats {
 pub mut:
-	total_transfers     u64
-	zero_copy_transfers u64
-	fallback_transfers  u64
-	bytes_zero_copy     u64
-	bytes_fallback      u64
+	total_transfers     u64 // 총 전송 수
+	zero_copy_transfers u64 // 제로카피 전송 수
+	fallback_transfers  u64 // 폴백 전송 수
+	bytes_zero_copy     u64 // 제로카피로 전송된 바이트
+	bytes_fallback      u64 // 폴백으로 전송된 바이트
 }
 
-// new_dma_transfer creates a new DMA transfer handler
+/// new_dma_transfer는 새 DMA 전송 핸들러를 생성합니다.
 pub fn new_dma_transfer() DmaTransfer {
 	return DmaTransfer{
 		capabilities: get_platform_capabilities()
 	}
 }
 
-// scatter_read performs scatter read with automatic fallback
+/// scatter_read는 자동 폴백을 포함한 scatter read를 수행합니다.
 pub fn (mut d DmaTransfer) scatter_read(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 	d.stats.total_transfers++
 
@@ -424,7 +429,7 @@ pub fn (mut d DmaTransfer) scatter_read(fd int, mut buffers []ScatterGatherBuffe
 	return result
 }
 
-// gather_write performs gather write with automatic fallback
+/// gather_write는 자동 폴백을 포함한 gather write를 수행합니다.
 pub fn (mut d DmaTransfer) gather_write(fd int, buffers []ScatterGatherBuffer) DmaResult {
 	d.stats.total_transfers++
 
@@ -440,7 +445,7 @@ pub fn (mut d DmaTransfer) gather_write(fd int, buffers []ScatterGatherBuffer) D
 	return result
 }
 
-// sendfile performs zero-copy file to socket transfer with fallback
+/// sendfile은 폴백을 포함한 제로카피 파일-소켓 전송을 수행합니다.
 pub fn (mut d DmaTransfer) sendfile(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 	d.stats.total_transfers++
 
@@ -461,12 +466,12 @@ pub fn (mut d DmaTransfer) sendfile(out_fd int, in_fd int, offset i64, count i64
 	return result
 }
 
-// copy_file copies between files using best available method
+/// copy_file은 사용 가능한 최선의 방법을 사용하여 파일 간에 복사합니다.
 pub fn (mut d DmaTransfer) copy_file(fd_in int, fd_out int, count i64) DmaResult {
 	d.stats.total_transfers++
 
 	$if linux {
-		// Try copy_file_range first (most efficient)
+		// 먼저 copy_file_range 시도 (가장 효율적)
 		if d.capabilities.has_copy_file_range {
 			result := copy_file_range_native(fd_in, 0, fd_out, 0, count)
 			if result.success {
@@ -477,7 +482,7 @@ pub fn (mut d DmaTransfer) copy_file(fd_in int, fd_out int, count i64) DmaResult
 		}
 	}
 
-	// Fallback to buffered copy
+	// 버퍼링된 복사로 폴백
 	d.stats.fallback_transfers++
 	return DmaResult{
 		bytes_transferred: 0
@@ -487,12 +492,12 @@ pub fn (mut d DmaTransfer) copy_file(fd_in int, fd_out int, count i64) DmaResult
 	}
 }
 
-// get_stats returns current DMA statistics
+/// get_stats는 현재 DMA 통계를 반환합니다.
 pub fn (d &DmaTransfer) get_stats() DmaStats {
 	return d.stats
 }
 
-// zero_copy_ratio returns the ratio of zero-copy transfers
+/// zero_copy_ratio는 제로카피 전송 비율을 반환합니다.
 pub fn (d &DmaTransfer) zero_copy_ratio() f64 {
 	if d.stats.total_transfers == 0 {
 		return 0.0
@@ -501,30 +506,30 @@ pub fn (d &DmaTransfer) zero_copy_ratio() f64 {
 }
 
 // ============================================================================
-// File Descriptor Helpers for V's os.File
+// V의 os.File을 위한 파일 디스크립터 헬퍼
 // ============================================================================
 
-// get_fd extracts raw file descriptor from os.File
-// Note: This relies on V's internal implementation
+/// get_fd는 os.File에서 원시 파일 디스크립터를 추출합니다.
+/// 참고: 이것은 V의 내부 구현에 의존합니다.
 pub fn get_fd(file &os.File) int {
-	// V's os.File has an internal fd field
-	// This is a workaround since fd is not directly exposed
+	// V의 os.File은 내부 fd 필드를 가지고 있습니다
+	// fd가 직접 노출되지 않으므로 이것은 우회 방법입니다
 	$if linux || macos {
-		// On Unix-like systems, we can use unsafe access
-		// In production, would need proper V API support
-		return -1 // Placeholder - actual implementation needs V internals
+		// Unix 계열 시스템에서는 unsafe 접근을 사용할 수 있습니다
+		// 프로덕션에서는 적절한 V API 지원이 필요합니다
+		return -1 // 플레이스홀더 - 실제 구현에는 V 내부가 필요
 	} $else {
 		return -1
 	}
 }
 
 // ============================================================================
-// Convenience Functions for Common Operations
+// 일반적인 작업을 위한 편의 함수
 // ============================================================================
 
-// scatter_read_file reads from file into multiple buffers
+/// scatter_read_file은 파일에서 여러 버퍼로 읽습니다.
 pub fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) DmaResult {
-	// For now, use V's file API with fallback behavior
+	// 현재는 폴백 동작과 함께 V의 파일 API 사용
 	mut total := i64(0)
 
 	for mut buf in buffers {
@@ -546,11 +551,11 @@ pub fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) Dm
 	return DmaResult{
 		bytes_transferred: total
 		success:           true
-		used_zero_copy:    false // Using V's API, not native readv
+		used_zero_copy:    false // V의 API 사용, 네이티브 readv 아님
 	}
 }
 
-// gather_write_file writes multiple buffers to file
+/// gather_write_file은 여러 버퍼에서 파일로 씁니다.
 pub fn gather_write_file(mut file os.File, buffers []ScatterGatherBuffer) DmaResult {
 	mut total := i64(0)
 
@@ -574,6 +579,6 @@ pub fn gather_write_file(mut file os.File, buffers []ScatterGatherBuffer) DmaRes
 	return DmaResult{
 		bytes_transferred: total
 		success:           true
-		used_zero_copy:    false // Using V's API, not native writev
+		used_zero_copy:    false // V의 API 사용, 네이티브 writev 아님
 	}
 }

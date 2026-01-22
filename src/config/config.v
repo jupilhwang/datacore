@@ -1,9 +1,16 @@
-// Configuration Management
+// 설정 관리 모듈
+// TOML 형식의 설정 파일을 로드하고 관리합니다.
 module config
 
 import os
 import toml
 
+/// Config는 DataCore의 전체 설정을 나타냅니다.
+/// broker: 브로커 설정
+/// rest: REST API 설정
+/// storage: 스토리지 설정
+/// schema_registry: 스키마 레지스트리 설정
+/// observability: 관측성 설정 (메트릭, 로깅, 트레이싱)
 pub struct Config {
 pub:
 	broker          BrokerConfig
@@ -13,6 +20,16 @@ pub:
 	observability   ObservabilityConfig
 }
 
+/// BrokerConfig는 Kafka 브로커 설정을 나타냅니다.
+/// host: 바인딩할 호스트 주소
+/// port: 바인딩할 포트 번호
+/// broker_id: 브로커 고유 ID
+/// cluster_id: 클러스터 ID
+/// max_connections: 최대 연결 수
+/// max_request_size: 최대 요청 크기 (바이트)
+/// request_timeout_ms: 요청 타임아웃 (밀리초)
+/// idle_timeout_ms: 유휴 연결 타임아웃 (밀리초)
+/// advertised_host: 클라이언트에게 광고할 호스트 주소
 pub struct BrokerConfig {
 pub:
 	host               string = '0.0.0.0'
@@ -26,6 +43,16 @@ pub:
 	advertised_host    string = '127.0.0.1'
 }
 
+/// RestConfig는 REST API 서버 설정을 나타냅니다.
+/// enabled: REST API 활성화 여부
+/// host: 바인딩할 호스트 주소
+/// port: 바인딩할 포트 번호
+/// max_connections: 최대 연결 수
+/// static_dir: 정적 파일 디렉토리
+/// sse_heartbeat_interval_ms: SSE 하트비트 간격 (밀리초)
+/// sse_connection_timeout_ms: SSE 연결 타임아웃 (밀리초)
+/// ws_max_message_size: WebSocket 최대 메시지 크기
+/// ws_ping_interval_ms: WebSocket 핑 간격 (밀리초)
 pub struct RestConfig {
 pub:
 	enabled                   bool   = true
@@ -39,6 +66,12 @@ pub:
 	ws_ping_interval_ms       int    = 30000
 }
 
+/// StorageConfig는 스토리지 엔진 설정을 나타냅니다.
+/// engine: 스토리지 엔진 유형 ('memory', 's3', 'sqlite', 'postgres')
+/// memory: 메모리 스토리지 설정
+/// s3: S3 스토리지 설정
+/// sqlite: SQLite 스토리지 설정
+/// postgres: PostgreSQL 스토리지 설정
 pub struct StorageConfig {
 pub:
 	engine   string = 'memory'
@@ -48,12 +81,27 @@ pub:
 	postgres PostgresStorageConfig
 }
 
+/// MemoryStorageConfig는 메모리 스토리지 설정을 나타냅니다.
+/// max_memory_mb: 최대 메모리 사용량 (MB)
+/// segment_size_bytes: 세그먼트 크기 (바이트)
 pub struct MemoryStorageConfig {
 pub:
 	max_memory_mb      int = 1024
 	segment_size_bytes int = 1073741824
 }
 
+/// S3StorageConfig는 S3 스토리지 설정을 나타냅니다.
+/// endpoint: S3 엔드포인트 URL
+/// bucket: S3 버킷 이름
+/// access_key: AWS 액세스 키
+/// secret_key: AWS 시크릿 키
+/// region: AWS 리전
+/// prefix: 객체 키 접두사
+/// batch_timeout_ms: 배치 타임아웃 (밀리초)
+/// batch_max_bytes: 배치 최대 크기 (바이트)
+/// compaction_interval_ms: 컴팩션 간격 (밀리초)
+/// target_segment_bytes: 목표 세그먼트 크기 (바이트)
+/// index_cache_ttl_ms: 파티션 인덱스 캐시 TTL (밀리초)
 pub struct S3StorageConfig {
 pub mut:
 	endpoint   string
@@ -63,21 +111,31 @@ pub mut:
 	region     string = 'us-east-1'
 	prefix     string = 'datacore/'
 	timezone   string = 'UTC'
-	// Batching
+	// 배치 설정
 	batch_timeout_ms int = 1000
 	batch_max_bytes  i64 = 10485760
-	// Compaction
+	// 컴팩션 설정
 	compaction_interval_ms int = 60000
 	target_segment_bytes   i64 = 104857600
-	index_cache_ttl_ms     int = 30000 // New field: 30 seconds default TTL for partition index cache
+	index_cache_ttl_ms     int = 30000 // 파티션 인덱스 캐시 TTL (기본 30초)
 }
 
+/// SqliteStorageConfig는 SQLite 스토리지 설정을 나타냅니다.
+/// path: 데이터베이스 파일 경로
+/// journal_mode: 저널 모드 ('WAL' 권장)
 pub struct SqliteStorageConfig {
 pub:
 	path         string = 'datacore.db'
 	journal_mode string = 'WAL'
 }
 
+/// PostgresStorageConfig는 PostgreSQL 스토리지 설정을 나타냅니다.
+/// host: 데이터베이스 호스트
+/// port: 데이터베이스 포트
+/// database: 데이터베이스 이름
+/// user: 사용자명
+/// password: 비밀번호
+/// pool_size: 연결 풀 크기
 pub struct PostgresStorageConfig {
 pub:
 	host      string = 'localhost'
@@ -88,12 +146,20 @@ pub:
 	pool_size int = 10
 }
 
+/// SchemaRegistryConfig는 스키마 레지스트리 설정을 나타냅니다.
+/// enabled: 스키마 레지스트리 활성화 여부
+/// topic: 스키마를 저장할 내부 토픽 이름
 pub struct SchemaRegistryConfig {
 pub:
 	enabled bool   = true
 	topic   string = '__schemas'
 }
 
+/// ObservabilityConfig는 관측성 설정을 나타냅니다.
+/// otel: OpenTelemetry 공통 설정
+/// metrics: 메트릭 설정
+/// logging: 로깅 설정
+/// tracing: 트레이싱 설정
 pub struct ObservabilityConfig {
 pub:
 	otel    OtelConfig
@@ -102,7 +168,15 @@ pub:
 	tracing TracingConfig
 }
 
-// OtelConfig - OpenTelemetry 공통 설정
+/// OtelConfig는 OpenTelemetry 공통 설정을 나타냅니다.
+/// enabled: OTEL 활성화 여부
+/// service_name: 서비스 이름
+/// service_version: 서비스 버전
+/// instance_id: 인스턴스 ID
+/// environment: 환경 (development, staging, production)
+/// otlp_endpoint: OTLP gRPC 엔드포인트
+/// otlp_http_endpoint: OTLP HTTP 엔드포인트
+/// resource_attributes: 추가 리소스 속성
 pub struct OtelConfig {
 pub:
 	enabled             bool   = true
@@ -115,6 +189,12 @@ pub:
 	resource_attributes string
 }
 
+/// MetricsConfig는 메트릭 설정을 나타냅니다.
+/// enabled: 메트릭 활성화 여부
+/// exporter: 내보내기 방식 ('prometheus', 'otlp')
+/// prometheus_endpoint: Prometheus 엔드포인트 경로
+/// prometheus_port: Prometheus 메트릭 포트
+/// collection_interval: 수집 간격 (초)
 pub struct MetricsConfig {
 pub:
 	enabled             bool   = true
@@ -125,18 +205,32 @@ pub:
 	collection_interval int = 15
 }
 
+/// LoggingConfig는 로깅 설정을 나타냅니다.
+/// enabled: 로깅 활성화 여부
+/// level: 로그 레벨 (trace, debug, info, warn, error, fatal)
+/// format: 로그 형식 (json, text)
+/// output: 출력 대상 (stdout, otel, both, none)
+/// inject_trace_context: 트레이스 컨텍스트 주입 여부
 pub struct LoggingConfig {
 pub:
 	enabled              bool   = true
 	level                string = 'info'   // trace, debug, info, warn, error, fatal
 	format               string = 'json'   // json, text
 	output               string = 'stdout' // stdout, otel, both, none
-	otlp_endpoint        string             // OTLP endpoint for log export (e.g., http://localhost:4317)
-	otlp_export          bool               // Deprecated: use output = 'otel' or 'both'
-	console_output       bool   = true     // Deprecated: use output = 'stdout' or 'both'
-	inject_trace_context bool   = true
+	otlp_endpoint        string // 로그 내보내기용 OTLP 엔드포인트
+	otlp_export          bool   // Deprecated: output = 'otel' 또는 'both' 사용
+	console_output       bool = true // Deprecated: output = 'stdout' 또는 'both' 사용
+	inject_trace_context bool = true
 }
 
+/// TracingConfig는 트레이싱 설정을 나타냅니다.
+/// enabled: 트레이싱 활성화 여부
+/// otlp_endpoint: OTLP 엔드포인트
+/// sampler: 샘플러 유형 ('trace_id_ratio', 'always_on', 'always_off')
+/// sample_rate: 샘플링 비율 (0.0 ~ 1.0)
+/// batch_timeout_ms: 배치 타임아웃 (밀리초)
+/// max_batch_size: 최대 배치 크기
+/// max_queue_size: 최대 큐 크기
 pub struct TracingConfig {
 pub:
 	enabled                 bool
@@ -151,11 +245,13 @@ pub:
 	max_links_per_span      int    = 128
 }
 
-// Load configuration from TOML file
+/// load_config는 TOML 파일에서 설정을 로드합니다.
+/// path: 설정 파일 경로
+/// 반환값: 로드된 Config 또는 에러
 pub fn load_config(path string) !Config {
-	// Check if file exists
+	// 파일 존재 확인
 	if !os.exists(path) {
-		// Return default config if no file
+		// 파일이 없으면 기본 설정 반환
 		return Config{}
 	}
 
@@ -163,7 +259,7 @@ pub fn load_config(path string) !Config {
 
 	doc := toml.parse_text(content) or { return error('Failed to parse config file: ${err}') }
 
-	// Parse broker config
+	// 브로커 설정 파싱
 	broker := BrokerConfig{
 		host:               get_string(doc, 'broker.host', '0.0.0.0')
 		port:               get_int(doc, 'broker.port', 9092)
@@ -177,7 +273,7 @@ pub fn load_config(path string) !Config {
 			'broker.host', '127.0.0.1'))
 	}
 
-	// Parse REST config
+	// REST 설정 파싱
 	rest := RestConfig{
 		enabled:                   get_bool(doc, 'rest.enabled', true)
 		host:                      get_string(doc, 'rest.host', '0.0.0.0')
@@ -190,17 +286,16 @@ pub fn load_config(path string) !Config {
 		ws_ping_interval_ms:       get_int(doc, 'rest.ws_ping_interval_ms', 30000)
 	}
 
-	// Parse storage config
+	// 스토리지 설정 파싱
 	storage_engine := get_string(doc, 'storage.engine', 'memory')
 
-	// Parse Memory config
+	// 메모리 설정 파싱
 	memory := MemoryStorageConfig{
 		max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 1024)
 		segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
 	}
 
-	// Parse S3 config with environment variable override
-	// Parse S3 config (base values from TOML)
+	// S3 설정 파싱 (환경 변수 우선)
 	mut s3 := S3StorageConfig{
 		endpoint:               get_string(doc, 'storage.s3.endpoint', '')
 		bucket:                 get_string(doc, 'storage.s3.bucket', '')
@@ -211,16 +306,16 @@ pub fn load_config(path string) !Config {
 		batch_max_bytes:        get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
 		compaction_interval_ms: get_int(doc, 'storage.s3.compaction_interval_ms', 60000)
 		target_segment_bytes:   get_i64(doc, 'storage.s3.target_segment_bytes', 104857600)
-		index_cache_ttl_ms:     get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000) // Added TTL parsing
+		index_cache_ttl_ms:     get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000)
 		access_key:             ''
 		secret_key:             ''
 	}
 
-	// 1. Priority: Environment variables (*)
+	// 1순위: 환경 변수
 	s3.access_key = os.getenv('AWS_ACCESS_KEY_ID')
 	s3.secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 
-	// 2. Priority: ~/.aws/credentials
+	// 2순위: ~/.aws/credentials 파일
 	if s3.access_key == '' || s3.secret_key == '' {
 		file_access, file_secret := load_s3_credentials_from_file()
 		if s3.access_key == '' {
@@ -231,7 +326,7 @@ pub fn load_config(path string) !Config {
 		}
 	}
 
-	// 3. Priority: config.toml
+	// 3순위: config.toml
 	if s3.access_key == '' {
 		s3.access_key = get_string(doc, 'storage.s3.access_key', '')
 	}
@@ -249,13 +344,13 @@ pub fn load_config(path string) !Config {
 		s3.region = env_region
 	}
 
-	// Parse SQLite config
+	// SQLite 설정 파싱
 	sqlite := SqliteStorageConfig{
 		path:         get_string(doc, 'storage.sqlite.path', 'datacore.db')
 		journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
 	}
 
-	// Parse PostgreSQL config
+	// PostgreSQL 설정 파싱
 	postgres := PostgresStorageConfig{
 		host:      get_string(doc, 'storage.postgres.host', 'localhost')
 		port:      get_int(doc, 'storage.postgres.port', 5432)
@@ -273,13 +368,13 @@ pub fn load_config(path string) !Config {
 		postgres: postgres
 	}
 
-	// Parse schema registry config
+	// 스키마 레지스트리 설정 파싱
 	schema_registry := SchemaRegistryConfig{
 		enabled: get_bool(doc, 'schema_registry.enabled', true)
 		topic:   get_string(doc, 'schema_registry.topic', '__schemas')
 	}
 
-	// Parse observability config - OTel common
+	// 관측성 설정 파싱 - OTel 공통
 	otel := OtelConfig{
 		enabled:             get_bool(doc, 'observability.otel.enabled', true)
 		service_name:        get_string(doc, 'observability.otel.service_name', 'datacore')
@@ -293,7 +388,7 @@ pub fn load_config(path string) !Config {
 			'')
 	}
 
-	// Parse metrics config
+	// 메트릭 설정 파싱
 	metrics := MetricsConfig{
 		enabled:             get_bool(doc, 'observability.metrics.enabled', true)
 		exporter:            get_string(doc, 'observability.metrics.exporter', 'prometheus')
@@ -305,7 +400,7 @@ pub fn load_config(path string) !Config {
 			15)
 	}
 
-	// Parse logging config
+	// 로깅 설정 파싱
 	logging := LoggingConfig{
 		enabled:              get_bool(doc, 'observability.logging.enabled', true)
 		level:                get_string(doc, 'observability.logging.level', 'info')
@@ -318,7 +413,7 @@ pub fn load_config(path string) !Config {
 			true)
 	}
 
-	// Parse tracing config
+	// 트레이싱 설정 파싱
 	tracing := TracingConfig{
 		enabled:                 get_bool(doc, 'observability.tracing.enabled', false)
 		otlp_endpoint:           get_string(doc, 'observability.tracing.otlp_endpoint',
@@ -354,43 +449,47 @@ pub fn load_config(path string) !Config {
 		observability:   observability
 	}
 
-	// Validate configuration
+	// 설정 유효성 검사
 	cfg.validate()!
 
 	return cfg
 }
 
-// Helper function to get string value from TOML
+// ============================================================================
+// 헬퍼 함수
+// ============================================================================
+
+/// get_string은 TOML 문서에서 문자열 값을 가져옵니다.
 fn get_string(doc toml.Doc, key string, default_val string) string {
 	val := doc.value_opt(key) or { return default_val }
 	return val.string()
 }
 
-// Helper function to get int value from TOML
+/// get_int는 TOML 문서에서 정수 값을 가져옵니다.
 fn get_int(doc toml.Doc, key string, default_val int) int {
 	val := doc.value_opt(key) or { return default_val }
 	return val.int()
 }
 
-// Helper function to get i64 value from TOML
+/// get_i64는 TOML 문서에서 64비트 정수 값을 가져옵니다.
 fn get_i64(doc toml.Doc, key string, default_val i64) i64 {
 	val := doc.value_opt(key) or { return default_val }
 	return val.i64()
 }
 
-// Helper function to get f64 value from TOML
+/// get_f64는 TOML 문서에서 실수 값을 가져옵니다.
 fn get_f64(doc toml.Doc, key string, default_val f64) f64 {
 	val := doc.value_opt(key) or { return default_val }
 	return val.f64()
 }
 
-// Helper function to get bool value from TOML
+/// get_bool은 TOML 문서에서 불리언 값을 가져옵니다.
 fn get_bool(doc toml.Doc, key string, default_val bool) bool {
 	val := doc.value_opt(key) or { return default_val }
 	return val.bool()
 }
 
-// Save configuration to TOML file
+/// save는 설정을 TOML 파일로 저장합니다.
 pub fn (c Config) save(path string) ! {
 	mut content := '# DataCore Configuration\n\n'
 
@@ -428,9 +527,9 @@ pub fn (c Config) save(path string) ! {
 	os.write_file(path, content)!
 }
 
-// Validate configuration
+/// validate는 설정의 유효성을 검사합니다.
 pub fn (c Config) validate() ! {
-	// Validate broker config
+	// 브로커 설정 검증
 	if c.broker.port < 1 || c.broker.port > 65535 {
 		return error('Invalid broker port: ${c.broker.port}')
 	}
@@ -438,7 +537,7 @@ pub fn (c Config) validate() ! {
 		return error('Invalid broker_id: ${c.broker.broker_id}')
 	}
 
-	// Validate storage config
+	// 스토리지 설정 검증
 	match c.storage.engine {
 		'memory' {
 			if c.storage.memory.max_memory_mb < 1 {
@@ -475,22 +574,22 @@ pub fn (c Config) validate() ! {
 	}
 }
 
-// Get storage engine name
+/// get_storage_engine은 스토리지 엔진 이름을 반환합니다.
 pub fn (c Config) get_storage_engine() string {
 	return c.storage.engine
 }
 
-// Check if S3 storage is configured
+/// is_s3_storage는 S3 스토리지가 설정되어 있는지 확인합니다.
 pub fn (c Config) is_s3_storage() bool {
 	return c.storage.engine == 's3'
 }
 
-// Check if metrics are enabled
+/// is_metrics_enabled는 메트릭이 활성화되어 있는지 확인합니다.
 pub fn (c Config) is_metrics_enabled() bool {
 	return c.observability.metrics.enabled
 }
 
-// Check if tracing is enabled
+/// is_tracing_enabled는 트레이싱이 활성화되어 있는지 확인합니다.
 pub fn (c Config) is_tracing_enabled() bool {
 	return c.observability.tracing.enabled
 }

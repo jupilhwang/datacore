@@ -1,6 +1,7 @@
-// Infra Layer - Performance Tests
+/// 인프라 레이어 - 성능 테스트
 module benchmarks
 
+/// 버퍼 쓰기 및 읽기 테스트
 fn test_buffer_write_and_read() {
 	mut buf := Buffer{
 		data: []u8{len: 256}
@@ -15,6 +16,7 @@ fn test_buffer_write_and_read() {
 	assert buf.bytes() == data
 }
 
+/// 버퍼 바이트 쓰기 테스트
 fn test_buffer_write_byte() {
 	mut buf := Buffer{
 		data: []u8{len: 10}
@@ -29,6 +31,7 @@ fn test_buffer_write_byte() {
 	assert buf.bytes() == [u8(0x41), 0x42, 0x43]
 }
 
+/// 버퍼 빅엔디안 i32 쓰기 테스트
 fn test_buffer_write_i32_be() {
 	mut buf := Buffer{
 		data: []u8{len: 10}
@@ -40,6 +43,7 @@ fn test_buffer_write_i32_be() {
 	assert buf.bytes() == [u8(0x12), 0x34, 0x56, 0x78]
 }
 
+/// 버퍼 오버플로우 테스트
 fn test_buffer_overflow() {
 	mut buf := Buffer{
 		data: []u8{len: 4}
@@ -53,6 +57,7 @@ fn test_buffer_overflow() {
 	assert buf.len == 4
 }
 
+/// 버퍼 풀 획득/반환 테스트
 fn test_buffer_pool_get_put() {
 	mut pool := new_buffer_pool(PoolConfig{
 		prewarm_tiny: 5
@@ -69,6 +74,7 @@ fn test_buffer_pool_get_put() {
 	assert stats.hits_tiny > 0
 }
 
+/// 크기 클래스 선택 테스트
 fn test_size_class_selection() {
 	assert get_size_class(100) == .tiny
 	assert get_size_class(256) == .tiny
@@ -81,6 +87,7 @@ fn test_size_class_selection() {
 	assert get_size_class(1048577) == .huge
 }
 
+/// Murmur3 기본 테스트
 fn test_murmur3_basic() {
 	data := 'test'.bytes()
 	hash := murmur3_32(data, 0)
@@ -94,6 +101,7 @@ fn test_murmur3_basic() {
 	assert murmur3_32(other, 0) != hash
 }
 
+/// Murmur3 빈 입력 테스트
 fn test_murmur3_empty() {
 	empty := []u8{}
 	hash := murmur3_32(empty, 0)
@@ -101,6 +109,7 @@ fn test_murmur3_empty() {
 	assert hash == murmur3_32(empty, 0)
 }
 
+/// Kafka 파티션 계산 테스트
 fn test_kafka_partition() {
 	key := 'my-key'.bytes()
 
@@ -112,11 +121,13 @@ fn test_kafka_partition() {
 	assert kafka_partition(key, 10) == partition
 }
 
+/// Kafka 파티션 빈 키 테스트
 fn test_kafka_partition_empty_key() {
 	empty := []u8{}
 	assert kafka_partition(empty, 10) == 0
 }
 
+/// CRC32 기본 테스트
 fn test_crc32_basic() {
 	data := 'Hello, World!'.bytes()
 	crc := crc32_ieee(data)
@@ -129,6 +140,7 @@ fn test_crc32_basic() {
 	assert crc32_ieee(other) != crc
 }
 
+/// CRC32 알려진 값 테스트
 fn test_crc32_known_value() {
 	// Test with known CRC32 value
 	data := 'test'.bytes()
@@ -136,6 +148,7 @@ fn test_crc32_known_value() {
 	assert crc != 0
 }
 
+/// Varint 왕복 테스트
 fn test_varint_roundtrip() {
 	values := [i64(0), 1, -1, 127, -128, 255, 300, -300, 1000000, -1000000]
 
@@ -148,6 +161,7 @@ fn test_varint_roundtrip() {
 	}
 }
 
+/// Uvarint 왕복 테스트
 fn test_uvarint_roundtrip() {
 	values := [u64(0), 1, 127, 128, 255, 16383, 16384, 2097151]
 
@@ -160,6 +174,7 @@ fn test_uvarint_roundtrip() {
 	}
 }
 
+/// Varint 크기 테스트
 fn test_varint_size() {
 	assert varint_size(0) == 1
 	assert varint_size(1) == 1
@@ -170,6 +185,7 @@ fn test_varint_size() {
 	assert varint_size(-65) == 2
 }
 
+/// 링 버퍼 기본 테스트
 fn test_ring_buffer_basic() {
 	mut rb := new_ring_buffer(16)
 
@@ -184,6 +200,7 @@ fn test_ring_buffer_basic() {
 	assert !rb.is_empty()
 }
 
+/// 링 버퍼 읽기/쓰기 테스트
 fn test_ring_buffer_read_write() {
 	mut rb := new_ring_buffer(16)
 
@@ -198,6 +215,7 @@ fn test_ring_buffer_read_write() {
 	assert rb.is_empty()
 }
 
+/// 링 버퍼 랩어라운드 테스트
 fn test_ring_buffer_wrap_around() {
 	mut rb := new_ring_buffer(8)
 
@@ -219,6 +237,7 @@ fn test_ring_buffer_wrap_around() {
 	assert all == [u8(3), 4, 5, 6, 7, 8]
 }
 
+/// 레코드 풀 테스트
 fn test_record_pool() {
 	mut pool := new_record_pool(10)
 
@@ -238,6 +257,7 @@ fn test_record_pool() {
 	assert r2.value.len == 0
 }
 
+/// 레코드 배치 풀 테스트
 fn test_record_batch_pool() {
 	mut pool := new_record_batch_pool(10)
 
@@ -253,6 +273,7 @@ fn test_record_batch_pool() {
 	assert stats.returns == 1
 }
 
+/// 요청 풀 테스트
 fn test_request_pool() {
 	mut pool := new_request_pool(10)
 
@@ -269,6 +290,7 @@ fn test_request_pool() {
 	assert req2.correlation_id == 0
 }
 
+/// 비트 연산 테스트
 fn test_bit_operations() {
 	// Leading zeros
 	assert count_leading_zeros(0) == 64
@@ -287,6 +309,7 @@ fn test_bit_operations() {
 	assert popcount(0xffffffffffffffff) == 64
 }
 
+/// 전송 결과 테스트
 fn test_transfer_result() {
 	result := TransferResult{
 		bytes_transferred: 1024
@@ -297,6 +320,7 @@ fn test_transfer_result() {
 	assert result.bytes_transferred == 1024
 }
 
+/// 풀 통계 적중률 테스트
 fn test_pool_stats_hit_rate() {
 	stats := PoolStats{
 		hits_tiny:   80
@@ -308,6 +332,7 @@ fn test_pool_stats_hit_rate() {
 	assert stats.hit_rate() == 0.8
 }
 
+/// 객체 풀 통계 적중률 테스트
 fn test_object_pool_stats_hit_rate() {
 	stats := ObjectPoolStats{
 		hits:   90
@@ -317,6 +342,7 @@ fn test_object_pool_stats_hit_rate() {
 	assert stats.hit_rate() == 0.9
 }
 
+/// 풀링된 레코드 헤더 테스트
 fn test_pooled_record_headers() {
 	mut r := PooledRecord{}
 
@@ -328,6 +354,7 @@ fn test_pooled_record_headers() {
 	assert r.headers[1].key == 'key2'
 }
 
+/// 풀링된 레코드 배치 테스트
 fn test_pooled_record_batch() {
 	mut batch := PooledRecordBatch{}
 

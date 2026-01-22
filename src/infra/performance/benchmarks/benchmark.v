@@ -1,5 +1,5 @@
-// Infra Layer - Performance Benchmark Suite
-// Comprehensive benchmarks for Buffer Pool, Object Pool, and Zero-Copy
+/// 인프라 레이어 - 성능 벤치마크 스위트
+/// 버퍼 풀, 객체 풀, 제로카피에 대한 종합 벤치마크
 module benchmarks
 
 import time
@@ -7,40 +7,41 @@ import infra.performance.core
 import infra.performance
 
 // ============================================================================
-// Benchmark Configuration
+// 벤치마크 설정
 // ============================================================================
 
+/// BenchmarkConfig는 벤치마크 실행 설정을 정의합니다.
 pub struct BenchmarkConfig {
 pub:
-	warmup_iterations    int   = 1000
-	benchmark_iterations int   = 10000
-	buffer_sizes         []int = [64, 256, 1024, 4096, 16384, 65536]
-	concurrent_workers   int   = 4
+	warmup_iterations    int   = 1000  // 워밍업 반복 횟수
+	benchmark_iterations int   = 10000 // 벤치마크 반복 횟수
+	buffer_sizes         []int = [64, 256, 1024, 4096, 16384, 65536] // 테스트할 버퍼 크기들
+	concurrent_workers   int   = 4 // 동시 작업자 수
 }
 
-// BenchmarkResult holds benchmark results
+/// BenchmarkResult는 벤치마크 결과를 저장합니다.
 pub struct BenchmarkResult {
 pub:
-	name           string
-	iterations     int
-	total_time_ns  i64
-	avg_time_ns    i64
-	min_time_ns    i64
-	max_time_ns    i64
-	ops_per_second f64
-	memory_saved   i64 // Estimated memory saved by pooling
+	name           string // 벤치마크 이름
+	iterations     int    // 반복 횟수
+	total_time_ns  i64    // 총 소요 시간 (나노초)
+	avg_time_ns    i64    // 평균 소요 시간 (나노초)
+	min_time_ns    i64    // 최소 소요 시간 (나노초)
+	max_time_ns    i64    // 최대 소요 시간 (나노초)
+	ops_per_second f64    // 초당 작업 수
+	memory_saved   i64    // 풀링으로 절약된 예상 메모리
 }
 
-// BenchmarkSuite runs all benchmarks
+/// BenchmarkSuite는 모든 벤치마크를 실행하는 스위트입니다.
 @[heap]
 pub struct BenchmarkSuite {
 mut:
-	config  BenchmarkConfig
-	results []BenchmarkResult
-	manager &performance.PerformanceManager
+	config  BenchmarkConfig                 // 벤치마크 설정
+	results []BenchmarkResult               // 벤치마크 결과 목록
+	manager &performance.PerformanceManager // 성능 관리자 참조
 }
 
-// new_benchmark_suite creates a new benchmark suite
+/// new_benchmark_suite는 새로운 벤치마크 스위트를 생성합니다.
 pub fn new_benchmark_suite(config BenchmarkConfig) &BenchmarkSuite {
 	return &BenchmarkSuite{
 		config:  config
@@ -50,12 +51,12 @@ pub fn new_benchmark_suite(config BenchmarkConfig) &BenchmarkSuite {
 }
 
 // ============================================================================
-// Buffer Pool Benchmarks
+// 버퍼 풀 벤치마크
 // ============================================================================
 
-// benchmark_buffer_pool_allocation benchmarks buffer allocation
+/// benchmark_buffer_pool_allocation은 버퍼 할당 성능을 벤치마크합니다.
 pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_allocation() BenchmarkResult {
-	// Warmup
+	// 워밍업
 	for _ in 0 .. s.config.warmup_iterations {
 		buf := s.manager.get_buffer(1024)
 		s.manager.put_buffer(buf)
@@ -73,12 +74,12 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_allocation() BenchmarkResult
 	return s.calculate_result('BufferPool Allocation (1KB)', times)
 }
 
-// benchmark_buffer_pool_vs_heap compares pool vs heap allocation
+/// benchmark_buffer_pool_vs_heap는 풀 할당과 힙 할당을 비교합니다.
 pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_vs_heap() []BenchmarkResult {
 	mut results := []BenchmarkResult{}
 
 	for size in s.config.buffer_sizes {
-		// Pooled allocation
+		// 풀 할당
 		mut pooled_times := []i64{cap: s.config.benchmark_iterations}
 		for _ in 0 .. s.config.benchmark_iterations {
 			start := time.sys_mono_now()
@@ -88,7 +89,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_vs_heap() []BenchmarkResult 
 		}
 		results << s.calculate_result('Pooled ${size}B', pooled_times)
 
-		// Heap allocation (baseline)
+		// 힙 할당 (기준선)
 		mut heap_times := []i64{cap: s.config.benchmark_iterations}
 		for _ in 0 .. s.config.benchmark_iterations {
 			start := time.sys_mono_now()
@@ -101,9 +102,9 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_vs_heap() []BenchmarkResult 
 	return results
 }
 
-// benchmark_buffer_pool_hit_rate benchmarks cache hit rate
+/// benchmark_buffer_pool_hit_rate는 캐시 적중률을 벤치마크합니다.
 pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
-	// Pre-warm the pool
+	// 풀 사전 워밍업
 	mut buffers := []&core.Buffer{cap: 100}
 	for _ in 0 .. 100 {
 		buffers << s.manager.get_buffer(1024)
@@ -112,7 +113,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
 		s.manager.put_buffer(buf)
 	}
 
-	// Now benchmark - should have high hit rate
+	// 이제 벤치마크 - 높은 적중률이 예상됨
 	mut times := []i64{cap: s.config.benchmark_iterations}
 	for _ in 0 .. s.config.benchmark_iterations {
 		start := time.sys_mono_now()
@@ -125,19 +126,19 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
 	mut result := s.calculate_result('BufferPool Hit Rate Test', times)
 	result = BenchmarkResult{
 		...result
-		memory_saved: i64(stats.bytes_reused) // Bytes saved through reuse
+		memory_saved: i64(stats.bytes_reused) // 재사용으로 절약된 바이트
 	}
 
 	return result
 }
 
 // ============================================================================
-// Object Pool Benchmarks
+// 객체 풀 벤치마크
 // ============================================================================
 
-// benchmark_record_pool benchmarks record pool
+/// benchmark_record_pool은 레코드 풀 성능을 벤치마크합니다.
 pub fn (mut s BenchmarkSuite) benchmark_record_pool() BenchmarkResult {
-	// Warmup
+	// 워밍업
 	for _ in 0 .. s.config.warmup_iterations {
 		rec := s.manager.get_record()
 		s.manager.put_record(rec)
@@ -154,9 +155,9 @@ pub fn (mut s BenchmarkSuite) benchmark_record_pool() BenchmarkResult {
 	return s.calculate_result('RecordPool Allocation', times)
 }
 
-// benchmark_batch_pool benchmarks batch pool
+/// benchmark_batch_pool은 배치 풀 성능을 벤치마크합니다.
 pub fn (mut s BenchmarkSuite) benchmark_batch_pool() BenchmarkResult {
-	// Warmup
+	// 워밍업
 	for _ in 0 .. s.config.warmup_iterations {
 		batch := s.manager.get_batch()
 		s.manager.put_batch(batch)
@@ -173,9 +174,9 @@ pub fn (mut s BenchmarkSuite) benchmark_batch_pool() BenchmarkResult {
 	return s.calculate_result('BatchPool Allocation', times)
 }
 
-// benchmark_request_pool benchmarks request pool
+/// benchmark_request_pool은 요청 풀 성능을 벤치마크합니다.
 pub fn (mut s BenchmarkSuite) benchmark_request_pool() BenchmarkResult {
-	// Warmup
+	// 워밍업
 	for _ in 0 .. s.config.warmup_iterations {
 		req := s.manager.get_request()
 		s.manager.put_request(req)
@@ -193,29 +194,29 @@ pub fn (mut s BenchmarkSuite) benchmark_request_pool() BenchmarkResult {
 }
 
 // ============================================================================
-// Integration Benchmarks
+// 통합 벤치마크
 // ============================================================================
 
-// benchmark_request_response_cycle simulates full request/response cycle
+/// benchmark_request_response_cycle은 전체 요청/응답 사이클을 시뮬레이션합니다.
 pub fn (mut s BenchmarkSuite) benchmark_request_response_cycle() BenchmarkResult {
-	// Simulate: read request -> process -> write response
+	// 시뮬레이션: 요청 읽기 -> 처리 -> 응답 쓰기
 	mut times := []i64{cap: s.config.benchmark_iterations}
 
 	for _ in 0 .. s.config.benchmark_iterations {
 		start := time.sys_mono_now()
 
-		// Get request buffer
+		// 요청 버퍼 획득
 		mut req_buf := new_request_buffer(4096)
 
-		// Simulate some processing
+		// 처리 시뮬레이션
 		_ := req_buf.data()
 
-		// Get response buffer
+		// 응답 버퍼 획득
 		mut resp_buf := new_response_buffer(8192)
-		resp_buf.write_i32_be(100) // Write some data
+		resp_buf.write_i32_be(100) // 데이터 쓰기
 		resp_buf.write([u8(1), 2, 3, 4])
 
-		// Release buffers
+		// 버퍼 해제
 		req_buf.release()
 		resp_buf.release()
 
@@ -225,21 +226,21 @@ pub fn (mut s BenchmarkSuite) benchmark_request_response_cycle() BenchmarkResult
 	return s.calculate_result('Request/Response Cycle', times)
 }
 
-// benchmark_connection_lifecycle simulates connection lifecycle
+/// benchmark_connection_lifecycle은 연결 생명주기를 시뮬레이션합니다.
 pub fn (mut s BenchmarkSuite) benchmark_connection_lifecycle() BenchmarkResult {
 	mut times := []i64{cap: s.config.benchmark_iterations}
 
 	for _ in 0 .. s.config.benchmark_iterations {
 		start := time.sys_mono_now()
 
-		// Simulate connection setup
+		// 연결 설정 시뮬레이션
 		mut conn_bufs := new_connection_buffers(8192, 16384)
 
-		// Simulate some I/O operations
+		// I/O 작업 시뮬레이션
 		_ := conn_bufs.get_read_slice(1024)
 		_ := conn_bufs.get_write_slice(2048)
 
-		// Connection close
+		// 연결 종료
 		conn_bufs.release()
 
 		times << time.sys_mono_now() - start
@@ -248,7 +249,7 @@ pub fn (mut s BenchmarkSuite) benchmark_connection_lifecycle() BenchmarkResult {
 	return s.calculate_result('Connection Lifecycle', times)
 }
 
-// benchmark_storage_operations simulates storage operations with pooling
+/// benchmark_storage_operations은 풀링을 사용한 스토리지 작업을 시뮬레이션합니다.
 pub fn (mut s BenchmarkSuite) benchmark_storage_operations() BenchmarkResult {
 	mut times := []i64{cap: s.config.benchmark_iterations}
 	mut pool := new_storage_record_pool()
@@ -256,7 +257,7 @@ pub fn (mut s BenchmarkSuite) benchmark_storage_operations() BenchmarkResult {
 	for _ in 0 .. s.config.benchmark_iterations {
 		start := time.sys_mono_now()
 
-		// Simulate creating records for storage
+		// 스토리지용 레코드 생성 시뮬레이션
 		mut batch := pool.get_batch()
 		for _ in 0 .. 10 {
 			rec := pool.get_record()
@@ -271,9 +272,10 @@ pub fn (mut s BenchmarkSuite) benchmark_storage_operations() BenchmarkResult {
 }
 
 // ============================================================================
-// Result Calculation
+// 결과 계산
 // ============================================================================
 
+/// calculate_result는 시간 측정값으로부터 벤치마크 결과를 계산합니다.
 fn (s &BenchmarkSuite) calculate_result(name string, times []i64) BenchmarkResult {
 	if times.len == 0 {
 		return BenchmarkResult{
@@ -310,10 +312,10 @@ fn (s &BenchmarkSuite) calculate_result(name string, times []i64) BenchmarkResul
 }
 
 // ============================================================================
-// Run All Benchmarks
+// 모든 벤치마크 실행
 // ============================================================================
 
-// run_all runs all benchmarks and returns results
+/// run_all은 모든 벤치마크를 실행하고 결과를 반환합니다.
 pub fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
 	mut results := []BenchmarkResult{}
 
@@ -322,20 +324,20 @@ pub fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
 	println('╚══════════════════════════════════════════════════════════════╝')
 	println('')
 
-	// Buffer Pool Benchmarks
+	// 버퍼 풀 벤치마크
 	println('▶ Running Buffer Pool Benchmarks...')
 	results << s.benchmark_buffer_pool_allocation()
 	results << s.benchmark_buffer_pool_hit_rate()
 	pool_vs_heap := s.benchmark_buffer_pool_vs_heap()
 	results << pool_vs_heap
 
-	// Object Pool Benchmarks
+	// 객체 풀 벤치마크
 	println('▶ Running Object Pool Benchmarks...')
 	results << s.benchmark_record_pool()
 	results << s.benchmark_batch_pool()
 	results << s.benchmark_request_pool()
 
-	// Integration Benchmarks
+	// 통합 벤치마크
 	println('▶ Running Integration Benchmarks...')
 	results << s.benchmark_request_response_cycle()
 	results << s.benchmark_connection_lifecycle()
@@ -345,7 +347,7 @@ pub fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
 	return results
 }
 
-// print_results prints benchmark results in a formatted table
+/// print_results는 벤치마크 결과를 포맷된 테이블로 출력합니다.
 pub fn (mut s BenchmarkSuite) print_results() {
 	println('')
 	println('┌────────────────────────────────┬────────────┬────────────┬────────────┬──────────────┐')
@@ -359,7 +361,7 @@ pub fn (mut s BenchmarkSuite) print_results() {
 
 	println('└────────────────────────────────┴────────────┴────────────┴────────────┴──────────────┘')
 
-	// Print pool statistics
+	// 풀 통계 출력
 	stats := s.manager.get_stats()
 	println('')
 	println('Pool Statistics:')
@@ -376,10 +378,10 @@ pub fn (mut s BenchmarkSuite) print_results() {
 }
 
 // ============================================================================
-// Quick Benchmark Entry Point
+// 빠른 벤치마크 진입점
 // ============================================================================
 
-// run_quick_benchmark runs a quick benchmark with default settings
+/// run_quick_benchmark는 기본 설정으로 빠른 벤치마크를 실행합니다.
 pub fn run_quick_benchmark() {
 	performance.init_global_performance(performance.PerformanceConfig{
 		buffer_pool_prewarm: true

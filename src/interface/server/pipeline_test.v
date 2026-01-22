@@ -1,4 +1,4 @@
-// Unit tests for Request Pipeline
+// Request Pipeline 단위 테스트
 module server
 
 import time
@@ -19,7 +19,7 @@ fn test_pipeline_creation() {
 fn test_pipeline_enqueue() {
 	mut pipeline := new_pipeline(10)
 
-	// Enqueue a request
+	// 요청 큐에 추가
 	pipeline.enqueue(1, 0, 0, [u8(1), 2, 3]) or { assert false, 'enqueue should not fail' }
 
 	assert pipeline.pending_count() == 1
@@ -31,7 +31,7 @@ fn test_pipeline_enqueue() {
 fn test_pipeline_enqueue_multiple() {
 	mut pipeline := new_pipeline(10)
 
-	// Enqueue multiple requests
+	// 여러 요청 큐에 추가
 	for i in 1 .. 6 {
 		pipeline.enqueue(i32(i), 0, 0, [u8(i)]) or { assert false, 'enqueue should not fail' }
 	}
@@ -43,14 +43,14 @@ fn test_pipeline_enqueue_multiple() {
 fn test_pipeline_full() {
 	mut pipeline := new_pipeline(3)
 
-	// Fill the pipeline
+	// 파이프라인 채우기
 	for i in 1 .. 4 {
 		pipeline.enqueue(i32(i), 0, 0, [u8(i)]) or { assert false, 'enqueue should not fail' }
 	}
 
 	assert pipeline.is_full()
 
-	// Try to enqueue when full - should fail
+	// 가득 찬 상태에서 추가 시도 - 실패해야 함
 	pipeline.enqueue(4, 0, 0, [u8(4)]) or {
 		assert err.str().contains('pipeline full')
 		return
@@ -61,15 +61,15 @@ fn test_pipeline_full() {
 fn test_pipeline_complete_and_get_ready() {
 	mut pipeline := new_pipeline(10)
 
-	// Enqueue requests
+	// 요청 큐에 추가
 	pipeline.enqueue(1, 0, 0, [u8(1)]) or { assert false }
 	pipeline.enqueue(2, 0, 0, [u8(2)]) or { assert false }
 	pipeline.enqueue(3, 0, 0, [u8(3)]) or { assert false }
 
-	// Complete first request
+	// 첫 번째 요청 완료
 	pipeline.complete(1, [u8(10), 11]) or { assert false }
 
-	// Get ready responses - should return first only
+	// 준비된 응답 가져오기 - 첫 번째만 반환되어야 함
 	ready := pipeline.get_ready_responses()
 	assert ready.len == 1
 	assert ready[0].correlation_id == 1
@@ -81,23 +81,23 @@ fn test_pipeline_complete_and_get_ready() {
 fn test_pipeline_order_preservation() {
 	mut pipeline := new_pipeline(10)
 
-	// Enqueue requests in order
+	// 순서대로 요청 큐에 추가
 	pipeline.enqueue(1, 0, 0, []) or { assert false }
 	pipeline.enqueue(2, 0, 0, []) or { assert false }
 	pipeline.enqueue(3, 0, 0, []) or { assert false }
 
-	// Complete out of order
+	// 순서 무관하게 완료
 	pipeline.complete(3, [u8(30)]) or { assert false }
 	pipeline.complete(2, [u8(20)]) or { assert false }
 
-	// Get ready - should return none since first not complete
+	// 준비된 응답 가져오기 - 첫 번째가 완료되지 않아 없어야 함
 	ready1 := pipeline.get_ready_responses()
 	assert ready1.len == 0
 
-	// Complete first
+	// 첫 번째 완료
 	pipeline.complete(1, [u8(10)]) or { assert false }
 
-	// Now should get all three in order
+	// 이제 세 개 모두 순서대로 반환되어야 함
 	ready2 := pipeline.get_ready_responses()
 	assert ready2.len == 3
 	assert ready2[0].correlation_id == 1
@@ -122,7 +122,7 @@ fn test_pipeline_complete_not_found() {
 
 	pipeline.enqueue(1, 0, 0, []) or { assert false }
 
-	// Try to complete non-existent request
+	// 존재하지 않는 요청 완료 시도
 	pipeline.complete(999, []) or {
 		assert err.str().contains('not found')
 		return
@@ -133,7 +133,7 @@ fn test_pipeline_complete_not_found() {
 fn test_pipeline_peek_first() {
 	mut pipeline := new_pipeline(10)
 
-	// Empty pipeline
+	// 빈 파이프라인
 	if _ := pipeline.peek_first() {
 		assert false, 'should return none for empty pipeline'
 	}
@@ -148,7 +148,7 @@ fn test_pipeline_peek_first() {
 		assert false, 'should return first request'
 	}
 
-	// peek should not remove
+	// peek는 제거하지 않아야 함
 	assert pipeline.pending_count() == 1
 }
 
@@ -170,38 +170,38 @@ fn test_pipeline_clear() {
 fn test_pipeline_oldest_pending_age() {
 	mut pipeline := new_pipeline(10)
 
-	// Empty pipeline
+	// 빈 파이프라인
 	assert pipeline.oldest_pending_age() == 0
 
 	pipeline.enqueue(1, 0, 0, []) or { assert false }
 
-	// Small delay to ensure age > 0
+	// age > 0 확인을 위한 짧은 지연
 	time.sleep(10 * time.millisecond)
 
 	age := pipeline.oldest_pending_age()
-	assert age >= 10 // At least 10ms
+	assert age >= 10 // 최소 10ms
 }
 
 fn test_pipeline_has_timed_out() {
 	mut pipeline := new_pipeline(10)
 
-	// Empty pipeline - no timeout
+	// 빈 파이프라인 - 타임아웃 없음
 	assert !pipeline.has_timed_out(100)
 
 	pipeline.enqueue(1, 0, 0, []) or { assert false }
 
-	// Should not have timed out yet
+	// 아직 타임아웃되지 않아야 함
 	assert !pipeline.has_timed_out(10000)
 
-	// Wait and check with short timeout
+	// 대기 후 짧은 타임아웃으로 확인
 	time.sleep(50 * time.millisecond)
-	assert pipeline.has_timed_out(10) // 10ms timeout, waited 50ms
+	assert pipeline.has_timed_out(10) // 10ms 타임아웃, 50ms 대기
 }
 
 fn test_pipeline_stats() {
 	mut pipeline := new_pipeline(5)
 
-	// Enqueue and complete some requests
+	// 요청 큐에 추가 및 완료
 	pipeline.enqueue(1, 0, 0, []) or { assert false }
 	pipeline.enqueue(2, 0, 0, []) or { assert false }
 

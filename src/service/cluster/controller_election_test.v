@@ -1,14 +1,14 @@
-// Service Layer - Controller Election Tests
+// Service Layer - Controller Election 테스트
 module cluster
 
 import time
 
-// Mock ClusterMetadataPort for testing
+// 테스트용 Mock ClusterMetadataPort
 struct MockClusterMetadataPort {
 mut:
-	locks          map[string]string // lock_name -> holder_id
-	lock_expiry    map[string]i64    // lock_name -> expiry_timestamp
-	controller_id  i32
+	locks         map[string]string // lock_name -> holder_id
+	lock_expiry   map[string]i64    // lock_name -> expiry_timestamp
+	controller_id i32
 }
 
 fn (mut m MockClusterMetadataPort) try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool {

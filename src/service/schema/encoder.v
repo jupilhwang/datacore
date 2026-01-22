@@ -1,40 +1,46 @@
-// Service Layer - Schema Encoder
-// Provides binary encoding/decoding for Avro, JSON Schema, and Protobuf
+// 서비스 레이어 - 스키마 인코더
+// Avro, JSON Schema, Protobuf를 위한 바이너리 인코딩/디코딩을 제공합니다.
+// Apache Avro 1.11 사양의 바이너리 인코딩을 구현합니다.
 module schema
 
 import domain
 
-// SchemaEncoder provides encoding/decoding functionality
+/// SchemaEncoder는 인코딩/디코딩 기능을 제공하는 인터페이스입니다.
 pub interface SchemaEncoder {
+	/// 데이터를 스키마에 따라 인코딩합니다.
 	encode(data []u8, schema domain.Schema) ![]u8
+
+	/// 데이터를 스키마에 따라 디코딩합니다.
 	decode(data []u8, schema domain.Schema) ![]u8
 }
 
 // ============================================================================
-// Avro Binary Encoder
-// Implements Apache Avro 1.11 specification binary encoding
+// Avro 바이너리 인코더
+// Apache Avro 1.11 사양의 바이너리 인코딩을 구현합니다.
 // https://avro.apache.org/docs/current/spec.html#binary_encoding
 // ============================================================================
 
+/// AvroEncoder는 Avro 바이너리 인코딩/디코딩을 제공합니다.
 pub struct AvroEncoder {}
 
+/// new_avro_encoder는 새로운 Avro 인코더를 생성합니다.
 pub fn new_avro_encoder() &AvroEncoder {
 	return &AvroEncoder{}
 }
 
-// encode serializes data according to Avro schema
+/// encode는 Avro 스키마에 따라 데이터를 직렬화합니다.
 pub fn (e &AvroEncoder) encode(data []u8, schema domain.Schema) ![]u8 {
 	parsed := parse_avro_schema(schema.schema_str) or {
 		return error('failed to parse Avro schema: ${err}')
 	}
 
-	// Parse input JSON data
+	// 입력 JSON 데이터 파싱
 	json_str := data.bytestr()
 
 	return e.encode_value(json_str, parsed)
 }
 
-// decode deserializes Avro binary data to JSON
+/// decode는 Avro 바이너리 데이터를 JSON으로 역직렬화합니다.
 pub fn (e &AvroEncoder) decode(data []u8, schema domain.Schema) ![]u8 {
 	parsed := parse_avro_schema(schema.schema_str) or {
 		return error('failed to parse Avro schema: ${err}')
@@ -50,25 +56,25 @@ pub fn (e &AvroEncoder) decode(data []u8, schema domain.Schema) ![]u8 {
 }
 
 // ============================================================================
-// AvroReader - Binary Data Reader
+// AvroReader - 바이너리 데이터 리더
 // ============================================================================
 
-// AvroReader helps read binary data sequentially
+/// AvroReader는 바이너리 데이터를 순차적으로 읽는 것을 돕습니다.
 struct AvroReader {
 mut:
-	data []u8
-	pos  int
+	data []u8 // 바이너리 데이터
+	pos  int  // 현재 위치
 }
 
 // ============================================================================
-// Value Encoding/Decoding - Main Dispatch
+// 값 인코딩/디코딩 - 메인 디스패치
 // ============================================================================
 
-// encode_value encodes a JSON value according to schema type
+/// encode_value는 스키마 타입에 따라 JSON 값을 인코딩합니다.
 fn (e &AvroEncoder) encode_value(json_str string, schema AvroSchema) ![]u8 {
 	match schema.schema_type {
 		'null' {
-			return []u8{} // null is encoded as zero bytes
+			return []u8{} // null은 0바이트로 인코딩
 		}
 		'boolean' {
 			val := parse_json_bool(json_str) or { return error('invalid boolean value') }
@@ -122,7 +128,7 @@ fn (e &AvroEncoder) encode_value(json_str string, schema AvroSchema) ![]u8 {
 	}
 }
 
-// decode_value decodes Avro binary data to JSON string
+/// decode_value는 Avro 바이너리 데이터를 JSON 문자열로 디코딩합니다.
 fn (e &AvroEncoder) decode_value(mut reader AvroReader, schema AvroSchema) !string {
 	match schema.schema_type {
 		'null' {

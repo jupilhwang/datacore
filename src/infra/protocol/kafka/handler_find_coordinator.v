@@ -1,5 +1,5 @@
-// Kafka Protocol - FindCoordinator (API Key 10)
-// Request/Response types, parsing, encoding, and handlers
+// Kafka 프로토콜 - FindCoordinator (API Key 10)
+// 요청/응답 타입, 파싱, 인코딩 및 핸들러
 module kafka
 
 import infra.observability
@@ -143,16 +143,14 @@ fn (mut h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 		version))!
 
 	key_type_str := if req.key_type == 0 { 'GROUP' } else { 'TRANSACTION' }
-	h.logger.debug('Processing find coordinator',
-		observability.field_string('key', req.key),
-		observability.field_string('key_type', key_type_str),
-		observability.field_int('coordinator_keys', req.coordinator_keys.len))
+	h.logger.debug('Processing find coordinator', observability.field_string('key', req.key),
+		observability.field_string('key_type', key_type_str), observability.field_int('coordinator_keys',
+		req.coordinator_keys.len))
 
 	resp := h.process_find_coordinator(req, version)!
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Find coordinator completed',
-		observability.field_int('node_id', h.broker_id),
+	h.logger.debug('Find coordinator completed', observability.field_int('node_id', h.broker_id),
 		observability.field_duration('latency', elapsed))
 
 	return resp.encode(version)

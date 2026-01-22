@@ -1,6 +1,6 @@
-// Kafka Protocol - Topic Operations
+// Kafka 프로토콜 - Topic 작업
 // CreateTopics, DeleteTopics
-// Request/Response types, parsing, encoding, and handlers
+// 요청/응답 타입, 파싱, 인코딩 및 핸들러
 module kafka
 
 import domain
@@ -244,27 +244,25 @@ pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// CreateTopics handler - creates topics in storage
+// CreateTopics 핸들러 - 스토리지에 토픽 생성
 fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_create_topics_request(mut reader, version, is_flexible_version(.create_topics,
 		version))!
 
-	h.logger.debug('Processing create topics request',
-		observability.field_int('topics', req.topics.len),
-		observability.field_int('timeout_ms', req.timeout_ms),
-		observability.field_bool('validate_only', req.validate_only))
+	h.logger.debug('Processing create topics request', observability.field_int('topics',
+		req.topics.len), observability.field_int('timeout_ms', req.timeout_ms), observability.field_bool('validate_only',
+		req.validate_only))
 
 	mut topics := []CreateTopicsResponseTopic{}
 	mut created_count := 0
 	mut error_count := 0
 
 	for t in req.topics {
-		h.logger.trace('Creating topic',
-			observability.field_string('topic', t.name),
-			observability.field_int('partitions', t.num_partitions),
-			observability.field_int('replication_factor', t.replication_factor))
+		h.logger.trace('Creating topic', observability.field_string('topic', t.name),
+			observability.field_int('partitions', t.num_partitions), observability.field_int('replication_factor',
+			t.replication_factor))
 		// Convert config map to domain.TopicConfig
 		topic_config := domain.TopicConfig{
 			retention_ms:        parse_config_i64(t.configs, 'retention.ms', 604800000)
@@ -288,10 +286,9 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 				i16(ErrorCode.unknown_server_error)
 			}
 
-			h.logger.warn('Failed to create topic',
-				observability.field_string('topic', t.name),
-				observability.field_int('error_code', error_code),
-				observability.field_string('error', err.str()))
+			h.logger.warn('Failed to create topic', observability.field_string('topic',
+				t.name), observability.field_int('error_code', error_code), observability.field_string('error',
+				err.str()))
 			error_count += 1
 
 			topics << CreateTopicsResponseTopic{
@@ -305,9 +302,8 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 			continue
 		}
 
-		h.logger.info('Topic created',
-			observability.field_string('topic', t.name),
-			observability.field_int('partitions', int(t.num_partitions)))
+		h.logger.info('Topic created', observability.field_string('topic', t.name), observability.field_int('partitions',
+			int(t.num_partitions)))
 		created_count += 1
 
 		// Success - use topic_id from created metadata
@@ -322,10 +318,9 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Create topics completed',
-		observability.field_int('created', created_count),
-		observability.field_int('errors', error_count),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Create topics completed', observability.field_int('created', created_count),
+		observability.field_int('errors', error_count), observability.field_duration('latency',
+		elapsed))
 
 	resp := CreateTopicsResponse{
 		throttle_time_ms: 0
@@ -335,23 +330,22 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// DeleteTopics handler - deletes topics from storage
+// DeleteTopics 핸들러 - 스토리지에서 토픽 삭제
 fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_delete_topics_request(mut reader, version, is_flexible_version(.delete_topics,
 		version))!
 
-	h.logger.debug('Processing delete topics request',
-		observability.field_int('topics', req.topics.len),
-		observability.field_int('timeout_ms', req.timeout_ms))
+	h.logger.debug('Processing delete topics request', observability.field_int('topics',
+		req.topics.len), observability.field_int('timeout_ms', req.timeout_ms))
 
 	mut topics := []DeleteTopicsResponseTopic{}
 	mut deleted_count := 0
 	mut error_count := 0
 
 	for t in req.topics {
-		// For v6+, we may need to find topic name from topic_id
+		// v6+의 경우 topic_id에서 토픽 이름을 찾아야 할 수 있음
 		mut topic_name := t.name
 		mut topic_id := t.topic_id.clone()
 
@@ -383,10 +377,9 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 				i16(ErrorCode.unknown_server_error)
 			}
 
-			h.logger.warn('Failed to delete topic',
-				observability.field_string('topic', topic_name),
-				observability.field_int('error_code', error_code),
-				observability.field_string('error', err.str()))
+			h.logger.warn('Failed to delete topic', observability.field_string('topic',
+				topic_name), observability.field_int('error_code', error_code), observability.field_string('error',
+				err.str()))
 			error_count += 1
 
 			topics << DeleteTopicsResponseTopic{
@@ -397,8 +390,7 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 			continue
 		}
 
-		h.logger.info('Topic deleted',
-			observability.field_string('topic', topic_name))
+		h.logger.info('Topic deleted', observability.field_string('topic', topic_name))
 		deleted_count += 1
 
 		// Success
@@ -410,10 +402,9 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Delete topics completed',
-		observability.field_int('deleted', deleted_count),
-		observability.field_int('errors', error_count),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Delete topics completed', observability.field_int('deleted', deleted_count),
+		observability.field_int('errors', error_count), observability.field_duration('latency',
+		elapsed))
 
 	resp := DeleteTopicsResponse{
 		throttle_time_ms: 0
@@ -423,12 +414,12 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// Process CreateTopics request (Frame-based)
+// CreateTopics 요청 처리 (Frame 기반)
 fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !CreateTopicsResponse {
 	mut topics := []CreateTopicsResponseTopic{}
 
 	for t in req.topics {
-		// Convert config map to domain.TopicConfig
+		// config 맵을 domain.TopicConfig로 변환
 		topic_config := domain.TopicConfig{
 			retention_ms:        parse_config_i64(t.configs, 'retention.ms', 604800000)
 			retention_bytes:     parse_config_i64(t.configs, 'retention.bytes', -1)
@@ -438,7 +429,7 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 			max_message_bytes:   parse_config_int(t.configs, 'max.message.bytes', 1048576)
 		}
 
-		// Try to create topic in storage
+		// 스토리지에 토픽 생성 시도
 		partitions := if t.num_partitions <= 0 { 1 } else { int(t.num_partitions) }
 
 		created_meta := h.storage.create_topic(t.name, partitions, topic_config) or {
@@ -478,7 +469,7 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 	}
 }
 
-// Process DeleteTopics request (Frame-based)
+// DeleteTopics 요청 처리 (Frame 기반)
 fn (mut h Handler) process_delete_topics(req DeleteTopicsRequest, version i16) !DeleteTopicsResponse {
 	mut topics := []DeleteTopicsResponseTopic{}
 

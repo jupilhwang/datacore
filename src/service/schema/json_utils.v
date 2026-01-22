@@ -1,9 +1,9 @@
-// Service Layer - JSON Parsing Utilities
-// Provides JSON parsing helper functions for schema validation and compatibility checking
+// Service Layer - JSON 파싱 유틸리티
+// 스키마 검증 및 호환성 검사를 위한 JSON 파싱 헬퍼 함수를 제공합니다
 module schema
 
-// extract_json_string extracts a string value for a given key from JSON
-// Returns the value if found, none otherwise
+// extract_json_string은 JSON에서 주어진 키의 문자열 값을 추출합니다
+// 찾으면 값을 반환하고, 그렇지 않으면 none을 반환합니다
 fn extract_json_string(json_str string, key string) ?string {
 	// Find "key": "value" pattern
 	key_pattern := '"${key}"'
@@ -45,8 +45,8 @@ fn extract_json_string(json_str string, key string) ?string {
 	return json_str[start..end]
 }
 
-// extract_json_int extracts an integer value for a given key from JSON
-// Returns the value if found, none otherwise
+// extract_json_int는 JSON에서 주어진 키의 정수 값을 추출합니다
+// 찾으면 값을 반환하고, 그렇지 않으면 none을 반환합니다
 fn extract_json_int(json_str string, key string) ?int {
 	// Find "key": value pattern
 	key_pattern := '"${key}"'
@@ -78,8 +78,8 @@ fn extract_json_int(json_str string, key string) ?int {
 	return json_str[pos..end].int()
 }
 
-// extract_json_float extracts a float value for a given key from JSON
-// Returns the value if found, none otherwise
+// extract_json_float는 JSON에서 주어진 키의 실수 값을 추출합니다
+// 찾으면 값을 반환하고, 그렇지 않으면 none을 반환합니다
 fn extract_json_float(json_str string, key string) ?f64 {
 	key_pattern := '"${key}"'
 	key_pos := json_str.index(key_pattern) or { return none }

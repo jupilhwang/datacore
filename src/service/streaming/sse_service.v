@@ -348,7 +348,7 @@ fn (mut s SSEService) poll_subscription(conn_id string, sub_id string, sub domai
 }
 
 // poll_messages_for_connection fetches and sends new messages for a specific connection
-// Returns (messages_sent, bytes_sent) for statistics
+// 통계를 위해 (messages_sent, bytes_sent) 반환
 pub fn (mut s SSEService) poll_messages_for_connection(conn_id string) !(int, i64) {
 	s.mutex.rlock()
 	state := s.connections[conn_id] or {

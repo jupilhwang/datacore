@@ -1,7 +1,13 @@
-// Entity Layer - Offset Domain Model
+// 도메인 레이어 - 오프셋 도메인 모델
+// Kafka 컨슈머 오프셋 관련 데이터 구조를 정의합니다.
 module domain
 
-// PartitionOffset represents committed offset for a partition
+/// PartitionOffset은 파티션에 대해 커밋된 오프셋을 나타냅니다.
+/// topic: 토픽 이름
+/// partition: 파티션 번호
+/// offset: 커밋된 오프셋
+/// leader_epoch: 리더 에포크 (기본 -1)
+/// metadata: 사용자 정의 메타데이터
 pub struct PartitionOffset {
 pub:
 	topic        string
@@ -11,7 +17,11 @@ pub:
 	metadata     string
 }
 
-// OffsetCommit represents an offset commit request
+/// OffsetCommit은 오프셋 커밋 요청을 나타냅니다.
+/// group_id: 컨슈머 그룹 ID
+/// generation_id: 세대 ID
+/// member_id: 멤버 ID
+/// offsets: 커밋할 파티션 오프셋 목록
 pub struct OffsetCommit {
 pub:
 	group_id      string
@@ -20,7 +30,12 @@ pub:
 	offsets       []PartitionOffset
 }
 
-// OffsetFetchResult represents offset fetch result for a partition
+/// OffsetFetchResult는 오프셋 조회 결과를 나타냅니다.
+/// topic: 토픽 이름
+/// partition: 파티션 번호
+/// offset: 조회된 오프셋
+/// metadata: 사용자 정의 메타데이터
+/// error_code: 에러 코드 (0 = 성공)
 pub struct OffsetFetchResult {
 pub:
 	topic      string

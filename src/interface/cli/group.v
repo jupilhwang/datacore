@@ -1,18 +1,25 @@
 // Interface Layer - CLI Group Commands
-// Consumer group management commands (Simplified implementation)
+// 인터페이스 레이어 - CLI 그룹 명령어
+//
+// 컨슈머 그룹 관리 명령어를 제공합니다 (간소화된 구현).
+// 그룹 목록 조회 및 상세 정보 확인 기능을 지원합니다.
+//
+// 주요 기능:
+// - 컨슈머 그룹 목록 조회
+// - 컨슈머 그룹 상세 정보 조회
 module cli
 
 import net as _
 import time as _
 
-// GroupOptions holds group command options
+/// GroupOptions는 그룹 명령어 옵션을 담는 구조체입니다.
 pub struct GroupOptions {
 pub:
-	bootstrap_server string = 'localhost:9092'
-	group_id         string
+	bootstrap_server string = 'localhost:9092' // 브로커 주소
+	group_id         string // 그룹 ID
 }
 
-// parse_group_options parses group command options
+/// parse_group_options는 그룹 명령어 옵션을 파싱합니다.
 pub fn parse_group_options(args []string) GroupOptions {
 	mut opts := GroupOptions{}
 
@@ -38,7 +45,7 @@ pub fn parse_group_options(args []string) GroupOptions {
 				}
 			}
 			else {
-				// Positional argument might be group_id
+				// 위치 인자가 group_id일 수 있음
 				if !args[i].starts_with('-') && opts.group_id.len == 0 {
 					opts = GroupOptions{
 						...opts
@@ -53,24 +60,24 @@ pub fn parse_group_options(args []string) GroupOptions {
 	return opts
 }
 
-// run_group_list lists all consumer groups
+/// run_group_list는 모든 컨슈머 그룹을 나열합니다.
 pub fn run_group_list(opts GroupOptions) ! {
 	println('\x1b[90m⏳ Listing consumer groups...\x1b[0m')
 
-	// Connect to broker
+	// 브로커에 연결
 	mut conn := connect_broker(opts.bootstrap_server)!
 	defer { conn.close() or {} }
 
-	// Build ListGroups request (API Key 16, Version 4)
+	// ListGroups 요청 생성 (API Key 16, Version 4)
 	request := build_list_groups_request()
 
-	// Send request
+	// 요청 전송
 	send_kafka_request(mut conn, 16, 4, request)!
 
-	// Read response
+	// 응답 읽기
 	response := read_kafka_response(mut conn)!
 
-	// Simplified parsing - just check if response is valid
+	// 간소화된 파싱 - 응답 유효성만 확인
 	if response.len < 10 {
 		return error('Failed to list groups: Invalid response')
 	}
@@ -80,7 +87,7 @@ pub fn run_group_list(opts GroupOptions) ! {
 	println('  Use kafka-consumer-groups.sh for complete information')
 }
 
-// run_group_describe describes a consumer group
+/// run_group_describe는 컨슈머 그룹의 상세 정보를 표시합니다.
 pub fn run_group_describe(opts GroupOptions) ! {
 	if opts.group_id.len == 0 {
 		return error('Group ID is required. Use --group <group-id>')
@@ -88,20 +95,20 @@ pub fn run_group_describe(opts GroupOptions) ! {
 
 	println('\x1b[90m⏳ Describing group "${opts.group_id}"...\x1b[0m')
 
-	// Connect to broker
+	// 브로커에 연결
 	mut conn := connect_broker(opts.bootstrap_server)!
 	defer { conn.close() or {} }
 
-	// Build DescribeGroups request (API Key 15, Version 5)
+	// DescribeGroups 요청 생성 (API Key 15, Version 5)
 	request := build_describe_groups_request(opts.group_id)
 
-	// Send request
+	// 요청 전송
 	send_kafka_request(mut conn, 15, 5, request)!
 
-	// Read response
+	// 응답 읽기
 	response := read_kafka_response(mut conn)!
 
-	// Simplified parsing - just check if response is valid
+	// 간소화된 파싱 - 응답 유효성만 확인
 	if response.len < 10 {
 		return error('Failed to describe group: Invalid response')
 	}
@@ -112,35 +119,37 @@ pub fn run_group_describe(opts GroupOptions) ! {
 }
 
 // ============================================================
-// Kafka Protocol Helpers
+// Kafka 프로토콜 헬퍼
 // ============================================================
 
+// build_list_groups_request는 ListGroups 요청을 생성합니다.
 fn build_list_groups_request() []u8 {
 	mut body := []u8{}
 
-	// Groups filter (empty array = all groups)
-	body << u8(1) // array length = 0
+	// Groups 필터 (빈 배열 = 모든 그룹)
+	body << u8(1) // 배열 길이 = 0
 
-	// Tagged fields (empty)
+	// Tagged fields (빈)
 	body << u8(0)
 
 	return body
 }
 
+// build_describe_groups_request는 DescribeGroups 요청을 생성합니다.
 fn build_describe_groups_request(group_id string) []u8 {
 	mut body := []u8{}
 
-	// Groups array (compact array)
-	body << u8(2) // array length = 1
+	// Groups 배열 (compact array)
+	body << u8(2) // 배열 길이 = 1
 
 	// Group ID (compact string)
 	body << u8(group_id.len + 1)
 	body << group_id.bytes()
 
-	// Include authorized operations (1 byte)
+	// 인가 작업 포함 (1바이트)
 	body << u8(0)
 
-	// Tagged fields (empty)
+	// Tagged fields (빈)
 	body << u8(0)
 
 	return body

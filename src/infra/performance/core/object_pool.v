@@ -1,31 +1,34 @@
-// Infra Layer - Object Pool
-// High-performance object pooling for Kafka records and requests
+/// 인프라 레이어 - 객체 풀
+/// Kafka 레코드와 요청을 위한 고성능 객체 풀링
 module core
 
 import sync
 
 // ============================================================================
-// Pooled Record
+// PooledRecord - 풀링된 레코드
 // ============================================================================
 
+/// PooledRecord는 풀에서 관리되는 재사용 가능한 레코드입니다.
 @[heap]
 pub struct PooledRecord {
 pub mut:
-	key       []u8
-	value     []u8
-	headers   []RecordHeader
-	timestamp i64
-	partition int
-	offset    i64
-	in_use    bool
+	key       []u8           // 레코드 키
+	value     []u8           // 레코드 값
+	headers   []RecordHeader // 레코드 헤더 목록
+	timestamp i64            // 타임스탬프
+	partition int            // 파티션 번호
+	offset    i64            // 오프셋
+	in_use    bool           // 사용 중 여부
 }
 
+/// RecordHeader는 레코드 헤더를 나타냅니다.
 pub struct RecordHeader {
 pub:
-	key   string
-	value []u8
+	key   string // 헤더 키
+	value []u8   // 헤더 값
 }
 
+/// reset은 레코드를 재사용을 위해 초기화합니다.
 pub fn (mut r PooledRecord) reset() {
 	r.key = r.key[..0]
 	r.value = r.value[..0]
@@ -36,14 +39,17 @@ pub fn (mut r PooledRecord) reset() {
 	r.in_use = false
 }
 
+/// set_key는 레코드 키를 설정합니다.
 pub fn (mut r PooledRecord) set_key(k []u8) {
 	r.key = k.clone()
 }
 
+/// set_value는 레코드 값을 설정합니다.
 pub fn (mut r PooledRecord) set_value(v []u8) {
 	r.value = v.clone()
 }
 
+/// add_header는 레코드에 헤더를 추가합니다.
 pub fn (mut r PooledRecord) add_header(key string, value []u8) {
 	r.headers << RecordHeader{
 		key:   key
@@ -52,26 +58,28 @@ pub fn (mut r PooledRecord) add_header(key string, value []u8) {
 }
 
 // ============================================================================
-// Pooled Record Batch
+// PooledRecordBatch - 풀링된 레코드 배치
 // ============================================================================
 
+/// PooledRecordBatch는 풀에서 관리되는 재사용 가능한 레코드 배치입니다.
 @[heap]
 pub struct PooledRecordBatch {
 pub mut:
-	topic       string
-	partition   int
-	records     []&PooledRecord
-	base_offset i64
-	first_ts    i64
-	max_ts      i64
-	crc         u32
-	in_use      bool
+	topic       string          // 토픽 이름
+	partition   int             // 파티션 번호
+	records     []&PooledRecord // 레코드 목록
+	base_offset i64             // 기본 오프셋
+	first_ts    i64             // 첫 번째 타임스탬프
+	max_ts      i64             // 최대 타임스탬프
+	crc         u32             // CRC 체크섬
+	in_use      bool            // 사용 중 여부
 }
 
+/// reset은 배치를 재사용을 위해 초기화합니다.
 pub fn (mut b PooledRecordBatch) reset() {
 	b.topic = ''
 	b.partition = 0
-	// Clear records but keep capacity
+	// 레코드를 지우되 용량은 유지
 	b.records = b.records[..0]
 	b.base_offset = 0
 	b.first_ts = 0
@@ -80,6 +88,7 @@ pub fn (mut b PooledRecordBatch) reset() {
 	b.in_use = false
 }
 
+/// add_record는 배치에 레코드를 추가합니다.
 pub fn (mut b PooledRecordBatch) add_record(r &PooledRecord) {
 	b.records << r
 	if b.records.len == 1 {
@@ -90,33 +99,37 @@ pub fn (mut b PooledRecordBatch) add_record(r &PooledRecord) {
 	}
 }
 
+/// size는 배치의 레코드 수를 반환합니다.
 pub fn (b &PooledRecordBatch) size() int {
 	return b.records.len
 }
 
+/// byte_size는 배치의 예상 바이트 크기를 반환합니다.
 pub fn (b &PooledRecordBatch) byte_size() int {
 	mut total := 0
 	for r in b.records {
-		total += r.key.len + r.value.len + 20 // overhead estimate
+		total += r.key.len + r.value.len + 20 // 오버헤드 추정
 	}
 	return total
 }
 
 // ============================================================================
-// Pooled Request
+// PooledRequest - 풀링된 요청
 // ============================================================================
 
+/// PooledRequest는 풀에서 관리되는 재사용 가능한 요청입니다.
 @[heap]
 pub struct PooledRequest {
 pub mut:
-	api_key        i16
-	api_version    i16
-	correlation_id i32
-	client_id      string
-	payload        []u8
-	in_use         bool
+	api_key        i16    // API 키
+	api_version    i16    // API 버전
+	correlation_id i32    // 상관관계 ID
+	client_id      string // 클라이언트 ID
+	payload        []u8   // 페이로드 데이터
+	in_use         bool   // 사용 중 여부
 }
 
+/// reset은 요청을 재사용을 위해 초기화합니다.
 pub fn (mut r PooledRequest) reset() {
 	r.api_key = 0
 	r.api_version = 0
@@ -127,18 +140,20 @@ pub fn (mut r PooledRequest) reset() {
 }
 
 // ============================================================================
-// Object Pool for Records
+// RecordPool - 레코드 객체 풀
 // ============================================================================
 
+/// RecordPool은 PooledRecord 객체를 관리하는 풀입니다.
 @[heap]
 pub struct RecordPool {
 mut:
-	pool     []&PooledRecord
-	max_size int
-	stats    ObjectPoolStats
-	lock     sync.Mutex
+	pool     []&PooledRecord // 풀에 있는 레코드들
+	max_size int             // 최대 풀 크기
+	stats    ObjectPoolStats // 풀 통계
+	lock     sync.Mutex      // 동기화를 위한 뮤텍스
 }
 
+/// new_record_pool은 지정된 최대 크기로 새 레코드 풀을 생성합니다.
 pub fn new_record_pool(max_size int) &RecordPool {
 	return &RecordPool{
 		pool:     []&PooledRecord{cap: max_size}
@@ -146,6 +161,7 @@ pub fn new_record_pool(max_size int) &RecordPool {
 	}
 }
 
+/// get은 풀에서 레코드를 가져옵니다.
 pub fn (mut p RecordPool) get() &PooledRecord {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -169,6 +185,7 @@ pub fn (mut p RecordPool) get() &PooledRecord {
 	}
 }
 
+/// put은 레코드를 풀에 반환합니다.
 pub fn (mut p RecordPool) put(r &PooledRecord) {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -181,6 +198,7 @@ pub fn (mut p RecordPool) put(r &PooledRecord) {
 	}
 }
 
+/// get_stats는 현재 풀 통계를 반환합니다.
 pub fn (mut p RecordPool) get_stats() ObjectPoolStats {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -191,18 +209,20 @@ pub fn (mut p RecordPool) get_stats() ObjectPoolStats {
 }
 
 // ============================================================================
-// Object Pool for Record Batches
+// RecordBatchPool - 레코드 배치 객체 풀
 // ============================================================================
 
+/// RecordBatchPool은 PooledRecordBatch 객체를 관리하는 풀입니다.
 @[heap]
 pub struct RecordBatchPool {
 mut:
-	pool     []&PooledRecordBatch
-	max_size int
-	stats    ObjectPoolStats
-	lock     sync.Mutex
+	pool     []&PooledRecordBatch // 풀에 있는 배치들
+	max_size int                  // 최대 풀 크기
+	stats    ObjectPoolStats      // 풀 통계
+	lock     sync.Mutex           // 동기화를 위한 뮤텍스
 }
 
+/// new_record_batch_pool은 지정된 최대 크기로 새 배치 풀을 생성합니다.
 pub fn new_record_batch_pool(max_size int) &RecordBatchPool {
 	return &RecordBatchPool{
 		pool:     []&PooledRecordBatch{cap: max_size}
@@ -210,6 +230,7 @@ pub fn new_record_batch_pool(max_size int) &RecordBatchPool {
 	}
 }
 
+/// get은 풀에서 배치를 가져옵니다.
 pub fn (mut p RecordBatchPool) get() &PooledRecordBatch {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -231,6 +252,7 @@ pub fn (mut p RecordBatchPool) get() &PooledRecordBatch {
 	}
 }
 
+/// put은 배치를 풀에 반환합니다.
 pub fn (mut p RecordBatchPool) put(b &PooledRecordBatch) {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -243,6 +265,7 @@ pub fn (mut p RecordBatchPool) put(b &PooledRecordBatch) {
 	}
 }
 
+/// get_stats는 현재 풀 통계를 반환합니다.
 pub fn (mut p RecordBatchPool) get_stats() ObjectPoolStats {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -253,18 +276,20 @@ pub fn (mut p RecordBatchPool) get_stats() ObjectPoolStats {
 }
 
 // ============================================================================
-// Object Pool for Requests
+// RequestPool - 요청 객체 풀
 // ============================================================================
 
+/// RequestPool은 PooledRequest 객체를 관리하는 풀입니다.
 @[heap]
 pub struct RequestPool {
 mut:
-	pool     []&PooledRequest
-	max_size int
-	stats    ObjectPoolStats
-	lock     sync.Mutex
+	pool     []&PooledRequest // 풀에 있는 요청들
+	max_size int              // 최대 풀 크기
+	stats    ObjectPoolStats  // 풀 통계
+	lock     sync.Mutex       // 동기화를 위한 뮤텍스
 }
 
+/// new_request_pool은 지정된 최대 크기로 새 요청 풀을 생성합니다.
 pub fn new_request_pool(max_size int) &RequestPool {
 	return &RequestPool{
 		pool:     []&PooledRequest{cap: max_size}
@@ -272,6 +297,7 @@ pub fn new_request_pool(max_size int) &RequestPool {
 	}
 }
 
+/// get은 풀에서 요청을 가져옵니다.
 pub fn (mut p RequestPool) get() &PooledRequest {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -293,6 +319,7 @@ pub fn (mut p RequestPool) get() &PooledRequest {
 	}
 }
 
+/// put은 요청을 풀에 반환합니다.
 pub fn (mut p RequestPool) put(r &PooledRequest) {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -305,6 +332,7 @@ pub fn (mut p RequestPool) put(r &PooledRequest) {
 	}
 }
 
+/// get_stats는 현재 풀 통계를 반환합니다.
 pub fn (mut p RequestPool) get_stats() ObjectPoolStats {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -315,19 +343,21 @@ pub fn (mut p RequestPool) get_stats() ObjectPoolStats {
 }
 
 // ============================================================================
-// Statistics
+// 통계
 // ============================================================================
 
+/// ObjectPoolStats는 객체 풀 통계를 담고 있습니다.
 pub struct ObjectPoolStats {
 pub mut:
-	hits        u64
-	misses      u64
-	allocations u64
-	returns     u64
-	discards    u64
-	pool_size   int
+	hits        u64 // 풀 히트 수
+	misses      u64 // 풀 미스 수
+	allocations u64 // 새 할당 수
+	returns     u64 // 반환 수
+	discards    u64 // 버려진 수
+	pool_size   int // 현재 풀 크기
 }
 
+/// hit_rate는 풀 히트율을 반환합니다.
 pub fn (s &ObjectPoolStats) hit_rate() f64 {
 	total := s.hits + s.misses
 	if total == 0 {
@@ -336,6 +366,7 @@ pub fn (s &ObjectPoolStats) hit_rate() f64 {
 	return f64(s.hits) / f64(total)
 }
 
+/// discard_rate는 버려진 비율을 반환합니다.
 pub fn (s &ObjectPoolStats) discard_rate() f64 {
 	total := s.returns + s.discards
 	if total == 0 {

@@ -1,5 +1,5 @@
 // Infra Layer - Prometheus HTTP Exporter
-// Exposes /metrics endpoint for Prometheus scraping
+// Prometheus 스크래핑을 위한 /metrics 엔드포인트 제공
 module observability
 
 import net

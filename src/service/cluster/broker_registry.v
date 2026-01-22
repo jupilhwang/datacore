@@ -1,5 +1,5 @@
-// Service Layer - Broker Registry
-// Manages broker registration, heartbeats, and health monitoring
+// 서비스 레이어 - 브로커 레지스트리
+// 클러스터 내 브로커 등록, 하트비트, 상태 모니터링을 관리합니다.
 module cluster
 
 import domain
@@ -8,42 +8,48 @@ import sync
 import time
 
 // ============================================================================
-// Broker Registry
+// 브로커 레지스트리
 // ============================================================================
 
-// BrokerRegistry manages broker registration and health in the cluster
+/// MetricsProvider는 외부에서 브로커 부하 메트릭을 제공하는 콜백 함수 타입입니다.
+/// 연결 수, 초당 바이트 입출력 등의 메트릭을 반환합니다.
+pub type MetricsProvider = fn () domain.BrokerLoad
+
+/// BrokerRegistry는 클러스터 내 브로커 등록 및 상태를 관리합니다.
+/// 단일 브로커 모드와 멀티 브로커 모드를 모두 지원합니다.
 pub struct BrokerRegistry {
 	config domain.ClusterConfig
 mut:
-	// Local broker info
-	local_broker domain.BrokerInfo
-	// Cluster metadata port (for distributed storage)
-	metadata_port ?port.ClusterMetadataPort
-	// In-memory cache of brokers (for single-broker mode or caching)
-	brokers map[i32]domain.BrokerInfo
-	// Thread safety
-	lock sync.RwMutex
-	// Background worker control
-	running bool
-	// Storage capability
-	capability domain.StorageCapability
+	local_broker     domain.BrokerInfo         // 로컬 브로커 정보
+	metadata_port    ?port.ClusterMetadataPort // 클러스터 메타데이터 포트 (분산 스토리지용)
+	brokers          map[i32]domain.BrokerInfo // 브로커 인메모리 캐시 (단일 브로커 모드 또는 캐싱용)
+	lock             sync.RwMutex              // 스레드 안전성
+	running          bool                      // 백그라운드 워커 제어
+	capability       domain.StorageCapability  // 스토리지 기능 정보
+	metrics_provider ?MetricsProvider          // 메트릭 프로바이더 콜백 (v0.29.0)
+	prev_bytes_in    u64                       // 이전 입력 바이트 (속도 계산용)
+	prev_bytes_out   u64                       // 이전 출력 바이트 (속도 계산용)
+	prev_time        i64                       // 이전 시간 (속도 계산용)
 }
 
-// BrokerRegistryConfig holds configuration for the registry
+/// BrokerRegistryConfig는 레지스트리 설정을 담습니다.
 pub struct BrokerRegistryConfig {
 pub:
-	broker_id  i32
-	host       string
-	port       i32
-	rack       string
-	cluster_id string
-	version    string
-	// Timing
-	heartbeat_interval_ms i32 = 3000
-	session_timeout_ms    i32 = 10000
+	broker_id  i32    // 브로커 ID
+	host       string // 호스트명
+	port       i32    // 포트
+	rack       string // 랙 정보
+	cluster_id string // 클러스터 ID
+	version    string // 버전
+	// 타이밍 설정
+	heartbeat_interval_ms i32 = 3000  // 하트비트 간격 (ms)
+	session_timeout_ms    i32 = 10000 // 세션 타임아웃 (ms)
 }
 
-// new_broker_registry creates a new broker registry
+/// new_broker_registry는 새로운 브로커 레지스트리를 생성합니다.
+/// config: 브로커 설정
+/// capability: 스토리지 기능 정보
+/// metadata_port: 분산 스토리지용 클러스터 메타데이터 포트 (멀티 브로커 모드)
 pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.StorageCapability, metadata_port ?port.ClusterMetadataPort) &BrokerRegistry {
 	local_broker := domain.BrokerInfo{
 		broker_id:         config.broker_id
@@ -74,20 +80,29 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 	}
 
 	return &BrokerRegistry{
-		config:        cluster_config
-		local_broker:  local_broker
-		metadata_port: metadata_port
-		brokers:       map[i32]domain.BrokerInfo{}
-		capability:    capability
-		running:       false
+		config:         cluster_config
+		local_broker:   local_broker
+		metadata_port:  metadata_port
+		brokers:        map[i32]domain.BrokerInfo{}
+		capability:     capability
+		running:        false
+		prev_bytes_in:  0
+		prev_bytes_out: 0
+		prev_time:      time.now().unix_milli()
 	}
 }
 
+/// set_metrics_provider는 브로커 부하 메트릭을 제공하는 콜백 함수를 설정합니다.
+/// 이 콜백은 heartbeat_loop에서 주기적으로 호출되어 실제 서버 메트릭을 수집합니다.
+pub fn (mut r BrokerRegistry) set_metrics_provider(provider MetricsProvider) {
+	r.metrics_provider = provider
+}
+
 // ============================================================================
-// Registration
+// 등록
 // ============================================================================
 
-// register registers the local broker with the cluster
+/// register는 로컬 브로커를 클러스터에 등록합니다.
 pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -97,10 +112,10 @@ pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 	r.local_broker.last_heartbeat = now
 	r.local_broker.status = .active
 
-	// If multi-broker mode with distributed storage
+	// 분산 스토리지를 사용하는 멀티 브로커 모드인 경우
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
-			// Register with distributed storage
+			// 분산 스토리지에 등록
 			registered := mp.register_broker(r.local_broker)!
 			r.local_broker = registered
 			r.brokers[registered.broker_id] = registered
@@ -108,19 +123,19 @@ pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 		}
 	}
 
-	// Single-broker mode - just store locally
+	// 단일 브로커 모드 - 로컬에만 저장
 	r.brokers[r.local_broker.broker_id] = r.local_broker
 	return r.local_broker
 }
 
-// deregister removes the local broker from the cluster
+/// deregister는 로컬 브로커를 클러스터에서 제거합니다.
 pub fn (mut r BrokerRegistry) deregister() ! {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
 
 	r.local_broker.status = .shutdown
 
-	// If multi-broker mode with distributed storage
+	// 분산 스토리지를 사용하는 멀티 브로커 모드인 경우
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
 			mp.deregister_broker(r.local_broker.broker_id)!
@@ -131,10 +146,10 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 }
 
 // ============================================================================
-// Heartbeat
+// 하트비트
 // ============================================================================
 
-// send_heartbeat sends a heartbeat for the local broker
+/// send_heartbeat는 로컬 브로커의 하트비트를 전송합니다.
 pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -149,55 +164,55 @@ pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 		wants_shutdown: r.local_broker.status == .draining
 	}
 
-	// If multi-broker mode with distributed storage
+	// 분산 스토리지를 사용하는 멀티 브로커 모드인 경우
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
 			mp.update_broker_heartbeat(heartbeat)!
 		}
 	}
 
-	// Update local cache
+	// 로컬 캐시 업데이트
 	r.brokers[r.local_broker.broker_id] = r.local_broker
 }
 
 // ============================================================================
-// Query
+// 조회
 // ============================================================================
 
-// get_local_broker returns the local broker info
+/// get_local_broker는 로컬 브로커 정보를 반환합니다.
 pub fn (r &BrokerRegistry) get_local_broker() domain.BrokerInfo {
 	return r.local_broker
 }
 
-// get_broker returns information about a specific broker
+/// get_broker는 특정 브로커의 정보를 반환합니다.
 pub fn (mut r BrokerRegistry) get_broker(broker_id i32) !domain.BrokerInfo {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 
-	// Try distributed storage first
+	// 분산 스토리지 먼저 시도
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
 			return mp.get_broker(broker_id)
 		}
 	}
 
-	// Fall back to local cache
+	// 로컬 캐시로 폴백
 	return r.brokers[broker_id] or { return error('broker not found: ${broker_id}') }
 }
 
-// list_brokers returns all registered brokers
+/// list_brokers는 등록된 모든 브로커를 반환합니다.
 pub fn (mut r BrokerRegistry) list_brokers() ![]domain.BrokerInfo {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 
-	// Try distributed storage first
+	// 분산 스토리지 먼저 시도
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
 			return mp.list_brokers()
 		}
 	}
 
-	// Fall back to local cache
+	// 로컬 캐시로 폴백
 	mut result := []domain.BrokerInfo{}
 	for _, broker in r.brokers {
 		result << broker
@@ -205,19 +220,19 @@ pub fn (mut r BrokerRegistry) list_brokers() ![]domain.BrokerInfo {
 	return result
 }
 
-// list_active_brokers returns only active brokers
+/// list_active_brokers는 활성 브로커만 반환합니다.
 pub fn (mut r BrokerRegistry) list_active_brokers() ![]domain.BrokerInfo {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 
-	// Try distributed storage first
+	// 분산 스토리지 먼저 시도
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
 			return mp.list_active_brokers()
 		}
 	}
 
-	// Fall back to local cache - filter active
+	// 로컬 캐시로 폴백 - 활성 브로커 필터링
 	mut result := []domain.BrokerInfo{}
 	for _, broker in r.brokers {
 		if broker.status == .active {
@@ -228,10 +243,10 @@ pub fn (mut r BrokerRegistry) list_active_brokers() ![]domain.BrokerInfo {
 }
 
 // ============================================================================
-// Health Monitoring
+// 상태 모니터링
 // ============================================================================
 
-// check_expired_brokers checks for brokers that have missed heartbeats
+/// check_expired_brokers는 하트비트를 놓친 브로커를 확인합니다.
 pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -240,7 +255,7 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 	timeout := i64(r.config.broker_session_timeout_ms)
 	mut expired := []i32{}
 
-	// In multi-broker mode, check distributed storage
+	// 멀티 브로커 모드에서는 분산 스토리지 확인
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
 			brokers := mp.list_brokers()!
@@ -254,7 +269,7 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 		}
 	}
 
-	// Single-broker mode - check local cache
+	// 단일 브로커 모드 - 로컬 캐시 확인
 	for broker_id, broker in r.brokers {
 		if broker.status == .active && now - broker.last_heartbeat > timeout {
 			expired << broker_id
@@ -269,16 +284,16 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 }
 
 // ============================================================================
-// Background Worker
+// 백그라운드 워커
 // ============================================================================
 
-// start_heartbeat_worker starts the background heartbeat worker
+/// start_heartbeat_worker는 백그라운드 하트비트 워커를 시작합니다.
 pub fn (mut r BrokerRegistry) start_heartbeat_worker() {
 	r.running = true
 	spawn r.heartbeat_loop()
 }
 
-// stop_heartbeat_worker stops the background heartbeat worker
+/// stop_heartbeat_worker는 백그라운드 하트비트 워커를 중지합니다.
 pub fn (mut r BrokerRegistry) stop_heartbeat_worker() {
 	r.running = false
 }
@@ -287,11 +302,17 @@ fn (mut r BrokerRegistry) heartbeat_loop() {
 	interval := time.Duration(r.config.broker_heartbeat_interval_ms * time.millisecond)
 
 	for r.running {
-		// Send heartbeat
-		load := domain.BrokerLoad{} // TODO: Collect actual metrics
+		// 메트릭 수집: 외부 프로바이더가 설정된 경우 실제 메트릭 사용
+		load := if provider := r.metrics_provider {
+			provider()
+		} else {
+			// 프로바이더가 없으면 기본 빈 메트릭 반환
+			domain.BrokerLoad{}
+		}
+
 		r.send_heartbeat(load) or { eprintln('[WARN] Failed to send heartbeat: ${err}') }
 
-		// Check for expired brokers
+		// 만료된 브로커 확인
 		expired := r.check_expired_brokers() or { []i32{} }
 		if expired.len > 0 {
 			eprintln('[INFO] Detected ${expired.len} expired brokers: ${expired}')
@@ -302,36 +323,36 @@ fn (mut r BrokerRegistry) heartbeat_loop() {
 }
 
 // ============================================================================
-// Cluster Metadata
+// 클러스터 메타데이터
 // ============================================================================
 
-// get_cluster_metadata returns the current cluster metadata
+/// get_cluster_metadata는 현재 클러스터 메타데이터를 반환합니다.
 pub fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
-	// Try distributed storage first
+	// 분산 스토리지 먼저 시도
 	if r.capability.supports_multi_broker {
 		if mut mp := r.metadata_port {
 			return mp.get_cluster_metadata()
 		}
 	}
 
-	// Build from local state
+	// 로컬 상태에서 구성
 	brokers := r.list_brokers()!
 
 	return domain.ClusterMetadata{
 		cluster_id:       r.config.cluster_id
-		controller_id:    r.local_broker.broker_id // In single-broker, we are the controller
+		controller_id:    r.local_broker.broker_id // 단일 브로커에서는 자신이 컨트롤러
 		brokers:          brokers
 		metadata_version: 1
 		updated_at:       time.now().unix_milli()
 	}
 }
 
-// is_multi_broker_enabled returns whether multi-broker mode is enabled
+/// is_multi_broker_enabled는 멀티 브로커 모드가 활성화되었는지 반환합니다.
 pub fn (r &BrokerRegistry) is_multi_broker_enabled() bool {
 	return r.capability.supports_multi_broker
 }
 
-// get_capability returns the storage capability
+/// get_capability는 스토리지 기능 정보를 반환합니다.
 pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 	return r.capability
 }

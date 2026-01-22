@@ -1,19 +1,19 @@
+/// io_uring - Linux 5.1+ 비동기 I/O 인터페이스
+/// 커널 제출/완료 큐를 사용한 고성능 비동기 I/O 제공
+///
+/// 기능:
+/// - 제로카피 I/O 연산
+/// - 시스템 호출 오버헤드를 줄이기 위한 배치 제출
+/// - 폴링 I/O 모드 지원
+/// - 연결된 요청을 위한 링크 연산
+///
+/// 참고: Linux 5.1+ 에서만 사용 가능, 다른 플랫폼은 폴백 사용
 module engines
 
-// io_uring - Linux 5.1+ Async I/O Interface
-// Provides high-performance asynchronous I/O using kernel submission/completion queues
-//
-// Features:
-// - Zero-copy I/O operations
-// - Batch submission for reduced syscall overhead
-// - Polled I/O mode support
-// - Link operations for chained requests
-//
-// Note: Only available on Linux 5.1+, other platforms use fallback
 import os
 
 // ============================================================================
-// io_uring Constants and Flags
+// io_uring 상수 및 플래그
 // ============================================================================
 
 $if linux {
@@ -22,12 +22,12 @@ $if linux {
 	#include <sys/mman.h>
 	#include <unistd.h>
 
-	// io_uring_setup flags
-	const ioring_setup_iopoll = u32(1) // Use polling for I/O completion
-	const ioring_setup_sqpoll = u32(2) // Use kernel thread for SQ polling
-	const ioring_setup_sq_aff = u32(4) // SQ thread CPU affinity
+	// io_uring_setup 플래그
+	const ioring_setup_iopoll = u32(1) // I/O 완료에 폴링 사용
+	const ioring_setup_sqpoll = u32(2) // SQ 폴링에 커널 스레드 사용
+	const ioring_setup_sq_aff = u32(4) // SQ 스레드 CPU 친화성
 
-	// io_uring opcodes
+	// io_uring 연산 코드
 	const ioring_op_nop = u8(0)
 	const ioring_op_readv = u8(1)
 	const ioring_op_writev = u8(2)
@@ -39,12 +39,12 @@ $if linux {
 	const ioring_op_read = u8(22)
 	const ioring_op_write = u8(23)
 
-	// Syscall numbers (x86_64)
+	// 시스템 호출 번호 (x86_64)
 	const sys_io_uring_setup = 425
 	const sys_io_uring_enter = 426
 	const sys_io_uring_register = 427
 
-	// io_uring_enter flags
+	// io_uring_enter 플래그
 	const ioring_enter_getevents = u32(1)
 	const ioring_enter_sq_wakeup = u32(2)
 
@@ -54,138 +54,142 @@ $if linux {
 }
 
 // ============================================================================
-// io_uring Structures
+// io_uring 구조체
 // ============================================================================
 
-// IoUringParams holds io_uring setup parameters
+/// IoUringParams는 io_uring 설정 파라미터를 담고 있습니다.
 pub struct IoUringParams {
 pub mut:
-	sq_entries     u32
-	cq_entries     u32
-	flags          u32
-	sq_thread_cpu  u32
-	sq_thread_idle u32
-	features       u32
-	resv           [4]u32
-	sq_off         SqRingOffsets
-	cq_off         CqRingOffsets
+	sq_entries     u32          // 제출 큐 항목 수
+	cq_entries     u32          // 완료 큐 항목 수
+	flags          u32          // 플래그
+	sq_thread_cpu  u32          // SQ 스레드 CPU
+	sq_thread_idle u32          // SQ 스레드 유휴 시간
+	features       u32          // 기능 플래그
+	resv           [4]u32       // 예약됨
+	sq_off         SqRingOffsets // SQ 링 오프셋
+	cq_off         CqRingOffsets // CQ 링 오프셋
 }
 
+/// SqRingOffsets는 제출 큐 링 오프셋을 담고 있습니다.
 pub struct SqRingOffsets {
 pub:
-	head         u32
-	tail         u32
-	ring_mask    u32
-	ring_entries u32
-	flags        u32
-	dropped      u32
-	array        u32
-	resv1        u32
-	resv2        u64
+	head         u32 // 헤드 오프셋
+	tail         u32 // 테일 오프셋
+	ring_mask    u32 // 링 마스크
+	ring_entries u32 // 링 항목 수
+	flags        u32 // 플래그
+	dropped      u32 // 드롭된 수
+	array        u32 // 배열 오프셋
+	resv1        u32 // 예약됨
+	resv2        u64 // 예약됨
 }
 
+/// CqRingOffsets는 완료 큐 링 오프셋을 담고 있습니다.
 pub struct CqRingOffsets {
 pub:
-	head         u32
-	tail         u32
-	ring_mask    u32
-	ring_entries u32
-	overflow     u32
-	cqes         u32
-	flags        u32
-	resv1        u32
-	resv2        u64
+	head         u32 // 헤드 오프셋
+	tail         u32 // 테일 오프셋
+	ring_mask    u32 // 링 마스크
+	ring_entries u32 // 링 항목 수
+	overflow     u32 // 오버플로우 오프셋
+	cqes         u32 // CQE 오프셋
+	flags        u32 // 플래그
+	resv1        u32 // 예약됨
+	resv2        u64 // 예약됨
 }
 
-// IoUringSqe - Submission Queue Entry
+/// IoUringSqe는 제출 큐 항목입니다.
 pub struct IoUringSqe {
 pub mut:
-	opcode      u8
-	flags       u8
-	ioprio      u16
-	fd          i32
-	off         u64 // offset or addr2
-	addr        u64 // buffer address or splice_fd_in
-	len         u32 // buffer length or poll events
-	rw_flags    u32 // op-specific flags
-	user_data   u64 // user data for completion
-	buf_index   u16
-	personality u16
-	splice_fd   i32
-	pad2        [2]u64
+	opcode      u8     // 연산 코드
+	flags       u8     // 플래그
+	ioprio      u16    // I/O 우선순위
+	fd          i32    // 파일 디스크립터
+	off         u64    // 오프셋 또는 addr2
+	addr        u64    // 버퍼 주소 또는 splice_fd_in
+	len         u32    // 버퍼 길이 또는 poll 이벤트
+	rw_flags    u32    // 연산별 플래그
+	user_data   u64    // 완료를 위한 사용자 데이터
+	buf_index   u16    // 버퍼 인덱스
+	personality u16    // 퍼스널리티
+	splice_fd   i32    // splice 파일 디스크립터
+	pad2        [2]u64 // 패딩
 }
 
-// IoUringCqe - Completion Queue Entry
+/// IoUringCqe는 완료 큐 항목입니다.
 pub struct IoUringCqe {
 pub:
-	user_data u64 // correlates to submission
-	res       i32 // result (bytes transferred or error)
-	flags     u32
+	user_data u64 // 제출과 연관됨
+	res       i32 // 결과 (전송된 바이트 또는 에러)
+	flags     u32 // 플래그
 }
 
 // ============================================================================
-// io_uring Ring Structure
+// io_uring 링 구조체
 // ============================================================================
 
-// IoUring represents an io_uring instance
+/// IoUring은 io_uring 인스턴스를 나타냅니다.
 pub struct IoUring {
 pub mut:
-	ring_fd      int
-	sq_ring_ptr  voidptr
-	cq_ring_ptr  voidptr
-	sqes         voidptr
-	sq_ring_size usize
-	cq_ring_size usize
-	sqes_size    usize
-	params       IoUringParams
-	// Ring state
-	sq_head  &u32 = unsafe { nil }
-	sq_tail  &u32 = unsafe { nil }
-	sq_mask  u32
-	sq_array &u32 = unsafe { nil }
-	cq_head  &u32 = unsafe { nil }
-	cq_tail  &u32 = unsafe { nil }
-	cq_mask  u32
-	cqes_ptr &IoUringCqe = unsafe { nil }
-	// Stats
-	submissions u64
-	completions u64
-	errors      u64
+	ring_fd      int           // 링 파일 디스크립터
+	sq_ring_ptr  voidptr       // SQ 링 포인터
+	cq_ring_ptr  voidptr       // CQ 링 포인터
+	sqes         voidptr       // SQE 배열
+	sq_ring_size usize         // SQ 링 크기
+	cq_ring_size usize         // CQ 링 크기
+	sqes_size    usize         // SQE 크기
+	params       IoUringParams // 파라미터
+	// 링 상태
+	sq_head  &u32        = unsafe { nil } // SQ 헤드
+	sq_tail  &u32        = unsafe { nil } // SQ 테일
+	sq_mask  u32                          // SQ 마스크
+	sq_array &u32        = unsafe { nil } // SQ 배열
+	cq_head  &u32        = unsafe { nil } // CQ 헤드
+	cq_tail  &u32        = unsafe { nil } // CQ 테일
+	cq_mask  u32                          // CQ 마스크
+	cqes_ptr &IoUringCqe = unsafe { nil } // CQE 포인터
+	// 통계
+	submissions u64 // 제출 수
+	completions u64 // 완료 수
+	errors      u64 // 에러 수
 }
 
-// IoUringConfig holds configuration for io_uring setup
+/// IoUringConfig는 io_uring 설정을 담고 있습니다.
 pub struct IoUringConfig {
 pub:
-	queue_depth    u32 = 256
-	flags          u32 = 0
-	sq_thread_cpu  u32 = 0
-	sq_thread_idle u32 = 1000
+	queue_depth    u32 = 256  // 큐 깊이
+	flags          u32 = 0    // 플래그
+	sq_thread_cpu  u32 = 0    // SQ 스레드 CPU
+	sq_thread_idle u32 = 1000 // SQ 스레드 유휴 시간 (ms)
 }
 
 // ============================================================================
-// io_uring Result Types
+// io_uring 결과 타입
 // ============================================================================
 
+/// IoUringResult는 io_uring 연산 결과를 담고 있습니다.
 pub struct IoUringResult {
 pub:
-	user_data u64
-	result    i32
-	success   bool
+	user_data u64  // 사용자 데이터
+	result    i32  // 결과
+	success   bool // 성공 여부
 }
 
+/// IoUringStats는 io_uring 통계를 담고 있습니다.
 pub struct IoUringStats {
 pub:
-	submissions u64
-	completions u64
-	errors      u64
-	pending     u64
+	submissions u64 // 제출 수
+	completions u64 // 완료 수
+	errors      u64 // 에러 수
+	pending     u64 // 대기 중인 수
 }
 
 // ============================================================================
-// io_uring Implementation
+// io_uring 구현
 // ============================================================================
 
-// new_io_uring creates a new io_uring instance
+/// new_io_uring은 새 io_uring 인스턴스를 생성합니다.
 pub fn new_io_uring(config IoUringConfig) !IoUring {
 	$if linux {
 		mut params := IoUringParams{
@@ -196,7 +200,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 			sq_thread_idle: config.sq_thread_idle
 		}
 
-		// Call io_uring_setup syscall
+		// io_uring_setup 시스템 호출
 		fd := C.syscall(sys_io_uring_setup, config.queue_depth, &params)
 		if fd < 0 {
 			return error('io_uring_setup failed')
@@ -209,7 +213,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 			cq_mask: params.cq_entries - 1
 		}
 
-		// Map submission queue ring
+		// 제출 큐 링 매핑
 		sq_ring_sz := usize(params.sq_off.array) + usize(params.sq_entries) * sizeof(u32)
 		ring.sq_ring_size = sq_ring_sz
 		ring.sq_ring_ptr = C.mmap(unsafe { nil }, sq_ring_sz, 0x1 | 0x2, 0x1, int(fd),
@@ -218,7 +222,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 			return error('mmap sq_ring failed')
 		}
 
-		// Map completion queue ring
+		// 완료 큐 링 매핑
 		cq_ring_sz := usize(params.cq_off.cqes) + usize(params.cq_entries) * sizeof(IoUringCqe)
 		ring.cq_ring_size = cq_ring_sz
 		ring.cq_ring_ptr = C.mmap(unsafe { nil }, cq_ring_sz, 0x1 | 0x2, 0x1, int(fd),
@@ -227,7 +231,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 			return error('mmap cq_ring failed')
 		}
 
-		// Map SQEs
+		// SQE 매핑
 		sqes_sz := usize(params.sq_entries) * sizeof(IoUringSqe)
 		ring.sqes_size = sqes_sz
 		ring.sqes = C.mmap(unsafe { nil }, sqes_sz, 0x1 | 0x2, 0x1, int(fd), 0x10000000)
@@ -235,7 +239,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 			return error('mmap sqes failed')
 		}
 
-		// Setup ring pointers
+		// 링 포인터 설정
 		ring.sq_head = unsafe { &u32(voidptr(usize(ring.sq_ring_ptr) + params.sq_off.head)) }
 		ring.sq_tail = unsafe { &u32(voidptr(usize(ring.sq_ring_ptr) + params.sq_off.tail)) }
 		ring.sq_array = unsafe { &u32(voidptr(usize(ring.sq_ring_ptr) + params.sq_off.array)) }
@@ -249,7 +253,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 	}
 }
 
-// close releases io_uring resources
+/// close는 io_uring 리소스를 해제합니다.
 pub fn (mut r IoUring) close() {
 	$if linux {
 		if r.sq_ring_ptr != unsafe { nil } {
@@ -267,7 +271,7 @@ pub fn (mut r IoUring) close() {
 	}
 }
 
-// get_sqe gets a free submission queue entry
+/// get_sqe는 빈 제출 큐 항목을 가져옵니다.
 pub fn (mut r IoUring) get_sqe() ?&IoUringSqe {
 	$if linux {
 		head := unsafe { *r.sq_head }
@@ -275,13 +279,13 @@ pub fn (mut r IoUring) get_sqe() ?&IoUringSqe {
 		next := tail + 1
 
 		if (next - head) > r.params.sq_entries {
-			return none // Queue full
+			return none // 큐가 가득 참
 		}
 
 		idx := tail & r.sq_mask
 		sqe := unsafe { &IoUringSqe(voidptr(usize(r.sqes) + usize(idx) * sizeof(IoUringSqe))) }
 
-		// Clear the SQE
+		// SQE 초기화
 		unsafe {
 			C.memset(sqe, 0, sizeof(IoUringSqe))
 		}
@@ -292,7 +296,7 @@ pub fn (mut r IoUring) get_sqe() ?&IoUringSqe {
 	}
 }
 
-// submit_sqe submits the current SQE
+/// submit_sqe는 현재 SQE를 제출합니다.
 pub fn (mut r IoUring) submit_sqe() {
 	$if linux {
 		tail := unsafe { *r.sq_tail }
@@ -305,7 +309,7 @@ pub fn (mut r IoUring) submit_sqe() {
 	}
 }
 
-// submit submits pending SQEs and optionally waits for completions
+/// submit은 대기 중인 SQE를 제출하고 선택적으로 완료를 기다립니다.
 pub fn (mut r IoUring) submit(wait_nr u32) !int {
 	$if linux {
 		head := unsafe { *r.sq_head }
@@ -330,14 +334,14 @@ pub fn (mut r IoUring) submit(wait_nr u32) !int {
 	}
 }
 
-// peek_cqe peeks at the next completion without consuming
+/// peek_cqe는 소비하지 않고 다음 완료를 확인합니다.
 pub fn (r &IoUring) peek_cqe() ?&IoUringCqe {
 	$if linux {
 		head := unsafe { *r.cq_head }
 		tail := unsafe { *r.cq_tail }
 
 		if head == tail {
-			return none // No completions
+			return none // 완료 없음
 		}
 
 		idx := head & r.cq_mask
@@ -347,7 +351,7 @@ pub fn (r &IoUring) peek_cqe() ?&IoUringCqe {
 	}
 }
 
-// consume_cqe marks the current CQE as consumed
+/// consume_cqe는 현재 CQE를 소비된 것으로 표시합니다.
 pub fn (mut r IoUring) consume_cqe() {
 	$if linux {
 		unsafe {
@@ -357,10 +361,10 @@ pub fn (mut r IoUring) consume_cqe() {
 	}
 }
 
-// wait_cqe waits for at least one completion
+/// wait_cqe는 최소 하나의 완료를 기다립니다.
 pub fn (mut r IoUring) wait_cqe() !IoUringResult {
 	$if linux {
-		// First check if there's already a completion
+		// 먼저 이미 완료가 있는지 확인
 		if cqe := r.peek_cqe() {
 			result := IoUringResult{
 				user_data: cqe.user_data
@@ -371,7 +375,7 @@ pub fn (mut r IoUring) wait_cqe() !IoUringResult {
 			return result
 		}
 
-		// Wait for completion
+		// 완료 대기
 		r.submit(1)!
 
 		if cqe := r.peek_cqe() {
@@ -390,7 +394,7 @@ pub fn (mut r IoUring) wait_cqe() !IoUringResult {
 	}
 }
 
-// get_stats returns io_uring statistics
+/// get_stats는 io_uring 통계를 반환합니다.
 pub fn (r &IoUring) get_stats() IoUringStats {
 	$if linux {
 		head := unsafe { *r.sq_head }
@@ -409,10 +413,10 @@ pub fn (r &IoUring) get_stats() IoUringStats {
 }
 
 // ============================================================================
-// High-Level Operations
+// 고수준 연산
 // ============================================================================
 
-// prep_read prepares a read operation
+/// prep_read는 읽기 연산을 준비합니다.
 pub fn (mut r IoUring) prep_read(fd int, buf []u8, offset i64, user_data u64) bool {
 	$if linux {
 		sqe := r.get_sqe() or { return false }
@@ -431,7 +435,7 @@ pub fn (mut r IoUring) prep_read(fd int, buf []u8, offset i64, user_data u64) bo
 	}
 }
 
-// prep_write prepares a write operation
+/// prep_write는 쓰기 연산을 준비합니다.
 pub fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) bool {
 	$if linux {
 		sqe := r.get_sqe() or { return false }
@@ -450,7 +454,7 @@ pub fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) b
 	}
 }
 
-// prep_fsync prepares an fsync operation
+/// prep_fsync는 fsync 연산을 준비합니다.
 pub fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
 	$if linux {
 		sqe := r.get_sqe() or { return false }
@@ -466,7 +470,7 @@ pub fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
 	}
 }
 
-// prep_nop prepares a no-op (useful for testing)
+/// prep_nop은 no-op을 준비합니다 (테스트에 유용).
 pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 	$if linux {
 		sqe := r.get_sqe() or { return false }
@@ -482,27 +486,28 @@ pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 }
 
 // ============================================================================
-// Batch Operations
+// 배치 연산
 // ============================================================================
 
-// BatchOp represents a batch operation
+/// BatchOp은 배치 연산을 나타냅니다.
 pub struct BatchOp {
 pub:
-	op_type   BatchOpType
-	fd        int
-	buf       []u8
-	offset    i64
-	user_data u64
+	op_type   BatchOpType // 연산 타입
+	fd        int         // 파일 디스크립터
+	buf       []u8        // 버퍼
+	offset    i64         // 오프셋
+	user_data u64         // 사용자 데이터
 }
 
+/// BatchOpType은 배치 연산 타입입니다.
 pub enum BatchOpType {
-	read
-	write
-	fsync
-	nop
+	read  // 읽기
+	write // 쓰기
+	fsync // fsync
+	nop   // no-op
 }
 
-// submit_batch submits multiple operations at once
+/// submit_batch는 여러 연산을 한 번에 제출합니다.
 pub fn (mut r IoUring) submit_batch(ops []BatchOp) !int {
 	$if linux {
 		mut submitted := 0
@@ -525,7 +530,7 @@ pub fn (mut r IoUring) submit_batch(ops []BatchOp) !int {
 	}
 }
 
-// wait_batch waits for multiple completions
+/// wait_batch는 여러 완료를 기다립니다.
 pub fn (mut r IoUring) wait_batch(count int) ![]IoUringResult {
 	$if linux {
 		mut results := []IoUringResult{cap: count}
@@ -542,21 +547,21 @@ pub fn (mut r IoUring) wait_batch(count int) ![]IoUringResult {
 }
 
 // ============================================================================
-// Fallback Implementation for Non-Linux
+// 비Linux를 위한 폴백 구현
 // ============================================================================
 
-// IoUringFallback provides synchronous fallback for non-Linux systems
+/// IoUringFallback은 비Linux 시스템을 위한 동기 폴백을 제공합니다.
 pub struct IoUringFallback {
 pub mut:
-	operations u64
+	operations u64 // 연산 수
 }
 
-// new_io_uring_fallback creates a fallback handler
+/// new_io_uring_fallback은 폴백 핸들러를 생성합니다.
 pub fn new_io_uring_fallback() IoUringFallback {
 	return IoUringFallback{}
 }
 
-// sync_read performs synchronous read (fallback)
+/// sync_read는 동기 읽기를 수행합니다 (폴백).
 pub fn (mut f IoUringFallback) sync_read(mut file os.File, mut buf []u8, offset i64) !int {
 	if offset >= 0 {
 		file.seek(offset, .start) or { return error('seek failed: ${err}') }
@@ -566,7 +571,7 @@ pub fn (mut f IoUringFallback) sync_read(mut file os.File, mut buf []u8, offset 
 	return bytes_read
 }
 
-// sync_write performs synchronous write (fallback)
+/// sync_write는 동기 쓰기를 수행합니다 (폴백).
 pub fn (mut f IoUringFallback) sync_write(mut file os.File, buf []u8, offset i64) !int {
 	if offset >= 0 {
 		file.seek(offset, .start) or { return error('seek failed: ${err}') }
@@ -577,19 +582,19 @@ pub fn (mut f IoUringFallback) sync_write(mut file os.File, buf []u8, offset i64
 }
 
 // ============================================================================
-// Platform-Independent Async I/O Interface
+// 플랫폼 독립적 비동기 I/O 인터페이스
 // ============================================================================
 
-// AsyncIoCapabilities indicates platform support
+/// AsyncIoCapabilities는 플랫폼 지원을 나타냅니다.
 pub struct AsyncIoCapabilities {
 pub:
-	has_io_uring  bool
-	has_aio       bool // POSIX AIO
-	has_iocp      bool // Windows IOCP
-	platform_name string
+	has_io_uring  bool   // io_uring 지원
+	has_aio       bool   // POSIX AIO 지원
+	has_iocp      bool   // Windows IOCP 지원
+	platform_name string // 플랫폼 이름
 }
 
-// get_async_io_capabilities returns available async I/O features
+/// get_async_io_capabilities는 사용 가능한 비동기 I/O 기능을 반환합니다.
 pub fn get_async_io_capabilities() AsyncIoCapabilities {
 	$if linux {
 		return AsyncIoCapabilities{
@@ -622,10 +627,10 @@ pub fn get_async_io_capabilities() AsyncIoCapabilities {
 	}
 }
 
-// is_io_uring_available checks if io_uring is available at runtime
+/// is_io_uring_available은 런타임에 io_uring 사용 가능 여부를 확인합니다.
 pub fn is_io_uring_available() bool {
 	$if linux {
-		// Try to create a minimal io_uring to check availability
+		// 최소 io_uring을 생성하여 가용성 확인
 		ring := new_io_uring(IoUringConfig{ queue_depth: 1 }) or { return false }
 		mut r := ring
 		r.close()

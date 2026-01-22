@@ -1,11 +1,11 @@
-// SSE Service Tests
+// SSE Service 테스트
 module streaming
 
 import domain
 import service.port
 
 // ============================================================================
-// Mock Storage for Testing
+// 테스트용 Mock Storage
 // ============================================================================
 
 struct MockStorage {

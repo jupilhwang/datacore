@@ -1,10 +1,10 @@
-// gRPC Service Tests
+// gRPC Service 테스트
 module streaming
 
 import domain
 import service.port
 
-// Mock storage for testing
+// 테스트용 Mock storage
 struct MockStorage {
 mut:
 	topics     map[string]domain.TopicMetadata

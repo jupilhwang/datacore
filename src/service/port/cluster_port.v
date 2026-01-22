@@ -1,80 +1,81 @@
-// Service Layer - Cluster Metadata Port Interface
-// Defines the interface for cluster metadata operations in multi-broker mode
+// 서비스 레이어 - 클러스터 메타데이터 포트 인터페이스
+// 멀티 브로커 모드에서 클러스터 메타데이터 작업을 정의합니다.
+// 분산 스토리지 어댑터(PostgreSQL, etcd 등)에서 구현됩니다.
 module port
 
 import domain
 
-// ClusterMetadataPort defines operations for cluster coordination
-// This interface is implemented by storage adapters that support multi-broker mode
+/// ClusterMetadataPort는 클러스터 조정을 위한 작업을 정의합니다.
+/// 멀티 브로커 모드를 지원하는 스토리지 어댑터에서 구현됩니다.
 pub interface ClusterMetadataPort {
 mut:
 
 	// ============================================================
-	// Broker Registration
+	// 브로커 등록
 	// ============================================================
-	// register_broker registers a broker in the cluster
-	// Returns the assigned broker_id (may differ from requested if conflict)
+	/// 클러스터에 브로커를 등록합니다.
+	/// 반환값: 할당된 broker_id (충돌 시 요청과 다를 수 있음)
 	register_broker(info domain.BrokerInfo) !domain.BrokerInfo
 
-	// deregister_broker removes a broker from the cluster
+	/// 클러스터에서 브로커를 제거합니다.
 	deregister_broker(broker_id i32) !
 
-	// update_broker_heartbeat updates the broker's last heartbeat time
+	/// 브로커의 마지막 하트비트 시간을 업데이트합니다.
 	update_broker_heartbeat(heartbeat domain.BrokerHeartbeat) !
 
-	// get_broker returns information about a specific broker
+	/// 특정 브로커의 정보를 반환합니다.
 	get_broker(broker_id i32) !domain.BrokerInfo
 
-	// list_brokers returns all registered brokers
+	/// 등록된 모든 브로커 목록을 반환합니다.
 	list_brokers() ![]domain.BrokerInfo
 
-	// list_active_brokers returns only active brokers (not dead/shutdown)
+	/// 활성 상태의 브로커만 반환합니다 (dead/shutdown 제외).
 	list_active_brokers() ![]domain.BrokerInfo
 
 	// ============================================================
-	// Cluster Metadata
+	// 클러스터 메타데이터
 	// ============================================================
-	// get_cluster_metadata returns the current cluster metadata
+	/// 현재 클러스터 메타데이터를 반환합니다.
 	get_cluster_metadata() !domain.ClusterMetadata
 
-	// update_cluster_metadata updates cluster metadata with optimistic locking
-	// Returns error if version mismatch (concurrent modification)
+	/// 낙관적 잠금을 사용하여 클러스터 메타데이터를 업데이트합니다.
+	/// 버전 불일치 시 (동시 수정) 오류를 반환합니다.
 	update_cluster_metadata(metadata domain.ClusterMetadata) !
 
 	// ============================================================
-	// Partition Assignment
+	// 파티션 할당
 	// ============================================================
-	// get_partition_assignment returns assignment for a partition
+	/// 특정 파티션의 할당 정보를 반환합니다.
 	get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment
 
-	// list_partition_assignments returns all assignments for a topic
+	/// 토픽의 모든 파티션 할당 정보를 반환합니다.
 	list_partition_assignments(topic_name string) ![]domain.PartitionAssignment
 
-	// update_partition_assignment updates partition assignment
+	/// 파티션 할당 정보를 업데이트합니다.
 	update_partition_assignment(assignment domain.PartitionAssignment) !
 
 	// ============================================================
-	// Distributed Locking (for coordination)
+	// 분산 잠금 (조정용)
 	// ============================================================
-	// try_acquire_lock attempts to acquire a distributed lock
-	// Returns true if lock acquired, false if already held by another
+	/// 분산 잠금 획득을 시도합니다.
+	/// 반환값: 잠금 획득 성공 시 true, 다른 곳에서 보유 중이면 false
 	try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool
 
-	// release_lock releases a distributed lock
+	/// 분산 잠금을 해제합니다.
 	release_lock(lock_name string, holder_id string) !
 
-	// refresh_lock extends the TTL of a held lock
+	/// 보유 중인 잠금의 TTL을 연장합니다.
 	refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool
 
 	// ============================================================
-	// Health Monitoring
+	// 상태 모니터링
 	// ============================================================
-	// mark_broker_dead marks a broker as dead (missed heartbeats)
+	/// 브로커를 dead 상태로 표시합니다 (하트비트 누락).
 	mark_broker_dead(broker_id i32) !
 
 	// ============================================================
-	// Capability (immutable)
+	// 기능 정보 (불변)
 	// ============================================================
-	// get_capability returns the storage capability
+	/// 스토리지 기능 정보를 반환합니다.
 	get_capability() domain.StorageCapability
 }

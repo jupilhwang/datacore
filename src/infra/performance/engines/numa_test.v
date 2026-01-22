@@ -1,7 +1,7 @@
 module engines
 
-// NUMA Module Tests
-// Tests for NUMA-aware memory allocation and topology detection
+// NUMA 모듈 테스트
+// NUMA 인식 메모리 할당 및 토폴로지 감지 테스트
 import time
 
 // ============================================================================

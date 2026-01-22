@@ -1,6 +1,6 @@
-// Kafka Protocol - Config Operations
+// Kafka 프로토콜 - Config 작업
 // DescribeConfigs
-// Request/Response types, parsing, encoding, and handlers
+// 요청/응답 타입, 파싱, 인코딩 및 핸들러
 module kafka
 
 import infra.observability
@@ -196,25 +196,23 @@ pub fn (r DescribeConfigsResponse) encode(version i16) []u8 {
 }
 
 // ============================================================================
-// DescribeConfigs Handler
+// DescribeConfigs 핸들러
 // ============================================================================
 
-// DescribeConfigs handler
+// DescribeConfigs 핸들러
 fn (mut h Handler) handle_describe_configs(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_describe_configs_request(mut reader, version, is_flexible_version(.describe_configs,
 		version))!
 
-	h.logger.debug('Processing describe configs',
-		observability.field_int('resources', req.resources.len),
-		observability.field_bool('include_synonyms', req.include_synonyms))
+	h.logger.debug('Processing describe configs', observability.field_int('resources',
+		req.resources.len), observability.field_bool('include_synonyms', req.include_synonyms))
 
 	resp := h.process_describe_configs(req, version)!
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Describe configs completed',
-		observability.field_int('results', resp.results.len),
+	h.logger.debug('Describe configs completed', observability.field_int('results', resp.results.len),
 		observability.field_duration('latency', elapsed))
 
 	return resp.encode(version)

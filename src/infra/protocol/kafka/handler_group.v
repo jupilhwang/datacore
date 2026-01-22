@@ -1,6 +1,6 @@
-// Kafka Protocol - Group Operations
+// Kafka 프로토콜 - Group 작업
 // ListGroups, DescribeGroups
-// Request/Response types, parsing, encoding, and handlers
+// 요청/응답 타입, 파싱, 인코딩 및 핸들러
 module kafka
 
 import infra.observability
@@ -194,20 +194,19 @@ pub fn (r DescribeGroupsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ListGroups handler - lists consumer groups
+// ListGroups 핸들러 - 컨슈머 그룹 목록 조회
 fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_list_groups_request(mut reader, version, is_flexible_version(.list_groups,
 		version))!
 
-	h.logger.debug('Processing list groups request',
-		observability.field_int('states_filter', req.states_filter.len))
+	h.logger.debug('Processing list groups request', observability.field_int('states_filter',
+		req.states_filter.len))
 
-	// Get groups from storage
+	// 스토리지에서 그룹 조회
 	groups_info := h.storage.list_groups() or {
-		h.logger.error('List groups failed',
-			observability.field_string('error', err.str()))
+		h.logger.error('List groups failed', observability.field_string('error', err.str()))
 		resp := ListGroupsResponse{
 			throttle_time_ms: 0
 			error_code:       i16(ErrorCode.unknown_server_error)
@@ -226,8 +225,7 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('List groups completed',
-		observability.field_int('groups', groups.len),
+	h.logger.debug('List groups completed', observability.field_int('groups', groups.len),
 		observability.field_duration('latency', elapsed))
 
 	resp := ListGroupsResponse{
@@ -239,15 +237,15 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// DescribeGroups handler - describes consumer groups
+// DescribeGroups 핸들러 - 컨슈머 그룹 상세 조회
 fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	req := parse_describe_groups_request(mut reader, version, is_flexible_version(.describe_groups,
 		version))!
 
-	h.logger.debug('Processing describe groups request',
-		observability.field_int('groups', req.groups.len))
+	h.logger.debug('Processing describe groups request', observability.field_int('groups',
+		req.groups.len))
 
 	mut groups := []DescribeGroupsResponseGroup{}
 	mut found_count := 0
@@ -255,9 +253,8 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 
 	for group_id in req.groups {
 		group := h.storage.load_group(group_id) or {
-			// Group not found
-			h.logger.trace('Group not found',
-				observability.field_string('group_id', group_id))
+			// 그룹을 찾을 수 없음
+			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
 			not_found_count += 1
 			groups << DescribeGroupsResponseGroup{
 				error_code:    i16(ErrorCode.group_id_not_found)
@@ -292,10 +289,9 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 			.dead { 'Dead' }
 		}
 
-		h.logger.trace('Describing group',
-			observability.field_string('group_id', group_id),
-			observability.field_string('state', state_str),
-			observability.field_int('members', response_members.len))
+		h.logger.trace('Describing group', observability.field_string('group_id', group_id),
+			observability.field_string('state', state_str), observability.field_int('members',
+			response_members.len))
 
 		groups << DescribeGroupsResponseGroup{
 			error_code:    0
@@ -308,10 +304,9 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Describe groups completed',
-		observability.field_int('found', found_count),
-		observability.field_int('not_found', not_found_count),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Describe groups completed', observability.field_int('found', found_count),
+		observability.field_int('not_found', not_found_count), observability.field_duration('latency',
+		elapsed))
 
 	resp := DescribeGroupsResponse{
 		throttle_time_ms: 0
@@ -321,7 +316,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// Process ListGroups request (Frame-based)
+// ListGroups 요청 처리 (Frame 기반)
 fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !ListGroupsResponse {
 	groups_info := h.storage.list_groups() or {
 		return ListGroupsResponse{
@@ -347,7 +342,7 @@ fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !List
 	}
 }
 
-// Process DescribeGroups request (Frame-based)
+// DescribeGroups 요청 처리 (Frame 기반)
 fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i16) !DescribeGroupsResponse {
 	mut groups := []DescribeGroupsResponseGroup{}
 

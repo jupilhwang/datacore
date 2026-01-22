@@ -1,9 +1,9 @@
-// Kafka Protocol - Consumer Group Response Encoders
-// Encoding methods for JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat
+// Kafka 프로토콜 - 컨슈머 그룹 응답 인코더
+// JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat 인코딩 메서드
 module kafka
 
 // ============================================================================
-// JoinGroup Response Encoder (API Key 11)
+// JoinGroup 응답 인코더 (API Key 11)
 // ============================================================================
 
 pub fn (r JoinGroupResponse) encode(version i16) []u8 {
@@ -51,7 +51,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 	for m in r.members {
 		if is_flexible {
 			writer.write_compact_string(m.member_id)
-			// v5+: group_instance_id
+			// v5+: 정적 멤버십 인스턴스 ID
 			if version >= 5 {
 				writer.write_compact_nullable_string(m.group_instance_id)
 			}
@@ -59,7 +59,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 			writer.write_tagged_fields()
 		} else {
 			writer.write_string(m.member_id)
-			// v5+: group_instance_id
+			// v5+: 정적 멤버십 인스턴스 ID
 			if version >= 5 {
 				writer.write_nullable_string(m.group_instance_id)
 			}
@@ -75,7 +75,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 }
 
 // ============================================================================
-// SyncGroup Response Encoder (API Key 14)
+// SyncGroup 응답 인코더 (API Key 14)
 // ============================================================================
 
 pub fn (r SyncGroupResponse) encode(version i16) []u8 {
@@ -108,7 +108,7 @@ pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 }
 
 // ============================================================================
-// Heartbeat Response Encoder (API Key 12)
+// Heartbeat 응답 인코더 (API Key 12)
 // ============================================================================
 
 pub fn (r HeartbeatResponse) encode(version i16) []u8 {
@@ -127,7 +127,7 @@ pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 }
 
 // ============================================================================
-// LeaveGroup Response Encoder (API Key 13)
+// LeaveGroup 응답 인코더 (API Key 13)
 // ============================================================================
 
 pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
@@ -168,59 +168,59 @@ pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
 }
 
 // ============================================================================
-// ConsumerGroupHeartbeat Response Encoder (API Key 68) - KIP-848
+// ConsumerGroupHeartbeat 응답 인코더 (API Key 68) - KIP-848
 // ============================================================================
 
 pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
-	// ConsumerGroupHeartbeat is always flexible (v0+)
+	// ConsumerGroupHeartbeat는 항상 flexible (v0+)
 	mut writer := new_writer()
 
-	// throttle_time_ms: INT32
+	// throttle_time_ms: INT32 - 스로틀링 시간
 	writer.write_i32(r.throttle_time_ms)
 
-	// error_code: INT16
+	// error_code: INT16 - 에러 코드
 	writer.write_i16(r.error_code)
 
-	// error_message: COMPACT_NULLABLE_STRING
+	// error_message: COMPACT_NULLABLE_STRING - 에러 메시지
 	writer.write_compact_nullable_string(r.error_message)
 
-	// member_id: COMPACT_NULLABLE_STRING
+	// member_id: COMPACT_NULLABLE_STRING - 멤버 ID
 	writer.write_compact_nullable_string(r.member_id)
 
-	// member_epoch: INT32
+	// member_epoch: INT32 - 멤버 에포크
 	writer.write_i32(r.member_epoch)
 
-	// heartbeat_interval_ms: INT32
+	// heartbeat_interval_ms: INT32 - 하트비트 간격
 	writer.write_i32(r.heartbeat_interval_ms)
 
-	// assignment: Assignment (nullable)
+	// assignment: Assignment (nullable) - 파티션 할당
 	if assignment := r.assignment {
-		// Write topic_partitions array
+		// topic_partitions 배열 쓰기
 		writer.write_compact_array_len(assignment.topic_partitions.len)
 
 		for tp in assignment.topic_partitions {
-			// topic_id: UUID (16 bytes)
+			// topic_id: UUID (16바이트) - 토픽 UUID
 			writer.write_uuid(tp.topic_id)
 
-			// partitions: COMPACT_ARRAY[INT32]
+			// partitions: COMPACT_ARRAY[INT32] - 파티션 목록
 			writer.write_compact_array_len(tp.partitions.len)
 			for p in tp.partitions {
 				writer.write_i32(p)
 			}
 
-			// Tagged fields for each topic partition
+			// 각 토픽 파티션의 태그된 필드
 			writer.write_tagged_fields()
 		}
 
-		// Tagged fields for assignment
+		// 할당의 태그된 필드
 		writer.write_tagged_fields()
 	} else {
-		// Write -1 to indicate null assignment
-		// For compact nullable structs, we use 0 to indicate null (length = 0 - 1 = -1)
+		// null 할당을 나타내기 위해 -1 쓰기
+		// compact nullable 구조체의 경우 0을 사용하여 null을 나타냄 (length = 0 - 1 = -1)
 		writer.write_uvarint(0)
 	}
 
-	// Tagged fields at the end
+	// 마지막 태그된 필드
 	writer.write_tagged_fields()
 
 	return writer.bytes()

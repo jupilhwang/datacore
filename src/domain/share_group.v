@@ -1,19 +1,19 @@
-// Domain Layer - Share Group Domain Model (KIP-932)
-// Share groups allow consumers to cooperatively consume records with
-// record-level acknowledgement and automatic redelivery
+// 도메인 레이어 - Share Group 도메인 모델 (KIP-932)
+// Share Group은 컨슈머들이 레코드 수준의 확인 및 자동 재전송을 통해
+// 협력적으로 레코드를 소비할 수 있게 합니다.
 module domain
 
 import time
 
 // ============================================================================
-// Share Group Types
+// Share Group 타입
 // ============================================================================
 
-// ShareGroup represents a share group (KIP-932)
-// Share groups differ from consumer groups in that:
-// - Partitions can be assigned to multiple consumers
-// - Records are acknowledged individually
-// - Delivery attempts are tracked for poison message handling
+/// ShareGroup은 Share Group (KIP-932)을 나타냅니다.
+/// Share Group은 Consumer Group과 다음과 같은 점에서 다릅니다:
+/// - 파티션이 여러 컨슈머에게 할당될 수 있음
+/// - 레코드가 개별적으로 확인됨
+/// - 독 메시지 처리를 위해 전송 시도 횟수가 추적됨
 pub struct ShareGroup {
 pub mut:
 	group_id          string
@@ -21,27 +21,27 @@ pub mut:
 	assignment_epoch  i32
 	state             ShareGroupState
 	members           map[string]&ShareMember
-	target_assignment map[string][]SharePartitionAssignment // member_id -> assignments
-	subscribed_topics map[string]bool                       // All subscribed topics
-	// Configuration
-	record_lock_duration_ms i32 = 30000 // Default 30s
-	delivery_attempt_limit  i32 = 5     // Max delivery attempts
-	max_partition_locks     i32 = 200   // Max in-flight records per partition
-	heartbeat_interval_ms   i32 = 5000  // Heartbeat interval
-	session_timeout_ms      i32 = 45000 // Session timeout
-	// Timestamps
+	target_assignment map[string][]SharePartitionAssignment // member_id -> 할당 목록
+	subscribed_topics map[string]bool                       // 모든 구독된 토픽
+	// 설정
+	record_lock_duration_ms i32 = 30000 // 기본 30초
+	delivery_attempt_limit  i32 = 5     // 최대 전송 시도 횟수
+	max_partition_locks     i32 = 200   // 파티션당 최대 진행 중 레코드 수
+	heartbeat_interval_ms   i32 = 5000  // Heartbeat 간격
+	session_timeout_ms      i32 = 45000 // 세션 타임아웃
+	// 타임스탬프
 	created_at i64
 	updated_at i64
 }
 
-// ShareGroupState represents the state of a share group
+/// ShareGroupState는 Share Group의 상태를 나타냅니다.
 pub enum ShareGroupState {
-	empty  // No members in the group
-	stable // Group has active members
-	dead   // Group is being deleted
+	empty  // 그룹에 멤버 없음
+	stable // 그룹에 활성 멤버 있음
+	dead   // 그룹이 삭제되는 중
 }
 
-// ShareMember represents a member of a share group
+/// ShareMember는 Share Group의 멤버를 나타냅니다.
 pub struct ShareMember {
 pub mut:
 	member_id              string
@@ -52,87 +52,87 @@ pub mut:
 	member_epoch           i32
 	state                  ShareMemberState
 	assigned_partitions    []SharePartitionAssignment
-	last_heartbeat         i64 // Unix timestamp ms
+	last_heartbeat         i64 // Unix 타임스탬프 (밀리초)
 	joined_at              i64
 }
 
-// ShareMemberState represents the state of a share group member
+/// ShareMemberState는 Share Group 멤버의 상태를 나타냅니다.
 pub enum ShareMemberState {
-	joining // Member is joining the group
-	stable  // Member has stable assignment
-	leaving // Member is leaving the group
-	fenced  // Member has been fenced
+	joining // 멤버가 그룹에 참여 중
+	stable  // 멤버가 안정적인 할당을 가짐
+	leaving // 멤버가 그룹을 떠나는 중
+	fenced  // 멤버가 펜싱됨
 }
 
-// SharePartitionAssignment represents a partition assignment for share groups
+/// SharePartitionAssignment는 Share Group을 위한 파티션 할당을 나타냅니다.
 pub struct SharePartitionAssignment {
 pub:
-	topic_id   []u8 // UUID (16 bytes)
+	topic_id   []u8 // UUID (16바이트)
 	topic_name string
 	partitions []i32
 }
 
 // ============================================================================
-// Share Partition State
+// Share Partition 상태
 // ============================================================================
 
-// SharePartition represents the share group's view of a topic-partition
-// It manages in-flight records between SPSO and SPEO
+/// SharePartition은 토픽-파티션에 대한 Share Group의 뷰를 나타냅니다.
+/// SPSO와 SPEO 사이의 진행 중 레코드를 관리합니다.
 pub struct SharePartition {
 pub mut:
 	topic_name string
 	partition  i32
 	group_id   string
-	// Offsets
+	// 오프셋
 	start_offset i64 // Share Partition Start Offset (SPSO)
 	end_offset   i64 // Share Partition End Offset (SPEO)
-	// In-flight record states
-	record_states map[i64]RecordState // offset -> state
-	// Lock management
-	acquired_records map[i64]AcquiredRecord // offset -> acquisition info
-	// Statistics
+	// 진행 중 레코드 상태
+	record_states map[i64]RecordState // offset -> 상태
+	// 잠금 관리
+	acquired_records map[i64]AcquiredRecord // offset -> 획득 정보
+	// 통계
 	total_acquired     i64
 	total_acknowledged i64
 	total_released     i64
 	total_rejected     i64
 }
 
-// RecordState represents the state of a record in a share partition
+/// RecordState는 Share Partition 내 레코드의 상태를 나타냅니다.
 pub enum RecordState {
-	available    // Record is available for delivery
-	acquired     // Record has been acquired by a consumer
-	acknowledged // Record has been successfully processed
-	archived     // Record is no longer available (rejected or max attempts)
+	available    // 레코드가 전송 가능
+	acquired     // 레코드가 컨슈머에 의해 획득됨
+	acknowledged // 레코드가 성공적으로 처리됨
+	archived     // 레코드가 더 이상 사용 불가 (거부됨 또는 최대 시도 초과)
 }
 
-// AcquiredRecord tracks acquisition info for a record
+/// AcquiredRecord는 레코드의 획득 정보를 추적합니다.
 pub struct AcquiredRecord {
 pub mut:
 	offset          i64
 	member_id       string
 	delivery_count  i32
-	acquired_at     i64 // Unix timestamp ms
-	lock_expires_at i64 // When the acquisition lock expires
+	acquired_at     i64 // Unix 타임스탬프 (밀리초)
+	lock_expires_at i64 // 획득 잠금 만료 시간
 }
 
 // ============================================================================
-// Share Session
+// Share 세션
 // ============================================================================
 
-// ShareSession represents a share session for a consumer
-// Sessions track fetch context and acquired records
+/// ShareSession은 컨슈머의 Share 세션을 나타냅니다.
+/// 세션은 fetch 컨텍스트와 획득된 레코드를 추적합니다.
 pub struct ShareSession {
 pub mut:
 	group_id       string
 	member_id      string
 	session_epoch  i32
 	partitions     []ShareSessionPartition
-	acquired_locks map[string][]i64 // topic-partition -> acquired offsets
+	acquired_locks map[string][]i64 // topic-partition -> 획득된 오프셋 목록
 	created_at     i64
 	last_used      i64
 }
 
-// ShareSessionPartition represents a partition in a share session
+/// ShareSessionPartition은 Share 세션 내의 파티션을 나타냅니다.
 pub struct ShareSessionPartition {
 pub:
 	topic_id   []u8
@@ -141,17 +141,17 @@ pub:
 }
 
 // ============================================================================
-// Acknowledgement Types
+// 확인 타입
 // ============================================================================
 
-// AcknowledgeType represents how a record should be acknowledged
+/// AcknowledgeType은 레코드를 어떻게 확인할지 나타냅니다.
 pub enum AcknowledgeType {
-	accept  // Record processed successfully
-	release // Release for redelivery
-	reject  // Reject as unprocessable (poison message)
+	accept  // 레코드가 성공적으로 처리됨
+	release // 재전송을 위해 해제
+	reject  // 처리 불가로 거부 (독 메시지)
 }
 
-// AcknowledgementBatch represents a batch of acknowledgements
+/// AcknowledgementBatch는 확인 배치를 나타냅니다.
 pub struct AcknowledgementBatch {
 pub:
 	topic_name       string
@@ -159,14 +159,14 @@ pub:
 	first_offset     i64
 	last_offset      i64
 	acknowledge_type AcknowledgeType
-	gap_offsets      []i64 // Offsets that don't correspond to records (gaps)
+	gap_offsets      []i64 // 레코드에 해당하지 않는 오프셋 (갭)
 }
 
 // ============================================================================
-// Share Fetch/Acknowledge Results
+// Share Fetch/Acknowledge 결과
 // ============================================================================
 
-// ShareFetchResult represents the result of a share fetch
+/// ShareFetchResult는 Share Fetch의 결과를 나타냅니다.
 pub struct ShareFetchResult {
 pub:
 	topic_name          string
@@ -175,11 +175,11 @@ pub:
 	acquired_records    []AcquiredRecordInfo
 	error_code          i16
 	error_message       string
-	acquired_offset     i64 // First offset acquired in this fetch
-	last_fetched_offset i64 // Last offset fetched
+	acquired_offset     i64 // 이번 fetch에서 획득된 첫 번째 오프셋
+	last_fetched_offset i64 // 마지막으로 fetch된 오프셋
 }
 
-// AcquiredRecordInfo contains info about an acquired record
+/// AcquiredRecordInfo는 획득된 레코드에 대한 정보를 포함합니다.
 pub struct AcquiredRecordInfo {
 pub:
 	offset         i64
@@ -187,7 +187,7 @@ pub:
 	timestamp      i64
 }
 
-// ShareAcknowledgeResult represents the result of acknowledgements
+/// ShareAcknowledgeResult는 확인의 결과를 나타냅니다.
 pub struct ShareAcknowledgeResult {
 pub:
 	topic_name    string
@@ -197,31 +197,31 @@ pub:
 }
 
 // ============================================================================
-// Configuration
+// 설정
 // ============================================================================
 
-// ShareGroupConfig holds share group configuration
+/// ShareGroupConfig는 Share Group 설정을 보관합니다.
 pub struct ShareGroupConfig {
 pub:
-	// Record lock duration in milliseconds (default 30000)
+	// 레코드 잠금 지속 시간 (밀리초, 기본 30000)
 	record_lock_duration_ms i32 = 30000
-	// Maximum delivery attempts before archiving (default 5)
+	// 아카이브 전 최대 전송 시도 횟수 (기본 5)
 	delivery_attempt_limit i32 = 5
-	// Maximum in-flight records per partition (default 200)
+	// 파티션당 최대 진행 중 레코드 수 (기본 200)
 	max_partition_locks i32 = 200
-	// Heartbeat interval in milliseconds (default 5000)
+	// Heartbeat 간격 (밀리초, 기본 5000)
 	heartbeat_interval_ms i32 = 5000
-	// Session timeout in milliseconds (default 45000)
+	// 세션 타임아웃 (밀리초, 기본 45000)
 	session_timeout_ms i32 = 45000
-	// Maximum share sessions per broker (default 1000)
+	// 브로커당 최대 Share 세션 수 (기본 1000)
 	max_share_sessions i32 = 1000
 }
 
 // ============================================================================
-// Helper Functions
+// 헬퍼 함수
 // ============================================================================
 
-// new_share_group creates a new share group
+/// new_share_group은 새로운 Share Group을 생성합니다.
 pub fn new_share_group(group_id string, config ShareGroupConfig) ShareGroup {
 	now := time.now().unix_milli()
 	return ShareGroup{
@@ -242,7 +242,7 @@ pub fn new_share_group(group_id string, config ShareGroupConfig) ShareGroup {
 	}
 }
 
-// new_share_partition creates a new share partition
+/// new_share_partition은 새로운 Share Partition을 생성합니다.
 pub fn new_share_partition(topic_name string, partition i32, group_id string, start_offset i64) SharePartition {
 	return SharePartition{
 		topic_name:       topic_name
@@ -255,7 +255,7 @@ pub fn new_share_partition(topic_name string, partition i32, group_id string, st
 	}
 }
 
-// ShareGroupState string conversion
+/// str은 ShareGroupState를 문자열로 변환합니다.
 pub fn (s ShareGroupState) str() string {
 	return match s {
 		.empty { 'EMPTY' }
@@ -264,7 +264,7 @@ pub fn (s ShareGroupState) str() string {
 	}
 }
 
-// ShareMemberState string conversion
+/// str은 ShareMemberState를 문자열로 변환합니다.
 pub fn (s ShareMemberState) str() string {
 	return match s {
 		.joining { 'JOINING' }
@@ -274,7 +274,7 @@ pub fn (s ShareMemberState) str() string {
 	}
 }
 
-// RecordState string conversion
+/// str은 RecordState를 문자열로 변환합니다.
 pub fn (s RecordState) str() string {
 	return match s {
 		.available { 'AVAILABLE' }
@@ -284,7 +284,7 @@ pub fn (s RecordState) str() string {
 	}
 }
 
-// AcknowledgeType string conversion
+/// str은 AcknowledgeType을 문자열로 변환합니다.
 pub fn (t AcknowledgeType) str() string {
 	return match t {
 		.accept { 'ACCEPT' }
@@ -293,7 +293,7 @@ pub fn (t AcknowledgeType) str() string {
 	}
 }
 
-// acknowledge_type_from_value converts API value to AcknowledgeType
+/// acknowledge_type_from_value는 API 값을 AcknowledgeType으로 변환합니다.
 pub fn acknowledge_type_from_value(value u8) !AcknowledgeType {
 	return match value {
 		1 { .accept }
@@ -303,7 +303,7 @@ pub fn acknowledge_type_from_value(value u8) !AcknowledgeType {
 	}
 }
 
-// is_share_group_type checks if a group type string indicates a share group
+/// is_share_group_type은 그룹 타입 문자열이 Share Group을 나타내는지 확인합니다.
 pub fn is_share_group_type(group_type string) bool {
 	return group_type == 'share'
 }

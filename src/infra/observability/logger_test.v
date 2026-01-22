@@ -1,17 +1,17 @@
-// Unit Tests - Structured Logger
+/// 단위 테스트 - 구조화된 로거
 module observability
 
 import time
 
 fn test_log_levels() {
-	// Create logger with debug level
+	// debug 레벨로 로거 생성
 	logger := new_logger(LoggerConfig{
 		name:   'test'
 		level:  .debug
 		format: .text
 	})
 
-	// Should log returns true for levels >= debug
+	// should_log는 debug 이상의 레벨에 대해 true를 반환해야 함
 	assert logger.should_log(.trace) == false
 	assert logger.should_log(.debug) == true
 	assert logger.should_log(.info) == true
@@ -71,7 +71,7 @@ fn test_log_level_from_string() {
 	assert log_level_from_string('WARN') == .warn
 	assert log_level_from_string('error') == .error
 	assert log_level_from_string('FATAL') == .fatal
-	assert log_level_from_string('unknown') == .info // default
+	assert log_level_from_string('unknown') == .info // 기본값
 }
 
 fn test_log_level_str() {
@@ -112,7 +112,7 @@ fn test_field_constructors() {
 
 fn test_field_duration() {
 	f := field_duration('latency', 1500 * time.millisecond)
-	assert f.key == 'latency_ms' // field_duration appends _ms suffix
+	assert f.key == 'latency_ms' // field_duration은 _ms 접미사를 추가함
 	assert f.value.contains('1500')
 }
 
@@ -133,7 +133,7 @@ fn test_json_output_format() {
 
 	json := format_entry_json(entry)
 	assert json.contains('"level":"INFO"')
-	assert json.contains('"msg":"test message"') // JSON format uses "msg" not "message"
+	assert json.contains('"msg":"test message"') // JSON 형식은 "message"가 아닌 "msg" 사용
 	assert json.contains('"trace_id":"trace-id"')
 	assert json.contains('"key":"value"')
 }
@@ -216,7 +216,7 @@ fn test_log_context_empty() {
 }
 
 fn test_special_characters_in_json() {
-	// Test escaping of special characters
+	// 특수 문자 이스케이프 테스트
 	entry := LogEntry{
 		timestamp:   time.now()
 		level:       .info

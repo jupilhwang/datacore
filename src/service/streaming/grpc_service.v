@@ -23,7 +23,7 @@ mut:
 	running     bool // Service running flag
 }
 
-// GrpcConnectionState holds the state of a gRPC connection
+// GrpcConnectionState는 gRPC 연결 상태를 보관합니다
 @[heap]
 struct GrpcConnectionState {
 pub mut:

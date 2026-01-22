@@ -1,5 +1,5 @@
-// Infra Layer - Performance Integration Module
-// Integrates Buffer Pool, Object Pool, and Zero-Copy into core components
+/// 인프라 레이어 - 성능 통합 모듈
+/// 버퍼 풀, 객체 풀, 제로카피를 핵심 컴포넌트에 통합합니다.
 module benchmarks
 
 import time
@@ -7,33 +7,33 @@ import infra.performance.core
 import infra.performance
 
 // ============================================================================
-// Global Performance Manager Proxy
+// 전역 성능 관리자 프록시
 // ============================================================================
 
-// get_global_performance returns the global performance manager from the root module
+/// get_global_performance는 루트 모듈에서 전역 성능 관리자를 반환합니다.
 pub fn get_global_performance() &performance.PerformanceManager {
 	return performance.get_global_performance()
 }
 
-// init_global_performance initializes the global performance manager
+/// init_global_performance는 전역 성능 관리자를 초기화합니다.
 pub fn init_global_performance(config performance.PerformanceConfig) {
 	performance.init_global_performance(config)
 }
 
 // ============================================================================
-// TCP Server Integration - Buffer Allocation Helpers
+// TCP 서버 통합 - 버퍼 할당 헬퍼
 // ============================================================================
 
-// RequestBuffer wraps a pooled buffer for request processing
+/// RequestBuffer는 요청 처리를 위한 풀링된 버퍼를 래핑합니다.
 @[heap]
 pub struct RequestBuffer {
 pub mut:
-	buffer     &core.Buffer
-	manager    &performance.PerformanceManager
-	created_at time.Time
+	buffer     &core.Buffer                    // 내부 버퍼
+	manager    &performance.PerformanceManager // 성능 관리자 참조
+	created_at time.Time                       // 생성 시간
 }
 
-// new_request_buffer gets a buffer for request processing
+/// new_request_buffer는 요청 처리를 위한 버퍼를 획득합니다.
 pub fn new_request_buffer(size int) &RequestBuffer {
 	mut mgr := get_global_performance()
 	return &RequestBuffer{
@@ -43,36 +43,36 @@ pub fn new_request_buffer(size int) &RequestBuffer {
 	}
 }
 
-// data returns the underlying byte slice
+/// data는 내부 바이트 슬라이스를 반환합니다.
 pub fn (r &RequestBuffer) data() []u8 {
 	return r.buffer.data
 }
 
-// resize resizes the buffer if needed
+/// resize는 필요한 경우 버퍼 크기를 조정합니다.
 pub fn (mut r RequestBuffer) resize(new_size int) {
 	if new_size > r.buffer.cap {
-		// Return old buffer and get a new larger one
+		// 기존 버퍼 반환 후 더 큰 새 버퍼 획득
 		r.manager.put_buffer(r.buffer)
 		r.buffer = r.manager.get_buffer(new_size)
 	}
 	r.buffer.len = new_size
 }
 
-// release returns the buffer to the pool
+/// release는 버퍼를 풀에 반환합니다.
 pub fn (mut r RequestBuffer) release() {
 	r.manager.put_buffer(r.buffer)
 }
 
-// ResponseBuffer wraps a pooled buffer for response building
+/// ResponseBuffer는 응답 빌드를 위한 풀링된 버퍼를 래핑합니다.
 @[heap]
 pub struct ResponseBuffer {
 pub mut:
-	buffer  &core.Buffer
-	manager &performance.PerformanceManager
-	offset  int // Current write position
+	buffer  &core.Buffer                    // 내부 버퍼
+	manager &performance.PerformanceManager // 성능 관리자 참조
+	offset  int // 현재 쓰기 위치
 }
 
-// new_response_buffer gets a buffer for response building
+/// new_response_buffer는 응답 빌드를 위한 버퍼를 획득합니다.
 pub fn new_response_buffer(estimated_size int) &ResponseBuffer {
 	mut mgr := get_global_performance()
 	return &ResponseBuffer{
@@ -82,11 +82,11 @@ pub fn new_response_buffer(estimated_size int) &ResponseBuffer {
 	}
 }
 
-// write appends data to the response buffer
+/// write는 응답 버퍼에 데이터를 추가합니다.
 pub fn (mut r ResponseBuffer) write(data []u8) {
 	needed := r.offset + data.len
 	if needed > r.buffer.cap {
-		// Need larger buffer - get new one and copy
+		// 더 큰 버퍼 필요 - 새 버퍼 획득 후 복사
 		mut new_buf := r.manager.get_buffer(needed * 2)
 		for i in 0 .. r.offset {
 			new_buf.data[i] = r.buffer.data[i]
@@ -102,45 +102,45 @@ pub fn (mut r ResponseBuffer) write(data []u8) {
 	r.buffer.len = r.offset
 }
 
-// write_i32_be writes a big-endian i32
+/// write_i32_be는 빅엔디안 i32를 씁니다.
 pub fn (mut r ResponseBuffer) write_i32_be(val i32) {
 	r.write([u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)])
 }
 
-// write_i16_be writes a big-endian i16
+/// write_i16_be는 빅엔디안 i16을 씁니다.
 pub fn (mut r ResponseBuffer) write_i16_be(val i16) {
 	r.write([u8(val >> 8), u8(val)])
 }
 
-// bytes returns the written bytes
+/// bytes는 쓰여진 바이트들을 반환합니다.
 pub fn (r &ResponseBuffer) bytes() []u8 {
 	return r.buffer.data[..r.offset]
 }
 
-// len returns the current length
+/// len은 현재 길이를 반환합니다.
 pub fn (r &ResponseBuffer) len() int {
 	return r.offset
 }
 
-// release returns the buffer to the pool
+/// release는 버퍼를 풀에 반환합니다.
 pub fn (mut r ResponseBuffer) release() {
 	r.manager.put_buffer(r.buffer)
 }
 
 // ============================================================================
-// Connection Integration - Reusable Read/Write Buffers
+// 연결 통합 - 재사용 가능한 읽기/쓰기 버퍼
 // ============================================================================
 
-// ConnectionBuffers holds reusable buffers for a connection
+/// ConnectionBuffers는 연결을 위한 재사용 가능한 버퍼를 보유합니다.
 @[heap]
 pub struct ConnectionBuffers {
 pub mut:
-	read_buffer  &core.Buffer
-	write_buffer &core.Buffer
-	manager      &performance.PerformanceManager
+	read_buffer  &core.Buffer                    // 읽기 버퍼
+	write_buffer &core.Buffer                    // 쓰기 버퍼
+	manager      &performance.PerformanceManager // 성능 관리자 참조
 }
 
-// new_connection_buffers creates connection buffers
+/// new_connection_buffers는 연결 버퍼를 생성합니다.
 pub fn new_connection_buffers(read_size int, write_size int) &ConnectionBuffers {
 	mut mgr := get_global_performance()
 	return &ConnectionBuffers{
@@ -150,7 +150,7 @@ pub fn new_connection_buffers(read_size int, write_size int) &ConnectionBuffers 
 	}
 }
 
-// get_read_slice returns a slice for reading
+/// get_read_slice는 읽기용 슬라이스를 반환합니다.
 pub fn (c &ConnectionBuffers) get_read_slice(size int) []u8 {
 	if size <= c.read_buffer.cap {
 		return c.read_buffer.data[..size]
@@ -158,7 +158,7 @@ pub fn (c &ConnectionBuffers) get_read_slice(size int) []u8 {
 	return []u8{len: size}
 }
 
-// get_write_slice returns a slice for writing
+/// get_write_slice는 쓰기용 슬라이스를 반환합니다.
 pub fn (c &ConnectionBuffers) get_write_slice(size int) []u8 {
 	if size <= c.write_buffer.cap {
 		return c.write_buffer.data[..size]
@@ -166,66 +166,66 @@ pub fn (c &ConnectionBuffers) get_write_slice(size int) []u8 {
 	return []u8{len: size}
 }
 
-// release returns buffers to the pool
+/// release는 버퍼들을 풀에 반환합니다.
 pub fn (mut c ConnectionBuffers) release() {
 	c.manager.put_buffer(c.read_buffer)
 	c.manager.put_buffer(c.write_buffer)
 }
 
 // ============================================================================
-// Storage Integration - Pooled Records
+// 스토리지 통합 - 풀링된 레코드
 // ============================================================================
 
-// StorageRecordPool provides record pooling for storage operations
+/// StorageRecordPool은 스토리지 작업을 위한 레코드 풀링을 제공합니다.
 @[heap]
 pub struct StorageRecordPool {
 mut:
-	manager &performance.PerformanceManager
+	manager &performance.PerformanceManager // 성능 관리자 참조
 }
 
-// new_storage_record_pool creates a storage record pool
+/// new_storage_record_pool은 스토리지 레코드 풀을 생성합니다.
 pub fn new_storage_record_pool() &StorageRecordPool {
 	return &StorageRecordPool{
 		manager: get_global_performance()
 	}
 }
 
-// get_record gets a pooled record
+/// get_record는 풀링된 레코드를 획득합니다.
 pub fn (mut p StorageRecordPool) get_record() &core.PooledRecord {
 	return p.manager.get_record()
 }
 
-// put_record returns a record to the pool
+/// put_record는 레코드를 풀에 반환합니다.
 pub fn (mut p StorageRecordPool) put_record(r &core.PooledRecord) {
 	p.manager.put_record(r)
 }
 
-// get_batch gets a pooled batch
+/// get_batch는 풀링된 배치를 획득합니다.
 pub fn (mut p StorageRecordPool) get_batch() &core.PooledRecordBatch {
 	return p.manager.get_batch()
 }
 
-// put_batch returns a batch to the pool
+/// put_batch는 배치를 풀에 반환합니다.
 pub fn (mut p StorageRecordPool) put_batch(b &core.PooledRecordBatch) {
 	p.manager.put_batch(b)
 }
 
 // ============================================================================
-// Fetch Handler Integration - Zero-Copy Support
+// Fetch 핸들러 통합 - 제로카피 지원
 // ============================================================================
 
-// FetchBuffer holds fetch response data with zero-copy support
+/// FetchBuffer는 제로카피 지원과 함께 fetch 응답 데이터를 보유합니다.
 @[heap]
 pub struct FetchBuffer {
 pub mut:
-	buffer        &core.Buffer
-	manager       &performance.PerformanceManager
-	zero_copy_fd  int // File descriptor for zero-copy (-1 if not used)
-	zero_copy_off i64 // Offset for zero-copy
-	zero_copy_len int // Length for zero-copy
+	buffer        &core.Buffer                    // 내부 버퍼
+	manager       &performance.PerformanceManager // 성능 관리자 참조
+	zero_copy_fd  int // 제로카피용 파일 디스크립터 (미사용 시 -1)
+	zero_copy_off i64 // 제로카피 오프셋
+	zero_copy_len int // 제로카피 길이
 }
 
-// new_fetch_buffer creates a fetch buffer
+/// new_fetch_buffer는 fetch 버퍼를 생성합니다.
 pub fn new_fetch_buffer(size int) &FetchBuffer {
 	mut mgr := get_global_performance()
 	return &FetchBuffer{
@@ -237,55 +237,55 @@ pub fn new_fetch_buffer(size int) &FetchBuffer {
 	}
 }
 
-// set_zero_copy sets up zero-copy transfer
+/// set_zero_copy는 제로카피 전송을 설정합니다.
 pub fn (mut f FetchBuffer) set_zero_copy(fd int, offset i64, length int) {
 	f.zero_copy_fd = fd
 	f.zero_copy_off = offset
 	f.zero_copy_len = length
 }
 
-// has_zero_copy checks if zero-copy is available
+/// has_zero_copy는 제로카피가 사용 가능한지 확인합니다.
 pub fn (f &FetchBuffer) has_zero_copy() bool {
 	return f.zero_copy_fd >= 0 && f.zero_copy_len > 0
 }
 
-// release returns the buffer to the pool
+/// release는 버퍼를 풀에 반환합니다.
 pub fn (mut f FetchBuffer) release() {
 	f.manager.put_buffer(f.buffer)
 }
 
 // ============================================================================
-// Integration Statistics
+// 통합 통계
 // ============================================================================
 
-// IntegrationStats holds integration statistics
+/// IntegrationStats는 통합 통계를 보유합니다.
 pub struct IntegrationStats {
 pub:
-	request_buffers_allocated  u64
-	response_buffers_allocated u64
-	connection_buffers_active  int
-	storage_records_pooled     u64
-	fetch_zero_copy_count      u64
-	perf_stats                 performance.PerformanceStats
+	request_buffers_allocated  u64 // 할당된 요청 버퍼 수
+	response_buffers_allocated u64 // 할당된 응답 버퍼 수
+	connection_buffers_active  int // 활성 연결 버퍼 수
+	storage_records_pooled     u64 // 풀링된 스토리지 레코드 수
+	fetch_zero_copy_count      u64 // 제로카피 fetch 횟수
+	perf_stats                 performance.PerformanceStats // 성능 통계
 }
 
-// IntegrationMetrics tracks integration usage
+/// IntegrationMetrics는 통합 사용량을 추적합니다.
 @[heap]
 pub struct IntegrationMetrics {
 pub mut:
-	request_buffers_allocated  u64
-	response_buffers_allocated u64
-	connection_buffers_active  int
-	storage_records_pooled     u64
-	fetch_zero_copy_count      u64
+	request_buffers_allocated  u64 // 할당된 요청 버퍼 수
+	response_buffers_allocated u64 // 할당된 응답 버퍼 수
+	connection_buffers_active  int // 활성 연결 버퍼 수
+	storage_records_pooled     u64 // 풀링된 스토리지 레코드 수
+	fetch_zero_copy_count      u64 // 제로카피 fetch 횟수
 }
 
-// Metrics singleton
+/// 메트릭 싱글톤
 fn get_metrics() &IntegrationMetrics {
 	return &IntegrationMetrics{}
 }
 
-// get_integration_stats returns integration statistics
+/// get_integration_stats는 통합 통계를 반환합니다.
 pub fn get_integration_stats() IntegrationStats {
 	mut mgr := get_global_performance()
 	metrics := get_metrics()
@@ -300,29 +300,29 @@ pub fn get_integration_stats() IntegrationStats {
 }
 
 // ============================================================================
-// Convenience Functions
+// 편의 함수
 // ============================================================================
 
-// with_request_buffer executes a function with a pooled request buffer
+/// with_request_buffer는 풀링된 요청 버퍼로 함수를 실행합니다.
 pub fn with_request_buffer(size int, f fn (mut RequestBuffer)) {
 	mut buf := new_request_buffer(size)
 	defer { buf.release() }
 	f(mut buf)
 }
 
-// with_response_buffer executes a function with a pooled response buffer
+/// with_response_buffer는 풀링된 응답 버퍼로 함수를 실행합니다.
 pub fn with_response_buffer(size int, f fn (mut ResponseBuffer)) {
 	mut buf := new_response_buffer(size)
 	defer { buf.release() }
 	f(mut buf)
 }
 
-// allocate_request_buffer allocates and tracks a request buffer
+/// allocate_request_buffer는 요청 버퍼를 할당하고 추적합니다.
 pub fn allocate_request_buffer(size int) &RequestBuffer {
 	return new_request_buffer(size)
 }
 
-// allocate_response_buffer allocates and tracks a response buffer
+/// allocate_response_buffer는 응답 버퍼를 할당하고 추적합니다.
 pub fn allocate_response_buffer(size int) &ResponseBuffer {
 	return new_response_buffer(size)
 }

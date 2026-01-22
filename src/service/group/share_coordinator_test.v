@@ -1,11 +1,11 @@
-// Share Group Coordinator Tests (KIP-932)
+// Share Group Coordinator 테스트 (KIP-932)
 module group
 
 import domain
 import service.port
 
 // ============================================================================
-// Mock Storage for Testing
+// 테스트용 Mock Storage
 // ============================================================================
 
 struct MockStorage {

@@ -1,5 +1,6 @@
-// Infra Layer - Memory Storage Adapter
-// In-memory storage with partition-level locking for better concurrency
+// Infra Layer - 메모리 스토리지 어댑터
+// 파티션 수준 락킹을 사용한 인메모리 스토리지 구현
+// 테스트 및 단일 브로커 환경에 적합
 module memory
 
 import domain
@@ -8,27 +9,28 @@ import sync
 import time
 import rand
 
-// MemoryStorageAdapter implements port.StoragePort
+/// MemoryStorageAdapter는 port.StoragePort를 구현합니다.
+/// 메모리 기반 스토리지로 파티션별 락킹을 통해 동시성을 제어합니다.
 pub struct MemoryStorageAdapter {
 pub mut:
 	config MemoryConfig
 mut:
 	topics         map[string]&TopicStore
-	topic_id_index map[string]string // topic_id (hex) -> topic_name for O(1) lookup
+	topic_id_index map[string]string // topic_id (hex) -> topic_name, O(1) 조회용
 	groups         map[string]domain.ConsumerGroup
 	offsets        map[string]map[string]i64
 	global_lock    sync.RwMutex
 }
 
-// MemoryConfig holds memory storage configuration
+/// MemoryConfig는 메모리 스토리지 설정을 담습니다.
 pub struct MemoryConfig {
 pub:
-	max_messages_per_partition int = 1000000   // Default 1M messages
-	max_bytes_per_partition    i64 = -1        // -1 = unlimited
-	retention_ms               i64 = 604800000 // 7 days default
+	max_messages_per_partition int = 1000000   // 파티션당 최대 메시지 수 (기본 100만)
+	max_bytes_per_partition    i64 = -1        // 파티션당 최대 바이트 (-1 = 무제한)
+	retention_ms               i64 = 604800000 // 보존 기간 (기본 7일)
 }
 
-// Storage capability for memory adapter
+/// memory_capability는 메모리 어댑터의 스토리지 기능을 정의합니다.
 pub const memory_capability = domain.StorageCapability{
 	name:                  'memory'
 	supports_multi_broker: false
@@ -38,7 +40,7 @@ pub const memory_capability = domain.StorageCapability{
 	is_distributed:        false
 }
 
-// TopicStore stores topic data
+/// TopicStore는 토픽 데이터를 저장합니다.
 struct TopicStore {
 pub mut:
 	metadata   domain.TopicMetadata
@@ -47,7 +49,7 @@ pub mut:
 	lock       sync.RwMutex
 }
 
-// PartitionStore stores partition data with fine-grained locking
+/// PartitionStore는 파티션 데이터를 저장하며 세밀한 락킹을 지원합니다.
 struct PartitionStore {
 mut:
 	records        []domain.Record
@@ -56,12 +58,12 @@ mut:
 	lock           sync.RwMutex
 }
 
-// new_memory_adapter creates a new memory storage adapter
+/// new_memory_adapter는 새로운 메모리 스토리지 어댑터를 생성합니다.
 pub fn new_memory_adapter() &MemoryStorageAdapter {
 	return new_memory_adapter_with_config(MemoryConfig{})
 }
 
-// new_memory_adapter_with_config creates adapter with custom config
+/// new_memory_adapter_with_config는 사용자 정의 설정으로 어댑터를 생성합니다.
 pub fn new_memory_adapter_with_config(config MemoryConfig) &MemoryStorageAdapter {
 	return &MemoryStorageAdapter{
 		config:         config
@@ -73,9 +75,11 @@ pub fn new_memory_adapter_with_config(config MemoryConfig) &MemoryStorageAdapter
 }
 
 // ============================================================
-// Topic Operations
+// 토픽 작업 (Topic Operations)
 // ============================================================
 
+/// create_topic은 새로운 토픽을 생성합니다.
+/// UUID v4 형식의 topic_id를 자동 생성합니다.
 pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -84,16 +88,16 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 		return error('topic already exists')
 	}
 
-	// Generate UUID for topic_id
+	// topic_id용 UUID 생성
 	mut topic_id := []u8{len: 16}
 	for i in 0 .. 16 {
 		topic_id[i] = u8(rand.intn(256) or { 0 })
 	}
-	// Set UUID version 4 (random)
+	// UUID 버전 4 (랜덤) 설정
 	topic_id[6] = (topic_id[6] & 0x0f) | 0x40
 	topic_id[8] = (topic_id[8] & 0x3f) | 0x80
 
-	// Create partition stores
+	// 파티션 스토어 생성
 	mut partition_stores := []&PartitionStore{cap: partitions}
 	for _ in 0 .. partitions {
 		partition_stores << &PartitionStore{
@@ -117,24 +121,26 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 		partitions: partition_stores
 	}
 
-	// Cache topic_id -> name mapping for O(1) lookup
+	// topic_id -> name 매핑을 캐시에 저장 (O(1) 조회용)
 	a.topic_id_index[topic_id.hex()] = name
 
 	return metadata
 }
 
+/// delete_topic은 토픽을 삭제합니다.
 pub fn (mut a MemoryStorageAdapter) delete_topic(name string) ! {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
 
 	topic := a.topics[name] or { return error('topic not found') }
 
-	// Remove from topic_id_index cache
+	// topic_id_index 캐시에서 제거
 	a.topic_id_index.delete(topic.metadata.topic_id.hex())
 
 	a.topics.delete(name)
 }
 
+/// list_topics는 모든 토픽 목록을 반환합니다.
 pub fn (mut a MemoryStorageAdapter) list_topics() ![]domain.TopicMetadata {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -146,6 +152,7 @@ pub fn (mut a MemoryStorageAdapter) list_topics() ![]domain.TopicMetadata {
 	return result
 }
 
+/// get_topic은 토픽 메타데이터를 조회합니다.
 pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -156,12 +163,13 @@ pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata
 	return error('topic not found')
 }
 
-// get_topic_by_id retrieves topic by ID using O(1) cache lookup
+/// get_topic_by_id는 topic_id로 토픽을 조회합니다.
+/// O(1) 캐시 조회를 사용합니다.
 pub fn (mut a MemoryStorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
 
-	// O(1) lookup using topic_id_index cache
+	// topic_id_index 캐시를 사용한 O(1) 조회
 	topic_id_hex := topic_id.hex()
 	if topic_name := a.topic_id_index[topic_id_hex] {
 		if topic := a.topics[topic_name] {
@@ -172,6 +180,7 @@ pub fn (mut a MemoryStorageAdapter) get_topic_by_id(topic_id []u8) !domain.Topic
 	return error('topic not found')
 }
 
+/// add_partitions는 토픽에 파티션을 추가합니다.
 pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) ! {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -201,11 +210,13 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 }
 
 // ============================================================
-// Record Operations (Partition-level locking)
+// 레코드 작업 (Record Operations) - 파티션 수준 락킹
 // ============================================================
 
+/// append는 파티션에 레코드를 추가합니다.
+/// 파티션 수준 락킹으로 동시성을 제어합니다.
 pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
-	// Get topic with read lock
+	// 읽기 락으로 토픽 조회
 	a.global_lock.rlock()
 	topic := a.topics[topic_name] or {
 		a.global_lock.runlock()
@@ -217,7 +228,7 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 		return error('partition out of range')
 	}
 
-	// Lock only the specific partition (write)
+	// 특정 파티션만 쓰기 락
 	mut part := topic.partitions[partition]
 	part.lock.@lock()
 	defer { part.lock.unlock() }
@@ -225,7 +236,7 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	base_offset := part.high_watermark
 	now := time.now()
 
-	// Add records with timestamp
+	// 타임스탬프와 함께 레코드 추가
 	for record in records {
 		mut r := record
 		if r.timestamp.unix() == 0 {
@@ -238,11 +249,11 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	}
 	part.high_watermark += i64(records.len)
 
-	// Apply retention policy (max messages)
+	// 보존 정책 적용 (최대 메시지 수)
 	if a.config.max_messages_per_partition > 0 {
 		excess := part.records.len - a.config.max_messages_per_partition
 		if excess > 0 {
-			// Use drop_first to avoid clone - shift elements in place
+			// 슬라이스를 사용하여 clone 없이 제자리에서 요소 이동
 			part.records = part.records[excess..]
 			part.base_offset += i64(excess)
 		}
@@ -256,8 +267,9 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	}
 }
 
+/// fetch는 파티션에서 레코드를 조회합니다.
 pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
-	// Get topic with read lock
+	// 읽기 락으로 토픽 조회
 	a.global_lock.rlock()
 	topic := a.topics[topic_name] or {
 		a.global_lock.runlock()
@@ -269,12 +281,12 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 		return error('partition out of range')
 	}
 
-	// Lock partition for read
+	// 파티션 읽기 락
 	mut part := topic.partitions[partition]
 	part.lock.rlock()
 	defer { part.lock.runlock() }
 
-	// Empty result if offset out of range
+	// 오프셋이 범위를 벗어나면 빈 결과 반환
 	if offset < part.base_offset {
 		return domain.FetchResult{
 			records:            []
@@ -294,7 +306,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 		}
 	}
 
-	// Calculate end index based on max_bytes
+	// max_bytes 기반으로 종료 인덱스 계산
 	mut end_idx := start_idx
 	mut total_bytes := 0
 	max_fetch_bytes := if max_bytes <= 0 { 1048576 } else { max_bytes }
@@ -320,6 +332,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 	}
 }
 
+/// delete_records는 지정된 오프셋 이전의 레코드를 삭제합니다.
 pub fn (mut a MemoryStorageAdapter) delete_records(topic_name string, partition int, before_offset i64) ! {
 	a.global_lock.rlock()
 	topic := a.topics[topic_name] or {
@@ -338,16 +351,17 @@ pub fn (mut a MemoryStorageAdapter) delete_records(topic_name string, partition 
 
 	delete_count := int(before_offset - part.base_offset)
 	if delete_count > 0 && delete_count <= part.records.len {
-		// Use slice assignment instead of clone
+		// clone 대신 슬라이스 할당 사용
 		part.records = part.records[delete_count..]
 		part.base_offset = before_offset
 	}
 }
 
 // ============================================================
-// Offset Operations
+// 오프셋 작업 (Offset Operations)
 // ============================================================
 
+/// get_partition_info는 파티션 정보를 조회합니다.
 pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partition int) !domain.PartitionInfo {
 	a.global_lock.rlock()
 	topic := a.topics[topic_name] or {
@@ -374,9 +388,10 @@ pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partit
 }
 
 // ============================================================
-// Consumer Group Operations
+// 컨슈머 그룹 작업 (Consumer Group Operations)
 // ============================================================
 
+/// save_group은 컨슈머 그룹을 저장합니다.
 pub fn (mut a MemoryStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -384,6 +399,7 @@ pub fn (mut a MemoryStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 	a.groups[group.group_id] = group
 }
 
+/// load_group은 컨슈머 그룹을 로드합니다.
 pub fn (mut a MemoryStorageAdapter) load_group(group_id string) !domain.ConsumerGroup {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -394,6 +410,7 @@ pub fn (mut a MemoryStorageAdapter) load_group(group_id string) !domain.Consumer
 	return error('group not found')
 }
 
+/// delete_group은 컨슈머 그룹을 삭제합니다.
 pub fn (mut a MemoryStorageAdapter) delete_group(group_id string) ! {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -405,6 +422,7 @@ pub fn (mut a MemoryStorageAdapter) delete_group(group_id string) ! {
 	a.offsets.delete(group_id)
 }
 
+/// list_groups는 모든 컨슈머 그룹 목록을 반환합니다.
 pub fn (mut a MemoryStorageAdapter) list_groups() ![]domain.GroupInfo {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -427,9 +445,10 @@ pub fn (mut a MemoryStorageAdapter) list_groups() ![]domain.GroupInfo {
 }
 
 // ============================================================
-// Offset Commit/Fetch
+// 오프셋 커밋/조회 (Offset Commit/Fetch)
 // ============================================================
 
+/// commit_offsets는 오프셋을 커밋합니다.
 pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -444,6 +463,7 @@ pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []do
 	}
 }
 
+/// fetch_offsets는 커밋된 오프셋을 조회합니다.
 pub fn (mut a MemoryStorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -479,32 +499,34 @@ pub fn (mut a MemoryStorageAdapter) fetch_offsets(group_id string, partitions []
 }
 
 // ============================================================
-// Health Check
+// 헬스 체크 (Health Check)
 // ============================================================
 
+/// health_check는 스토리지 상태를 확인합니다.
 pub fn (mut a MemoryStorageAdapter) health_check() !port.HealthStatus {
 	return .healthy
 }
 
 // ============================================================
-// Multi-Broker Support
+// 멀티 브로커 지원 (Multi-Broker Support)
 // ============================================================
 
-// get_storage_capability returns the storage capability
+/// get_storage_capability는 스토리지 기능 정보를 반환합니다.
 pub fn (a &MemoryStorageAdapter) get_storage_capability() domain.StorageCapability {
 	return memory_capability
 }
 
-// get_cluster_metadata_port returns none - memory doesn't support multi-broker
+/// get_cluster_metadata_port는 클러스터 메타데이터 포트를 반환합니다.
+/// 메모리 스토리지는 멀티 브로커를 지원하지 않으므로 none을 반환합니다.
 pub fn (a &MemoryStorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
 
 // ============================================================
-// Stats and Utilities
+// 통계 및 유틸리티 (Stats and Utilities)
 // ============================================================
 
-// StorageStats provides storage statistics
+/// StorageStats는 스토리지 통계를 제공합니다.
 pub struct StorageStats {
 pub:
 	topic_count      int
@@ -514,7 +536,7 @@ pub:
 	group_count      int
 }
 
-// get_stats returns current storage statistics
+/// get_stats는 현재 스토리지 통계를 반환합니다.
 pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -529,7 +551,7 @@ pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 		for i in 0 .. topic.partitions.len {
 			part := topic.partitions[i]
 			total_records += part.high_watermark - part.base_offset
-			// Note: total_bytes is approximate without iterating records
+			// 참고: total_bytes는 레코드를 순회하지 않으면 대략적인 값
 		}
 	}
 
@@ -542,7 +564,7 @@ pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 	}
 }
 
-// clear removes all data (for testing)
+/// clear는 모든 데이터를 삭제합니다 (테스트용).
 pub fn (mut a MemoryStorageAdapter) clear() {
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -554,74 +576,74 @@ pub fn (mut a MemoryStorageAdapter) clear() {
 }
 
 // ============================================================
-// SharedAdapter - Thread-safe wrapper for concurrent tests
-// V language requires 'shared' keyword for cross-thread access
+// SharedAdapter - 동시성 테스트를 위한 스레드 안전 래퍼
+// V 언어는 스레드 간 접근에 'shared' 키워드가 필요합니다.
 // ============================================================
 
-// SharedAdapter wraps MemoryStorageAdapter for concurrent access in V
-// Usage: shared adapter := SharedAdapter{ inner: new_memory_adapter() }
+/// SharedAdapter는 V에서 동시 접근을 위해 MemoryStorageAdapter를 래핑합니다.
+/// 사용법: shared adapter := SharedAdapter{ inner: new_memory_adapter() }
 pub struct SharedAdapter {
 pub mut:
 	inner &MemoryStorageAdapter
 }
 
-// new_shared_adapter creates a new SharedAdapter
+/// new_shared_adapter는 새로운 SharedAdapter를 생성합니다.
 pub fn new_shared_adapter() SharedAdapter {
 	return SharedAdapter{
 		inner: new_memory_adapter()
 	}
 }
 
-// new_shared_adapter_with_config creates SharedAdapter with custom config
+/// new_shared_adapter_with_config는 사용자 정의 설정으로 SharedAdapter를 생성합니다.
 pub fn new_shared_adapter_with_config(config MemoryConfig) SharedAdapter {
 	return SharedAdapter{
 		inner: new_memory_adapter_with_config(config)
 	}
 }
 
-// Thread-safe create_topic with shared receiver
+/// create_topic_safe는 스레드 안전한 토픽 생성을 수행합니다.
 pub fn (shared a SharedAdapter) create_topic_safe(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
 	lock a {
 		return a.inner.create_topic(name, partitions, config)
 	}
 }
 
-// Thread-safe append with shared receiver
+/// append_safe는 스레드 안전한 레코드 추가를 수행합니다.
 pub fn (shared a SharedAdapter) append_safe(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
 	lock a {
 		return a.inner.append(topic_name, partition, records)
 	}
 }
 
-// Thread-safe fetch with shared receiver
+/// fetch_safe는 스레드 안전한 레코드 조회를 수행합니다.
 pub fn (shared a SharedAdapter) fetch_safe(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
 	lock a {
 		return a.inner.fetch(topic_name, partition, offset, max_bytes)
 	}
 }
 
-// Thread-safe get_partition_info with shared receiver
+/// get_partition_info_safe는 스레드 안전한 파티션 정보 조회를 수행합니다.
 pub fn (shared a SharedAdapter) get_partition_info_safe(topic_name string, partition int) !domain.PartitionInfo {
 	lock a {
 		return a.inner.get_partition_info(topic_name, partition)
 	}
 }
 
-// Thread-safe commit_offsets with shared receiver
+/// commit_offsets_safe는 스레드 안전한 오프셋 커밋을 수행합니다.
 pub fn (shared a SharedAdapter) commit_offsets_safe(group_id string, offsets []domain.PartitionOffset) ! {
 	lock a {
 		return a.inner.commit_offsets(group_id, offsets)
 	}
 }
 
-// Thread-safe fetch_offsets with shared receiver
+/// fetch_offsets_safe는 스레드 안전한 오프셋 조회를 수행합니다.
 pub fn (shared a SharedAdapter) fetch_offsets_safe(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
 	lock a {
 		return a.inner.fetch_offsets(group_id, partitions)
 	}
 }
 
-// Thread-safe get_stats with shared receiver
+/// get_stats_safe는 스레드 안전한 통계 조회를 수행합니다.
 pub fn (shared a SharedAdapter) get_stats_safe() StorageStats {
 	lock a {
 		return a.inner.get_stats()

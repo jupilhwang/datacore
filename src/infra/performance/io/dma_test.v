@@ -1,6 +1,6 @@
 module io
 
-// Tests for dma.v - DMA and Scatter-Gather I/O
+// dma.v 테스트 - DMA 및 Scatter-Gather I/O
 import os
 import time
 

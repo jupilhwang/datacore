@@ -1,9 +1,9 @@
-// Kafka Protocol - ApiVersions (API Key 18)
-// Request/Response types, parsing, encoding, and handlers
+// Kafka 프로토콜 - ApiVersions (API Key 18)
+// 요청/응답 타입, 파싱, 인코딩 및 핸들러
 module kafka
 
 // ============================================================================
-// ApiVersions (API Key 18)
+// ApiVersions (API Key 18) - API 버전 조회
 // ============================================================================
 
 pub struct ApiVersionsRequest {

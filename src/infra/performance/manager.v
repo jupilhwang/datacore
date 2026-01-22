@@ -4,31 +4,32 @@ import infra.performance.core
 import infra.performance.engines
 
 // ============================================================================
-// Performance Manager - Strategy Facade
+// 성능 관리자 - 전략 파사드
 // ============================================================================
 
+/// PerformanceManager는 성능 최적화를 위한 중앙 관리자입니다.
 @[heap]
 pub struct PerformanceManager {
 pub mut:
-	engine  PerformanceEngine
-	enabled bool
+	engine  PerformanceEngine // 성능 엔진
+	enabled bool              // 활성화 여부
 }
 
-// new_performance_manager creates a performance manager with the best available engine
+/// new_performance_manager는 사용 가능한 최적의 엔진으로 성능 관리자를 생성합니다.
 pub fn new_performance_manager(config core.PerformanceConfig) &PerformanceManager {
 	mut engine := PerformanceEngine(engines.GenericPerformanceEngine{})
 
 	$if linux {
 		if config.enable_linux_optimizations {
-			// TODO: Initialize LinuxPerformanceEngine when fully implemented
-			// For now, use Generic but log as Linux if available
+			// TODO: LinuxPerformanceEngine이 완전히 구현되면 초기화
+			// 현재는 Generic을 사용하지만 사용 가능하면 Linux로 로깅
 			// mut linux_engine := engines.LinuxPerformanceEngine{}
 			// engine = linux_engine
 		}
 	}
 
 	engine.init(config) or {
-		// Fallback to minimal/generic on error
+		// 오류 시 최소/일반 엔진으로 폴백
 		println('Failed to init optimized engine, falling back to Generic')
 	}
 
@@ -39,87 +40,97 @@ pub fn new_performance_manager(config core.PerformanceConfig) &PerformanceManage
 }
 
 // ============================================================================
-// Convenience Methods Proxying to Engine
+// 엔진에 프록시하는 편의 메서드
 // ============================================================================
 
+/// get_buffer는 지정된 크기의 버퍼를 획득합니다.
 pub fn (mut m PerformanceManager) get_buffer(size int) &core.Buffer {
 	return m.engine.get_buffer(size)
 }
 
+/// put_buffer는 버퍼를 풀에 반환합니다.
 pub fn (mut m PerformanceManager) put_buffer(buf &core.Buffer) {
 	m.engine.put_buffer(buf)
 }
 
+/// get_record는 풀링된 레코드를 획득합니다.
 pub fn (mut m PerformanceManager) get_record() &core.PooledRecord {
 	return m.engine.get_record()
 }
 
+/// put_record는 레코드를 풀에 반환합니다.
 pub fn (mut m PerformanceManager) put_record(r &core.PooledRecord) {
 	m.engine.put_record(r)
 }
 
+/// get_batch는 풀링된 배치를 획득합니다.
 pub fn (mut m PerformanceManager) get_batch() &core.PooledRecordBatch {
 	return m.engine.get_batch()
 }
 
+/// put_batch는 배치를 풀에 반환합니다.
 pub fn (mut m PerformanceManager) put_batch(b &core.PooledRecordBatch) {
 	m.engine.put_batch(b)
 }
 
+/// get_request는 풀링된 요청을 획득합니다.
 pub fn (mut m PerformanceManager) get_request() &core.PooledRequest {
 	return m.engine.get_request()
 }
 
+/// put_request는 요청을 풀에 반환합니다.
 pub fn (mut m PerformanceManager) put_request(r &core.PooledRequest) {
 	m.engine.put_request(r)
 }
 
 // ============================================================================
-// Helper functions (Moved from manager.v original)
+// 헬퍼 함수 (원래 manager.v에서 이동)
 // ============================================================================
 
+/// with_buffer는 풀링된 버퍼로 함수를 실행합니다.
 pub fn (mut m PerformanceManager) with_buffer(min_size int, f fn (mut core.Buffer)) {
 	mut buf := m.get_buffer(min_size)
 	defer { m.put_buffer(buf) }
 	f(mut buf)
 }
 
-// compute_partition computes Kafka partition for a key
+/// compute_partition은 키에 대한 Kafka 파티션을 계산합니다.
 pub fn (m &PerformanceManager) compute_partition(key []u8, num_partitions int) int {
 	return core.kafka_partition(key, num_partitions)
 }
 
-// compute_checksum computes CRC32 checksum
+/// compute_checksum은 CRC32 체크섬을 계산합니다.
 pub fn (m &PerformanceManager) compute_checksum(data []u8) u32 {
 	return core.crc32_ieee(data)
 }
 
 // ============================================================================
-// Global Performance Manager
-// Note: Requires -enable-globals flag for tests in infra/performance/
-// The main test target in Makefile excludes these tests intentionally.
+// 전역 성능 관리자
+// 참고: infra/performance/ 테스트에서 -enable-globals 플래그가 필요합니다.
+// Makefile의 메인 테스트 타겟은 의도적으로 이 테스트들을 제외합니다.
 // ============================================================================
 
 __global (
-	g_performance &PerformanceManager
+	g_performance &PerformanceManager // 전역 성능 관리자 인스턴스
 )
 
-// init_global_performance initializes the global performance manager
+/// init_global_performance는 전역 성능 관리자를 초기화합니다.
 pub fn init_global_performance(config core.PerformanceConfig) {
 	unsafe {
 		g_performance = new_performance_manager(config)
 	}
 }
 
-// get_global_performance returns the global performance manager
+/// get_global_performance는 전역 성능 관리자를 반환합니다.
 pub fn get_global_performance() &PerformanceManager {
 	if unsafe { g_performance == nil } {
-		// Safe default if not initialized
+		// 초기화되지 않은 경우 안전한 기본값
 		init_global_performance(core.PerformanceConfig{})
 	}
 	return unsafe { g_performance }
 }
 
+/// get_stats는 성능 통계를 반환합니다.
 pub fn (mut m PerformanceManager) get_stats() core.PerformanceStats {
 	return m.engine.get_stats()
 }

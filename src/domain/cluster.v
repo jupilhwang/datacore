@@ -1,53 +1,73 @@
-// Domain Layer - Cluster and Multi-Broker Models
-// Defines core types for multi-broker cluster coordination
+// 도메인 레이어 - 클러스터 및 멀티 브로커 모델
+// 멀티 브로커 클러스터 조정을 위한 핵심 타입을 정의합니다.
 module domain
 
 import time
 
 // ============================================================================
-// Broker Registration
+// 브로커 등록
 // ============================================================================
 
-// BrokerInfo represents a broker in the cluster
+/// BrokerInfo는 클러스터 내의 브로커를 나타냅니다.
+/// broker_id: 브로커 고유 ID
+/// host: 호스트 주소
+/// port: 포트 번호
+/// rack: 랙 정보 (데이터 지역성용)
+/// security_protocol: 보안 프로토콜 (PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL)
+/// endpoints: 리스너 엔드포인트 목록
+/// status: 브로커 상태
 pub struct BrokerInfo {
 pub mut:
 	broker_id i32
 	host      string
 	port      i32
 	rack      string
-	// Security
+	// 보안
 	security_protocol string // PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL
-	// Endpoints for different listeners
+	// 다른 리스너를 위한 엔드포인트
 	endpoints []BrokerEndpoint
-	// Status
+	// 상태
 	status BrokerStatus
-	// Timestamps
+	// 타임스탬프
 	registered_at  i64
 	last_heartbeat i64
-	// Metadata
+	// 메타데이터
 	version  string
 	features []string
 }
 
-// BrokerEndpoint represents a listener endpoint
+/// BrokerEndpoint는 리스너 엔드포인트를 나타냅니다.
+/// name: 엔드포인트 이름 (예: "PLAINTEXT", "SSL", "SASL_SSL")
+/// host: 호스트 주소
+/// port: 포트 번호
+/// security_protocol: 보안 프로토콜
 pub struct BrokerEndpoint {
 pub:
-	name              string // e.g., "PLAINTEXT", "SSL", "SASL_SSL"
+	name              string // 예: "PLAINTEXT", "SSL", "SASL_SSL"
 	host              string
 	port              i32
 	security_protocol string
 }
 
-// BrokerStatus represents the status of a broker
+/// BrokerStatus는 브로커의 상태를 나타냅니다.
+/// starting: 시작 중
+/// active: 활성 (요청 수락 중)
+/// draining: 드레이닝 (새 연결 거부)
+/// shutdown: 종료 중
+/// dead: 죽음 (하트비트 누락)
 pub enum BrokerStatus {
-	starting // Broker is starting up
-	active   // Broker is active and accepting requests
-	draining // Broker is draining (not accepting new connections)
-	shutdown // Broker is shutting down
-	dead     // Broker is considered dead (missed heartbeats)
+	starting // 브로커가 시작 중
+	active   // 브로커가 활성 상태이며 요청을 수락 중
+	draining // 브로커가 드레이닝 중 (새 연결을 수락하지 않음)
+	shutdown // 브로커가 종료 중
+	dead     // 브로커가 죽은 것으로 간주됨 (하트비트 누락)
 }
 
-// BrokerHeartbeat represents a heartbeat from a broker
+/// BrokerHeartbeat는 브로커로부터의 하트비트를 나타냅니다.
+/// broker_id: 브로커 ID
+/// timestamp: 타임스탬프
+/// current_load: 현재 부하 정보
+/// wants_shutdown: 종료 요청 여부
 pub struct BrokerHeartbeat {
 pub:
 	broker_id      i32
@@ -56,7 +76,13 @@ pub:
 	wants_shutdown bool
 }
 
-// BrokerLoad represents the current load of a broker
+/// BrokerLoad는 브로커의 현재 부하를 나타냅니다.
+/// connections: 현재 연결 수
+/// requests_per_sec: 초당 요청 수
+/// bytes_in_per_sec: 초당 수신 바이트
+/// bytes_out_per_sec: 초당 송신 바이트
+/// cpu_percent: CPU 사용률
+/// memory_percent: 메모리 사용률
 pub struct BrokerLoad {
 pub:
 	connections       int
@@ -68,25 +94,30 @@ pub:
 }
 
 // ============================================================================
-// Cluster Metadata
+// 클러스터 메타데이터
 // ============================================================================
 
-// ClusterMetadata represents the cluster state
+/// ClusterMetadata는 클러스터 상태를 나타냅니다.
+/// cluster_id: 클러스터 ID
+/// controller_id: 컨트롤러 브로커 ID (stateless 모드에서는 -1)
+/// brokers: 브로커 목록
+/// metadata_version: 메타데이터 버전 (낙관적 동시성용)
+/// updated_at: 마지막 업데이트 시간
 pub struct ClusterMetadata {
 pub mut:
 	cluster_id    string
-	controller_id i32 // -1 if no controller (stateless mode)
+	controller_id i32 // stateless 모드에서는 -1
 	brokers       []BrokerInfo
-	// Epoch for optimistic concurrency
+	// 낙관적 동시성을 위한 에포크
 	metadata_version i64
 	updated_at       i64
 }
 
-// new_cluster_metadata creates a new cluster metadata instance
+/// new_cluster_metadata는 새로운 클러스터 메타데이터 인스턴스를 생성합니다.
 pub fn new_cluster_metadata(cluster_id string) ClusterMetadata {
 	return ClusterMetadata{
 		cluster_id:       cluster_id
-		controller_id:    -1 // No controller in stateless mode
+		controller_id:    -1 // Stateless 모드에서는 컨트롤러 없음
 		brokers:          []BrokerInfo{}
 		metadata_version: 0
 		updated_at:       time.now().unix_milli()
@@ -94,35 +125,48 @@ pub fn new_cluster_metadata(cluster_id string) ClusterMetadata {
 }
 
 // ============================================================================
-// Partition Assignment (for Stateless Multi-Broker)
+// 파티션 할당 (Stateless 멀티 브로커용)
 // ============================================================================
 
-// In stateless mode, partitions don't have a fixed leader.
-// Any broker can serve any partition since data is in shared storage.
-// However, we track "preferred" brokers for load balancing.
+// Stateless 모드에서는 파티션에 고정된 리더가 없습니다.
+// 데이터가 공유 스토리지에 있으므로 모든 브로커가 모든 파티션을 서비스할 수 있습니다.
+// 그러나 로드 밸런싱을 위해 "선호" 브로커를 추적합니다.
 
-// PartitionAssignment represents partition metadata in multi-broker mode
+/// PartitionAssignment는 멀티 브로커 모드에서 파티션 메타데이터를 나타냅니다.
+/// topic_name: 토픽 이름
+/// topic_id: 토픽 UUID
+/// partition: 파티션 번호
+/// preferred_broker: 선호 브로커 (로드 밸런싱 힌트)
+/// replica_brokers: 레플리카 브로커 목록 (Kafka 프로토콜 호환성용)
+/// isr_brokers: ISR 브로커 목록 (Stateless 모드에서는 모든 활성 브로커)
+/// partition_epoch: 파티션 에포크
 pub struct PartitionAssignment {
 pub mut:
 	topic_name string
 	topic_id   []u8
 	partition  i32
-	// In stateless mode, all active brokers can serve this partition
-	// preferred_broker is used for load balancing hints
+	// Stateless 모드에서는 모든 활성 브로커가 이 파티션을 서비스할 수 있음
+	// preferred_broker는 로드 밸런싱 힌트로 사용됨
 	preferred_broker i32
-	// Replicas field for Kafka protocol compatibility
-	// In stateless mode, all brokers are effectively replicas
+	// Kafka 프로토콜 호환성을 위한 Replicas 필드
+	// Stateless 모드에서는 모든 브로커가 사실상 레플리카임
 	replica_brokers []i32
-	isr_brokers     []i32 // In-sync replicas (all active brokers in stateless mode)
-	// Epoch for partition state changes
+	isr_brokers     []i32 // 동기화된 레플리카 (Stateless 모드에서는 모든 활성 브로커)
+	// 파티션 상태 변경을 위한 에포크
 	partition_epoch i32
 }
 
 // ============================================================================
-// Storage Capability
+// 스토리지 기능
 // ============================================================================
 
-// StorageCapability indicates what a storage engine supports
+/// StorageCapability는 스토리지 엔진이 지원하는 기능을 나타냅니다.
+/// name: 스토리지 이름
+/// supports_multi_broker: 멀티 브로커 지원 여부
+/// supports_transactions: 트랜잭션 지원 여부
+/// supports_compaction: 컴팩션 지원 여부
+/// is_persistent: 영속성 여부
+/// is_distributed: 분산 여부
 pub struct StorageCapability {
 pub:
 	name                  string
@@ -133,7 +177,7 @@ pub:
 	is_distributed        bool
 }
 
-// Predefined storage capabilities
+// 사전 정의된 스토리지 기능
 pub const memory_storage_capability = StorageCapability{
 	name:                  'memory'
 	supports_multi_broker: false
@@ -162,27 +206,36 @@ pub const postgresql_storage_capability = StorageCapability{
 }
 
 // ============================================================================
-// Cluster Configuration
+// 클러스터 설정
 // ============================================================================
 
-// ClusterConfig holds cluster-wide configuration
+/// ClusterConfig는 클러스터 전체 설정을 보관합니다.
+/// cluster_id: 클러스터 ID
+/// broker_heartbeat_interval_ms: 하트비트 전송 간격 (밀리초)
+/// broker_session_timeout_ms: 브로커 세션 타임아웃 (밀리초)
+/// metadata_refresh_interval_ms: 메타데이터 갱신 간격 (밀리초)
+/// multi_broker_enabled: 멀티 브로커 모드 활성화 여부
 pub struct ClusterConfig {
 pub:
 	cluster_id string
-	// Broker registration
-	broker_heartbeat_interval_ms i32 = 3000  // How often brokers send heartbeats
-	broker_session_timeout_ms    i32 = 10000 // When to consider a broker dead
-	// Metadata
-	metadata_refresh_interval_ms i32 = 30000 // How often to refresh cluster metadata
-	// Multi-broker mode
+	// 브로커 등록
+	broker_heartbeat_interval_ms i32 = 3000  // 브로커가 하트비트를 보내는 빈도
+	broker_session_timeout_ms    i32 = 10000 // 브로커를 죽은 것으로 간주하는 시간
+	// 메타데이터
+	metadata_refresh_interval_ms i32 = 30000 // 클러스터 메타데이터를 갱신하는 빈도
+	// 멀티 브로커 모드
 	multi_broker_enabled bool
 }
 
 // ============================================================================
-// Cluster Events
+// 클러스터 이벤트
 // ============================================================================
 
-// ClusterEvent represents events in the cluster
+/// ClusterEvent는 클러스터에서 발생하는 이벤트를 나타냅니다.
+/// event_type: 이벤트 유형
+/// broker_id: 관련 브로커 ID
+/// timestamp: 발생 시간
+/// details: 상세 정보
 pub struct ClusterEvent {
 pub:
 	event_type ClusterEventType
@@ -191,11 +244,16 @@ pub:
 	details    string
 }
 
-// ClusterEventType represents types of cluster events
+/// ClusterEventType은 클러스터 이벤트 유형을 나타냅니다.
+/// broker_joined: 브로커 가입
+/// broker_left: 브로커 탈퇴
+/// broker_failed: 브로커 실패
+/// metadata_updated: 메타데이터 업데이트
+/// partition_reassigned: 파티션 재할당
 pub enum ClusterEventType {
-	broker_joined
-	broker_left
-	broker_failed
-	metadata_updated
-	partition_reassigned
+	broker_joined        // 브로커 가입
+	broker_left          // 브로커 탈퇴
+	broker_failed        // 브로커 실패
+	metadata_updated     // 메타데이터 업데이트
+	partition_reassigned // 파티션 재할당
 }

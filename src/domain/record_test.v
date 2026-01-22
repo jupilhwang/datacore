@@ -1,4 +1,4 @@
-// Unit Tests - Domain Layer: Record
+// 단위 테스트 - 도메인 레이어: Record
 module domain_test
 
 import domain as d

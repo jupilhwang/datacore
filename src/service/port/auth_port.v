@@ -1,75 +1,77 @@
-// UseCase Layer - Authentication Port Interfaces
-// These interfaces are defined in UseCase layer and implemented by Adapter layer
+// 서비스 레이어 - 인증 포트 인터페이스
+// 유스케이스 레이어에서 정의하고 어댑터 레이어에서 구현하는 인증 관련 인터페이스입니다.
+// SASL 인증 및 ACL 관리를 위한 추상화를 제공합니다.
 module port
 
 import domain
 
-// UserStore defines the interface for user storage and authentication
-// Implemented by infra/auth
+/// UserStore는 사용자 저장 및 인증을 위한 인터페이스입니다.
+/// infra/auth에서 구현됩니다.
 pub interface UserStore {
 mut:
-	// Get user by username
+	/// 사용자명으로 사용자를 조회합니다.
 	get_user(username string) !domain.User
 
-	// Create a new user
+	/// 새로운 사용자를 생성합니다.
 	create_user(username string, password string, mechanism domain.SaslMechanism) !domain.User
 
-	// Update user password
+	/// 사용자 비밀번호를 업데이트합니다.
 	update_password(username string, new_password string) !
 
-	// Delete user
+	/// 사용자를 삭제합니다.
 	delete_user(username string) !
 
-	// List all users
+	/// 모든 사용자 목록을 반환합니다.
 	list_users() ![]domain.User
 
-	// Validate password for PLAIN authentication
-	// Returns true if password matches
+	/// PLAIN 인증을 위한 비밀번호를 검증합니다.
+	/// 반환값: 비밀번호가 일치하면 true
 	validate_password(username string, password string) !bool
 }
 
-// SaslAuthenticator defines the interface for SASL authentication
+/// SaslAuthenticator는 SASL 인증을 위한 인터페이스입니다.
 pub interface SaslAuthenticator {
-	// Get the supported mechanism
+	/// 지원하는 메커니즘을 반환합니다.
 	mechanism() domain.SaslMechanism
 mut:
-	// Authenticate with the provided auth bytes
-	// For PLAIN: auth_bytes contains [authzid]\0[authcid]\0[password]
-	// Returns AuthResult with principal on success
+	/// 제공된 인증 바이트로 인증을 수행합니다.
+	/// PLAIN의 경우: auth_bytes는 [authzid]\0[authcid]\0[password] 형식
+	/// 반환값: 성공 시 principal을 포함한 AuthResult
 	authenticate(auth_bytes []u8) !domain.AuthResult
 
-	// For SCRAM: Process next step in challenge-response
-	// Returns AuthResult with challenge or final result
+	/// SCRAM용: 챌린지-응답의 다음 단계를 처리합니다.
+	/// 반환값: 챌린지 또는 최종 결과를 포함한 AuthResult
 	step(response []u8) !domain.AuthResult
 }
 
-// AuthManager manages authentication for connections
+/// AuthManager는 연결에 대한 인증을 관리합니다.
 pub interface AuthManager {
-	// Get supported SASL mechanisms
+	/// 지원되는 SASL 메커니즘 목록을 반환합니다.
 	supported_mechanisms() []domain.SaslMechanism
 
-	// Check if a mechanism is supported
+	/// 특정 메커니즘이 지원되는지 확인합니다.
 	is_mechanism_supported(mechanism string) bool
 mut:
-	// Get authenticator for a specific mechanism
+	/// 특정 메커니즘에 대한 인증자를 반환합니다.
 	get_authenticator(mechanism domain.SaslMechanism) !SaslAuthenticator
 
-	// Authenticate using the specified mechanism
+	/// 지정된 메커니즘을 사용하여 인증을 수행합니다.
 	authenticate(mechanism domain.SaslMechanism, auth_bytes []u8) !domain.AuthResult
 }
 
-// AclManager manages Access Control Lists
+/// AclManager는 접근 제어 목록(ACL)을 관리합니다.
 pub interface AclManager {
 mut:
-	// Create ACLs
+	/// ACL을 생성합니다.
 	create_acls(acls []domain.AclBinding) ![]domain.AclCreateResult
 
-	// Delete ACLs matching the filter
+	/// 필터와 일치하는 ACL을 삭제합니다.
 	delete_acls(filters []domain.AclBindingFilter) ![]domain.AclDeleteResult
 
-	// Describe ACLs matching the filter
+	/// 필터와 일치하는 ACL을 조회합니다.
 	describe_acls(filter domain.AclBindingFilter) ![]domain.AclBinding
 
-	// Authorize an operation
+	/// 작업에 대한 권한을 확인합니다.
+	/// 반환값: 권한이 있으면 true
 	authorize(principal string, host string, operation domain.AclOperation, resource domain.ResourcePattern) !bool
 }

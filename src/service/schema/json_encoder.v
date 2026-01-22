@@ -1,12 +1,12 @@
-// Service Layer - JSON Schema Encoder
-// Provides validation-based encoding/decoding for JSON Schema
+// Service Layer - JSON 스키마 인코더
+// JSON Schema를 위한 검증 기반 인코딩/디코딩을 제공합니다
 module schema
 
 import domain
 
 // ============================================================================
-// JSON Schema Encoder
-// Validates and encodes JSON data according to JSON Schema
+// JSON 스키마 인코더
+// JSON Schema에 따라 JSON 데이터를 검증하고 인코딩합니다
 // https://json-schema.org/draft/2020-12/json-schema-validation.html
 // ============================================================================
 

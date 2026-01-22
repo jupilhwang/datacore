@@ -1,5 +1,5 @@
-// Service Layer - Schema Encoder Primitives
-// Low-level binary encoding/decoding for Avro primitive types
+// Service Layer - 스키마 인코더 프리미티브
+// Avro 프리미티브 타입을 위한 저수준 바이너리 인코딩/디코딩
 module schema
 
 // ============================================================================

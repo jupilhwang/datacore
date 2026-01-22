@@ -1,5 +1,5 @@
-// Infra Layer - WebSocket Handler
-// HTTP handler for WebSocket connections
+// 인프라 레이어 - WebSocket 핸들러
+// WebSocket 연결을 위한 HTTP 핸들러
 module http
 
 import crypto.sha1
@@ -11,10 +11,10 @@ import service.port
 import time
 
 // ============================================================================
-// WebSocket Handler
+// WebSocket 핸들러
 // ============================================================================
 
-// WebSocketHandler handles WebSocket HTTP requests
+/// WebSocketHandler는 WebSocket HTTP 요청을 처리합니다.
 pub struct WebSocketHandler {
 	config domain.WebSocketConfig
 pub mut:
@@ -22,7 +22,7 @@ pub mut:
 	storage    port.StoragePort
 }
 
-// new_websocket_handler creates a new WebSocket handler
+/// new_websocket_handler는 새로운 WebSocket 핸들러를 생성합니다.
 pub fn new_websocket_handler(storage port.StoragePort, config domain.WebSocketConfig) &WebSocketHandler {
 	ws_service := streaming.new_websocket_service(storage, config)
 	return &WebSocketHandler{
@@ -33,12 +33,12 @@ pub fn new_websocket_handler(storage port.StoragePort, config domain.WebSocketCo
 }
 
 // ============================================================================
-// WebSocket Upgrade Handling
+// WebSocket 업그레이드 처리
 // ============================================================================
 
-// handle_upgrade handles the WebSocket upgrade request
+/// handle_upgrade는 WebSocket 업그레이드 요청을 처리합니다.
 pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map[string]string, client_ip string) !string {
-	// Validate WebSocket upgrade request
+	// WebSocket 업그레이드 요청 검증
 	upgrade := headers['Upgrade'] or { headers['upgrade'] or { '' } }
 	if upgrade.to_lower() != 'websocket' {
 		return error('Invalid Upgrade header')
@@ -59,19 +59,19 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		return error('Unsupported WebSocket version')
 	}
 
-	// Generate accept key
+	// Accept 키 생성
 	accept_key := generate_accept_key(ws_key)
 
-	// Create WebSocket connection
+	// WebSocket 연결 생성
 	user_agent := headers['User-Agent'] or { headers['user-agent'] or { 'unknown' } }
 	ws_conn := domain.new_ws_connection(client_ip, user_agent)
 
-	// Register connection
+	// 연결 등록
 	conn_id := h.ws_service.register_connection(ws_conn) or {
 		return error('Failed to register connection: ${err}')
 	}
 
-	// Send upgrade response
+	// 업그레이드 응답 전송
 	response := 'HTTP/1.1 101 Switching Protocols\r\n' + 'Upgrade: websocket\r\n' +
 		'Connection: Upgrade\r\n' + 'Sec-WebSocket-Accept: ${accept_key}\r\n' +
 		'X-WebSocket-Connection-Id: ${conn_id}\r\n' + '\r\n'
@@ -84,7 +84,7 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 	return conn_id
 }
 
-// generate_accept_key generates the Sec-WebSocket-Accept key
+/// generate_accept_key는 Sec-WebSocket-Accept 키를 생성합니다.
 fn generate_accept_key(key string) string {
 	magic := '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 	combined := key + magic
@@ -93,10 +93,10 @@ fn generate_accept_key(key string) string {
 }
 
 // ============================================================================
-// WebSocket Frame Handling
+// WebSocket 프레임 처리
 // ============================================================================
 
-// WebSocketOpcode represents WebSocket frame opcodes
+/// WebSocketOpcode는 WebSocket 프레임 opcode를 나타냅니다.
 enum WebSocketOpcode {
 	continuation = 0x0
 	text         = 0x1
@@ -106,7 +106,7 @@ enum WebSocketOpcode {
 	pong         = 0xa
 }
 
-// WebSocketFrame represents a WebSocket frame
+/// WebSocketFrame은 WebSocket 프레임을 나타냅니다.
 struct WebSocketFrame {
 	fin     bool
 	opcode  WebSocketOpcode
@@ -114,27 +114,27 @@ struct WebSocketFrame {
 	payload []u8
 }
 
-// start_connection starts handling a WebSocket connection
+/// start_connection은 WebSocket 연결 처리를 시작합니다.
 pub fn (mut h WebSocketHandler) start_connection(conn_id string, mut conn net.TcpConn) {
 	defer {
 		h.ws_service.unregister_connection(conn_id) or {}
 		conn.close() or {}
 	}
 
-	// Get send channel
+	// 송신 채널 획득
 	send_chan := h.ws_service.get_send_channel(conn_id) or { return }
 
-	// Start sender goroutine
+	// 송신 고루틴 시작
 	spawn h.sender_loop(conn_id, mut conn, send_chan)
 
-	// Start polling goroutine
+	// 폴링 고루틴 시작
 	spawn h.poll_loop(conn_id)
 
-	// Receiver loop (main loop)
+	// 수신 루프 (메인 루프)
 	h.receiver_loop(conn_id, mut conn)
 }
 
-// receiver_loop handles incoming WebSocket frames
+/// receiver_loop는 수신되는 WebSocket 프레임을 처리합니다.
 fn (mut h WebSocketHandler) receiver_loop(conn_id string, mut conn net.TcpConn) {
 	for {
 		frame := h.read_frame(mut conn) or { break }
@@ -157,32 +157,32 @@ fn (mut h WebSocketHandler) receiver_loop(conn_id string, mut conn net.TcpConn) 
 				break
 			}
 			.continuation {
-				// TODO: Handle fragmented messages
+				// TODO: 분할된 프레임 메시지 처리 구현 필요
 			}
 		}
 	}
 }
 
-// sender_loop handles outgoing messages
+/// sender_loop는 나가는 메시지를 처리합니다.
 fn (mut h WebSocketHandler) sender_loop(conn_id string, mut conn net.TcpConn, recv_chan chan string) {
 	for {
-		// Blocking receive from channel - will exit when channel is closed
+		// 채널에서 블로킹 수신 - 채널이 닫히면 종료
 		msg := <-recv_chan or { break }
 		h.send_text_frame(mut conn, msg) or { break }
 	}
 }
 
-// poll_loop periodically polls for new messages
+/// poll_loop는 새 메시지를 주기적으로 폴링합니다.
 fn (mut h WebSocketHandler) poll_loop(conn_id string) {
 	mut last_poll := time.now().unix_milli()
 
 	for {
 		now := time.now().unix_milli()
 
-		// Check if connection still exists
+		// 연결이 여전히 존재하는지 확인
 		_ = h.ws_service.get_connection(conn_id) or { break }
 
-		// Poll for new messages every 100ms
+		// 100ms마다 새 메시지 폴링
 		if now - last_poll >= 100 {
 			h.ws_service.poll_and_send()
 			last_poll = now
@@ -193,12 +193,12 @@ fn (mut h WebSocketHandler) poll_loop(conn_id string) {
 }
 
 // ============================================================================
-// Frame Reading
+// 프레임 읽기
 // ============================================================================
 
-// read_frame reads a WebSocket frame from the connection
+/// read_frame은 연결에서 WebSocket 프레임을 읽습니다.
 fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
-	// Read first 2 bytes (FIN, RSV, Opcode, MASK, Payload len)
+	// 처음 2바이트 읽기 (FIN, RSV, Opcode, MASK, Payload len)
 	mut header := []u8{len: 2}
 	conn.read(mut header) or { return error('Failed to read frame header') }
 
@@ -207,7 +207,7 @@ fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
 	masked := (header[1] & 0x80) != 0
 	mut payload_len := u64(header[1] & 0x7F)
 
-	// Extended payload length
+	// 확장 페이로드 길이
 	if payload_len == 126 {
 		mut ext := []u8{len: 2}
 		conn.read(mut ext) or { return error('Failed to read extended length') }
@@ -218,19 +218,19 @@ fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
 		payload_len = u64(ext[0]) << 56 | u64(ext[1]) << 48 | u64(ext[2]) << 40 | u64(ext[3]) << 32 | u64(ext[4]) << 24 | u64(ext[5]) << 16 | u64(ext[6]) << 8 | u64(ext[7])
 	}
 
-	// Check max message size
+	// 최대 메시지 크기 확인
 	if payload_len > u64(h.config.max_message_size) {
 		return error('Message too large')
 	}
 
-	// Read masking key (if masked)
+	// 마스킹 키 읽기 (마스킹된 경우)
 	mut mask_key := []u8{}
 	if masked {
 		mask_key = []u8{len: 4}
 		conn.read(mut mask_key) or { return error('Failed to read mask key') }
 	}
 
-	// Read payload
+	// 페이로드 읽기
 	mut payload := []u8{len: int(payload_len)}
 	if payload_len > 0 {
 		mut total_read := 0
@@ -242,7 +242,7 @@ fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
 			total_read += n
 		}
 
-		// Unmask payload
+		// 페이로드 언마스킹
 		if masked {
 			for i := 0; i < payload.len; i++ {
 				payload[i] ^= mask_key[i % 4]
@@ -259,20 +259,20 @@ fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
 }
 
 // ============================================================================
-// Frame Writing
+// 프레임 쓰기
 // ============================================================================
 
-// send_text_frame sends a text frame
+/// send_text_frame은 텍스트 프레임을 전송합니다.
 fn (mut h WebSocketHandler) send_text_frame(mut conn net.TcpConn, message string) ! {
 	h.send_frame(mut conn, .text, message.bytes())!
 }
 
-// send_pong sends a pong frame
+/// send_pong은 pong 프레임을 전송합니다.
 fn (mut h WebSocketHandler) send_pong(mut conn net.TcpConn, payload []u8) ! {
 	h.send_frame(mut conn, .pong, payload)!
 }
 
-// send_close sends a close frame
+/// send_close는 close 프레임을 전송합니다.
 fn (mut h WebSocketHandler) send_close(mut conn net.TcpConn, code u16, reason string) ! {
 	mut payload := []u8{len: 2 + reason.len}
 	payload[0] = u8(code >> 8)
@@ -283,14 +283,14 @@ fn (mut h WebSocketHandler) send_close(mut conn net.TcpConn, code u16, reason st
 	h.send_frame(mut conn, .close, payload)!
 }
 
-// send_frame sends a WebSocket frame
+/// send_frame은 WebSocket 프레임을 전송합니다.
 fn (mut h WebSocketHandler) send_frame(mut conn net.TcpConn, opcode WebSocketOpcode, payload []u8) ! {
 	mut frame := []u8{}
 
-	// First byte: FIN + Opcode
+	// 첫 번째 바이트: FIN + Opcode
 	frame << u8(0x80 | u8(opcode))
 
-	// Second byte: Payload length (server frames are not masked)
+	// 두 번째 바이트: 페이로드 길이 (서버 프레임은 마스킹되지 않음)
 	if payload.len < 126 {
 		frame << u8(payload.len)
 	} else if payload.len < 65536 {
@@ -304,72 +304,72 @@ fn (mut h WebSocketHandler) send_frame(mut conn net.TcpConn, opcode WebSocketOpc
 		}
 	}
 
-	// Payload
+	// 페이로드
 	frame << payload
 
 	conn.write(frame) or { return error('Failed to write frame') }
 }
 
 // ============================================================================
-// Message Handling
+// 메시지 처리
 // ============================================================================
 
-// handle_text_message handles a text message
+/// handle_text_message는 텍스트 메시지를 처리합니다.
 fn (mut h WebSocketHandler) handle_text_message(conn_id string, payload []u8) {
 	message := payload.bytestr()
 
-	// Parse JSON message
+	// JSON 메시지 파싱
 	msg := parse_ws_message(message) or {
 		response := domain.new_ws_error_response('INVALID_MESSAGE', 'Failed to parse message: ${err}')
 		h.ws_service.send_message(conn_id, response) or {}
 		return
 	}
 
-	// Handle message
+	// 메시지 처리
 	response := h.ws_service.handle_message(conn_id, msg) or {
 		err_response := domain.new_ws_error_response('INTERNAL_ERROR', 'Failed to handle message: ${err}')
 		h.ws_service.send_message(conn_id, err_response) or {}
 		return
 	}
 
-	// Send response
+	// 응답 전송
 	h.ws_service.send_message(conn_id, response) or {}
 }
 
-// handle_binary_message handles a binary message
+/// handle_binary_message는 바이너리 메시지를 처리합니다.
 fn (mut h WebSocketHandler) handle_binary_message(conn_id string, payload []u8) {
-	// For now, treat binary as text
+	// 현재는 바이너리를 텍스트로 처리
 	h.handle_text_message(conn_id, payload)
 }
 
-// handle_pong handles a pong frame
+/// handle_pong은 pong 프레임을 처리합니다.
 fn (mut h WebSocketHandler) handle_pong(conn_id string) {
-	// Update last pong timestamp
+	// 마지막 pong 타임스탬프 업데이트
 	h.ws_service.handle_message(conn_id, domain.WebSocketMessage{
 		action: .ping
 	}) or {}
 }
 
-// handle_close handles a close frame
+/// handle_close는 close 프레임을 처리합니다.
 fn (mut h WebSocketHandler) handle_close(conn_id string, mut conn net.TcpConn, payload []u8) {
-	// Parse close code
+	// close 코드 파싱
 	code := if payload.len >= 2 {
 		u16(payload[0]) << 8 | u16(payload[1])
 	} else {
 		u16(1000)
 	}
 
-	// Send close response
+	// close 응답 전송
 	h.send_close(mut conn, code, '') or {}
 }
 
 // ============================================================================
-// JSON Parsing
+// JSON 파싱
 // ============================================================================
 
-// parse_ws_message parses a WebSocket message from JSON
+/// parse_ws_message는 JSON에서 WebSocket 메시지를 파싱합니다.
 fn parse_ws_message(json_str string) !domain.WebSocketMessage {
-	// Simple JSON parsing (TODO: use proper JSON library)
+	// 간단한 JSON 파싱 (TODO: 적절한 JSON 라이브러리로 교체 필요)
 	action_str := extract_json_string(json_str, 'action') or { return error('Missing action') }
 	action := domain.websocket_action_from_str(action_str) or {
 		return error('Invalid action: ${action_str}')
@@ -388,7 +388,7 @@ fn parse_ws_message(json_str string) !domain.WebSocketMessage {
 	value := extract_json_string(json_str, 'value')
 	group_id := extract_json_string(json_str, 'group_id')
 
-	// Parse headers (simplified)
+	// 헤더 파싱 (간소화)
 	headers := extract_json_object(json_str, 'headers')
 
 	return domain.WebSocketMessage{
@@ -403,13 +403,13 @@ fn parse_ws_message(json_str string) !domain.WebSocketMessage {
 	}
 }
 
-// extract_json_string extracts a string value from JSON
+/// extract_json_string은 JSON에서 문자열 값을 추출합니다.
 fn extract_json_string(json_str string, key string) ?string {
 	pattern := '"${key}":'
 	idx := json_str.index(pattern) or { return none }
 	start := idx + pattern.len
 
-	// Skip whitespace
+	// 공백 건너뛰기
 	mut pos := start
 	for pos < json_str.len && json_str[pos] in [` `, `\t`, `\n`, `\r`] {
 		pos++
@@ -419,7 +419,7 @@ fn extract_json_string(json_str string, key string) ?string {
 		return none
 	}
 
-	// Check for string value
+	// 문자열 값 확인
 	if json_str[pos] == `"` {
 		pos++
 		mut end := pos
@@ -432,7 +432,7 @@ fn extract_json_string(json_str string, key string) ?string {
 		return unescape_json_string(json_str[pos..end])
 	}
 
-	// Check for null
+	// null 확인
 	if json_str[pos..].starts_with('null') {
 		return none
 	}
@@ -440,13 +440,13 @@ fn extract_json_string(json_str string, key string) ?string {
 	return none
 }
 
-// extract_json_int extracts an integer value from JSON
+/// extract_json_int는 JSON에서 정수 값을 추출합니다.
 fn extract_json_int(json_str string, key string) ?int {
 	pattern := '"${key}":'
 	idx := json_str.index(pattern) or { return none }
 	start := idx + pattern.len
 
-	// Skip whitespace
+	// 공백 건너뛰기
 	mut pos := start
 	for pos < json_str.len && json_str[pos] in [` `, `\t`, `\n`, `\r`] {
 		pos++
@@ -456,7 +456,7 @@ fn extract_json_int(json_str string, key string) ?int {
 		return none
 	}
 
-	// Parse number
+	// 숫자 파싱
 	mut end := pos
 	if json_str[end] == `-` {
 		end++
@@ -472,7 +472,7 @@ fn extract_json_int(json_str string, key string) ?int {
 	return json_str[pos..end].int()
 }
 
-// extract_json_object extracts an object value from JSON (simplified - returns flat map)
+/// extract_json_object는 JSON에서 객체 값을 추출합니다 (간소화 - 단일 레벨 맵 반환).
 fn extract_json_object(json_str string, key string) map[string]string {
 	mut result := map[string]string{}
 
@@ -480,7 +480,7 @@ fn extract_json_object(json_str string, key string) map[string]string {
 	idx := json_str.index(pattern) or { return result }
 	start := idx + pattern.len
 
-	// Find opening brace
+	// 여는 중괄호 찾기
 	mut pos := start
 	for pos < json_str.len && json_str[pos] != `{` {
 		pos++
@@ -489,7 +489,7 @@ fn extract_json_object(json_str string, key string) map[string]string {
 		return result
 	}
 
-	// Find matching closing brace
+	// 매칭되는 닫는 중괄호 찾기
 	mut depth := 1
 	mut obj_start := pos + 1
 	pos++
@@ -508,7 +508,7 @@ fn extract_json_object(json_str string, key string) map[string]string {
 
 	obj_str := json_str[obj_start..pos - 1]
 
-	// Parse key-value pairs (simplified)
+	// 키-값 쌍 파싱 (간소화)
 	mut in_key := true
 	mut current_key := ''
 	mut i := 0
@@ -543,7 +543,7 @@ fn extract_json_object(json_str string, key string) map[string]string {
 	return result
 }
 
-// unescape_json_string unescapes JSON string escape sequences
+/// unescape_json_string은 JSON 문자열 이스케이프 시퀀스를 언이스케이프합니다.
 fn unescape_json_string(s string) string {
 	mut result := ''
 	mut i := 0
@@ -567,15 +567,15 @@ fn unescape_json_string(s string) string {
 }
 
 // ============================================================================
-// Statistics
+// 통계
 // ============================================================================
 
-// get_stats returns WebSocket service statistics
+/// get_stats는 WebSocket 서비스 통계를 반환합니다.
 pub fn (mut h WebSocketHandler) get_stats() streaming.WebSocketStats {
 	return h.ws_service.get_stats()
 }
 
-// get_connections returns all active WebSocket connections
+/// get_connections는 모든 활성 WebSocket 연결을 반환합니다.
 pub fn (mut h WebSocketHandler) get_connections() []domain.WebSocketConnection {
 	return h.ws_service.list_connections()
 }

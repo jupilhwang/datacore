@@ -1,15 +1,15 @@
-// Infra Layer - PostgreSQL Storage Adapter Tests
-// Integration tests requiring a running PostgreSQL instance
+// Infra Layer - PostgreSQL 스토리지 어댑터 테스트
+// 실행 중인 PostgreSQL 인스턴스가 필요한 통합 테스트
 module postgres
 
 import domain
 import os
 import time
 
-// Test configuration - set environment variables to run tests
+// 테스트 설정 - 테스트 실행을 위해 환경 변수 설정 필요
 // DATACORE_PG_HOST, DATACORE_PG_PORT, DATACORE_PG_USER, DATACORE_PG_PASSWORD, DATACORE_PG_DATABASE
 fn get_test_config() ?PostgresConfig {
-	// Skip tests if PostgreSQL is not configured
+	// PostgreSQL이 설정되지 않으면 테스트 건너뜀
 	host := os.getenv_opt('DATACORE_PG_HOST') or { return none }
 	port_str := os.getenv_opt('DATACORE_PG_PORT') or { '5432' }
 	user := os.getenv_opt('DATACORE_PG_USER') or { return none }
@@ -55,7 +55,7 @@ fn test_topic_lifecycle() {
 
 	topic_name := 'test-topic-${time.now().unix_milli()}'
 
-	// Create topic
+	// 토픽 생성
 	metadata := adapter.create_topic(topic_name, 3, domain.TopicConfig{}) or {
 		assert false, 'Failed to create topic: ${err}'
 		return
@@ -65,7 +65,7 @@ fn test_topic_lifecycle() {
 	assert metadata.partition_count == 3
 	assert metadata.topic_id.len == 16
 
-	// Get topic
+	// 토픽 조회
 	retrieved := adapter.get_topic(topic_name) or {
 		assert false, 'Failed to get topic: ${err}'
 		return
@@ -74,7 +74,7 @@ fn test_topic_lifecycle() {
 	assert retrieved.name == topic_name
 	assert retrieved.partition_count == 3
 
-	// Get topic by ID
+	// ID로 토픽 조회
 	by_id := adapter.get_topic_by_id(metadata.topic_id) or {
 		assert false, 'Failed to get topic by ID: ${err}'
 		return
@@ -82,7 +82,7 @@ fn test_topic_lifecycle() {
 
 	assert by_id.name == topic_name
 
-	// List topics
+	// 토픽 목록 조회
 	topics := adapter.list_topics() or {
 		assert false, 'Failed to list topics: ${err}'
 		return
@@ -97,7 +97,7 @@ fn test_topic_lifecycle() {
 	}
 	assert found == true
 
-	// Add partitions
+	// 파티션 추가
 	adapter.add_partitions(topic_name, 5) or {
 		assert false, 'Failed to add partitions: ${err}'
 		return
@@ -109,13 +109,13 @@ fn test_topic_lifecycle() {
 	}
 	assert updated.partition_count == 5
 
-	// Delete topic
+	// 토픽 삭제
 	adapter.delete_topic(topic_name) or {
 		assert false, 'Failed to delete topic: ${err}'
 		return
 	}
 
-	// Verify deletion
+	// 삭제 확인
 	_ := adapter.get_topic(topic_name) or {
 		assert err.msg() == 'topic not found'
 		return
@@ -137,14 +137,14 @@ fn test_record_operations() {
 
 	topic_name := 'test-records-${time.now().unix_milli()}'
 
-	// Create topic
+	// 토픽 생성
 	adapter.create_topic(topic_name, 2, domain.TopicConfig{}) or {
 		assert false, 'Failed to create topic: ${err}'
 		return
 	}
 	defer { adapter.delete_topic(topic_name) or {} }
 
-	// Append records
+	// 레코드 추가
 	records := [
 		domain.Record{
 			key:     'key1'.bytes()
@@ -166,7 +166,7 @@ fn test_record_operations() {
 	assert result.base_offset == 0
 	assert result.record_count == 2
 
-	// Fetch records
+	// 레코드 조회
 	fetch_result := adapter.fetch(topic_name, 0, 0, 1024 * 1024) or {
 		assert false, 'Failed to fetch records: ${err}'
 		return
@@ -177,7 +177,7 @@ fn test_record_operations() {
 	assert fetch_result.records[0].key == 'key1'.bytes()
 	assert fetch_result.records[1].value == 'value2'.bytes()
 
-	// Get partition info
+	// 파티션 정보 조회
 	info := adapter.get_partition_info(topic_name, 0) or {
 		assert false, 'Failed to get partition info: ${err}'
 		return
@@ -187,13 +187,13 @@ fn test_record_operations() {
 	assert info.latest_offset == 2
 	assert info.high_watermark == 2
 
-	// Delete records
+	// 레코드 삭제
 	adapter.delete_records(topic_name, 0, 1) or {
 		assert false, 'Failed to delete records: ${err}'
 		return
 	}
 
-	// Verify deletion
+	// 삭제 확인
 	info_after := adapter.get_partition_info(topic_name, 0) or {
 		assert false, 'Failed to get partition info after delete: ${err}'
 		return
@@ -216,7 +216,7 @@ fn test_consumer_group_operations() {
 
 	group_id := 'test-group-${time.now().unix_milli()}'
 
-	// Save group
+	// 그룹 저장
 	group := domain.ConsumerGroup{
 		group_id:      group_id
 		protocol_type: 'consumer'
@@ -232,7 +232,7 @@ fn test_consumer_group_operations() {
 		return
 	}
 
-	// Load group
+	// 그룹 로드
 	loaded := adapter.load_group(group_id) or {
 		assert false, 'Failed to load group: ${err}'
 		return
@@ -242,7 +242,7 @@ fn test_consumer_group_operations() {
 	assert loaded.protocol_type == 'consumer'
 	assert loaded.state == .stable
 
-	// List groups
+	// 그룹 목록 조회
 	groups := adapter.list_groups() or {
 		assert false, 'Failed to list groups: ${err}'
 		return
@@ -258,13 +258,13 @@ fn test_consumer_group_operations() {
 	}
 	assert found == true
 
-	// Delete group
+	// 그룹 삭제
 	adapter.delete_group(group_id) or {
 		assert false, 'Failed to delete group: ${err}'
 		return
 	}
 
-	// Verify deletion
+	// 삭제 확인
 	_ := adapter.load_group(group_id) or {
 		assert err.msg() == 'group not found'
 		return
@@ -287,7 +287,7 @@ fn test_offset_commit_fetch() {
 	group_id := 'test-offsets-${time.now().unix_milli()}'
 	topic_name := 'test-topic-offsets'
 
-	// Create group first
+	// 먼저 그룹 생성
 	group := domain.ConsumerGroup{
 		group_id:      group_id
 		protocol_type: 'consumer'
@@ -300,7 +300,7 @@ fn test_offset_commit_fetch() {
 	adapter.save_group(group) or {}
 	defer { adapter.delete_group(group_id) or {} }
 
-	// Commit offsets
+	// 오프셋 커밋
 	offsets := [
 		domain.PartitionOffset{
 			topic:     topic_name
@@ -321,7 +321,7 @@ fn test_offset_commit_fetch() {
 		return
 	}
 
-	// Fetch offsets
+	// 오프셋 조회
 	partitions := [
 		domain.TopicPartition{
 			topic:     topic_name
@@ -346,7 +346,7 @@ fn test_offset_commit_fetch() {
 	assert results[0].offset == 100
 	assert results[0].metadata == 'test-metadata'
 	assert results[1].offset == 200
-	assert results[2].offset == -1 // Not committed
+	assert results[2].offset == -1 // 커밋되지 않음
 }
 
 fn test_health_check() {
@@ -407,6 +407,6 @@ fn test_cluster_metadata_port() {
 		return
 	}
 
-	// ClusterMetadataPort is available
+	// ClusterMetadataPort 사용 가능
 	assert true
 }

@@ -1,25 +1,25 @@
-// Kafka Protocol - Transaction Encoders
-// Encode methods for transaction-related responses
+// Kafka 프로토콜 - 트랜잭션 인코더
+// 트랜잭션 관련 응답의 인코딩 메서드
 module kafka
 
-// encode encodes InitProducerIdResponse (API Key 22)
+/// encode는 InitProducerIdResponse를 인코딩합니다 (API Key 22).
 pub fn (r InitProducerIdResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
 
-	// throttle_time_ms: INT32 (v0+)
+	// throttle_time_ms: INT32 (v0+) - 스로틀링 시간
 	writer.write_i32(r.throttle_time_ms)
 
-	// error_code: INT16 (v0+)
+	// error_code: INT16 (v0+) - 에러 코드
 	writer.write_i16(r.error_code)
 
-	// producer_id: INT64 (v0+)
+	// producer_id: INT64 (v0+) - 프로듀서 ID
 	writer.write_i64(r.producer_id)
 
-	// producer_epoch: INT16 (v0+)
+	// producer_epoch: INT16 (v0+) - 프로듀서 에포크
 	writer.write_i16(r.producer_epoch)
 
-	// Tagged fields for flexible versions
+	// flexible 버전의 태그된 필드
 	if is_flexible {
 		writer.write_tagged_fields()
 	}
@@ -27,7 +27,7 @@ pub fn (r InitProducerIdResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// encode encodes AddPartitionsToTxnResponse (API Key 24)
+/// encode는 AddPartitionsToTxnResponse를 인코딩합니다 (API Key 24).
 pub fn (r AddPartitionsToTxnResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
@@ -69,7 +69,7 @@ pub fn (r AddPartitionsToTxnResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// encode encodes AddOffsetsToTxnResponse (API Key 25)
+/// encode는 AddOffsetsToTxnResponse를 인코딩합니다 (API Key 25).
 pub fn (r AddOffsetsToTxnResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
@@ -84,7 +84,7 @@ pub fn (r AddOffsetsToTxnResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// encode encodes EndTxnResponse (API Key 26)
+/// encode는 EndTxnResponse를 인코딩합니다 (API Key 26).
 pub fn (r EndTxnResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
@@ -99,9 +99,9 @@ pub fn (r EndTxnResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// encode encodes WriteTxnMarkersResponse (API Key 27)
+/// encode는 WriteTxnMarkersResponse를 인코딩합니다 (API Key 27).
 pub fn (r WriteTxnMarkersResponse) encode(version i16) []u8 {
-	// v1 is always flexible
+	// v1은 항상 flexible
 	is_flexible := version >= 1
 	mut writer := new_writer()
 
@@ -155,7 +155,7 @@ pub fn (r WriteTxnMarkersResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// encode encodes TxnOffsetCommitResponse (API Key 28)
+/// encode는 TxnOffsetCommitResponse를 인코딩합니다 (API Key 28).
 pub fn (r TxnOffsetCommitResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()

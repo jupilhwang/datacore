@@ -1,5 +1,6 @@
-// Infra Layer - PostgreSQL Storage Adapter
-// PostgreSQL-based storage with Transaction + Row Lock for concurrency control
+// Infra Layer - PostgreSQL 스토리지 어댑터
+// 트랜잭션 + 행 락을 사용한 PostgreSQL 기반 스토리지 구현
+// 동시성 제어를 위해 PostgreSQL의 FOR UPDATE 락을 활용
 module postgres
 
 import db.pg
@@ -10,31 +11,33 @@ import rand
 import sync
 import encoding.hex
 
-// PostgresStorageAdapter implements port.StoragePort
+/// PostgresStorageAdapter는 port.StoragePort를 구현합니다.
+/// PostgreSQL을 사용하여 토픽, 레코드, 컨슈머 그룹을 저장합니다.
+/// 트랜잭션과 행 락(FOR UPDATE)을 사용하여 동시성을 제어합니다.
 pub struct PostgresStorageAdapter {
 pub mut:
 	config PostgresConfig
 mut:
-	pool             &pg.ConnectionPool
-	cluster_metadata &PostgresClusterMetadataPort = unsafe { nil }
-	topic_cache      map[string]domain.TopicMetadata // topic_name -> metadata
-	topic_id_idx     map[string]string               // topic_id (hex) -> topic_name
-	cache_lock       sync.RwMutex
-	initialized      bool
+	pool             &pg.ConnectionPool // PostgreSQL 커넥션 풀
+	cluster_metadata &PostgresClusterMetadataPort = unsafe { nil } // 클러스터 메타데이터 포트
+	topic_cache      map[string]domain.TopicMetadata // topic_name -> metadata 캐시
+	topic_id_idx     map[string]string               // topic_id (hex) -> topic_name 인덱스
+	cache_lock       sync.RwMutex                    // 캐시 동시성 제어용 락
+	initialized      bool // 초기화 완료 여부
 }
 
-// PostgresConfig holds PostgreSQL storage configuration
+/// PostgresConfig는 PostgreSQL 스토리지 설정을 담습니다.
 pub struct PostgresConfig {
 pub:
-	host      string = 'localhost'
-	port      int    = 5432
-	user      string = 'datacore'
-	password  string
-	database  string = 'datacore'
-	pool_size int    = 10
+	host      string = 'localhost' // 호스트 주소
+	port      int    = 5432        // 포트 번호
+	user      string = 'datacore'  // 사용자 이름
+	password  string // 비밀번호
+	database  string = 'datacore' // 데이터베이스 이름
+	pool_size int    = 10         // 커넥션 풀 크기
 }
 
-// Storage capability for PostgreSQL adapter
+/// postgres_capability는 PostgreSQL 어댑터의 스토리지 기능을 정의합니다.
 pub const postgres_capability = domain.StorageCapability{
 	name:                  'postgresql'
 	supports_multi_broker: true
@@ -44,7 +47,8 @@ pub const postgres_capability = domain.StorageCapability{
 	is_distributed:        true
 }
 
-// new_postgres_adapter creates a new PostgreSQL storage adapter
+/// new_postgres_adapter는 새로운 PostgreSQL 스토리지 어댑터를 생성합니다.
+/// 커넥션 풀을 초기화하고, 스키마를 생성하며, 토픽 캐시를 로드합니다.
 pub fn new_postgres_adapter(config PostgresConfig) !&PostgresStorageAdapter {
 	pg_config := pg.Config{
 		host:     config.host
@@ -68,8 +72,8 @@ pub fn new_postgres_adapter(config PostgresConfig) !&PostgresStorageAdapter {
 	adapter.init_schema()!
 	adapter.load_topic_cache()!
 
-	// Initialize cluster metadata port for multi-broker support
-	cluster_id := 'datacore-cluster' // TODO: Make configurable
+	// 멀티 브로커 지원을 위한 클러스터 메타데이터 포트 초기화
+	cluster_id := 'datacore-cluster' // TODO: 설정 가능하게 변경
 	adapter.cluster_metadata = new_cluster_metadata_port(adapter.pool, cluster_id)!
 
 	adapter.initialized = true
@@ -77,7 +81,8 @@ pub fn new_postgres_adapter(config PostgresConfig) !&PostgresStorageAdapter {
 	return adapter
 }
 
-// Helper function to safely get string from row value
+/// get_row_str는 행 값에서 안전하게 문자열을 가져오는 헬퍼 함수입니다.
+/// 인덱스가 범위를 벗어나거나 값이 none이면 기본값을 반환합니다.
 fn get_row_str(row &pg.Row, idx int, default_val string) string {
 	if idx >= row.vals.len {
 		return default_val
@@ -89,7 +94,8 @@ fn get_row_str(row &pg.Row, idx int, default_val string) string {
 	return val_opt or { default_val }
 }
 
-// Helper function to safely get int from row value
+/// get_row_int는 행 값에서 안전하게 정수를 가져오는 헬퍼 함수입니다.
+/// 인덱스가 범위를 벗어나거나 값이 none이면 기본값을 반환합니다.
 fn get_row_int(row &pg.Row, idx int, default_val int) int {
 	if idx >= row.vals.len {
 		return default_val
@@ -102,7 +108,8 @@ fn get_row_int(row &pg.Row, idx int, default_val int) int {
 	return val.int()
 }
 
-// Helper function to safely get i64 from row value
+/// get_row_i64는 행 값에서 안전하게 i64를 가져오는 헬퍼 함수입니다.
+/// 인덱스가 범위를 벗어나거나 값이 none이면 기본값을 반환합니다.
 fn get_row_i64(row &pg.Row, idx int, default_val i64) i64 {
 	if idx >= row.vals.len {
 		return default_val
@@ -115,12 +122,14 @@ fn get_row_i64(row &pg.Row, idx int, default_val i64) i64 {
 	return val.i64()
 }
 
-// init_schema initializes the database schema
+/// init_schema는 데이터베이스 스키마를 초기화합니다.
+/// topics, records, partition_metadata, consumer_groups, committed_offsets 테이블을 생성합니다.
+/// 이미 존재하는 테이블은 건너뜁니다 (IF NOT EXISTS).
 fn (mut a PostgresStorageAdapter) init_schema() ! {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
 
-	// Topics table
+	// 토픽 테이블
 	db.exec("
 		CREATE TABLE IF NOT EXISTS topics (
 			name VARCHAR(255) PRIMARY KEY,
@@ -133,7 +142,7 @@ fn (mut a PostgresStorageAdapter) init_schema() ! {
 		)
 	")!
 
-	// Records table with partitioning support
+	// 파티셔닝 지원이 있는 레코드 테이블
 	db.exec("
 		CREATE TABLE IF NOT EXISTS records (
 			topic_name VARCHAR(255) NOT NULL,
@@ -148,7 +157,7 @@ fn (mut a PostgresStorageAdapter) init_schema() ! {
 		)
 	")!
 
-	// Partition metadata table
+	// 파티션 메타데이터 테이블
 	db.exec('
 		CREATE TABLE IF NOT EXISTS partition_metadata (
 			topic_name VARCHAR(255) NOT NULL,
@@ -159,7 +168,7 @@ fn (mut a PostgresStorageAdapter) init_schema() ! {
 		)
 	')!
 
-	// Consumer groups table
+	// 컨슈머 그룹 테이블
 	db.exec("
 		CREATE TABLE IF NOT EXISTS consumer_groups (
 			group_id VARCHAR(255) PRIMARY KEY,
@@ -174,7 +183,7 @@ fn (mut a PostgresStorageAdapter) init_schema() ! {
 		)
 	")!
 
-	// Committed offsets table
+	// 커밋된 오프셋 테이블
 	db.exec("
 		CREATE TABLE IF NOT EXISTS committed_offsets (
 			group_id VARCHAR(255) NOT NULL,
@@ -187,13 +196,14 @@ fn (mut a PostgresStorageAdapter) init_schema() ! {
 		)
 	")!
 
-	// Create indexes
+	// 인덱스 생성
 	db.exec('CREATE INDEX IF NOT EXISTS idx_records_topic_partition ON records(topic_name, partition_id)')!
 	db.exec('CREATE INDEX IF NOT EXISTS idx_records_offset ON records(topic_name, partition_id, offset_id)')!
 	db.exec('CREATE INDEX IF NOT EXISTS idx_committed_offsets_group ON committed_offsets(group_id)')!
 }
 
-// load_topic_cache loads all topics into memory cache
+/// load_topic_cache는 모든 토픽을 메모리 캐시에 로드합니다.
+/// 시작 시 한 번 호출되어 토픽 조회 성능을 최적화합니다.
 fn (mut a PostgresStorageAdapter) load_topic_cache() ! {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -213,7 +223,7 @@ fn (mut a PostgresStorageAdapter) load_topic_cache() ! {
 		is_internal_str := get_row_str(&row, 3, 'f')
 		is_internal := is_internal_str == 't' || is_internal_str == 'true'
 
-		// Decode topic_id from hex (removing \x prefix if present)
+		// topic_id를 hex에서 디코딩 (\x 접두사 제거)
 		clean_id := topic_id_str.replace('\\x', '')
 		topic_id := hex.decode(clean_id) or { []u8{} }
 
@@ -231,35 +241,37 @@ fn (mut a PostgresStorageAdapter) load_topic_cache() ! {
 }
 
 // ============================================================
-// Topic Operations
+// 토픽 작업 (Topic Operations)
 // ============================================================
 
+/// create_topic은 새로운 토픽을 생성합니다.
+/// UUID v4 형식의 topic_id를 자동 생성합니다.
 pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
 
-	// Generate UUID for topic_id
+	// topic_id용 UUID 생성
 	mut topic_id := []u8{len: 16}
 	for i in 0 .. 16 {
 		topic_id[i] = u8(rand.intn(256) or { 0 })
 	}
-	// Set UUID version 4 (random)
+	// UUID 버전 4 (랜덤) 설정
 	topic_id[6] = (topic_id[6] & 0x0f) | 0x40
 	topic_id[8] = (topic_id[8] & 0x3f) | 0x80
 
 	is_internal := name.starts_with('__')
 
-	// Begin transaction
+	// 트랜잭션 시작
 	db.begin()!
 
-	// Insert topic
+	// 토픽 삽입
 	db.exec_param_many('
 		INSERT INTO topics (name, topic_id, partition_count, is_internal)
 		VALUES (\$1, \$2, \$3, \$4)
 	',
 		[name, '\\x${topic_id.hex()}', partitions.str(), is_internal.str()])!
 
-	// Create partition metadata entries
+	// 파티션 메타데이터 항목 생성
 	for p in 0 .. partitions {
 		db.exec_param_many('
 			INSERT INTO partition_metadata (topic_name, partition_id, base_offset, high_watermark)
@@ -278,7 +290,7 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 		is_internal:     is_internal
 	}
 
-	// Update cache
+	// 캐시 업데이트
 	a.cache_lock.@lock()
 	a.topic_cache[name] = metadata
 	a.topic_id_idx[topic_id.hex()] = name
@@ -287,24 +299,25 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 	return metadata
 }
 
+/// delete_topic은 토픽을 삭제합니다.
 pub fn (mut a PostgresStorageAdapter) delete_topic(name string) ! {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
 
 	db.begin()!
 
-	// Delete records
+	// 레코드 삭제
 	db.exec_param('DELETE FROM records WHERE topic_name = $1', name)!
-	// Delete partition metadata
+	// 파티션 메타데이터 삭제
 	db.exec_param('DELETE FROM partition_metadata WHERE topic_name = $1', name)!
-	// Delete committed offsets
+	// 커밋된 오프셋 삭제
 	db.exec_param('DELETE FROM committed_offsets WHERE topic_name = $1', name)!
-	// Delete topic
+	// 토픽 삭제
 	db.exec_param('DELETE FROM topics WHERE name = $1', name)!
 
 	db.commit()!
 
-	// Update cache
+	// 캐시 업데이트
 	a.cache_lock.@lock()
 	if topic := a.topic_cache[name] {
 		a.topic_id_idx.delete(topic.topic_id.hex())
@@ -313,6 +326,7 @@ pub fn (mut a PostgresStorageAdapter) delete_topic(name string) ! {
 	a.cache_lock.unlock()
 }
 
+/// list_topics는 모든 토픽 목록을 반환합니다.
 pub fn (mut a PostgresStorageAdapter) list_topics() ![]domain.TopicMetadata {
 	a.cache_lock.rlock()
 	defer { a.cache_lock.runlock() }
@@ -324,6 +338,7 @@ pub fn (mut a PostgresStorageAdapter) list_topics() ![]domain.TopicMetadata {
 	return result
 }
 
+/// get_topic은 토픽 메타데이터를 조회합니다.
 pub fn (mut a PostgresStorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	a.cache_lock.rlock()
 	defer { a.cache_lock.runlock() }
@@ -334,6 +349,7 @@ pub fn (mut a PostgresStorageAdapter) get_topic(name string) !domain.TopicMetada
 	return error('topic not found')
 }
 
+/// get_topic_by_id는 topic_id로 토픽을 조회합니다.
 pub fn (mut a PostgresStorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 	a.cache_lock.rlock()
 	defer { a.cache_lock.runlock() }
@@ -347,6 +363,7 @@ pub fn (mut a PostgresStorageAdapter) get_topic_by_id(topic_id []u8) !domain.Top
 	return error('topic not found')
 }
 
+/// add_partitions는 토픽에 파티션을 추가합니다.
 pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int) ! {
 	a.cache_lock.rlock()
 	topic := a.topic_cache[name] or {
@@ -365,11 +382,11 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 
 	db.begin()!
 
-	// Update topic partition count
+	// 토픽 파티션 수 업데이트
 	db.exec_param_many('UPDATE topics SET partition_count = $1, updated_at = NOW() WHERE name = $2',
 		[new_count.str(), name])!
 
-	// Create new partition metadata entries
+	// 새 파티션 메타데이터 항목 생성
 	for p in current .. new_count {
 		db.exec_param_many('
 			INSERT INTO partition_metadata (topic_name, partition_id, base_offset, high_watermark)
@@ -380,7 +397,7 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 
 	db.commit()!
 
-	// Update cache
+	// 캐시 업데이트
 	a.cache_lock.@lock()
 	if mut metadata := a.topic_cache[name] {
 		a.topic_cache[name] = domain.TopicMetadata{
@@ -392,11 +409,13 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 }
 
 // ============================================================
-// Record Operations
+// 레코드 작업 (Record Operations)
 // ============================================================
 
+/// append는 파티션에 레코드를 추가합니다.
+/// 행 락(FOR UPDATE)을 사용하여 동시성을 제어합니다.
 pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
-	// Verify topic exists
+	// 토픽 존재 확인
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
@@ -413,7 +432,7 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 
 	db.begin()!
 
-	// Lock partition row for update (Row Lock)
+	// 업데이트를 위해 파티션 행 락 (행 락)
 	rows := db.exec_param_many('
 		SELECT base_offset, high_watermark FROM partition_metadata
 		WHERE topic_name = \$1 AND partition_id = \$2
@@ -432,7 +451,7 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 	now := time.now()
 	start_offset := high_watermark
 
-	// Insert records
+	// 레코드 삽입
 	for record in records {
 		ts := if record.timestamp.unix() == 0 { now } else { record.timestamp }
 
@@ -455,7 +474,7 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 		high_watermark++
 	}
 
-	// Update high watermark
+	// high watermark 업데이트
 	db.exec_param_many('
 		UPDATE partition_metadata SET high_watermark = \$1 WHERE topic_name = \$2 AND partition_id = \$3
 	',
@@ -471,8 +490,9 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 	}
 }
 
+/// fetch는 파티션에서 레코드를 조회합니다.
 pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
-	// Verify topic exists
+	// 토픽 존재 확인
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
@@ -487,7 +507,7 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
 
-	// Get partition metadata
+	// 파티션 메타데이터 조회
 	meta_rows := db.exec_param_many('
 		SELECT base_offset, high_watermark FROM partition_metadata
 		WHERE topic_name = \$1 AND partition_id = \$2
@@ -501,7 +521,7 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	base_offset := get_row_i64(&meta_rows[0], 0, 0)
 	high_watermark := get_row_i64(&meta_rows[0], 1, 0)
 
-	// Return empty if offset is before base
+	// 오프셋이 base 이전이면 빈 결과 반환
 	if offset < base_offset {
 		return domain.FetchResult{
 			records:            []
@@ -511,11 +531,11 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 		}
 	}
 
-	// Calculate limit based on max_bytes (rough estimate: 1KB per record)
+	// max_bytes 기반으로 limit 계산 (대략적 추정: 레코드당 1KB)
 	max_records := if max_bytes <= 0 { 1000 } else { max_bytes / 1024 }
 	limit := if max_records > 1000 { 1000 } else { max_records }
 
-	// Fetch records
+	// 레코드 조회
 	rows := db.exec_param_many('
 		SELECT offset_id, record_key, record_value, timestamp FROM records
 		WHERE topic_name = \$1 AND partition_id = \$2 AND offset_id >= \$3
@@ -530,13 +550,13 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 		value_str := get_row_str(&row, 2, '')
 		ts_str := get_row_str(&row, 3, '')
 
-		// Decode key from hex
+		// hex에서 키 디코딩
 		mut key := []u8{}
 		if key_str.len > 0 && key_str.starts_with('\\x') {
 			key = hex.decode(key_str[2..]) or { []u8{} }
 		}
 
-		// Decode value from hex
+		// hex에서 값 디코딩
 		mut value := []u8{}
 		if value_str.len > 0 && value_str.starts_with('\\x') {
 			value = hex.decode(value_str[2..]) or { []u8{} }
@@ -560,6 +580,7 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	}
 }
 
+/// delete_records는 지정된 오프셋 이전의 레코드를 삭제합니다.
 pub fn (mut a PostgresStorageAdapter) delete_records(topic_name string, partition int, before_offset i64) ! {
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
@@ -577,13 +598,13 @@ pub fn (mut a PostgresStorageAdapter) delete_records(topic_name string, partitio
 
 	db.begin()!
 
-	// Delete records before offset
+	// 오프셋 이전의 레코드 삭제
 	db.exec_param_many('
 		DELETE FROM records WHERE topic_name = \$1 AND partition_id = \$2 AND offset_id < \$3
 	',
 		[topic_name, partition.str(), before_offset.str()])!
 
-	// Update base offset
+	// base offset 업데이트
 	db.exec_param_many('
 		UPDATE partition_metadata SET base_offset = \$1
 		WHERE topic_name = \$2 AND partition_id = \$3 AND base_offset < \$1
@@ -594,9 +615,10 @@ pub fn (mut a PostgresStorageAdapter) delete_records(topic_name string, partitio
 }
 
 // ============================================================
-// Offset Operations
+// 오프셋 작업 (Offset Operations)
 // ============================================================
 
+/// get_partition_info는 파티션 정보를 조회합니다.
 pub fn (mut a PostgresStorageAdapter) get_partition_info(topic_name string, partition int) !domain.PartitionInfo {
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
@@ -635,9 +657,10 @@ pub fn (mut a PostgresStorageAdapter) get_partition_info(topic_name string, part
 }
 
 // ============================================================
-// Consumer Group Operations
+// 컨슈머 그룹 작업 (Consumer Group Operations)
 // ============================================================
 
+/// save_group은 컨슈머 그룹을 저장합니다.
 pub fn (mut a PostgresStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -650,7 +673,7 @@ pub fn (mut a PostgresStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 		.dead { 'dead' }
 	}
 
-	// Upsert group
+	// 그룹 upsert
 	db.exec_param_many('
 		INSERT INTO consumer_groups (group_id, protocol_type, state, generation_id, leader, protocol)
 		VALUES (\$1, \$2, \$3, \$4, \$5, \$6)
@@ -672,6 +695,7 @@ pub fn (mut a PostgresStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 	])!
 }
 
+/// load_group은 컨슈머 그룹을 로드합니다.
 pub fn (mut a PostgresStorageAdapter) load_group(group_id string) !domain.ConsumerGroup {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -707,6 +731,7 @@ pub fn (mut a PostgresStorageAdapter) load_group(group_id string) !domain.Consum
 	}
 }
 
+/// delete_group은 컨슈머 그룹을 삭제합니다.
 pub fn (mut a PostgresStorageAdapter) delete_group(group_id string) ! {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -717,6 +742,7 @@ pub fn (mut a PostgresStorageAdapter) delete_group(group_id string) ! {
 	db.commit()!
 }
 
+/// list_groups는 모든 컨슈머 그룹 목록을 반환합니다.
 pub fn (mut a PostgresStorageAdapter) list_groups() ![]domain.GroupInfo {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -744,9 +770,10 @@ pub fn (mut a PostgresStorageAdapter) list_groups() ![]domain.GroupInfo {
 }
 
 // ============================================================
-// Offset Commit/Fetch
+// 오프셋 커밋/조회 (Offset Commit/Fetch)
 // ============================================================
 
+/// commit_offsets는 오프셋을 커밋합니다.
 pub fn (mut a PostgresStorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -768,6 +795,7 @@ pub fn (mut a PostgresStorageAdapter) commit_offsets(group_id string, offsets []
 	db.commit()!
 }
 
+/// fetch_offsets는 커밋된 오프셋을 조회합니다.
 pub fn (mut a PostgresStorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -804,9 +832,10 @@ pub fn (mut a PostgresStorageAdapter) fetch_offsets(group_id string, partitions 
 }
 
 // ============================================================
-// Health Check
+// 헬스 체크 (Health Check)
 // ============================================================
 
+/// health_check는 스토리지 상태를 확인합니다.
 pub fn (mut a PostgresStorageAdapter) health_check() !port.HealthStatus {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -816,15 +845,17 @@ pub fn (mut a PostgresStorageAdapter) health_check() !port.HealthStatus {
 }
 
 // ============================================================
-// Multi-Broker Support
+// 멀티 브로커 지원 (Multi-Broker Support)
 // ============================================================
 
+/// get_storage_capability는 스토리지 기능 정보를 반환합니다.
 pub fn (a &PostgresStorageAdapter) get_storage_capability() domain.StorageCapability {
 	return postgres_capability
 }
 
+/// get_cluster_metadata_port는 클러스터 메타데이터 포트를 반환합니다.
+/// PostgreSQL은 멀티 브로커 모드를 지원합니다.
 pub fn (a &PostgresStorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
-	// PostgreSQL supports multi-broker mode
 	if a.cluster_metadata != unsafe { nil } {
 		return a.cluster_metadata
 	}
@@ -832,19 +863,21 @@ pub fn (a &PostgresStorageAdapter) get_cluster_metadata_port() ?&port.ClusterMet
 }
 
 // ============================================================
-// Stats and Utilities
+// 통계 및 유틸리티 (Stats and Utilities)
 // ============================================================
 
-// StorageStats provides storage statistics
+/// StorageStats는 스토리지 통계를 제공합니다.
+/// 데이터베이스의 현재 상태를 요약한 정보를 담습니다.
 pub struct StorageStats {
 pub:
-	topic_count      int
-	total_partitions int
-	total_records    i64
-	group_count      int
+	topic_count      int // 토픽 수
+	total_partitions int // 총 파티션 수
+	total_records    i64 // 총 레코드 수
+	group_count      int // 컨슈머 그룹 수
 }
 
-// get_stats returns current storage statistics
+/// get_stats는 현재 스토리지 통계를 반환합니다.
+/// 토픽 수, 파티션 수, 레코드 수, 컨슈머 그룹 수를 조회합니다.
 pub fn (mut a PostgresStorageAdapter) get_stats() !StorageStats {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -862,7 +895,8 @@ pub fn (mut a PostgresStorageAdapter) get_stats() !StorageStats {
 	}
 }
 
-// close closes all connections in the pool
+/// close는 풀의 모든 연결을 닫습니다.
+/// 어댑터 사용이 끝나면 반드시 호출하여 리소스를 해제해야 합니다.
 pub fn (mut a PostgresStorageAdapter) close() {
 	a.pool.close()
 }

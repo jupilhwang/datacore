@@ -1,19 +1,19 @@
+/// 고성능 데이터 처리를 위한 제로카피 슬라이스 연산
+/// 메모리 복사 없이 효율적인 바이트 슬라이스 뷰 제공
 module io
 
-// Zero-Copy Slice Operations for High-Performance Data Processing
-// Provides efficient byte slice views without memory copying
 import time
 
-// ByteSlice - Zero-copy view into a byte array
-// Does not own the underlying data, just provides a view
+/// ByteSlice는 바이트 배열에 대한 제로카피 뷰입니다.
+/// 기본 데이터를 소유하지 않고 뷰만 제공합니다.
 pub struct ByteSlice {
 pub:
-	data   []u8 // Reference to underlying data
-	offset int  // Start offset in the original array
-	length int  // Length of this slice
+	data   []u8 // 기본 데이터에 대한 참조
+	offset int  // 원본 배열에서의 시작 오프셋
+	length int  // 이 슬라이스의 길이
 }
 
-// Creates a new ByteSlice from a byte array
+/// new는 바이트 배열에서 새 ByteSlice를 생성합니다.
 pub fn ByteSlice.new(data []u8) ByteSlice {
 	return ByteSlice{
 		data:   data
@@ -22,7 +22,7 @@ pub fn ByteSlice.new(data []u8) ByteSlice {
 	}
 }
 
-// Creates a sub-slice without copying data
+/// slice는 데이터 복사 없이 서브 슬라이스를 생성합니다.
 pub fn (s ByteSlice) slice(start int, end int) !ByteSlice {
 	if start < 0 || end > s.length || start > end {
 		return error('slice bounds out of range: [${start}:${end}] with length ${s.length}')
@@ -34,7 +34,7 @@ pub fn (s ByteSlice) slice(start int, end int) !ByteSlice {
 	}
 }
 
-// Returns the byte at the given index
+/// at은 주어진 인덱스의 바이트를 반환합니다.
 pub fn (s ByteSlice) at(index int) !u8 {
 	if index < 0 || index >= s.length {
 		return error('index out of range: ${index} with length ${s.length}')
@@ -42,7 +42,7 @@ pub fn (s ByteSlice) at(index int) !u8 {
 	return s.data[s.offset + index]
 }
 
-// Returns a copy of the slice data (when ownership is needed)
+/// to_owned는 슬라이스 데이터의 복사본을 반환합니다 (소유권이 필요할 때).
 pub fn (s ByteSlice) to_owned() []u8 {
 	if s.length == 0 {
 		return []u8{}
@@ -54,7 +54,7 @@ pub fn (s ByteSlice) to_owned() []u8 {
 	return result
 }
 
-// Returns the raw bytes as a view (zero-copy when possible)
+/// bytes는 원시 바이트를 뷰로 반환합니다 (가능하면 제로카피).
 pub fn (s ByteSlice) bytes() []u8 {
 	if s.offset == 0 && s.length == s.data.len {
 		return s.data
@@ -62,30 +62,30 @@ pub fn (s ByteSlice) bytes() []u8 {
 	return s.data[s.offset..s.offset + s.length]
 }
 
-// Returns length of the slice
+/// len은 슬라이스의 길이를 반환합니다.
 pub fn (s ByteSlice) len() int {
 	return s.length
 }
 
-// Checks if slice is empty
+/// is_empty는 슬라이스가 비어있는지 확인합니다.
 pub fn (s ByteSlice) is_empty() bool {
 	return s.length == 0
 }
 
-// RecordView - Zero-copy view into a Kafka record
-// Parses record fields lazily without copying data
+/// RecordView는 Kafka 레코드에 대한 제로카피 뷰입니다.
+/// 데이터 복사 없이 레코드 필드를 지연 파싱합니다.
 pub struct RecordView {
 pub:
-	raw_data     ByteSlice // Original raw bytes
-	key_offset   int       // Offset where key starts
-	key_length   int       // Length of key
-	value_offset int       // Offset where value starts
-	value_length int       // Length of value
-	timestamp    i64       // Record timestamp
-	offset       i64       // Record offset in partition
+	raw_data     ByteSlice // 원본 원시 바이트
+	key_offset   int       // 키가 시작하는 오프셋
+	key_length   int       // 키 길이
+	value_offset int       // 값이 시작하는 오프셋
+	value_length int       // 값 길이
+	timestamp    i64       // 레코드 타임스탬프
+	offset       i64       // 파티션 내 레코드 오프셋
 }
 
-// Creates a RecordView from raw bytes (zero-copy parsing)
+/// parse는 원시 바이트에서 RecordView를 생성합니다 (제로카피 파싱).
 pub fn RecordView.parse(data []u8) !RecordView {
 	if data.len < 26 {
 		return error('record too small: ${data.len} bytes, minimum 26 required')
@@ -93,8 +93,8 @@ pub fn RecordView.parse(data []u8) !RecordView {
 
 	slice := ByteSlice.new(data)
 
-	// Parse header fields
-	// Kafka record format: offset(8) + timestamp(8) + key_len(4) + key + value_len(4) + value
+	// 헤더 필드 파싱
+	// Kafka 레코드 형식: offset(8) + timestamp(8) + key_len(4) + key + value_len(4) + value
 	record_offset := parse_i64_be(data, 0)
 	timestamp := parse_i64_be(data, 8)
 	key_length := parse_i32_be(data, 16)
@@ -134,7 +134,7 @@ pub fn RecordView.parse(data []u8) !RecordView {
 	}
 }
 
-// Returns key as a zero-copy slice
+/// key는 키를 제로카피 슬라이스로 반환합니다.
 pub fn (r RecordView) key() !ByteSlice {
 	if r.key_length == 0 {
 		return ByteSlice{}
@@ -142,7 +142,7 @@ pub fn (r RecordView) key() !ByteSlice {
 	return r.raw_data.slice(r.key_offset, r.key_offset + r.key_length)
 }
 
-// Returns value as a zero-copy slice
+/// value는 값을 제로카피 슬라이스로 반환합니다.
 pub fn (r RecordView) value() !ByteSlice {
 	if r.value_length == 0 {
 		return ByteSlice{}
@@ -150,7 +150,7 @@ pub fn (r RecordView) value() !ByteSlice {
 	return r.raw_data.slice(r.value_offset, r.value_offset + r.value_length)
 }
 
-// Returns key as owned bytes (copies data)
+/// key_bytes는 키를 소유된 바이트로 반환합니다 (데이터 복사).
 pub fn (r RecordView) key_bytes() []u8 {
 	if r.key_length == 0 {
 		return []u8{}
@@ -159,7 +159,7 @@ pub fn (r RecordView) key_bytes() []u8 {
 	return key_slice.to_owned()
 }
 
-// Returns value as owned bytes (copies data)
+/// value_bytes는 값을 소유된 바이트로 반환합니다 (데이터 복사).
 pub fn (r RecordView) value_bytes() []u8 {
 	if r.value_length == 0 {
 		return []u8{}
@@ -168,14 +168,14 @@ pub fn (r RecordView) value_bytes() []u8 {
 	return value_slice.to_owned()
 }
 
-// SliceReader - Efficient sequential reader for parsing byte streams
+/// SliceReader는 바이트 스트림 파싱을 위한 효율적인 순차 리더입니다.
 pub struct SliceReader {
 pub mut:
-	slice    ByteSlice
-	position int
+	slice    ByteSlice // 기본 슬라이스
+	position int       // 현재 읽기 위치
 }
 
-// Creates a new SliceReader
+/// new는 새 SliceReader를 생성합니다.
 pub fn SliceReader.new(data []u8) SliceReader {
 	return SliceReader{
 		slice:    ByteSlice.new(data)
@@ -183,7 +183,7 @@ pub fn SliceReader.new(data []u8) SliceReader {
 	}
 }
 
-// Creates a SliceReader from an existing ByteSlice
+/// from_slice는 기존 ByteSlice에서 SliceReader를 생성합니다.
 pub fn SliceReader.from_slice(slice ByteSlice) SliceReader {
 	return SliceReader{
 		slice:    slice
@@ -191,17 +191,17 @@ pub fn SliceReader.from_slice(slice ByteSlice) SliceReader {
 	}
 }
 
-// Returns remaining bytes available for reading
+/// remaining은 읽을 수 있는 남은 바이트 수를 반환합니다.
 pub fn (r SliceReader) remaining() int {
 	return r.slice.length - r.position
 }
 
-// Checks if reader has more data
+/// has_remaining은 리더에 더 많은 데이터가 있는지 확인합니다.
 pub fn (r SliceReader) has_remaining() bool {
 	return r.position < r.slice.length
 }
 
-// Reads a single byte
+/// read_u8은 단일 바이트를 읽습니다.
 pub fn (mut r SliceReader) read_u8() !u8 {
 	if r.position >= r.slice.length {
 		return error('read_u8: buffer underflow')
@@ -211,7 +211,7 @@ pub fn (mut r SliceReader) read_u8() !u8 {
 	return val
 }
 
-// Reads a big-endian i16
+/// read_i16_be는 빅엔디안 i16을 읽습니다.
 pub fn (mut r SliceReader) read_i16_be() !i16 {
 	if r.remaining() < 2 {
 		return error('read_i16_be: buffer underflow')
@@ -223,7 +223,7 @@ pub fn (mut r SliceReader) read_i16_be() !i16 {
 	return val
 }
 
-// Reads a big-endian i32
+/// read_i32_be는 빅엔디안 i32를 읽습니다.
 pub fn (mut r SliceReader) read_i32_be() !i32 {
 	if r.remaining() < 4 {
 		return error('read_i32_be: buffer underflow')
@@ -236,7 +236,7 @@ pub fn (mut r SliceReader) read_i32_be() !i32 {
 	return val
 }
 
-// Reads a big-endian i64
+/// read_i64_be는 빅엔디안 i64를 읽습니다.
 pub fn (mut r SliceReader) read_i64_be() !i64 {
 	if r.remaining() < 8 {
 		return error('read_i64_be: buffer underflow')
@@ -248,7 +248,7 @@ pub fn (mut r SliceReader) read_i64_be() !i64 {
 	return val
 }
 
-// Reads n bytes as a new ByteSlice (zero-copy)
+/// read_slice는 n 바이트를 새 ByteSlice로 읽습니다 (제로카피).
 pub fn (mut r SliceReader) read_slice(n int) !ByteSlice {
 	if r.remaining() < n {
 		return error('read_slice: buffer underflow, requested ${n} but only ${r.remaining()} available')
@@ -258,13 +258,13 @@ pub fn (mut r SliceReader) read_slice(n int) !ByteSlice {
 	return result
 }
 
-// Reads n bytes as owned array (copies data)
+/// read_bytes는 n 바이트를 소유된 배열로 읽습니다 (데이터 복사).
 pub fn (mut r SliceReader) read_bytes(n int) ![]u8 {
 	slice := r.read_slice(n)!
 	return slice.to_owned()
 }
 
-// Skips n bytes
+/// skip은 n 바이트를 건너뜁니다.
 pub fn (mut r SliceReader) skip(n int) ! {
 	if r.remaining() < n {
 		return error('skip: buffer underflow')
@@ -272,12 +272,12 @@ pub fn (mut r SliceReader) skip(n int) ! {
 	r.position += n
 }
 
-// Resets reader position to beginning
+/// reset은 리더 위치를 처음으로 재설정합니다.
 pub fn (mut r SliceReader) reset() {
 	r.position = 0
 }
 
-// Seeks to absolute position
+/// seek는 절대 위치로 이동합니다.
 pub fn (mut r SliceReader) seek(pos int) ! {
 	if pos < 0 || pos > r.slice.length {
 		return error('seek: position ${pos} out of bounds [0, ${r.slice.length}]')
@@ -285,15 +285,15 @@ pub fn (mut r SliceReader) seek(pos int) ! {
 	r.position = pos
 }
 
-// BatchSliceIterator - Zero-copy iterator over a batch of records
+/// BatchSliceIterator는 레코드 배치에 대한 제로카피 이터레이터입니다.
 pub struct BatchSliceIterator {
 mut:
-	reader       SliceReader
-	record_count int
-	current      int
+	reader       SliceReader // 기본 리더
+	record_count int         // 레코드 수
+	current      int         // 현재 인덱스
 }
 
-// Creates a new batch iterator
+/// new는 새 배치 이터레이터를 생성합니다.
 pub fn BatchSliceIterator.new(data []u8, record_count int) BatchSliceIterator {
 	return BatchSliceIterator{
 		reader:       SliceReader.new(data)
@@ -302,26 +302,26 @@ pub fn BatchSliceIterator.new(data []u8, record_count int) BatchSliceIterator {
 	}
 }
 
-// Returns the number of records in the batch
+/// count는 배치의 레코드 수를 반환합니다.
 pub fn (b BatchSliceIterator) count() int {
 	return b.record_count
 }
 
-// Checks if there are more records
+/// has_next는 더 많은 레코드가 있는지 확인합니다.
 pub fn (b BatchSliceIterator) has_next() bool {
 	return b.current < b.record_count && b.reader.has_remaining()
 }
 
-// SlicePool - Pool of reusable ByteSlice objects
+/// SlicePool은 재사용 가능한 ByteSlice 객체 풀입니다.
 pub struct SlicePool {
 mut:
-	pool      []ByteSlice
-	pool_size int
-	created   u64
-	reused    u64
+	pool      []ByteSlice // 풀에 있는 슬라이스들
+	pool_size int         // 풀 크기
+	created   u64         // 생성된 수
+	reused    u64         // 재사용된 수
 }
 
-// Creates a new SlicePool
+/// new는 새 SlicePool을 생성합니다.
 pub fn SlicePool.new(initial_size int) SlicePool {
 	return SlicePool{
 		pool:      []ByteSlice{cap: initial_size}
@@ -331,12 +331,12 @@ pub fn SlicePool.new(initial_size int) SlicePool {
 	}
 }
 
-// Acquires a ByteSlice from the pool or creates new one
+/// acquire는 풀에서 ByteSlice를 획득하거나 새로 생성합니다.
 pub fn (mut p SlicePool) acquire(data []u8) ByteSlice {
 	if p.pool.len > 0 {
 		p.reused++
 		_ = p.pool.pop()
-		// Reinitialize with new data
+		// 새 데이터로 재초기화
 		return ByteSlice{
 			data:   data
 			offset: 0
@@ -347,25 +347,27 @@ pub fn (mut p SlicePool) acquire(data []u8) ByteSlice {
 	return ByteSlice.new(data)
 }
 
-// Releases a ByteSlice back to the pool
+/// release는 ByteSlice를 풀에 반환합니다.
 pub fn (mut p SlicePool) release(slice ByteSlice) {
 	if p.pool.len < p.pool_size {
 		p.pool << slice
 	}
 }
 
-// Returns pool statistics
+/// stats는 풀 통계를 반환합니다.
 pub fn (p SlicePool) stats() (u64, u64, int) {
 	return p.created, p.reused, p.pool.len
 }
 
-// Helper functions for big-endian parsing
+// 빅엔디안 파싱을 위한 헬퍼 함수
 
+/// parse_i32_be는 빅엔디안 i32를 파싱합니다.
 fn parse_i32_be(data []u8, offset int) int {
 	return int((u32(data[offset]) << 24) | (u32(data[offset + 1]) << 16) | (u32(data[offset + 2]) << 8) | u32(data[
 		offset + 3]))
 }
 
+/// parse_i64_be는 빅엔디안 i64를 파싱합니다.
 fn parse_i64_be(data []u8, offset int) i64 {
 	high := u64((u32(data[offset]) << 24) | (u32(data[offset + 1]) << 16) | (u32(data[offset + 2]) << 8) | u32(data[
 		offset + 3]))
@@ -374,14 +376,16 @@ fn parse_i64_be(data []u8, offset int) i64 {
 	return i64((high << 32) | low)
 }
 
-// Benchmark utilities for slice operations
+// 슬라이스 연산을 위한 벤치마크 유틸리티
 
+/// SliceBenchmark는 슬라이스 연산 벤치마크입니다.
 pub struct SliceBenchmark {
 mut:
-	iterations u64
-	data_size  int
+	iterations u64 // 반복 횟수
+	data_size  int // 데이터 크기
 }
 
+/// new는 새 SliceBenchmark를 생성합니다.
 pub fn SliceBenchmark.new(iterations u64, data_size int) SliceBenchmark {
 	return SliceBenchmark{
 		iterations: iterations
@@ -389,15 +393,15 @@ pub fn SliceBenchmark.new(iterations u64, data_size int) SliceBenchmark {
 	}
 }
 
-// Benchmarks zero-copy slice creation vs array copy
+/// run_comparison은 제로카피 슬라이스 생성 vs 배열 복사를 벤치마크합니다.
 pub fn (b SliceBenchmark) run_comparison() (i64, i64) {
-	// Generate test data
+	// 테스트 데이터 생성
 	mut data := []u8{len: b.data_size}
 	for i in 0 .. b.data_size {
 		data[i] = u8(i % 256)
 	}
 
-	// Benchmark zero-copy slice
+	// 제로카피 슬라이스 벤치마크
 	sw1 := time.new_stopwatch()
 	for _ in 0 .. b.iterations {
 		slice := ByteSlice.new(data)
@@ -405,7 +409,7 @@ pub fn (b SliceBenchmark) run_comparison() (i64, i64) {
 	}
 	slice_time := sw1.elapsed().nanoseconds()
 
-	// Benchmark array copy
+	// 배열 복사 벤치마크
 	sw2 := time.new_stopwatch()
 	for _ in 0 .. b.iterations {
 		_ := data[0..b.data_size / 2].clone()
