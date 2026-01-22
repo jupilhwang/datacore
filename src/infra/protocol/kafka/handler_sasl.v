@@ -1,8 +1,13 @@
 // Kafka 프로토콜 - SASL 작업
 // SaslHandshake, SaslAuthenticate
 // 요청/응답 타입, 파싱, 인코딩 및 핸들러
+//
+// 지원 메커니즘:
+// - PLAIN: 단순 사용자명/비밀번호 (TLS 권장)
+// - SCRAM-SHA-256: Challenge-Response 기반 인증
 module kafka
 
+import domain
 import infra.observability
 import time
 
@@ -181,6 +186,7 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 
 // Handle SaslAuthenticate (API Key 36)
 // Handles SASL authentication
+// 지원 메커니즘: PLAIN, SCRAM-SHA-256
 fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -193,8 +199,21 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 
 	// Perform authentication
 	if mut auth_mgr := h.auth_manager {
-		result := auth_mgr.authenticate(.plain, req.auth_bytes) or {
+		// 인증 데이터에서 메커니즘 감지
+		// PLAIN: [authzid]\0[authcid]\0[password] 형식
+		// SCRAM: client-first-message (n,,n=username,r=nonce) 형식
+		mechanism := detect_sasl_mechanism(req.auth_bytes)
+
+		h.logger.debug('Detected SASL mechanism', observability.field_string('mechanism',
+			mechanism.str()))
+
+		result := auth_mgr.authenticate(mechanism, req.auth_bytes) or {
 			// Authentication error
+			elapsed := time.since(start_time)
+			h.logger.warn('SASL authentication error', observability.field_string('mechanism',
+				mechanism.str()), observability.field_err_str(err.msg()), observability.field_duration('latency',
+				elapsed))
+
 			response := SaslAuthenticateResponse{
 				error_code:          i16(ErrorCode.sasl_authentication_failed)
 				error_message:       'Authentication failed: ${err.msg()}'
@@ -205,16 +224,31 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 		}
 
 		if result.error_code == .none {
-			// Authentication successful
+			// Authentication successful or challenge response
+			elapsed := time.since(start_time)
+
+			if result.complete {
+				h.logger.info('SASL authentication successful', observability.field_string('mechanism',
+					mechanism.str()), observability.field_duration('latency', elapsed))
+			} else {
+				h.logger.debug('SASL authentication step completed', observability.field_string('mechanism',
+					mechanism.str()), observability.field_duration('latency', elapsed))
+			}
+
 			response := SaslAuthenticateResponse{
 				error_code:          0
 				error_message:       none
-				auth_bytes:          result.challenge // For SCRAM, this would be the server's challenge
+				auth_bytes:          result.challenge // For SCRAM, this is the server's challenge
 				session_lifetime_ms: 0                // No session lifetime limit
 			}
 			return response.encode(version)
 		} else {
 			// Authentication failed
+			elapsed := time.since(start_time)
+			h.logger.warn('SASL authentication failed', observability.field_string('mechanism',
+				mechanism.str()), observability.field_string('error', result.error_message),
+				observability.field_duration('latency', elapsed))
+
 			response := SaslAuthenticateResponse{
 				error_code:          i16(result.error_code)
 				error_message:       result.error_message
@@ -238,4 +272,32 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 		}
 		return response.encode(version)
 	}
+}
+
+/// detect_sasl_mechanism은 인증 바이트에서 SASL 메커니즘을 감지합니다.
+/// PLAIN: 바이트에 null(\0)이 포함됨
+/// SCRAM: "n,," 또는 "y,," 또는 "p="로 시작 (GS2 헤더)
+fn detect_sasl_mechanism(auth_bytes []u8) domain.SaslMechanism {
+	if auth_bytes.len == 0 {
+		return .plain
+	}
+
+	// SCRAM client-first-message는 GS2 헤더로 시작
+	// n,, (채널 바인딩 없음)
+	// y,, (서버가 채널 바인딩을 지원하지 않음)
+	// p=... (채널 바인딩 사용)
+	auth_str := auth_bytes.bytestr()
+	if auth_str.starts_with('n,,') || auth_str.starts_with('y,,') || auth_str.starts_with('p=') {
+		return .scram_sha_256
+	}
+
+	// PLAIN: null 바이트 포함 확인
+	for b in auth_bytes {
+		if b == 0 {
+			return .plain
+		}
+	}
+
+	// 기본값: PLAIN
+	return .plain
 }

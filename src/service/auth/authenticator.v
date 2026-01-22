@@ -26,8 +26,11 @@ pub fn new_auth_service(user_store port.UserStore, mechanisms []domain.SaslMecha
 			.plain {
 				authenticators[mech.str()] = new_plain_authenticator(user_store)
 			}
+			.scram_sha_256 {
+				authenticators[mech.str()] = new_scram_sha256_authenticator(user_store)
+			}
 			else {
-				// 다른 메커니즘은 추후 구현 예정
+				// 다른 메커니즘은 추후 구현 예정 (SCRAM-SHA-512, OAUTHBEARER)
 			}
 		}
 	}
