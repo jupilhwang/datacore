@@ -1,5 +1,79 @@
 # Changelog
 
+## [0.37.0] - 2026-01-23
+
+### Added
+
+- **Enhanced Test Infrastructure** - 테스트 스크립트 대폭 개선 및 확장
+  - `scripts/run_compat_test.sh` 개선:
+    - CLI 옵션 추가: `--skip-build`, `--timeout`, `--verbose`, `--log-file`
+    - 향상된 에러 핸들링 및 로깅 시스템
+    - 브로커 시작 타임아웃 설정 가능 (기본: 30초)
+    - 테스트 실패 시 자동으로 로그 출력
+    - 프로세스 정리 개선 (SIGKILL fallback)
+  - `scripts/test.sh` 완전 재작성:
+    - 새로운 명령어: `unit`, `integration`, `all`, `quick`, `coverage`
+    - CLI 옵션: `--coverage`, `--verbose`, `--parallel`, `--fail-fast`
+    - 커버리지 리포트 생성 및 분석
+    - 테스트 실행 시간 측정
+    - 향상된 출력 포맷 및 색상 코딩
+  - **새로운 테스트 스크립트 3개 추가**:
+    - `scripts/test_storage.sh`: 스토리지 엔진 테스트
+      - Memory, PostgreSQL, S3 스토리지 개별/전체 테스트
+      - 자동 환경 검증 (PostgreSQL 연결, S3 자격증명)
+      - 테스트 결과 요약 및 통계
+    - `scripts/test_performance.sh`: 성능 회귀 테스트
+      - 벤치마크 실행 및 메트릭 수집
+      - 베이스라인 비교 기능
+      - 성능 저하 임계값 설정 (기본: 10%)
+      - JSON 형식 결과 저장
+    - `scripts/test_security.sh`: 보안 테스트
+      - SSL/TLS 연결 테스트
+      - SASL 인증 테스트
+      - 자동 환경 검증 및 스킵 로직
+
+### Changed
+
+- **Makefile 테스트 타겟 확장**:
+  - 새로운 타겟 추가:
+    - `make test-storage`: 스토리지 엔진 테스트
+    - `make test-performance`: 성능 회귀 테스트
+    - `make test-security`: 보안 테스트
+  - `make test-all` 확장: unit + compat + storage + security
+  - `make help` 개선: 카테고리별 타겟 분류 (Build, Test, Code Quality, Release, Run)
+
+### Improved
+
+- **테스트 스크립트 공통 기능**:
+  - 일관된 로깅 시스템 (INFO, SUCCESS, ERROR, WARN)
+  - 색상 코딩으로 가독성 향상
+  - 상세 헬프 메시지 (`--help` 옵션)
+  - 에러 발생 시 상세 정보 출력
+  - 테스트 결과 요약 및 통계
+
+### Usage Examples
+
+```bash
+# 향상된 호환성 테스트
+./scripts/run_compat_test.sh --verbose --timeout 60
+
+# 커버리지 포함 유닛 테스트
+./scripts/test.sh coverage
+
+# 스토리지 엔진 테스트
+./scripts/test_storage.sh all
+./scripts/test_storage.sh postgres --verbose
+
+# 성능 테스트 및 베이스라인 저장
+./scripts/test_performance.sh --save-baseline
+
+# 보안 테스트
+./scripts/test_security.sh all
+
+# Makefile을 통한 전체 테스트
+make test-all
+```
+
 ## [0.36.0] - 2026-01-23
 
 ### Added

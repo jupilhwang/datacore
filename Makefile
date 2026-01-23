@@ -53,8 +53,23 @@ test-compat:
 	@echo "Running compatibility tests..."
 	./scripts/run_compat_test.sh
 
-## Run all tests (unit + compat)
-test-all: test test-compat
+## Run storage engine tests
+test-storage:
+	@echo "Running storage engine tests..."
+	./scripts/test_storage.sh
+
+## Run performance regression tests
+test-performance:
+	@echo "Running performance tests..."
+	./scripts/test_performance.sh
+
+## Run security tests (SSL, SASL)
+test-security:
+	@echo "Running security tests..."
+	./scripts/test_security.sh
+
+## Run all tests (unit + compat + storage + security)
+test-all: test test-compat test-storage test-security
 
 ## Format code
 fmt:
@@ -140,25 +155,36 @@ help:
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "Targets:"
+	@echo "Build Targets:"
 	@echo "  build       Build production binary"
 	@echo "  build-dev   Build development binary"
-	@echo "  test        Run unit tests"
-	@echo "  test-perf   Run performance tests (requires -enable-globals)"
-	@echo "  test-bench  Run benchmark tests (requires -enable-globals)"
-	@echo "  test-compat Run compatibility tests (requires Kafka CLI)"
-	@echo "  test-all    Run all tests (unit + compat)"
+	@echo "  build-all   Build for all platforms"
+	@echo "  clean       Clean build artifacts"
+	@echo ""
+	@echo "Test Targets:"
+	@echo "  test            Run unit tests"
+	@echo "  test-perf       Run performance tests (requires -enable-globals)"
+	@echo "  test-bench      Run benchmark tests (requires -enable-globals)"
+	@echo "  test-compat     Run compatibility tests (requires Kafka CLI)"
+	@echo "  test-storage    Run storage engine tests (Memory, PostgreSQL, S3)"
+	@echo "  test-performance Run performance regression tests"
+	@echo "  test-security   Run security tests (SSL, SASL)"
+	@echo "  test-all        Run all tests"
+	@echo ""
+	@echo "Code Quality Targets:"
 	@echo "  fmt         Format code"
 	@echo "  lint        Check format and run vet"
-	@echo "  clean       Clean build artifacts"
-	@echo "  build-all   Build for all platforms"
+	@echo ""
+	@echo "Release Targets:"
 	@echo "  release     Create release archive"
 	@echo "  docker      Build Docker image locally"
+	@echo "  tag         Create and push a git tag (TAG=v0.1.0)"
+	@echo ""
+	@echo "Run Targets:"
 	@echo "  run         Build and run the broker"
 	@echo "  run-dev     Build (dev) and run the broker"
-	@echo "  tag         Create and push a git tag (TAG=v0.1.0)"
-	@echo "  help        Show this help"
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  VERSION     Override version (default: from v.mod)"
 	@echo "  TAG         Tag name for 'make tag'"
+	@echo ""
