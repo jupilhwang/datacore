@@ -131,6 +131,123 @@ fn get_row_i64(row &pg.Row, idx int, default_val i64) i64 {
 	return val.i64()
 }
 
+/// build_batch_insert_query는 배치 INSERT 쿼리를 생성하는 헬퍼 함수입니다.
+/// 파라미터 개수와 행 개수를 받아서 VALUES 절을 생성합니다.
+fn build_batch_insert_query(table string, columns []string, params_per_row int, row_count int) string {
+	mut values_parts := []string{}
+	for i in 0 .. row_count {
+		param_idx := i * params_per_row + 1
+		mut placeholders := []string{}
+		for j in 0 .. params_per_row {
+			placeholders << '\$${param_idx + j}'
+		}
+		values_parts << '(${placeholders.join(', ')})'
+	}
+	values_clause := values_parts.join(', ')
+	columns_clause := columns.join(', ')
+	return 'INSERT INTO ${table} (${columns_clause}) VALUES ${values_clause}'
+}
+
+/// build_record_insert_params는 레코드 배치 INSERT를 위한 파라미터 배열을 생성합니다.
+fn (a &PostgresStorageAdapter) build_record_insert_params(topic_name string, partition int, start_offset i64, records []domain.Record, default_time time.Time) []string {
+	mut all_params := []string{}
+	for i, record in records {
+		ts := if record.timestamp.unix() == 0 { default_time } else { record.timestamp }
+		key_hex := if record.key.len > 0 { '\\x${record.key.hex()}' } else { '' }
+		value_hex := if record.value.len > 0 { '\\x${record.value.hex()}' } else { '' }
+		current_offset := start_offset + i64(i)
+
+		all_params << topic_name
+		all_params << partition.str()
+		all_params << current_offset.str()
+		all_params << key_hex
+		all_params << value_hex
+		all_params << ts.format_rfc3339()
+	}
+	return all_params
+}
+
+/// build_partition_metadata_params는 파티션 메타데이터 배치 INSERT를 위한 파라미터 배열을 생성합니다.
+fn (a &PostgresStorageAdapter) build_partition_metadata_params(topic_name string, partition_count int) []string {
+	mut all_params := []string{}
+	for p in 0 .. partition_count {
+		all_params << topic_name
+		all_params << p.str()
+		all_params << '0'
+		all_params << '0'
+	}
+	return all_params
+}
+
+/// build_partition_metadata_range_params는 특정 범위의 파티션 메타데이터 배치 INSERT를 위한 파라미터 배열을 생성합니다.
+fn (a &PostgresStorageAdapter) build_partition_metadata_range_params(topic_name string, start_partition int, end_partition int) []string {
+	mut all_params := []string{}
+	for p in start_partition .. end_partition {
+		all_params << topic_name
+		all_params << p.str()
+		all_params << '0'
+		all_params << '0'
+	}
+	return all_params
+}
+
+/// build_offset_commit_params는 오프셋 커밋 배치 UPSERT를 위한 파라미터 배열을 생성합니다.
+fn (a &PostgresStorageAdapter) build_offset_commit_params(group_id string, offsets []domain.PartitionOffset) []string {
+	mut all_params := []string{}
+	for offset in offsets {
+		all_params << group_id
+		all_params << offset.topic
+		all_params << offset.partition.str()
+		all_params << offset.offset.str()
+		all_params << offset.metadata
+	}
+	return all_params
+}
+
+/// build_offset_upsert_query는 오프셋 커밋 배치 UPSERT 쿼리를 생성합니다.
+fn (a &PostgresStorageAdapter) build_offset_upsert_query(offset_count int) string {
+	mut values_parts := []string{}
+	for i in 0 .. offset_count {
+		param_idx := i * 5 + 1
+		values_parts << '(\$${param_idx}, \$${param_idx + 1}, \$${param_idx + 2}, \$${param_idx + 3}, \$${
+			param_idx + 4})'
+	}
+	values_clause := values_parts.join(', ')
+	return 'INSERT INTO committed_offsets (group_id, topic_name, partition_id, committed_offset, metadata) VALUES ${values_clause} ON CONFLICT (group_id, topic_name, partition_id) DO UPDATE SET committed_offset = EXCLUDED.committed_offset, metadata = EXCLUDED.metadata, committed_at = NOW()'
+}
+
+/// decode_record_rows는 PostgreSQL 쿼리 결과 행을 domain.Record 배열로 디코딩합니다.
+fn (a &PostgresStorageAdapter) decode_record_rows(rows []pg.Row) []domain.Record {
+	mut records := []domain.Record{}
+	for row in rows {
+		key_str := get_row_str(&row, 1, '')
+		value_str := get_row_str(&row, 2, '')
+		ts_str := get_row_str(&row, 3, '')
+
+		// hex에서 키 디코딩
+		mut key := []u8{}
+		if key_str.len > 0 && key_str.starts_with('\\x') {
+			key = hex.decode(key_str[2..]) or { []u8{} }
+		}
+
+		// hex에서 값 디코딩
+		mut value := []u8{}
+		if value_str.len > 0 && value_str.starts_with('\\x') {
+			value = hex.decode(value_str[2..]) or { []u8{} }
+		}
+
+		ts := time.parse_rfc3339(ts_str) or { time.now() }
+
+		records << domain.Record{
+			key:       key
+			value:     value
+			timestamp: ts
+			headers:   map[string][]u8{}
+		}
+	}
+	return records
+}
+
 /// init_schema는 데이터베이스 스키마를 초기화합니다.
 /// topics, records, partition_metadata, consumer_groups, committed_offsets 테이블을 생성합니다.
 /// 이미 존재하는 테이블은 건너뜁니다 (IF NOT EXISTS).
@@ -282,18 +399,9 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 
 	// 파티션 메타데이터 항목 생성 (배치 INSERT)
 	if partitions > 0 {
-		mut values_parts := []string{}
-		mut all_params := []string{}
-
-		for p in 0 .. partitions {
-			param_idx := p * 2 + 1
-			values_parts << '(\$${param_idx}, \$${param_idx + 1}, 0, 0)'
-			all_params << name
-			all_params << p.str()
-		}
-
-		values_clause := values_parts.join(', ')
-		query := 'INSERT INTO partition_metadata (topic_name, partition_id, base_offset, high_watermark) VALUES ${values_clause}'
+		all_params := a.build_partition_metadata_params(name, partitions)
+		query := build_batch_insert_query('partition_metadata', ['topic_name', 'partition_id',
+			'base_offset', 'high_watermark'], 4, partitions)
 		db.exec_param_many(query, all_params)!
 	}
 
@@ -406,18 +514,9 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 	// 새 파티션 메타데이터 항목 생성 (배치 INSERT)
 	new_partition_count := new_count - current
 	if new_partition_count > 0 {
-		mut values_parts := []string{}
-		mut all_params := []string{}
-
-		for i in current .. new_count {
-			param_idx := (i - current) * 2 + 1
-			values_parts << '(\$${param_idx}, \$${param_idx + 1}, 0, 0)'
-			all_params << name
-			all_params << i.str()
-		}
-
-		values_clause := values_parts.join(', ')
-		query := 'INSERT INTO partition_metadata (topic_name, partition_id, base_offset, high_watermark) VALUES ${values_clause}'
+		all_params := a.build_partition_metadata_range_params(name, current, new_count)
+		query := build_batch_insert_query('partition_metadata', ['topic_name', 'partition_id',
+			'base_offset', 'high_watermark'], 4, new_partition_count)
 		db.exec_param_many(query, all_params)!
 	}
 
@@ -477,35 +576,12 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 	now := time.now()
 	start_offset := high_watermark
 
-	// 배치 INSERT를 위한 VALUES 절 생성
+	// 배치 INSERT를 위한 레코드 삽입
 	if records.len > 0 {
-		mut values_parts := []string{}
-		mut param_idx := 1
-		mut all_params := []string{}
-
-		for i, record in records {
-			ts := if record.timestamp.unix() == 0 { now } else { record.timestamp }
-			key_hex := if record.key.len > 0 { '\\x${record.key.hex()}' } else { '' }
-			value_hex := if record.value.len > 0 { '\\x${record.value.hex()}' } else { '' }
-			current_offset := high_watermark + i64(i)
-
-			// 각 레코드에 대한 파라미터 추가
-			all_params << topic_name
-			all_params << partition.str()
-			all_params << current_offset.str()
-			all_params << key_hex
-			all_params << value_hex
-			all_params << ts.format_rfc3339()
-
-			// VALUES 절 생성 ($1, $2, $3, $4, $5, $6)
-			values_parts << '(\$${param_idx}, \$${param_idx + 1}, \$${param_idx + 2}, \$${
-				param_idx + 3}, \$${param_idx + 4}, \$${param_idx + 5})'
-			param_idx += 6
-		}
-
-		// 단일 배치 INSERT 실행
-		values_clause := values_parts.join(', ')
-		query := 'INSERT INTO records (topic_name, partition_id, offset_id, record_key, record_value, timestamp) VALUES ${values_clause}'
+		all_params := a.build_record_insert_params(topic_name, partition, high_watermark,
+			records, now)
+		query := build_batch_insert_query('records', ['topic_name', 'partition_id', 'offset_id',
+			'record_key', 'record_value', 'timestamp'], 6, records.len)
 		db.exec_param_many(query, all_params)!
 
 		high_watermark += i64(records.len)
@@ -581,33 +657,8 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	',
 		[topic_name, partition.str(), offset.str(), limit.str()])!
 
-	mut fetched_records := []domain.Record{}
-	for row in rows {
-		key_str := get_row_str(&row, 1, '')
-		value_str := get_row_str(&row, 2, '')
-		ts_str := get_row_str(&row, 3, '')
-
-		// hex에서 키 디코딩
-		mut key := []u8{}
-		if key_str.len > 0 && key_str.starts_with('\\x') {
-			key = hex.decode(key_str[2..]) or { []u8{} }
-		}
-
-		// hex에서 값 디코딩
-		mut value := []u8{}
-		if value_str.len > 0 && value_str.starts_with('\\x') {
-			value = hex.decode(value_str[2..]) or { []u8{} }
-		}
-
-		ts := time.parse_rfc3339(ts_str) or { time.now() }
-
-		fetched_records << domain.Record{
-			key:       key
-			value:     value
-			timestamp: ts
-			headers:   map[string][]u8{}
-		}
-	}
+	// 레코드 디코딩
+	fetched_records := a.decode_record_rows(rows)
 
 	return domain.FetchResult{
 		records:            fetched_records
@@ -817,24 +868,10 @@ pub fn (mut a PostgresStorageAdapter) commit_offsets(group_id string, offsets []
 
 	db.begin()!
 
-	// 배치 UPSERT를 위한 VALUES 절 생성
+	// 배치 UPSERT 수행
 	if offsets.len > 0 {
-		mut values_parts := []string{}
-		mut all_params := []string{}
-
-		for i, offset in offsets {
-			param_idx := i * 5 + 1
-			values_parts << '(\$${param_idx}, \$${param_idx + 1}, \$${param_idx + 2}, \$${
-				param_idx + 3}, \$${param_idx + 4})'
-			all_params << group_id
-			all_params << offset.topic
-			all_params << offset.partition.str()
-			all_params << offset.offset.str()
-			all_params << offset.metadata
-		}
-
-		values_clause := values_parts.join(', ')
-		query := 'INSERT INTO committed_offsets (group_id, topic_name, partition_id, committed_offset, metadata) VALUES ${values_clause} ON CONFLICT (group_id, topic_name, partition_id) DO UPDATE SET committed_offset = EXCLUDED.committed_offset, metadata = EXCLUDED.metadata, committed_at = NOW()'
+		all_params := a.build_offset_commit_params(group_id, offsets)
+		query := a.build_offset_upsert_query(offsets.len)
 		db.exec_param_many(query, all_params)!
 	}
 

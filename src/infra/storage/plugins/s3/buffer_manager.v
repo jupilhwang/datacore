@@ -62,67 +62,11 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 		return error('Segment put failed during async flush: ${err}')
 	}
 
-	// 4. 새 세그먼트로 파티션 인덱스 업데이트 (동시 업데이트로부터 원자적/안전해야 함)
-
-	// 최신 영속화 상태를 보장하기 위해 S3에서 직접 현재 인덱스 조회 (캐시 우회)
-	index_key := a.partition_index_key(topic, partition)
-	mut index := PartitionIndex{
-		topic:           topic
-		partition:       partition
-		earliest_offset: 0
-		high_watermark:  0
-		log_segments:    []
-	}
-
-	if data, _ := a.get_object(index_key, -1, -1) {
-		if decoded := json.decode(PartitionIndex, data.bytestr()) {
-			index = decoded
-		}
-	}
-
-	// 새 세그먼트로 인덱스 업데이트
-	// 현재 S3 high_watermark를 넘어서 확장되는 경우 세그먼트 추가
-	// 이는 인메모리 캐시가 아닌 S3 영속화 상태 기반
-	if base_offset >= index.high_watermark {
-		// high watermark는 S3에 성공적으로 저장된 데이터 기반으로 계산
-		index.high_watermark = end_offset + 1 // 새 high watermark
-		index.log_segments << LogSegment{
-			start_offset: base_offset
-			end_offset:   end_offset
-			key:          segment_key
-			size_bytes:   i64(segment_data.len)
-			created_at:   time.now()
-		}
-
-		// 업데이트된 인덱스를 S3에 쓰기
-		a.put_object(index_key, json.encode(index).bytes()) or {
-			eprintln('[S3] ASYNC FLUSH FAILED for ${partition_key}: Index put failed: ${err}')
-			return error('Index put failed during async flush: ${err}')
-		}
-
-		// 새 인덱스로 로컬 캐시 업데이트 (인메모리의 더 높은 high_watermark 유지)
-		cache_key := '${topic}:${partition}'
-		a.topic_lock.@lock()
-		if cached := a.topic_index_cache[cache_key] {
-			// 캐시와 S3 사이에서 더 높은 high_watermark 유지
-			mut final_index := index
-			if cached.index.high_watermark > index.high_watermark {
-				final_index.high_watermark = cached.index.high_watermark
-			}
-			a.topic_index_cache[cache_key] = CachedPartitionIndex{
-				index:     final_index
-				cached_at: time.now()
-			}
-		} else {
-			a.topic_index_cache[cache_key] = CachedPartitionIndex{
-				index:     index
-				cached_at: time.now()
-			}
-		}
-		a.topic_lock.unlock()
-	} else {
-		// 이 세그먼트는 이미 저장된 데이터와 겹침, 인덱스 업데이트 건너뜀
-		eprintln('[S3] ASYNC FLUSH WARNING: Segment base_offset ${base_offset} < high_watermark ${index.high_watermark}. Index not updated.')
+	// 4. 새 세그먼트로 파티션 인덱스 업데이트
+	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
+		end_offset, segment_data.len) or {
+		eprintln('[S3] ASYNC FLUSH FAILED for ${partition_key}: Index update failed: ${err}')
+		return error('Index update failed during async flush: ${err}')
 	}
 }
 
@@ -235,6 +179,16 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 		a.index_update_lock.unlock()
 	}
 
+	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
+		end_offset, segment_data.len) or {
+		eprintln('[S3] FLUSH FAILED for ${partition_key}: Index update failed: ${err}')
+		return error('Index update failed during flush: ${err}')
+	}
+}
+
+/// update_partition_index_with_segment는 파티션 인덱스에 새 세그먼트를 추가합니다.
+/// S3에서 인덱스를 읽고, 세그먼트를 추가하고, 다시 S3에 저장합니다.
+fn (mut a S3StorageAdapter) update_partition_index_with_segment(topic string, partition int, segment_key string, base_offset i64, end_offset i64, segment_size int) ! {
 	// S3에서 직접 현재 인덱스 조회 (캐시 우회)
 	index_key := a.partition_index_key(topic, partition)
 	mut index := PartitionIndex{
@@ -266,7 +220,7 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 			start_offset: base_offset
 			end_offset:   end_offset
 			key:          segment_key
-			size_bytes:   i64(segment_data.len)
+			size_bytes:   i64(segment_size)
 			created_at:   time.now()
 		}
 
@@ -281,30 +235,35 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 		}
 
 		// 업데이트된 인덱스를 S3에 쓰기
-		a.put_object(index_key, json.encode(index).bytes()) or {
-			eprintln('[S3] FLUSH FAILED for ${partition_key}: Index put failed: ${err}')
-			return error('Index put failed during flush: ${err}')
-		}
+		a.put_object(index_key, json.encode(index).bytes())!
 
 		// 로컬 캐시 업데이트
-		cache_key := '${topic}:${partition}'
-		a.topic_lock.@lock()
-		if cached := a.topic_index_cache[cache_key] {
-			// 캐시와 S3 사이에서 더 높은 high_watermark 유지
-			mut final_index := index
-			if cached.index.high_watermark > index.high_watermark {
-				final_index.high_watermark = cached.index.high_watermark
-			}
-			a.topic_index_cache[cache_key] = CachedPartitionIndex{
-				index:     final_index
-				cached_at: time.now()
-			}
-		} else {
-			a.topic_index_cache[cache_key] = CachedPartitionIndex{
-				index:     index
-				cached_at: time.now()
-			}
-		}
+		a.update_index_cache(topic, partition, index)
+	}
+}
+
+/// update_index_cache는 로컬 인덱스 캐시를 업데이트합니다.
+fn (mut a S3StorageAdapter) update_index_cache(topic string, partition int, index PartitionIndex) {
+	cache_key := '${topic}:${partition}'
+	a.topic_lock.@lock()
+	defer {
 		a.topic_lock.unlock()
+	}
+
+	if cached := a.topic_index_cache[cache_key] {
+		// 캐시와 S3 사이에서 더 높은 high_watermark 유지
+		mut final_index := index
+		if cached.index.high_watermark > index.high_watermark {
+			final_index.high_watermark = cached.index.high_watermark
+		}
+		a.topic_index_cache[cache_key] = CachedPartitionIndex{
+			index:     final_index
+			cached_at: time.now()
+		}
+	} else {
+		a.topic_index_cache[cache_key] = CachedPartitionIndex{
+			index:     index
+			cached_at: time.now()
+		}
 	}
 }
