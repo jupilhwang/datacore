@@ -46,11 +46,21 @@
 - **Code Quality Improvements** - 리팩토링으로 유지보수성 향상
   - PostgreSQL adapter: 배치 쿼리 생성 로직을 재사용 가능한 헬퍼 함수로 추출
   - S3 buffer_manager: 인덱스 업데이트 로직 통합 (중복 제거)
+  - S3 compaction: `merge_segments()` 함수를 4개의 헬퍼 함수로 분리 (75% 단축)
+    - `download_segments_parallel()`: 병렬 세그먼트 다운로드
+    - `create_merged_segment()`: 병합 세그먼트 생성 및 업로드
+    - `update_index_with_merged_segment()`: 인덱스 업데이트
+    - `delete_segments_parallel()`: 병렬 세그먼트 삭제
   - 중복 코드 패턴 100% 제거 (7개 위치 → 0개)
   - 평균 함수 길이 56% 단축 (~80줄 → ~35줄)
   - 추가된 헬퍼 함수:
     - PostgreSQL: `build_batch_insert_query()`, `decode_record_rows()` 등 7개
-    - S3: `update_partition_index_with_segment()`, `update_index_cache()` 등 2개
+    - S3: `update_partition_index_with_segment()`, `update_index_cache()` 등 6개
+
+- **S3 Configuration** - 프로덕션 환경 최적화
+  - `index_cache_ttl_ms`: 24시간 → 1시간 (3600000ms)
+  - 최신 상태 유지와 성능의 균형
+  - 프로덕션 환경에 적합한 TTL 설정
 
 - **S3 Adapter Code Quality** - 코드 품질 및 유지보수성 향상
   - 전역 설정을 사용하여 V 구조체 복사 이슈 해결
