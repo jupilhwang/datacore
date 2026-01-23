@@ -3,19 +3,47 @@
 ## [0.35.0] - 2026-01-23
 
 ### Added
+
+- **PostgreSQL SSL Support** - 프로덕션 환경 보안 연결 지원
+  - 6가지 SSL 모드 지원: `disable`, `allow`, `prefer`, `require`, `verify-ca`, `verify-full`
+  - `config.toml`에 `sslmode` 설정 추가
+  - 환경 변수 지원: `DATACORE_PG_SSLMODE`
+  - libpq 연결 문자열 형식 사용
+  - 하위 호환성 유지 (기본값: `disable`)
+  - 테스트 가이드 문서: `tests/POSTGRES_SSL_TESTING.md`
+  - 환경 검사 도구: `tests/postgres_ssl_check.v`
+  - 테스트 실행 스크립트: `tests/postgres_ssl_test.sh`
+
 - **gRPC over HTTP/1.1 Integration Test** - gRPC 프로토콜 호환성 검증
   - Python gRPC 클라이언트를 사용한 E2E 테스트
   - HTTP/1.1 프로토콜 호환성 검증
   - 스트리밍 RPC 테스트 (Unary, Server Streaming, Bidirectional)
   - `tests/integration/test_grpc_http.py` - gRPC 통합 테스트 스크립트
 
+### Performance
+
+- **PostgreSQL Batch Operations** - 대량 작업 성능 최적화
+  - `append()` 배치 INSERT: 100개 레코드 시 ~100배 향상 (100 쿼리 → 1 쿼리)
+  - `create_topic()` 배치 파티션 생성: ~5배 향상 (11 쿼리 → 2 쿼리)
+  - `add_partitions()` 배치 INSERT: N개 파티션 시 ~N배 향상
+  - `commit_offsets()` 배치 UPSERT: 10개 오프셋 시 ~10배 향상 (10 쿼리 → 1 쿼리)
+  - `fetch_offsets()` IN 절 사용: 10개 파티션 시 ~10배 향상 (10 쿼리 → 1 쿼리)
+  - 테스트 실행 시간: 109초 → 0.4초 (99.6% 개선)
+
 ### Changed
+
 - **S3 Adapter Code Quality** - 코드 품질 및 유지보수성 향상
   - 전역 설정을 사용하여 V 구조체 복사 이슈 해결
   - S3 어댑터 테스트 수정 (전역 설정 사용)
   - 코드 포맷팅 및 백업 파일 제거
 
+- **PostgreSQL Test Environment** - 테스트 환경 제약 조건 대응
+  - 연결 풀 크기 최적화: 5 → 1 (서버 연결 슬롯 제한 대응)
+  - 타임스탬프 필드 초기화 수정 (PostgreSQL 범위 오류 해결)
+  - SSL 테스트 조건부 실행 (환경 의존성 처리)
+
 ### Fixed
+
 - **S3 Retry Logic** - OpenSSL 에러에 대한 재시도 로직 개선
   - OpenSSL 에러 처리 강화
   - 네트워크 에러 재시도 메커니즘 추가
@@ -29,21 +57,36 @@
   - 모든 메트릭을 REST API 포트 8080으로 통합
   - 메트릭 엔드포인트 일원화
 
+- **PostgreSQL Adapter Compilation** - V 언어 문법 오류 수정
+  - 비트 시프트 경고 수정 (`cluster_metadata.v`)
+  - Range 루프 문법 수정 (`add_partitions` 배치 작업)
+
 ### Tests
+
+- PostgreSQL SSL 연결 테스트 추가 (4개 SSL 모드)
+- PostgreSQL 어댑터 테스트 안정화 (8개 테스트 통과, 432ms)
 - gRPC 통합 테스트 추가 (3가지 RPC 패턴)
 - S3 어댑터 테스트 안정화
 - 모든 단위 테스트 통과
 
 ### Architecture
+
 - **Offset Service Layer** (Clean Architecture)
   - `OffsetManager` 서비스 레이어 추가
   - 비즈니스 로직 분리 (Handler → Service → Storage)
   - TopicId 해석 지원 (Kafka 프로토콜 v10+)
   - 헬퍼 함수 추출로 코드 중복 제거
 
+### Documentation
+
+- PostgreSQL SSL 테스트 가이드 (260줄)
+- 환경 변수 설정 가이드
+- SSL 모드별 사용 시나리오
+
 ## [0.34.0] - 2026-01-22
 
 ### Added
+
 - **DeleteGroups API** (Task #50) - Consumer Group 삭제 API (Kafka API Key 42)
   - DeleteGroups v0-v2 프로토콜 지원
   - `DeleteGroupsRequest` / `DeleteGroupsResponse` 구조체
@@ -52,11 +95,13 @@
   - `kafka-consumer-groups.sh --delete` 명령어 호환
 
 ### Changed
+
 - `types.v` - DeleteGroups API 버전 등록 (v0-v2)
 - `handler.v` - DeleteGroups 라우팅 추가
 - `handler_group.v` - DeleteGroups 핸들러 및 파서 구현
 
 ### Fixed
+
 - struct default value 경고 수정 (`= false` 제거)
   - `MemoryConfig.use_mmap`, `sync_on_append`
   - `MmapPartitionConfig.sync_on_write`
@@ -64,6 +109,7 @@
   - `ServerConfig.numa_enabled`, `io_uring_sqpoll`
 
 ### Tests
+
 - DeleteGroups API 단위 테스트 8개 추가
   - v0 요청 파싱 / v0, v2 응답 인코딩
   - Empty 그룹 삭제 성공 / Non-empty 그룹 삭제 실패
@@ -72,6 +118,7 @@
 ## [0.33.0] - 2026-01-22
 
 ### Added
+
 - **mmap Storage Integration** (Task #57) - Memory Mapped I/O 기반 영속 스토리지
   - `MmapPartitionStore` - mmap 기반 파티션 스토리지 구현
   - append-only 로그 세그먼트 + sparse 오프셋 인덱스
@@ -91,6 +138,7 @@
   - Linux 전용, 다른 플랫폼은 폴백
 
 ### Performance
+
 - **mmap 기대 효과**
   - 커널 버퍼 복사 제거로 읽기 성능 향상
   - 대용량 데이터셋에서 메모리 효율성 증가
@@ -102,14 +150,17 @@
   - CPU 코어와 메모리 친화도 최적화
 
 ### New Files
+
 - `src/infra/storage/plugins/memory/mmap_partition.v` - mmap 파티션 스토어
 
 ### Changed
+
 - `src/infra/storage/plugins/memory/adapter.v` - mmap 모드 지원 추가
 - `src/interface/server/worker_pool.v` - NUMA 바인딩 기능 추가
 - `src/interface/server/tcp.v` - NUMA 설정 옵션 추가
 
 ### Technical Details
+
 - mmap: 시뮬레이션 기반 구현 (실제 mmap syscall은 향후 추가)
 - NUMA: Linux libnuma 연동 (조건부 컴파일)
 - 기존 API 완전 호환 (새 옵션은 기본값으로 비활성화)
@@ -117,6 +168,7 @@
 ## [0.32.0] - 2026-01-22
 
 ### Added
+
 - **io_uring Network Integration** - Linux 5.1+ 고성능 비동기 네트워크 I/O
   - `IoUringServer` - io_uring 기반 네트워크 서버 래퍼
   - `IoUringTcpServer` - Kafka 프로토콜용 io_uring TCP 서버
@@ -131,6 +183,7 @@
   - `io_uring_sqpoll` - SQ 폴링 모드 (기본: false)
 
 ### Performance
+
 - **Buffer.write 최적화** - `C.memcpy()` 사용으로 50-100% 성능 향상
 - **UUID 생성 최적화** - 배열 초기화자 사용으로 루프 제거
 - **io_uring 기대 효과**
@@ -139,10 +192,12 @@
   - 높은 동시 연결 처리량
 
 ### Changed
+
 - `io_uring.v` - 네트워크 연산 추가 (accept, recv, send)
 - `create_listen_socket()` - SO_REUSEADDR, SO_REUSEPORT 설정
 
 ### Technical Details
+
 - Linux 5.1+ 커널 필요 (io_uring 지원)
 - 조건부 컴파일 (`$if linux`)로 플랫폼 독립성 유지
 - 기존 `RequestHandler` 인터페이스와 완전 호환
@@ -150,6 +205,7 @@
 ## [0.29.0] - 2026-01-22
 
 ### Added
+
 - **SCRAM-SHA-256 Authentication** - RFC 5802/7677 기반 Challenge-Response 인증
   - `ScramSha256Authenticator` - SCRAM-SHA-256 메커니즘 구현
   - PBKDF2-SHA256 키 파생 함수 지원
@@ -173,22 +229,26 @@
   - `ProducerIdBlock` 할당 로직 개선
 
 ### Changed
+
 - **Performance Manager Singleton** - 전역 변수를 싱글톤 패턴으로 변경
   - `-enable-globals` 컴파일러 플래그 의존성 제거
   - `GlobalPerformanceHolder` 구조체로 안전한 싱글톤 관리
   - Buffer Pool, I/O 엔진 모듈 포맷팅 개선
 
 ### Fixed
+
 - `TRANSACTION_ABORTABLE` 에러 코드 (109) 추가 누락 수정
 - API 버전 레지스트리에서 FindCoordinator max_version 업데이트 (5 → 6)
 
 ### Security
+
 - SCRAM-SHA-256으로 PLAIN보다 안전한 인증 방식 제공
 - Salt + Iteration 기반 비밀번호 해싱으로 오프라인 공격 방지
 
 ## [0.28.0] - 2026-01-22
 
 ### Added
+
 - **Controller Election** - 분산 락 기반 컨트롤러 선출 (v0.28.0 핵심 기능)
   - `ControllerElector` - distributed lock 기반 선출 서비스
   - `try_become_controller()`, `resign_controller()` - 선출/사임
@@ -209,6 +269,7 @@
   - Consumer Group 복구, 멀티 브로커 페일오버
 
 ### Performance
+
 - **Fetch Parallel Timeout** - 병렬 Fetch에 타임아웃 추가
   - `parallel_fetch_timeout_ms` - 기본 30초
   - 타임아웃 시 부분 응답 반환 (완료된 파티션만)
@@ -221,11 +282,13 @@
   - 메모리 누수 방지 (OTLP 엔드포인트 지연 시)
 
 ### Changed
+
 - `ServerConfig`에 `max_concurrent_handlers`, `handler_acquire_timeout` 필드 추가
 - `OTLPConfig`에 `max_log_buffer_size`, `max_span_buffer_size` 필드 추가
 - OTLP Exporter 버전 0.28.0으로 업데이트
 
 ### Documentation
+
 - `BENCHMARK.md`에 Storage Engine 비교 결과 추가 (Memory vs S3)
 - Multi-Broker Setup Guide 추가
 - 벤치마크 결과 업데이트 (v0.27.0 → v0.28.0)
@@ -233,6 +296,7 @@
 ## [0.27.0] - 2026-01-22
 
 ### Added
+
 - **Observability 고도화** - 전역 싱글톤 로거 및 OTLP 지원
   - `get_global_logger()`, `init_global_logger()` - 전역 로거 싱글톤
   - `LogOutput` enum (stdout, otel, both) - 출력 대상 선택
@@ -262,6 +326,7 @@
   - `handler_acl.v` - DescribeAcls, CreateAcls, DeleteAcls
 
 ### Performance
+
 - **Memory Adapter 최적화** - `.clone()` 제거로 메모리 복사 감소
   - fetch, retention, delete_records 경로에서 불필요한 클론 제거
   - Response 시간 -40~60%, Memory 사용량 -50%
@@ -278,11 +343,13 @@
   - Multi-partition fetch 시간 -50~70%
 
 ### Changed
+
 - `LoggingConfig`에 `output`, `otlp_endpoint`, `service_name` 필드 추가
 
 ## [0.26.0] - 2026-01-22
 
 ### Added
+
 - **Config Hot-Reload** - 런타임 설정 리로드 기능
   - `ConfigWatcher` - 파일 변경 감지 및 자동 리로드
   - 리로드 가능 설정: `max_connections`, `timeout`, `logging.level` 등
@@ -301,6 +368,7 @@
   - `make test-bench-io` - IO 벤치마크 타겟 추가
 
 ### Fixed
+
 - **ConfigWatcher Data Race** - 동시성 버그 수정
   - `running` 플래그 mutex 보호
   - `get_config()` thread-safe 구현
@@ -309,11 +377,13 @@
 - **PostgreSQL Adapter** - `mut` 키워드 누락 수정
 
 ### Changed
+
 - `detect_config_changes()` 함수가 문서화된 설정 목록과 일치하도록 업데이트
 
 ## [0.25.0] - 2026-01-22
 
 ### Added
+
 - **WriteTxnMarkers API (API Key 27)** - 트랜잭션 마커 기록 API
   - `WriteTxnMarkersRequest`, `WriteTxnMarkersResponse` 타입 정의
   - `parse_write_txn_markers_request` 파서 (v1 flexible 지원)
@@ -334,21 +404,25 @@
   - Proto 정의 및 서비스 구현
 
 ### Changed
+
 - `domain.Record`에 트랜잭션 control record 메타데이터 필드 추가
   - `is_control_record` - control record 여부
   - `control_type` - COMMIT/ABORT 타입
   - `producer_id`, `producer_epoch` - 트랜잭션 프로듀서 정보
 
 ### Removed
+
 - 문서에서 SQLite Storage 참조 제거 (PRD, TRD, config.toml)
 
 ### Tests
+
 - WriteTxnMarkers 단위 테스트 추가 (성공/에러 케이스)
 - PostgreSQL Storage 통합 테스트 추가
 
 ## [0.23.0] - 2026-01-21
 
 ### Refactoring (Code Quality)
+
 - **Phase 1: God Class Split** - `registry.v` 분리
   - `validator.v` (501줄) - 스키마 검증 로직
   - `compatibility.v` (1,126줄) - 호환성 검사 로직
@@ -378,6 +452,7 @@
   - `codec.v` 53개 함수 문서화 (+48줄)
 
 ### Fixed
+
 - **varint_size ZigZag 인코딩 버그** (`record_batch.v`)
   - 잘못된 인코딩 → `codec.v`와 동일하게 수정
   - i64 극단값 테스트 추가 (INT64_MIN, INT64_MAX)
@@ -395,6 +470,7 @@
   - `handler.v`, `frame.v`, `topic.v`
 
 ### Performance
+
 - **Transaction Validation 최적화**
   - O(n²) → O(1) HashMap 조회
   - 10-50배 속도 향상
@@ -405,12 +481,14 @@
   - 중복 인코딩 제거 → 40% CPU 감소
 
 ### Tests
+
 - `record_batch_test.v` 추가 (varint_size 정확성 검증)
 - 모든 37개 테스트 통과 (100%)
 
 ## [0.22.0] - 2026-01-21
 
 ### Added
+
 - **WebSocket Protocol Support**: 양방향 실시간 메시지 통신
   - `WebSocketConnection`, `WebSocketConnectionState` 연결 관리 모델
   - `WebSocketConfig` 설정 (ping 간격, 타임아웃, 최대 연결 수 등)
@@ -442,15 +520,18 @@
   - 최대 메시지 크기 제한 (기본 1MB)
 
 ### Changed
+
 - `RestServer`에 `WebSocketHandler` 통합
 - `RestServerConfig`에 `ws_config` 추가
 
 ### Tests
+
 - WebSocket 도메인 모델 단위 테스트 추가 (`src/domain/streaming_test.v`)
 
 ## [0.21.0] - 2026-01-21
 
 ### Added
+
 - **SSE (Server-Sent Events) Protocol Support**: 웹 브라우저용 실시간 메시지 스트리밍
   - `SSEEvent`, `SSEEventType`, `SSEConfig` 도메인 모델 (`src/domain/streaming.v`)
   - `Subscription`, `SubscriptionOffset`, `SSEConnection` 구독 관리 모델
@@ -472,16 +553,19 @@
   - `WebSocketAction`, `WebSocketMessage`, `WebSocketResponse` 타입
 
 ### Changed
+
 - `domain.Record.headers` 타입이 `map[string][]u8`로 통일됨
 - `SubscriptionFilter.matches()` 함수가 새로운 헤더 타입 지원
 
 ### Tests
+
 - SSE 도메인 모델 단위 테스트 (`src/domain/streaming_test.v`)
 - SSE 서비스 단위 테스트 (`src/service/streaming/sse_service_test.v`)
 
 ## [0.20.0] - 2026-01-21
 
 ### Added
+
 - **Multi-Broker Infrastructure**: S3 스토리지 기반 멀티 브로커 클러스터 지원
   - `BrokerInfo`, `ClusterMetadata`, `PartitionAssignment` 도메인 모델
   - `ClusterMetadataPort` 인터페이스 (브로커 등록, 메타데이터, 분산 락)
@@ -493,12 +577,14 @@
 - **Enhanced Schema Registry**: JSON Schema 및 Protobuf 검증 강화
 
 ### Changed
+
 - `StoragePort` 인터페이스에 `get_storage_capability()`, `get_cluster_metadata_port()` 메서드 추가
 - `Handler` 구조체에 `BrokerRegistry` 통합
 - `process_metadata()`, `process_describe_cluster()` 멀티 브로커 지원
 - 스토리지 엔진별 분기: Memory/SQLite (싱글) vs S3/PostgreSQL (멀티)
 
 ### Design Principles
+
 - **Stateless Broker**: 모든 상태는 공유 스토리지(S3)에 저장
 - **Any Broker Access**: 클라이언트가 아무 브로커에나 연결 가능
 - **Automatic Failover**: 하트비트 모니터링을 통한 자동 장애 감지
@@ -506,33 +592,39 @@
 ## [0.19.1] - 2026-01-21
 
 ### Changed
+
 - Consolidated all `request_*.v` and `response_*.v` files into respective `handler_*.v` files
 - Renamed `z_frame.v` to `frame.v` for cleaner naming
 - Removed `zerocopy_*.v` files (functionality merged into handler_produce.v)
 
 ### Added
+
 - LeaveGroup API v3-v5 support with batch member identities
 - `LeaveGroupMember` struct for v3+ batch leave operations
 - Full `process_*` function implementations with storage integration
 
 ### Fixed
+
 - LeaveGroupRequest parsing for v3+ protocol versions
 
 ## [0.19.0] - 2026-01-21
 
 ### Added
+
 - `AlterConfigs` (API Key 33) for modifying topic and broker configurations
 - `CreatePartitions` (API Key 37) for adding partitions to existing topics
 - `DeleteRecords` (API Key 21) for deleting records before a specified offset
 - Comprehensive unit tests for new Admin APIs (15 test cases)
 
 ### Changed
+
 - Enabled API version ranges for `delete_records`, `alter_configs`, and `create_partitions` in types.v
 - Updated handler routing in z_handler.v to support new Admin APIs
 
 ## [0.18.0] - 2026-01-21
 
 ### Added
+
 - Complete Transaction API support for Exactly-Once Semantics (EOS)
 - `AddOffsetsToTxn` (API Key 25) for adding consumer group offsets to transactions
 - `TxnOffsetCommit` (API Key 28) for transactional offset commits
@@ -540,18 +632,21 @@
 - `__consumer_offsets` partition tracking in transaction metadata
 
 ### Fixed
+
 - Transaction validation in `TxnOffsetCommit` handler (validates producer ID, epoch, and state)
 - `add_offsets_to_txn` now properly tracks `__consumer_offsets` partitions
 - Produce handler now enforces strict transaction state validation (only `.ongoing` allowed)
 - Produce handler now verifies partitions are added to transaction via `AddPartitionsToTxn`
 
 ### Changed
+
 - Strengthened transactional produce validation to prevent invalid operations
 - Improved error handling with specific error codes for transaction failures
 
 ## [0.17.0] - 2026-01-20
 
 ### Added
+
 - Transaction Coordinator support for Exactly-Once Semantics (EOS).
 - `InitProducerId` (API Key 22) enhancement for transactional producers.
 - `AddPartitionsToTxn` (API Key 24) and `EndTxn` (API Key 26) APIs.
@@ -560,6 +655,7 @@
 ## [0.16.0] - 2026-01-20
 
 ### Added
+
 - ACL Authorization support.
 - `DescribeAcls` (API Key 29), `CreateAcls` (API Key 30), `DeleteAcls` (API Key 31) APIs.
 - In-memory ACL manager for permission control.
@@ -567,6 +663,7 @@
 ## [0.15.0] - 2026-01-20
 
 ### Added
+
 - SASL PLAIN authentication mechanism support.
 - `SaslHandshake` (API Key 17) and `SaslAuthenticate` (API Key 36) APIs.
 - In-memory user store for managing credentials.
@@ -574,7 +671,9 @@
 ## [0.14.0] - 2026-01-20
 
 ### Added
+
 - S3 Range Request support in `S3StorageAdapter` for optimized segment reading.
 
 ### Changed
+
 - Updated `fetch` operation to use HTTP Range headers when reading from the beginning of a log segment, reducing bandwidth usage and latency for small fetches.
