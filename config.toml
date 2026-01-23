@@ -165,6 +165,13 @@ database = "datacore"
 # 연결 풀 크기
 pool_size = 10
 
+# SSL 모드 (disable, allow, prefer, require, verify-ca, verify-full)
+# disable: SSL 사용 안함 (기본값)
+# require: SSL 필수 (인증서 검증 안함)
+# verify-ca: SSL 필수 + CA 인증서 검증
+# verify-full: SSL 필수 + CA 인증서 + 호스트명 검증
+sslmode = "disable"
+
 # -----------------------------------------------------------------------------
 # [schema_registry] - 내장 Schema Registry 설정
 # -----------------------------------------------------------------------------

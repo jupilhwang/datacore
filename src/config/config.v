@@ -136,6 +136,7 @@ pub:
 /// user: 사용자명
 /// password: 비밀번호
 /// pool_size: 연결 풀 크기
+/// sslmode: SSL 모드 (disable, allow, prefer, require, verify-ca, verify-full)
 pub struct PostgresStorageConfig {
 pub:
 	host      string = 'localhost'
@@ -143,7 +144,8 @@ pub:
 	database  string = 'datacore'
 	user      string
 	password  string
-	pool_size int = 10
+	pool_size int    = 10
+	sslmode   string = 'disable'
 }
 
 /// SchemaRegistryConfig는 스키마 레지스트리 설정을 나타냅니다.
@@ -358,6 +360,7 @@ pub fn load_config(path string) !Config {
 		user:      get_string(doc, 'storage.postgres.user', '')
 		password:  get_string(doc, 'storage.postgres.password', '')
 		pool_size: get_int(doc, 'storage.postgres.pool_size', 10)
+		sslmode:   get_string(doc, 'storage.postgres.sslmode', 'disable')
 	}
 
 	storage := StorageConfig{

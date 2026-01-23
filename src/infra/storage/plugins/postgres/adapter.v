@@ -35,6 +35,7 @@ pub:
 	password  string // 비밀번호
 	database  string = 'datacore' // 데이터베이스 이름
 	pool_size int    = 10         // 커넥션 풀 크기
+	sslmode   string = 'disable'  // SSL 모드 (disable, allow, prefer, require, verify-ca, verify-full)
 }
 
 /// postgres_capability는 PostgreSQL 어댑터의 스토리지 기능을 정의합니다.
@@ -50,6 +51,14 @@ pub const postgres_capability = domain.StorageCapability{
 /// new_postgres_adapter는 새로운 PostgreSQL 스토리지 어댑터를 생성합니다.
 /// 커넥션 풀을 초기화하고, 스키마를 생성하며, 토픽 캐시를 로드합니다.
 pub fn new_postgres_adapter(config PostgresConfig) !&PostgresStorageAdapter {
+	// PostgreSQL 연결 문자열 생성 (sslmode 포함)
+	conninfo := 'host=${config.host} port=${config.port} user=${config.user} password=${config.password} dbname=${config.database} sslmode=${config.sslmode}'
+
+	// 연결 문자열을 사용하여 단일 연결 테스트
+	test_conn := pg.connect_with_conninfo(conninfo)!
+	test_conn.close()
+
+	// pg.Config 생성 (풀 생성용)
 	pg_config := pg.Config{
 		host:     config.host
 		port:     config.port
