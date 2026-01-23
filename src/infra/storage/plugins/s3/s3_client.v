@@ -175,11 +175,38 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 }
 
 /// delete_objects_with_prefix는 지정된 접두사를 가진 모든 객체를 삭제합니다.
-/// 먼저 접두사로 객체 목록을 조회한 후 각 객체를 개별 삭제합니다.
+/// 먼저 접두사로 객체 목록을 조회한 후 각 객체를 병렬로 삭제합니다.
 fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 	objects := a.list_objects(prefix)!
+
+	if objects.len == 0 {
+		return
+	}
+
+	// 병렬 삭제 (최대 20개 동시 처리)
+	ch := chan bool{cap: objects.len}
+	mut active := 0
+	max_concurrent := 20
+
 	for obj in objects {
-		a.delete_object(obj.key) or {}
+		// 동시 실행 제한
+		for active >= max_concurrent {
+			_ = <-ch
+			active--
+		}
+
+		active++
+		spawn fn [mut a, obj, ch] () {
+			a.delete_object(obj.key) or {
+				eprintln('[S3] Failed to delete object ${obj.key}: ${err}')
+			}
+			ch <- true
+		}()
+	}
+
+	// 모든 삭제 완료 대기
+	for _ in 0 .. active {
+		_ = <-ch
 	}
 }
 

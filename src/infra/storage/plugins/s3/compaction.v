@@ -40,15 +40,61 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 }
 
 /// compact_all_partitions는 모든 토픽과 파티션을 순회하며 작은 세그먼트 병합을 시도합니다.
+/// 병렬 처리를 통해 성능을 최적화합니다.
 fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 	topics := a.list_topics()!
 
-	// 컴팩션할 활성 파티션을 추적하기 위해 map/set 사용
-	// 단순화를 위해 알려진 모든 토픽/파티션을 순회
-
+	// 컴팩션할 파티션 목록 수집
+	mut partition_keys := []string{}
 	for t in topics {
 		for p in 0 .. t.partition_count {
-			a.compact_partition(t.name, p)!
+			partition_keys << '${t.name}:${p}'
+		}
+	}
+
+	// 병렬 컴팩션 (최대 10개 동시 처리)
+	if partition_keys.len <= 3 {
+		// 작은 배치: 순차 처리
+		for key in partition_keys {
+			parts := key.split(':')
+			if parts.len == 2 {
+				topic := parts[0]
+				partition := parts[1].int()
+				a.compact_partition(topic, partition) or {
+					eprintln('[S3] Compaction failed for ${key}: ${err}')
+				}
+			}
+		}
+	} else {
+		// 큰 배치: 병렬 처리 (채널 사용)
+		ch := chan bool{cap: partition_keys.len}
+		mut active := 0
+		max_concurrent := 10
+
+		for key in partition_keys {
+			// 동시 실행 제한
+			for active >= max_concurrent {
+				_ = <-ch
+				active--
+			}
+
+			active++
+			spawn fn [mut a, key, ch] () {
+				parts := key.split(':')
+				if parts.len == 2 {
+					topic := parts[0]
+					partition := parts[1].int()
+					a.compact_partition(topic, partition) or {
+						eprintln('[S3] Compaction failed for ${key}: ${err}')
+					}
+				}
+				ch <- true
+			}()
+		}
+
+		// 모든 작업 완료 대기
+		for _ in 0 .. active {
+			_ = <-ch
 		}
 	}
 }
@@ -86,21 +132,41 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 }
 
 /// merge_segments는 여러 세그먼트를 하나의 큰 세그먼트로 병합합니다.
+/// 세그먼트 다운로드를 병렬로 처리하여 성능을 최적화합니다.
 fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut index PartitionIndex, segments []LogSegment) ! {
 	if segments.len == 0 {
 		return
 	}
 
-	// 모든 세그먼트 데이터 다운로드 (단순화를 위해 순차 처리, 병렬 가능)
-	mut merged_data := []u8{}
+	// 병렬 세그먼트 다운로드 (채널 사용)
+	ch := chan []u8{cap: segments.len}
+	mut download_errors := []string{}
 
 	for seg in segments {
-		data, _ := a.get_object(seg.key, -1, -1) or {
-			// 에러 로깅 후 다음 세그먼트 세트로 계속하거나 에러 반환
-			// 안전을 위해 에러 반환
-			return error('Failed to download segment ${seg.key}: ${err}')
+		spawn fn [mut a, seg, ch] () {
+			data, _ := a.get_object(seg.key, -1, -1) or {
+				eprintln('[S3] Failed to download segment ${seg.key}: ${err}')
+				ch <- []u8{}
+				return
+			}
+			ch <- data
+		}()
+	}
+
+	// 다운로드 결과 수집 및 병합
+	mut merged_data := []u8{}
+	for _ in 0 .. segments.len {
+		data := <-ch
+		if data.len == 0 {
+			download_errors << 'segment download failed'
+		} else {
+			merged_data << data
 		}
-		merged_data << data
+	}
+
+	// 다운로드 실패 시 에러 반환
+	if download_errors.len > 0 {
+		return error('Failed to download ${download_errors.len} segments')
 	}
 
 	// 새 세그먼트 메타데이터
@@ -152,10 +218,19 @@ fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut inde
 	// 새 인덱스를 원자적으로 쓰기 (이전 것 덮어쓰기)
 	a.put_object(index_key, json.encode(index).bytes())!
 
-	// 5. 이전 세그먼트 삭제 (인덱스 업데이트 후 비중요 단계)
+	// 5. 이전 세그먼트 병렬 삭제 (인덱스 업데이트 후 비중요 단계)
+	ch_delete := chan bool{cap: segments.len}
 	for seg in segments {
-		a.delete_object(seg.key) or {
-			eprintln('[S3] Failed to delete old segment ${seg.key}: ${err}')
-		}
+		spawn fn [mut a, seg, ch_delete] () {
+			a.delete_object(seg.key) or {
+				eprintln('[S3] Failed to delete old segment ${seg.key}: ${err}')
+			}
+			ch_delete <- true
+		}()
+	}
+
+	// 모든 삭제 완료 대기
+	for _ in 0 .. segments.len {
+		_ = <-ch_delete
 	}
 }

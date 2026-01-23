@@ -647,15 +647,17 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 	}
 
 	// 그룹 배치 로드 (더 나은 성능을 위해 병렬 조회)
-	if group_ids.len <= 3 {
-		// 작은 배치: 순차 로드
-		for group_id in group_ids {
-			if group := a.load_group(group_id) {
-				groups << domain.GroupInfo{
-					group_id:      group_id
-					protocol_type: group.protocol_type
-					state:         group.state.str()
-				}
+	// 임계값을 1로 낮춰 거의 모든 경우 병렬 처리
+	if group_ids.len == 0 {
+		return groups
+	} else if group_ids.len == 1 {
+		// 단일 그룹: 순차 로드
+		group_id := group_ids[0]
+		if group := a.load_group(group_id) {
+			groups << domain.GroupInfo{
+				group_id:      group_id
+				protocol_type: group.protocol_type
+				state:         group.state.str()
 			}
 		}
 	} else {
@@ -697,20 +699,47 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 // ============================================================
 
 /// commit_offsets는 오프셋을 커밋합니다.
+/// 병렬 처리를 통해 성능을 최적화합니다.
 pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
+	if offsets.len == 0 {
+		return
+	}
+
 	mut failed := []string{}
 	mut succeeded := []domain.PartitionOffset{}
 
-	// 각 오프셋을 개별적으로 커밋 시도
+	// 병렬 커밋 (채널 사용)
+	ch := chan CommitResult{cap: offsets.len}
+
 	for offset in offsets {
-		key := a.offset_key(group_id, offset.topic, offset.partition)
-		data := json.encode(offset)
-		a.put_object(key, data.bytes()) or {
-			failed << '${offset.topic}:${offset.partition}'
-			eprintln('[WARN] Failed to commit offset for ${offset.topic}:${offset.partition}: ${err}')
-			continue
+		spawn fn [mut a, group_id, offset, ch] () {
+			key := a.offset_key(group_id, offset.topic, offset.partition)
+			data := json.encode(offset)
+			a.put_object(key, data.bytes()) or {
+				ch <- CommitResult{
+					offset:  offset
+					success: false
+					error:   err.msg()
+				}
+				return
+			}
+			ch <- CommitResult{
+				offset:  offset
+				success: true
+				error:   ''
+			}
+		}()
+	}
+
+	// 결과 수집
+	for _ in 0 .. offsets.len {
+		result := <-ch
+		if result.success {
+			succeeded << result.offset
+		} else {
+			failed << '${result.offset.topic}:${result.offset.partition}'
+			eprintln('[WARN] Failed to commit offset for ${result.offset.topic}:${result.offset.partition}: ${result.error}')
 		}
-		succeeded << offset
 	}
 
 	// 성공적으로 커밋된 오프셋에 대해 로컬 캐시 업데이트
@@ -735,6 +764,13 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 	if failed.len > 0 {
 		eprintln('[WARN] Partial offset commit success: ${succeeded.len} succeeded, ${failed.len} failed')
 	}
+}
+
+/// CommitResult는 오프셋 커밋 결과를 담습니다.
+struct CommitResult {
+	offset  domain.PartitionOffset
+	success bool
+	error   string
 }
 
 /// fetch_offsets는 커밋된 오프셋을 조회합니다.
