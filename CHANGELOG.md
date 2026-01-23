@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.36.0] - 2026-01-23
+
+### Added
+
+- **Configuration Priority Cascade** - 설정 우선순위 체계 구현
+  - 설정 값 우선순위: CLI 인자 > 환경변수 > 설정파일 > 기본값
+  - 33개 설정 필드에 우선순위 cascade 적용:
+    - Broker: 9개 필드 (`--broker-host`, `--broker-port`, `--broker-id`, etc.)
+    - Storage: 1개 필드 (`--storage-engine`)
+    - S3: 11개 필드 (`--s3-endpoint`, `--s3-bucket`, `--s3-region`, etc.)
+    - PostgreSQL: 7개 필드 (`--postgres-host`, `--postgres-port`, `--postgres-database`, etc.)
+    - REST: 5개 필드 (`--rest-enabled`, `--rest-host`, `--rest-port`, etc.)
+  - CLI 인자 네이밍 규칙:
+    - TOML `broker.host` → CLI `--broker-host` → 환경변수 `DATACORE_BROKER_HOST`
+    - TOML `storage.s3.bucket` → CLI `--s3-bucket` → 환경변수 `DATACORE_S3_BUCKET`
+  - 새로운 함수:
+    - `load_config_with_args()`: CLI 인자 포함 설정 로드
+    - `load_default_config_with_overrides()`: 설정 파일 없이 CLI/환경변수로 설정 생성
+    - `parse_cli_args()`: CLI 인자 파싱 (`--key=value`, `--key value` 형식 지원)
+    - `get_config_string/int/i64/bool()`: 우선순위 cascade 헬퍼 함수
+  - 하위 호환성 유지: 기존 `load_config(path)` 함수는 그대로 동작
+  - 테스트 추가: `src/config/config_test.v`
+
+### Usage Examples
+
+```bash
+# 1. 설정 파일만 사용 (기존 방식)
+./bin/datacore broker start --config=config.toml
+
+# 2. 환경변수로 오버라이드
+DATACORE_BROKER_PORT=9093 ./bin/datacore broker start --config=config.toml
+
+# 3. CLI 인자로 오버라이드 (최우선)
+./bin/datacore broker start --config=config.toml --broker-port=9094
+
+# 4. 우선순위 동작 (CLI > 환경변수)
+DATACORE_BROKER_PORT=9093 ./bin/datacore broker start --broker-port=9095
+# 결과: 9095 사용 (CLI 인자 우선)
+
+# 5. 설정 파일 없이 실행
+./bin/datacore broker start --broker-port=9092 --storage-engine=memory
+```
+
 ## [0.35.0] - 2026-01-23
 
 ### Added
