@@ -5,24 +5,27 @@ module s3
 import json
 import time
 
+// Compaction worker 설정 상수
+const max_consecutive_failures = 5
+const failure_backoff_duration = 5 * time.minute
+
 /// compaction_worker는 주기적으로 병합할 세그먼트를 확인하고 컴팩션을 수행합니다.
 fn (mut a S3StorageAdapter) compaction_worker() {
 	mut consecutive_failures := 0
-	max_consecutive_failures := 5
 
 	for a.compactor_running {
 		time.sleep(g_s3_config.compaction_interval_ms)
 
 		eprintln('[S3] Starting compaction cycle...')
-		
+
 		a.compact_all_partitions() or {
 			consecutive_failures++
 			eprintln('[S3] Compaction failed (${consecutive_failures}/${max_consecutive_failures}): ${err}')
-			
+
 			// 연속 실패가 너무 많으면 백오프 증가
 			if consecutive_failures >= max_consecutive_failures {
-				eprintln('[S3] Too many consecutive failures, backing off for 5 minutes...')
-				time.sleep(5 * time.minute)
+				eprintln('[S3] Too many consecutive failures, backing off for ${failure_backoff_duration}...')
+				time.sleep(failure_backoff_duration)
 				consecutive_failures = 0
 			}
 			continue

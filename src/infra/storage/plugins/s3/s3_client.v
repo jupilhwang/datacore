@@ -8,6 +8,11 @@ import crypto.hmac
 import net.http
 import time
 
+// S3 HTTP 요청 재시도 설정 상수
+const max_retries = 3
+const initial_backoff_ms = 100
+const max_backoff_jitter_ms = 50
+
 /// S3Object는 S3 목록 조회 결과의 객체를 나타냅니다.
 /// ListObjectsV2 API 응답에서 파싱된 개별 객체 정보를 담습니다.
 pub struct S3Object {
@@ -93,7 +98,8 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			last_err = 'S3 PUT failed: ${err}'
 			if attempt < max_retries - 1 {
 				// 지수 백오프: 100ms, 200ms, 400ms...
-				time.sleep(time.Duration(100 * (1 << attempt)) * time.millisecond)
+				backoff_ms := initial_backoff_ms * (1 << attempt)
+				time.sleep(time.Duration(backoff_ms) * time.millisecond)
 				continue
 			}
 			return error(last_err)
@@ -107,7 +113,8 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
 			last_err = 'S3 PUT failed with status ${resp.status_code}'
 			// 지터가 있는 지수 백오프
-			backoff_ms := 100 * (1 << attempt) + int(time.now().unix_milli() % 50)
+			backoff_ms := initial_backoff_ms * (1 << attempt) +
+				int(time.now().unix_milli() % max_backoff_jitter_ms)
 			time.sleep(time.Duration(backoff_ms) * time.millisecond)
 			continue
 		}
@@ -185,7 +192,6 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 	// Use global config to work around V struct copy issues
 	url := '${endpoint}/${g_s3_config.bucket_name}?${query}'
 
-	max_retries := 3
 	mut last_err := ''
 
 	for attempt in 0 .. max_retries {
@@ -202,10 +208,10 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		}) or {
 			last_err = 'S3 LIST failed: ${err}'
 			eprintln('[S3] LIST error (attempt ${attempt + 1}): ${err}')
-			
+
 			if attempt < max_retries - 1 {
 				// 지수 백오프: 100ms, 200ms, 400ms
-				backoff_ms := 100 * (1 << attempt)
+				backoff_ms := initial_backoff_ms * (1 << attempt)
 				eprintln('[S3] Waiting ${backoff_ms}ms before retry...')
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)
 				continue
@@ -222,9 +228,10 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
 			last_err = 'S3 LIST failed with status ${resp.status_code}'
 			eprintln('[S3] LIST status ${resp.status_code}, retrying...')
-			
+
 			// 지터가 있는 지수 백오프
-			backoff_ms := 100 * (1 << attempt) + int(time.now().unix_milli() % 50)
+			backoff_ms := initial_backoff_ms * (1 << attempt) +
+				int(time.now().unix_milli() % max_backoff_jitter_ms)
 			time.sleep(time.Duration(backoff_ms) * time.millisecond)
 			continue
 		}

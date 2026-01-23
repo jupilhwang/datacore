@@ -285,12 +285,6 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 
 	// 3. Metrics server is now served by REST API server on port 8080 (/metrics)
 	// Separate metrics server on port 9093 is deprecated
-	// if conf.observability.metrics.enabled {
-	// 	cli.print_progress('Starting metrics server')
-	// 	metrics_server := observability.new_metrics_server(conf.broker.host, conf.observability.metrics.prometheus_port)
-	// 	metrics_server.start_background()
-	// 	cli.print_done()
-	// }
 
 	// 4. Write PID file
 	cli.write_pid(opts.pid_path) or {
@@ -330,9 +324,6 @@ fn start_broker(app &cli.App, opts cli.CliOptions) ! {
 	}
 
 	mut tcp_server := server.new_server(server_config, protocol_handler)
-
-	// Print startup complete
-	cli.print_startup_complete(conf.broker.host, conf.broker.port)
 
 	// Log startup
 	logger.info('Broker started', observability.field_int('broker_id', conf.broker.broker_id),
