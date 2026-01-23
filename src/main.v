@@ -91,7 +91,8 @@ fn run_broker(app &cli.App, args []string) ! {
 
 	match args[0] {
 		'start' {
-			start_broker(app, opts)!
+			// Pass args[1..] to skip 'start' command
+			start_broker(app, opts, args[1..])!
 		}
 		'stop' {
 			stop_broker(opts)!
@@ -108,13 +109,16 @@ fn run_broker(app &cli.App, args []string) ! {
 	}
 }
 
-fn start_broker(app &cli.App, opts cli.CliOptions) ! {
+fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
+	// Parse CLI arguments for configuration override
+	cli_args := cfg.parse_cli_args(args)
+
 	// Print banner
 	cli.print_banner(app)
 
-	// Load configuration
+	// Load configuration with CLI args priority
 	cli.print_progress('Loading configuration')
-	conf := cfg.load_config(opts.config_path) or {
+	conf := cfg.load_config_with_args(opts.config_path, cli_args) or {
 		cli.print_failed('${err}')
 		return error('Failed to load config')
 	}

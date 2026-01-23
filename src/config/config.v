@@ -251,45 +251,69 @@ pub:
 /// path: 설정 파일 경로
 /// 반환값: 로드된 Config 또는 에러
 pub fn load_config(path string) !Config {
+	return load_config_with_args(path, map[string]string{})
+}
+
+/// load_config_with_args는 CLI 인자를 포함하여 설정을 로드합니다.
+/// 우선순위: CLI args > 환경변수 > TOML > 기본값
+/// path: 설정 파일 경로
+/// cli_args: CLI 인자 맵 (parse_cli_args로 파싱된 값)
+/// 반환값: 로드된 Config 또는 에러
+pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	// 파일 존재 확인
 	if !os.exists(path) {
-		// 파일이 없으면 기본 설정 반환
-		return Config{}
+		// 파일이 없으면 기본 설정 + CLI/환경변수 오버라이드
+		return load_default_config_with_overrides(cli_args)
 	}
 
 	content := os.read_file(path) or { return error('Failed to read config file: ${err}') }
 
 	doc := toml.parse_text(content) or { return error('Failed to parse config file: ${err}') }
 
-	// 브로커 설정 파싱
+	// 브로커 설정 파싱 (우선순위 cascade 적용)
+	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
+		doc, 'broker.host', '0.0.0.0')
 	broker := BrokerConfig{
-		host:               get_string(doc, 'broker.host', '0.0.0.0')
-		port:               get_int(doc, 'broker.port', 9092)
-		broker_id:          get_int(doc, 'broker.broker_id', 1)
-		cluster_id:         get_string(doc, 'broker.cluster_id', 'datacore-cluster')
-		max_connections:    get_int(doc, 'broker.max_connections', 10000)
-		max_request_size:   get_int(doc, 'broker.max_request_size', 104857600)
-		request_timeout_ms: get_int(doc, 'broker.request_timeout_ms', 30000)
-		idle_timeout_ms:    get_int(doc, 'broker.idle_timeout_ms', 600000)
-		advertised_host:    get_string(doc, 'broker.advertised_host', get_string(doc,
-			'broker.host', '127.0.0.1'))
+		host:               broker_host
+		port:               get_config_int(cli_args, 'broker-port', 'DATACORE_BROKER_PORT',
+			doc, 'broker.port', 9092)
+		broker_id:          get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID',
+			doc, 'broker.broker_id', 1)
+		cluster_id:         get_config_string(cli_args, 'cluster-id', 'DATACORE_CLUSTER_ID',
+			doc, 'broker.cluster_id', 'datacore-cluster')
+		max_connections:    get_config_int(cli_args, 'max-connections', 'DATACORE_MAX_CONNECTIONS',
+			doc, 'broker.max_connections', 10000)
+		max_request_size:   get_config_int(cli_args, 'max-request-size', 'DATACORE_MAX_REQUEST_SIZE',
+			doc, 'broker.max_request_size', 104857600)
+		request_timeout_ms: get_config_int(cli_args, 'request-timeout-ms', 'DATACORE_REQUEST_TIMEOUT_MS',
+			doc, 'broker.request_timeout_ms', 30000)
+		idle_timeout_ms:    get_config_int(cli_args, 'idle-timeout-ms', 'DATACORE_IDLE_TIMEOUT_MS',
+			doc, 'broker.idle_timeout_ms', 600000)
+		advertised_host:    get_config_string(cli_args, 'advertised-host', 'DATACORE_ADVERTISED_HOST',
+			doc, 'broker.advertised_host', broker_host)
 	}
 
-	// REST 설정 파싱
+	// REST 설정 파싱 (우선순위 cascade 적용)
 	rest := RestConfig{
-		enabled:                   get_bool(doc, 'rest.enabled', true)
-		host:                      get_string(doc, 'rest.host', '0.0.0.0')
-		port:                      get_int(doc, 'rest.port', 8080)
-		max_connections:           get_int(doc, 'rest.max_connections', 1000)
-		static_dir:                get_string(doc, 'rest.static_dir', 'tests/web')
+		enabled:                   get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
+			doc, 'rest.enabled', true)
+		host:                      get_config_string(cli_args, 'rest-host', 'DATACORE_REST_HOST',
+			doc, 'rest.host', '0.0.0.0')
+		port:                      get_config_int(cli_args, 'rest-port', 'DATACORE_REST_PORT',
+			doc, 'rest.port', 8080)
+		max_connections:           get_config_int(cli_args, 'rest-max-connections', 'DATACORE_REST_MAX_CONNECTIONS',
+			doc, 'rest.max_connections', 1000)
+		static_dir:                get_config_string(cli_args, 'rest-static-dir', 'DATACORE_REST_STATIC_DIR',
+			doc, 'rest.static_dir', 'tests/web')
 		sse_heartbeat_interval_ms: get_int(doc, 'rest.sse_heartbeat_interval_ms', 15000)
 		sse_connection_timeout_ms: get_int(doc, 'rest.sse_connection_timeout_ms', 3600000)
 		ws_max_message_size:       get_int(doc, 'rest.ws_max_message_size', 1048576)
 		ws_ping_interval_ms:       get_int(doc, 'rest.ws_ping_interval_ms', 30000)
 	}
 
-	// 스토리지 설정 파싱
-	storage_engine := get_string(doc, 'storage.engine', 'memory')
+	// 스토리지 설정 파싱 (우선순위 cascade 적용)
+	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
+		doc, 'storage.engine', 'memory')
 
 	// 메모리 설정 파싱
 	memory := MemoryStorageConfig{
@@ -297,13 +321,18 @@ pub fn load_config(path string) !Config {
 		segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
 	}
 
-	// S3 설정 파싱 (환경 변수 우선)
+	// S3 설정 파싱 (우선순위 cascade 적용)
 	mut s3 := S3StorageConfig{
-		endpoint:               get_string(doc, 'storage.s3.endpoint', '')
-		bucket:                 get_string(doc, 'storage.s3.bucket', '')
-		region:                 get_string(doc, 'storage.s3.region', 'us-east-1')
-		prefix:                 get_string(doc, 'storage.s3.prefix', 'datacore/')
-		timezone:               get_string(doc, 'storage.s3.timezone', 'UTC')
+		endpoint:               get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
+			doc, 'storage.s3.endpoint', '')
+		bucket:                 get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
+			doc, 'storage.s3.bucket', '')
+		region:                 get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
+			doc, 'storage.s3.region', 'us-east-1')
+		prefix:                 get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
+			doc, 'storage.s3.prefix', 'datacore/')
+		timezone:               get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
+			doc, 'storage.s3.timezone', 'UTC')
 		batch_timeout_ms:       get_int(doc, 'storage.s3.batch_timeout_ms', 1000)
 		batch_max_bytes:        get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
 		compaction_interval_ms: get_int(doc, 'storage.s3.compaction_interval_ms', 60000)
@@ -313,11 +342,24 @@ pub fn load_config(path string) !Config {
 		secret_key:             ''
 	}
 
-	// 1순위: 환경 변수
-	s3.access_key = os.getenv('AWS_ACCESS_KEY_ID')
-	s3.secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+	// S3 자격 증명 우선순위: CLI args > 환경변수 > ~/.aws/credentials > config.toml
+	// 1순위: CLI 인자
+	if cli_access_key := cli_args['s3-access-key'] {
+		s3.access_key = cli_access_key
+	}
+	if cli_secret_key := cli_args['s3-secret-key'] {
+		s3.secret_key = cli_secret_key
+	}
 
-	// 2순위: ~/.aws/credentials 파일
+	// 2순위: 환경변수
+	if s3.access_key == '' {
+		s3.access_key = os.getenv('AWS_ACCESS_KEY_ID')
+	}
+	if s3.secret_key == '' {
+		s3.secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+	}
+
+	// 3순위: ~/.aws/credentials 파일
 	if s3.access_key == '' || s3.secret_key == '' {
 		file_access, file_secret := load_s3_credentials_from_file()
 		if s3.access_key == '' {
@@ -328,22 +370,12 @@ pub fn load_config(path string) !Config {
 		}
 	}
 
-	// 3순위: config.toml
+	// 4순위: config.toml
 	if s3.access_key == '' {
 		s3.access_key = get_string(doc, 'storage.s3.access_key', '')
 	}
 	if s3.secret_key == '' {
 		s3.secret_key = get_string(doc, 'storage.s3.secret_key', '')
-	}
-
-	if env_endpoint := os.getenv_opt('DATACORE_S3_ENDPOINT') {
-		s3.endpoint = env_endpoint
-	}
-	if env_bucket := os.getenv_opt('DATACORE_S3_BUCKET') {
-		s3.bucket = env_bucket
-	}
-	if env_region := os.getenv_opt('DATACORE_S3_REGION') {
-		s3.region = env_region
 	}
 
 	// SQLite 설정 파싱
@@ -352,15 +384,22 @@ pub fn load_config(path string) !Config {
 		journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
 	}
 
-	// PostgreSQL 설정 파싱
+	// PostgreSQL 설정 파싱 (우선순위 cascade 적용)
 	postgres := PostgresStorageConfig{
-		host:      get_string(doc, 'storage.postgres.host', 'localhost')
-		port:      get_int(doc, 'storage.postgres.port', 5432)
-		database:  get_string(doc, 'storage.postgres.database', 'datacore')
-		user:      get_string(doc, 'storage.postgres.user', '')
-		password:  get_string(doc, 'storage.postgres.password', '')
-		pool_size: get_int(doc, 'storage.postgres.pool_size', 10)
-		sslmode:   get_string(doc, 'storage.postgres.sslmode', 'disable')
+		host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
+			doc, 'storage.postgres.host', 'localhost')
+		port:      get_config_int(cli_args, 'postgres-port', 'DATACORE_POSTGRES_PORT',
+			doc, 'storage.postgres.port', 5432)
+		database:  get_config_string(cli_args, 'postgres-database', 'DATACORE_POSTGRES_DATABASE',
+			doc, 'storage.postgres.database', 'datacore')
+		user:      get_config_string(cli_args, 'postgres-user', 'DATACORE_POSTGRES_USER',
+			doc, 'storage.postgres.user', '')
+		password:  get_config_string(cli_args, 'postgres-password', 'DATACORE_POSTGRES_PASSWORD',
+			doc, 'storage.postgres.password', '')
+		pool_size: get_config_int(cli_args, 'postgres-pool-size', 'DATACORE_POSTGRES_POOL_SIZE',
+			doc, 'storage.postgres.pool_size', 10)
+		sslmode:   get_config_string(cli_args, 'postgres-sslmode', 'DATACORE_POSTGRES_SSLMODE',
+			doc, 'storage.postgres.sslmode', 'disable')
 	}
 
 	storage := StorageConfig{
@@ -492,6 +531,125 @@ fn get_bool(doc toml.Doc, key string, default_val bool) bool {
 	return val.bool()
 }
 
+// ============================================================================
+// 우선순위 Cascade 헬퍼 함수
+// ============================================================================
+// 설정 값 우선순위: CLI args > 환경변수 > TOML > 기본값
+
+/// get_config_string은 우선순위에 따라 문자열 설정 값을 가져옵니다.
+/// 1. CLI 인자 (cli_key)
+/// 2. 환경변수 (env_key)
+/// 3. TOML 파일 (toml_key)
+/// 4. 기본값 (default_val)
+fn get_config_string(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val string) string {
+	// 1순위: CLI 인자
+	if cli_val := cli_args[cli_key] {
+		return cli_val
+	}
+
+	// 2순위: 환경변수
+	if env_val := os.getenv_opt(env_key) {
+		return env_val
+	}
+
+	// 3순위: TOML 파일
+	if toml_val := doc.value_opt(toml_key) {
+		return toml_val.string()
+	}
+
+	// 4순위: 기본값
+	return default_val
+}
+
+/// get_config_int는 우선순위에 따라 정수 설정 값을 가져옵니다.
+fn get_config_int(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val int) int {
+	// 1순위: CLI 인자
+	if cli_val := cli_args[cli_key] {
+		return cli_val.int()
+	}
+
+	// 2순위: 환경변수
+	if env_val := os.getenv_opt(env_key) {
+		return env_val.int()
+	}
+
+	// 3순위: TOML 파일
+	if toml_val := doc.value_opt(toml_key) {
+		return toml_val.int()
+	}
+
+	// 4순위: 기본값
+	return default_val
+}
+
+/// get_config_i64는 우선순위에 따라 64비트 정수 설정 값을 가져옵니다.
+fn get_config_i64(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val i64) i64 {
+	// 1순위: CLI 인자
+	if cli_val := cli_args[cli_key] {
+		return cli_val.i64()
+	}
+
+	// 2순위: 환경변수
+	if env_val := os.getenv_opt(env_key) {
+		return env_val.i64()
+	}
+
+	// 3순위: TOML 파일
+	if toml_val := doc.value_opt(toml_key) {
+		return toml_val.i64()
+	}
+
+	// 4순위: 기본값
+	return default_val
+}
+
+/// get_config_bool은 우선순위에 따라 불리언 설정 값을 가져옵니다.
+fn get_config_bool(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val bool) bool {
+	// 1순위: CLI 인자
+	if cli_val := cli_args[cli_key] {
+		return cli_val == 'true' || cli_val == '1' || cli_val == 'yes'
+	}
+
+	// 2순위: 환경변수
+	if env_val := os.getenv_opt(env_key) {
+		return env_val == 'true' || env_val == '1' || env_val == 'yes'
+	}
+
+	// 3순위: TOML 파일
+	if toml_val := doc.value_opt(toml_key) {
+		return toml_val.bool()
+	}
+
+	// 4순위: 기본값
+	return default_val
+}
+
+/// parse_cli_args는 커맨드라인 인자를 파싱하여 map으로 반환합니다.
+/// 형식: --key=value 또는 --key value
+pub fn parse_cli_args(args []string) map[string]string {
+	mut result := map[string]string{}
+
+	for i := 0; i < args.len; i++ {
+		arg := args[i]
+
+		// --key=value 형식
+		if arg.starts_with('--') && arg.contains('=') {
+			key, val := arg[2..].split_once('=') or { continue }
+			result[key] = val
+		}
+		// --key value 형식
+		else if arg.starts_with('--') && i + 1 < args.len {
+			key := arg[2..]
+			value := args[i + 1]
+			if !value.starts_with('--') {
+				result[key] = value
+			}
+		}
+	}
+
+	return result
+}
+
 /// save는 설정을 TOML 파일로 저장합니다.
 pub fn (c Config) save(path string) ! {
 	mut content := '# DataCore Configuration\n\n'
@@ -595,4 +753,205 @@ pub fn (c Config) is_metrics_enabled() bool {
 /// is_tracing_enabled는 트레이싱이 활성화되어 있는지 확인합니다.
 pub fn (c Config) is_tracing_enabled() bool {
 	return c.observability.tracing.enabled
+}
+
+/// load_default_config_with_overrides는 설정 파일 없이 CLI/환경변수로 설정을 생성합니다.
+/// cli_args: CLI 인자 맵
+/// 반환값: 기본값 + CLI/환경변수 오버라이드가 적용된 Config
+fn load_default_config_with_overrides(cli_args map[string]string) Config {
+	// 빈 TOML doc 생성
+	empty_doc := toml.Doc{}
+
+	// 브로커 설정 (우선순위 cascade 적용)
+	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
+		empty_doc, '', '0.0.0.0')
+	broker := BrokerConfig{
+		host:               broker_host
+		port:               get_config_int(cli_args, 'broker-port', 'DATACORE_BROKER_PORT',
+			empty_doc, '', 9092)
+		broker_id:          get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID',
+			empty_doc, '', 1)
+		cluster_id:         get_config_string(cli_args, 'cluster-id', 'DATACORE_CLUSTER_ID',
+			empty_doc, '', 'datacore-cluster')
+		max_connections:    get_config_int(cli_args, 'max-connections', 'DATACORE_MAX_CONNECTIONS',
+			empty_doc, '', 10000)
+		max_request_size:   get_config_int(cli_args, 'max-request-size', 'DATACORE_MAX_REQUEST_SIZE',
+			empty_doc, '', 104857600)
+		request_timeout_ms: get_config_int(cli_args, 'request-timeout-ms', 'DATACORE_REQUEST_TIMEOUT_MS',
+			empty_doc, '', 30000)
+		idle_timeout_ms:    get_config_int(cli_args, 'idle-timeout-ms', 'DATACORE_IDLE_TIMEOUT_MS',
+			empty_doc, '', 600000)
+		advertised_host:    get_config_string(cli_args, 'advertised-host', 'DATACORE_ADVERTISED_HOST',
+			empty_doc, '', broker_host)
+	}
+
+	// REST 설정 (우선순위 cascade 적용)
+	rest := RestConfig{
+		enabled:                   get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
+			empty_doc, '', true)
+		host:                      get_config_string(cli_args, 'rest-host', 'DATACORE_REST_HOST',
+			empty_doc, '', '0.0.0.0')
+		port:                      get_config_int(cli_args, 'rest-port', 'DATACORE_REST_PORT',
+			empty_doc, '', 8080)
+		max_connections:           get_config_int(cli_args, 'rest-max-connections', 'DATACORE_REST_MAX_CONNECTIONS',
+			empty_doc, '', 1000)
+		static_dir:                get_config_string(cli_args, 'rest-static-dir', 'DATACORE_REST_STATIC_DIR',
+			empty_doc, '', 'tests/web')
+		sse_heartbeat_interval_ms: 15000
+		sse_connection_timeout_ms: 3600000
+		ws_max_message_size:       1048576
+		ws_ping_interval_ms:       30000
+	}
+
+	// 스토리지 설정 (우선순위 cascade 적용)
+	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
+		empty_doc, '', 'memory')
+
+	memory := MemoryStorageConfig{
+		max_memory_mb:      1024
+		segment_size_bytes: 1073741824
+	}
+
+	// S3 설정 (우선순위 cascade 적용)
+	mut s3 := S3StorageConfig{
+		endpoint:               get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
+			empty_doc, '', '')
+		bucket:                 get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
+			empty_doc, '', '')
+		region:                 get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
+			empty_doc, '', 'us-east-1')
+		prefix:                 get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
+			empty_doc, '', 'datacore/')
+		timezone:               get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
+			empty_doc, '', 'UTC')
+		batch_timeout_ms:       1000
+		batch_max_bytes:        10485760
+		compaction_interval_ms: 60000
+		target_segment_bytes:   104857600
+		index_cache_ttl_ms:     30000
+		access_key:             ''
+		secret_key:             ''
+	}
+
+	// S3 자격 증명 우선순위: CLI args > 환경변수 > ~/.aws/credentials
+	if cli_access_key := cli_args['s3-access-key'] {
+		s3.access_key = cli_access_key
+	}
+	if cli_secret_key := cli_args['s3-secret-key'] {
+		s3.secret_key = cli_secret_key
+	}
+
+	if s3.access_key == '' {
+		s3.access_key = os.getenv('AWS_ACCESS_KEY_ID')
+	}
+	if s3.secret_key == '' {
+		s3.secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+	}
+
+	if s3.access_key == '' || s3.secret_key == '' {
+		file_access, file_secret := load_s3_credentials_from_file()
+		if s3.access_key == '' {
+			s3.access_key = file_access
+		}
+		if s3.secret_key == '' {
+			s3.secret_key = file_secret
+		}
+	}
+
+	sqlite := SqliteStorageConfig{
+		path:         'datacore.db'
+		journal_mode: 'WAL'
+	}
+
+	// PostgreSQL 설정 (우선순위 cascade 적용)
+	postgres := PostgresStorageConfig{
+		host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
+			empty_doc, '', 'localhost')
+		port:      get_config_int(cli_args, 'postgres-port', 'DATACORE_POSTGRES_PORT',
+			empty_doc, '', 5432)
+		database:  get_config_string(cli_args, 'postgres-database', 'DATACORE_POSTGRES_DATABASE',
+			empty_doc, '', 'datacore')
+		user:      get_config_string(cli_args, 'postgres-user', 'DATACORE_POSTGRES_USER',
+			empty_doc, '', '')
+		password:  get_config_string(cli_args, 'postgres-password', 'DATACORE_POSTGRES_PASSWORD',
+			empty_doc, '', '')
+		pool_size: get_config_int(cli_args, 'postgres-pool-size', 'DATACORE_POSTGRES_POOL_SIZE',
+			empty_doc, '', 10)
+		sslmode:   get_config_string(cli_args, 'postgres-sslmode', 'DATACORE_POSTGRES_SSLMODE',
+			empty_doc, '', 'disable')
+	}
+
+	storage := StorageConfig{
+		engine:   storage_engine
+		memory:   memory
+		s3:       s3
+		sqlite:   sqlite
+		postgres: postgres
+	}
+
+	// 스키마 레지스트리 설정
+	schema_registry := SchemaRegistryConfig{
+		enabled: true
+		topic:   '__schemas'
+	}
+
+	// 관측성 설정 (기본값)
+	otel := OtelConfig{
+		enabled:             true
+		service_name:        'datacore'
+		service_version:     '0.10.0'
+		instance_id:         ''
+		environment:         'development'
+		otlp_endpoint:       'http://localhost:4317'
+		otlp_http_endpoint:  ''
+		resource_attributes: ''
+	}
+
+	metrics := MetricsConfig{
+		enabled:             true
+		exporter:            'prometheus'
+		prometheus_endpoint: '/metrics'
+		prometheus_port:     9093
+		otlp_endpoint:       ''
+		collection_interval: 15
+	}
+
+	logging := LoggingConfig{
+		enabled:              true
+		level:                'info'
+		format:               'json'
+		output:               'stdout'
+		otlp_endpoint:        ''
+		otlp_export:          false
+		console_output:       true
+		inject_trace_context: true
+	}
+
+	tracing := TracingConfig{
+		enabled:                 false
+		otlp_endpoint:           ''
+		sampler:                 'trace_id_ratio'
+		sample_rate:             1.0
+		batch_timeout_ms:        5000
+		max_batch_size:          512
+		max_queue_size:          2048
+		max_attributes_per_span: 128
+		max_events_per_span:     128
+		max_links_per_span:      128
+	}
+
+	observability := ObservabilityConfig{
+		otel:    otel
+		metrics: metrics
+		logging: logging
+		tracing: tracing
+	}
+
+	return Config{
+		broker:          broker
+		rest:            rest
+		storage:         storage
+		schema_registry: schema_registry
+		observability:   observability
+	}
 }
