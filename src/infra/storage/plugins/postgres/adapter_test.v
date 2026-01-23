@@ -7,7 +7,7 @@ import os
 import time
 
 // 테스트 설정 - 테스트 실행을 위해 환경 변수 설정 필요
-// DATACORE_PG_HOST, DATACORE_PG_PORT, DATACORE_PG_USER, DATACORE_PG_PASSWORD, DATACORE_PG_DATABASE
+// DATACORE_PG_HOST, DATACORE_PG_PORT, DATACORE_PG_USER, DATACORE_PG_PASSWORD, DATACORE_PG_DATABASE, DATACORE_PG_SSLMODE
 fn get_test_config() ?PostgresConfig {
 	// PostgreSQL이 설정되지 않으면 테스트 건너뜀
 	host := os.getenv_opt('DATACORE_PG_HOST') or { return none }
@@ -15,6 +15,7 @@ fn get_test_config() ?PostgresConfig {
 	user := os.getenv_opt('DATACORE_PG_USER') or { return none }
 	password := os.getenv_opt('DATACORE_PG_PASSWORD') or { '' }
 	database := os.getenv_opt('DATACORE_PG_DATABASE') or { 'datacore_test' }
+	sslmode := os.getenv_opt('DATACORE_PG_SSLMODE') or { 'disable' }
 
 	return PostgresConfig{
 		host:      host
@@ -23,6 +24,7 @@ fn get_test_config() ?PostgresConfig {
 		password:  password
 		database:  database
 		pool_size: 5
+		sslmode:   sslmode
 	}
 }
 
@@ -409,4 +411,120 @@ fn test_cluster_metadata_port() {
 
 	// ClusterMetadataPort 사용 가능
 	assert true
+}
+
+fn test_ssl_connection_disable() {
+	// SSL 비활성화 모드 테스트
+	config := get_test_config() or {
+		println('Skipping PostgreSQL SSL tests')
+		return
+	}
+
+	mut ssl_config := PostgresConfig{
+		...config
+		sslmode: 'disable'
+	}
+
+	mut adapter := new_postgres_adapter(ssl_config) or {
+		assert false, 'Failed to create adapter with sslmode=disable: ${err}'
+		return
+	}
+	defer { adapter.close() }
+
+	// 헬스 체크로 연결 확인
+	status := adapter.health_check() or {
+		assert false, 'Health check failed with sslmode=disable: ${err}'
+		return
+	}
+
+	assert status == .healthy
+}
+
+fn test_ssl_connection_require() {
+	// SSL 필수 모드 테스트 (서버가 SSL을 지원하는 경우에만 성공)
+	config := get_test_config() or {
+		println('Skipping PostgreSQL SSL tests')
+		return
+	}
+
+	mut ssl_config := PostgresConfig{
+		...config
+		sslmode: 'require'
+	}
+
+	// SSL 필수 모드로 연결 시도
+	// 서버가 SSL을 지원하지 않으면 실패할 수 있음
+	mut adapter := new_postgres_adapter(ssl_config) or {
+		println('Note: sslmode=require failed - server may not support SSL: ${err}')
+		return
+	}
+	defer { adapter.close() }
+
+	// 헬스 체크로 연결 확인
+	status := adapter.health_check() or {
+		assert false, 'Health check failed with sslmode=require: ${err}'
+		return
+	}
+
+	assert status == .healthy
+	println('SSL connection (require mode) successful')
+}
+
+fn test_ssl_connection_prefer() {
+	// SSL 선호 모드 테스트 (가능하면 SSL 사용)
+	config := get_test_config() or {
+		println('Skipping PostgreSQL SSL tests')
+		return
+	}
+
+	mut ssl_config := PostgresConfig{
+		...config
+		sslmode: 'prefer'
+	}
+
+	mut adapter := new_postgres_adapter(ssl_config) or {
+		assert false, 'Failed to create adapter with sslmode=prefer: ${err}'
+		return
+	}
+	defer { adapter.close() }
+
+	// 헬스 체크로 연결 확인
+	status := adapter.health_check() or {
+		assert false, 'Health check failed with sslmode=prefer: ${err}'
+		return
+	}
+
+	assert status == .healthy
+	println('SSL connection (prefer mode) successful')
+}
+
+fn test_ssl_config_validation() {
+	// SSL 설정 검증 테스트
+	config := get_test_config() or {
+		println('Skipping PostgreSQL SSL tests')
+		return
+	}
+
+	// 유효한 SSL 모드들
+	valid_modes := ['disable', 'allow', 'prefer', 'require']
+
+	for mode in valid_modes {
+		mut ssl_config := PostgresConfig{
+			...config
+			sslmode: mode
+		}
+
+		// 각 모드로 어댑터 생성 시도
+		mut adapter := new_postgres_adapter(ssl_config) or {
+			// require 모드는 서버 설정에 따라 실패할 수 있음
+			if mode == 'require' {
+				println('Note: sslmode=${mode} failed - server may not support SSL')
+				continue
+			}
+			assert false, 'Failed to create adapter with sslmode=${mode}: ${err}'
+			return
+		}
+		adapter.close()
+		println('SSL mode "${mode}" validated successfully')
+	}
 }
