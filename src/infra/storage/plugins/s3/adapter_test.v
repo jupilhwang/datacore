@@ -73,13 +73,14 @@ fn test_encode_decode_large_record() {
 }
 
 fn test_s3_key_helpers() {
-	s3_config := S3Config{
+	// Set global config for testing (required since adapter uses g_s3_config)
+	g_s3_config = S3Config{
 		prefix:      'test-prefix/'
 		bucket_name: 'my-bucket'
+		region:      'us-east-1'
 	}
-
 	adapter := S3StorageAdapter{
-		config: s3_config
+		config: g_s3_config
 	}
 
 	// Topic metadata key
@@ -142,21 +143,21 @@ fn test_partition_index_serialization() {
 }
 
 fn test_s3_endpoint_generation() {
-	// Default AWS endpoint
-	config1 := S3Config{
+	// Test AWS S3 endpoint
+	g_s3_config = S3Config{
 		region: 'us-west-2'
 	}
 	adapter1 := S3StorageAdapter{
-		config: config1
+		config: g_s3_config
 	}
 	assert adapter1.get_endpoint() == 'https://s3.us-west-2.amazonaws.com'
 
 	// Custom endpoint (MinIO)
-	config2 := S3Config{
+	g_s3_config = S3Config{
 		endpoint: 'http://localhost:9000'
 	}
 	adapter2 := S3StorageAdapter{
-		config: config2
+		config: g_s3_config
 	}
 	assert adapter2.get_endpoint() == 'http://localhost:9000'
 }
