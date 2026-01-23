@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.35.0] - 2026-01-23
+
+### Added
+- **gRPC over HTTP/1.1 Integration Test** - gRPC 프로토콜 호환성 검증
+  - Python gRPC 클라이언트를 사용한 E2E 테스트
+  - HTTP/1.1 프로토콜 호환성 검증
+  - 스트리밍 RPC 테스트 (Unary, Server Streaming, Bidirectional)
+  - `tests/integration/test_grpc_http.py` - gRPC 통합 테스트 스크립트
+
+### Changed
+- **S3 Adapter Code Quality** - 코드 품질 및 유지보수성 향상
+  - 전역 설정을 사용하여 V 구조체 복사 이슈 해결
+  - S3 어댑터 테스트 수정 (전역 설정 사용)
+  - 코드 포맷팅 및 백업 파일 제거
+
+### Fixed
+- **S3 Retry Logic** - OpenSSL 에러에 대한 재시도 로직 개선
+  - OpenSSL 에러 처리 강화
+  - 네트워크 에러 재시도 메커니즘 추가
+  - 에러 로깅 개선
+
+- **Metrics Registry** - 전역 싱글톤 패턴 적용
+  - `MetricsRegistry`를 전역 싱글톤으로 변경
+  - 메트릭 수집 안정성 향상
+
+- **Observability** - 관찰성 메트릭 통합
+  - 모든 메트릭을 REST API 포트 8080으로 통합
+  - 메트릭 엔드포인트 일원화
+
+### Tests
+- gRPC 통합 테스트 추가 (3가지 RPC 패턴)
+- S3 어댑터 테스트 안정화
+- 모든 단위 테스트 통과
+
+### Architecture
+- **Offset Service Layer** (Clean Architecture)
+  - `OffsetManager` 서비스 레이어 추가
+  - 비즈니스 로직 분리 (Handler → Service → Storage)
+  - TopicId 해석 지원 (Kafka 프로토콜 v10+)
+  - 헬퍼 함수 추출로 코드 중복 제거
+
 ## [0.34.0] - 2026-01-22
 
 ### Added
