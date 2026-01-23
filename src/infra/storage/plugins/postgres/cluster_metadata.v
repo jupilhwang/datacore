@@ -653,7 +653,7 @@ fn parse_hex_string(s string) []u8 {
 		high := hex_char_to_nibble(s[i])
 		low := hex_char_to_nibble(s[i + 1])
 		if high >= 0 && low >= 0 {
-			result << u8((high << 4) | low)
+			result << u8((u8(high) << 4) | u8(low))
 		}
 		i += 2
 	}

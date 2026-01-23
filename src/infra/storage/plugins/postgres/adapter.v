@@ -56,7 +56,7 @@ pub fn new_postgres_adapter(config PostgresConfig) !&PostgresStorageAdapter {
 
 	// 연결 문자열을 사용하여 단일 연결 테스트
 	test_conn := pg.connect_with_conninfo(conninfo)!
-	test_conn.close()
+	test_conn.close() or {}
 
 	// pg.Config 생성 (풀 생성용)
 	pg_config := pg.Config{
