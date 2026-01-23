@@ -19,7 +19,7 @@ import time
 pub struct App {
 pub:
 	name        string = 'datacore'
-	version     string = '0.37.0'
+	version     string = '0.38.0'
 	description string = 'Kafka-compatible message broker written in V'
 }
 

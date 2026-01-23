@@ -68,6 +68,11 @@ test-security:
 	@echo "Running security tests..."
 	./scripts/test_security.sh
 
+## Run long-running tests (24+ hours)
+test-longrunning:
+	@echo "Running long-running tests..."
+	./scripts/test_longrunning.sh
+
 ## Run all tests (unit + compat + storage + security)
 test-all: test test-compat test-storage test-security
 
@@ -169,6 +174,7 @@ help:
 	@echo "  test-storage    Run storage engine tests (Memory, PostgreSQL, S3)"
 	@echo "  test-performance Run performance regression tests"
 	@echo "  test-security   Run security tests (SSL, SASL)"
+	@echo "  test-longrunning Run long-running tests (24+ hours)"
 	@echo "  test-all        Run all tests"
 	@echo ""
 	@echo "Code Quality Targets:"

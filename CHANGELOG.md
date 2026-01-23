@@ -1,5 +1,102 @@
 # Changelog
 
+## [0.38.0] - 2026-01-23
+
+### Added
+
+- **Long-Running Test Suite** - 24시간 이상 지속 가능한 안정성 테스트
+  - `scripts/test_longrunning.sh` 추가 (NEW, 500+ lines):
+    - 4가지 테스트 시나리오:
+      - `producer`: 지속적인 메시지 생산 테스트
+      - `consumer`: 지속적인 메시지 소비 테스트
+      - `mixed`: Producer + Consumer 동시 실행
+      - `stress`: 고부하 스트레스 테스트 (10개 동시 producer)
+    - CLI 옵션:
+      - `--duration HOURS`: 테스트 지속 시간 (기본: 24시간)
+      - `--interval SECONDS`: 액션 간격 (기본: 1초)
+      - `--metrics-dir DIR`: 메트릭 출력 디렉토리
+      - `--no-cleanup`: 테스트 후 리소스 정리 안 함
+      - `--verbose`: 상세 출력
+    - 메트릭 수집 및 모니터링:
+      - 실시간 메시지 카운트
+      - 에러 카운트 추적
+      - 경과 시간 표시 (HH:MM:SS)
+      - 타임스탬프가 포함된 로그 파일 생성
+    - 에러 감지 및 복구:
+      - 브로커 프로세스 모니터링
+      - Consumer 프로세스 자동 재시작
+      - 타임아웃 처리 (5초)
+    - 자동 정리 (cleanup trap):
+      - 브로커 프로세스 종료
+      - 테스트 요약 출력
+      - 메트릭 파일 저장
+
+### Changed
+
+- **Makefile 확장**:
+  - 새로운 타겟 추가:
+    - `make test-longrunning`: Long-running 테스트 실행
+  - `make help` 업데이트: test-longrunning 타겟 문서화
+
+### Usage Examples
+
+```bash
+# 기본 실행 (24시간, 모든 시나리오)
+./scripts/test_longrunning.sh
+
+# Producer 시나리오만 12시간 실행
+./scripts/test_longrunning.sh producer --duration 12
+
+# Mixed 시나리오, 2초 간격, 상세 로그
+./scripts/test_longrunning.sh mixed --interval 2 --verbose
+
+# Stress 테스트, 커스텀 메트릭 디렉토리
+./scripts/test_longrunning.sh stress --metrics-dir /tmp/metrics
+
+# Makefile 사용
+make test-longrunning
+```
+
+### Technical Details
+
+**테스트 시나리오 상세**:
+
+1. **Producer 시나리오**:
+   - 1초마다 메시지 생산
+   - 타임스탬프 포함 메시지 생성
+   - 100개마다 진행 상황 로그
+   - 실패 시 에러 카운트 증가
+
+2. **Consumer 시나리오**:
+   - 백그라운드에서 지속적인 소비
+   - 프로세스 모니터링 (10초마다)
+   - 프로세스 종료 시 자동 재시작
+   - 메시지 카운트 추적
+
+3. **Mixed 시나리오**:
+   - Producer와 Consumer 동시 실행
+   - 양쪽 프로세스 모니터링
+   - 5분마다 상태 로그
+   - 메시지 및 에러 통계
+
+4. **Stress 시나리오**:
+   - 10개의 동시 Producer
+   - 0.1초 간격으로 메시지 생산
+   - 고부하 상황 시뮬레이션
+   - 시스템 안정성 검증
+
+**메트릭 파일 형식**:
+
+```
+[2026-01-23 13:00:00] INFO: Long-running test initialized
+[2026-01-23 13:00:00] INFO: Scenario: producer
+[2026-01-23 13:00:00] INFO: Duration: 24 hours
+[2026-01-23 13:00:05] INFO: Produced message 1 (elapsed: 00:00:05)
+[2026-01-23 13:00:05] METRIC: messages_produced=1
+[2026-01-23 13:00:06] INFO: Produced message 2 (elapsed: 00:00:06)
+...
+```
+
 ## [0.37.0] - 2026-01-23
 
 ### Added
