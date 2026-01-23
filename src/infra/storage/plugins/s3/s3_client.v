@@ -178,26 +178,61 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 
 /// list_objects는 지정된 접두사로 S3 객체 목록을 조회합니다.
 /// ListObjectsV2 API를 사용하여 객체 목록을 가져옵니다.
+/// OpenSSL 에러 등의 네트워크 문제에 대비하여 재시도 로직을 포함합니다.
 fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 	endpoint := a.get_endpoint()
 	query := 'prefix=${prefix}&list-type=2'
 	// Use global config to work around V struct copy issues
 	url := '${endpoint}/${g_s3_config.bucket_name}?${query}'
 
-	headers := a.sign_request('GET', '', query, []u8{})
+	max_retries := 3
+	mut last_err := ''
 
-	resp := http.fetch(http.FetchConfig{
-		url:    url
-		method: .get
-		header: headers
-	}) or { return error('S3 LIST failed: ${err}') }
+	for attempt in 0 .. max_retries {
+		if attempt > 0 {
+			eprintln('[S3] LIST retry ${attempt}/${max_retries} for prefix="${prefix}"')
+		}
 
-	if resp.status_code != 200 {
+		headers := a.sign_request('GET', '', query, []u8{})
+
+		resp := http.fetch(http.FetchConfig{
+			url:    url
+			method: .get
+			header: headers
+		}) or {
+			last_err = 'S3 LIST failed: ${err}'
+			eprintln('[S3] LIST error (attempt ${attempt + 1}): ${err}')
+			
+			if attempt < max_retries - 1 {
+				// 지수 백오프: 100ms, 200ms, 400ms
+				backoff_ms := 100 * (1 << attempt)
+				eprintln('[S3] Waiting ${backoff_ms}ms before retry...')
+				time.sleep(time.Duration(backoff_ms) * time.millisecond)
+				continue
+			}
+			return error(last_err)
+		}
+
+		if resp.status_code == 200 {
+			// 성공 - XML 응답 파싱
+			return parse_list_objects_response(resp.body)
+		}
+
+		// 503 (Service Unavailable) 및 500 (Server Error)에서 재시도
+		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
+			last_err = 'S3 LIST failed with status ${resp.status_code}'
+			eprintln('[S3] LIST status ${resp.status_code}, retrying...')
+			
+			// 지터가 있는 지수 백오프
+			backoff_ms := 100 * (1 << attempt) + int(time.now().unix_milli() % 50)
+			time.sleep(time.Duration(backoff_ms) * time.millisecond)
+			continue
+		}
+
 		return error('S3 LIST failed with status ${resp.status_code}')
 	}
 
-	// XML 응답 파싱 (단순화)
-	return parse_list_objects_response(resp.body)
+	return error(last_err)
 }
 
 // ============================================================

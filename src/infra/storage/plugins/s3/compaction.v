@@ -7,13 +7,31 @@ import time
 
 /// compaction_worker는 주기적으로 병합할 세그먼트를 확인하고 컴팩션을 수행합니다.
 fn (mut a S3StorageAdapter) compaction_worker() {
+	mut consecutive_failures := 0
+	max_consecutive_failures := 5
+
 	for a.compactor_running {
 		time.sleep(g_s3_config.compaction_interval_ms)
 
+		eprintln('[S3] Starting compaction cycle...')
+		
 		a.compact_all_partitions() or {
-			// 프로덕션에서는 여기에 구조화된 로깅 사용
-			eprintln('[S3] Compaction failed: ${err}')
+			consecutive_failures++
+			eprintln('[S3] Compaction failed (${consecutive_failures}/${max_consecutive_failures}): ${err}')
+			
+			// 연속 실패가 너무 많으면 백오프 증가
+			if consecutive_failures >= max_consecutive_failures {
+				eprintln('[S3] Too many consecutive failures, backing off for 5 minutes...')
+				time.sleep(5 * time.minute)
+				consecutive_failures = 0
+			}
 			continue
+		}
+
+		// 성공 시 카운터 리셋
+		if consecutive_failures > 0 {
+			eprintln('[S3] Compaction succeeded after ${consecutive_failures} failures')
+			consecutive_failures = 0
 		}
 	}
 }
