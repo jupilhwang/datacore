@@ -44,6 +44,15 @@
 
 ### Fixed
 
+- **S3 Compaction/Flush Worker Critical Bug** - time.sleep 단위 오류 수정 (CRITICAL)
+  - `compaction_worker`: sleep 주기가 나노초로 해석되어 매우 짧은 주기(0.06ms)로 실행되던 심각한 버그 수정
+  - `flush_worker`: 동일한 문제 수정
+  - `time.sleep()`에 `time.millisecond`를 곱하여 올바른 Duration 타입으로 변환
+  - 이제 config.toml의 설정값이 올바르게 적용됨:
+    - `compaction_interval_ms: 60000` → 60초 (이전: 0.06ms)
+    - `batch_timeout_ms: 1000` → 1초 (이전: 0.001ms)
+  - **영향**: S3 스토리지 사용 시 CPU 사용률 급증 및 불필요한 S3 API 호출 폭증 문제 해결
+
 - **S3 Retry Logic** - OpenSSL 에러에 대한 재시도 로직 개선
   - OpenSSL 에러 처리 강화
   - 네트워크 에러 재시도 메커니즘 추가
