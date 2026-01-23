@@ -69,7 +69,7 @@ fn (e &ProtobufEncoder) encode_message(json_str string, schema ProtoMessage) ![]
 
 		// Encode field tag (field_number << 3 | wire_type)
 		wire_type := get_wire_type(field.field_type)
-		tag := (field.number << 3) | wire_type
+		tag := (u32(field.number) << 3) | u32(wire_type)
 		result << proto_encode_varint(u64(tag))
 
 		// Encode field value based on type
@@ -335,12 +335,14 @@ fn proto_encode_varint(val u64) []u8 {
 }
 
 fn proto_encode_zigzag32(val int) []u8 {
-	zigzag := u32((val << 1) ^ (val >> 31))
+	// Cast to u32 first to avoid signed shift warning
+	zigzag := u32(val) << 1 ^ u32(val >> 31)
 	return proto_encode_varint(u64(zigzag))
 }
 
 fn proto_encode_zigzag64(val i64) []u8 {
-	zigzag := u64((val << 1) ^ (val >> 63))
+	// Cast to u64 first to avoid signed shift warning
+	zigzag := u64(val) << 1 ^ u64(val >> 63)
 	return proto_encode_varint(zigzag)
 }
 

@@ -102,7 +102,7 @@ struct CachedGroup {
 pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 	// Store config in global to work around V struct copy issues
 	g_s3_config = config
-	
+
 	return &S3StorageAdapter{
 		config:                  g_s3_config
 		topic_cache:             map[string]CachedTopic{}

@@ -9,7 +9,8 @@ module schema
 // encode_varint_zigzag encodes an i64 using variable-length zigzag encoding
 fn encode_varint_zigzag(val i64) []u8 {
 	// ZigZag encoding: (n << 1) ^ (n >> 63)
-	zigzag := u64((val << 1) ^ (val >> 63))
+	// Cast to u64 first to avoid signed shift warning
+	zigzag := u64(val) << 1 ^ u64(val >> 63)
 	return encode_varint(zigzag)
 }
 

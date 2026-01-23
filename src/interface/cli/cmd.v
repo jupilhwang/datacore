@@ -239,18 +239,6 @@ pub fn print_startup_info(host string, port int, broker_id int, cluster_id strin
 	println('')
 }
 
-/// print_startup_complete는 시작 완료 메시지를 출력합니다.
-pub fn print_startup_complete(host string, port int) {
-	println('\x1b[32m✓\x1b[0m Broker started successfully!')
-	println('')
-	println('\x1b[33mEndpoints:\x1b[0m')
-	println('  • Kafka:    ${host}:${port}')
-	println('  • Metrics:  ${host}:9093/metrics')
-	println('')
-	println('\x1b[90mPress Ctrl+C to stop\x1b[0m')
-	println('')
-}
-
 /// print_shutdown은 종료 메시지를 출력합니다.
 pub fn print_shutdown() {
 	println('')
