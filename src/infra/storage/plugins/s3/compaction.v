@@ -14,7 +14,7 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 	mut consecutive_failures := 0
 
 	for a.compactor_running {
-		time.sleep(g_s3_config.compaction_interval_ms)
+		time.sleep(g_s3_config.compaction_interval_ms * time.millisecond)
 
 		eprintln('[S3] Starting compaction cycle...')
 
