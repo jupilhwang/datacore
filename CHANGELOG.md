@@ -1,8 +1,28 @@
 # Changelog
 
-## [0.38.0] - 2026-01-23
+## [0.38.0] - 2026-01-24
 
 ### Added
+
+- **Observability System** - 포괄적인 메트릭 수집 및 구조화된 로깅 시스템
+  - **S3 Storage Adapter**:
+    - `S3Metrics` 구조체 추가: 플러시, 컴팩션, S3 API, 캐시, 오프셋 커밋 메트릭 추적
+    - 구조화된 로깅 시스템: `LogLevel` enum (debug, info, warn, error)
+    - `log_message()` 함수: 타임스탬프, 레벨, 컴포넌트, 메시지, 컨텍스트 포함
+    - 28개 매직 넘버를 명명된 상수로 교체
+    - 메트릭 조회 API: `get_metrics()`, `get_metrics_summary()`, `reset_metrics()`
+    - 성공률, 처리 시간, 에러 카운트 추적
+  - **Memory Storage Adapter**:
+    - `MemoryMetrics` 구조체 추가: 토픽, 레코드, 오프셋, 그룹 작업 메트릭
+    - 구조화된 로깅 시스템 구현
+    - 모든 주요 작업에 메트릭 및 로깅 추가
+  - **메트릭 추적 항목**:
+    - 플러시: 총 횟수, 성공/실패, 총 시간
+    - 컴팩션: 총 횟수, 성공/실패, 총 시간, 병합된 바이트
+    - S3 API: GET/PUT/DELETE/LIST 요청 수, 에러 수
+    - 캐시: 히트/미스 수, 히트율
+    - 오프셋 커밋: 총 횟수, 성공/실패
+    - 레코드: append/fetch 횟수, 레코드 수, 바이트 수
 
 - **Long-Running Test Suite** - 24시간 이상 지속 가능한 안정성 테스트
   - `scripts/test_longrunning.sh` 추가 (NEW, 500+ lines):
