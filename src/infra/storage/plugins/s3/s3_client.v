@@ -9,9 +9,11 @@ import net.http
 import time
 
 // S3 HTTP 요청 재시도 설정 상수
-const max_retries = 3
-const initial_backoff_ms = 100
-const max_backoff_jitter_ms = 50
+const max_retries = 3 // 최대 재시도 횟수
+const initial_backoff_ms = 100 // 초기 백오프 시간 (밀리초)
+const max_backoff_jitter_ms = 50 // 최대 백오프 지터 (밀리초)
+const max_delete_concurrent = 20 // 삭제 최대 동시 실행 수
+const hmac_block_size = 64 // HMAC SHA256 블록 크기
 
 /// S3Object는 S3 목록 조회 결과의 객체를 나타냅니다.
 /// ListObjectsV2 API 응답에서 파싱된 개별 객체 정보를 담습니다.
@@ -32,10 +34,14 @@ pub:
 /// 반환값: (객체 데이터, ETag)
 /// start가 음수이면 전체 객체를 조회합니다.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
+	// 메트릭: S3 GET 요청
+	a.metrics_lock.@lock()
+	a.metrics.s3_get_count++
+	a.metrics_lock.unlock()
+
 	endpoint := a.get_endpoint()
-	// Use global config to work around V struct copy issues
-	url := if g_s3_config.use_path_style {
-		'${endpoint}/${g_s3_config.bucket_name}/${key}'
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
 	} else {
 		'${endpoint}/${key}'
 	}
@@ -53,13 +59,27 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 		url:    url
 		method: .get
 		header: headers
-	}) or { return error('S3 GET failed: ${err}') }
+	}) or {
+		// 메트릭: S3 에러
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
+		return error('S3 GET failed: ${err}')
+	}
 
 	if resp.status_code == 404 {
+		// 메트릭: S3 에러
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
 		return error('Object not found: ${key}')
 	}
 	// Range 요청의 경우 206 Partial Content도 성공
 	if resp.status_code != 200 && resp.status_code != 206 {
+		// 메트릭: S3 에러
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
 		return error('S3 GET failed with status ${resp.status_code}')
 	}
 
@@ -70,17 +90,21 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 /// put_object는 S3에 객체를 씁니다.
 /// 내부적으로 재시도 로직이 포함된 put_object_with_retry를 호출합니다.
 fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
-	a.put_object_with_retry(key, data, 3)!
+	a.put_object_with_retry(key, data, max_retries)!
 }
 
 /// put_object_with_retry는 지수 백오프 재시도로 객체 쓰기를 시도합니다.
 /// 500, 503 에러 발생 시 지수 백오프(100ms, 200ms, 400ms...)로 재시도합니다.
 /// 지터(jitter)를 추가하여 동시 재시도로 인한 충돌을 방지합니다.
 fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries int) ! {
+	// 메트릭: S3 PUT 요청 (재시도 포함하여 한 번만 카운트)
+	a.metrics_lock.@lock()
+	a.metrics.s3_put_count++
+	a.metrics_lock.unlock()
+
 	endpoint := a.get_endpoint()
-	// Use global config to work around V struct copy issues
-	url := if g_s3_config.use_path_style {
-		'${endpoint}/${g_s3_config.bucket_name}/${key}'
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
 	} else {
 		'${endpoint}/${key}'
 	}
@@ -102,6 +126,10 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)
 				continue
 			}
+			// 메트릭: S3 에러
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
 			return error(last_err)
 		}
 
@@ -119,8 +147,16 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			continue
 		}
 
+		// 메트릭: S3 에러
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
 		return error('S3 PUT failed with status ${resp.status_code}')
 	}
+	// 메트릭: S3 에러
+	a.metrics_lock.@lock()
+	a.metrics.s3_error_count++
+	a.metrics_lock.unlock()
 	return error(last_err)
 }
 
@@ -129,9 +165,8 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 /// 객체가 이미 존재하면 412 Precondition Failed 에러를 반환합니다.
 fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 	endpoint := a.get_endpoint()
-	// Use global config to work around V struct copy issues
-	url := if g_s3_config.use_path_style {
-		'${endpoint}/${g_s3_config.bucket_name}/${key}'
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
 	} else {
 		'${endpoint}/${key}'
 	}
@@ -157,9 +192,13 @@ fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 /// delete_object는 S3에서 객체를 삭제합니다.
 /// 삭제 성공 시 200 또는 204 상태 코드를 반환합니다.
 fn (mut a S3StorageAdapter) delete_object(key string) ! {
+	// 메트릭: S3 DELETE 요청
+	a.metrics_lock.@lock()
+	a.metrics.s3_delete_count++
+	a.metrics_lock.unlock()
+
 	endpoint := a.get_endpoint()
-	// Use global config to work around V struct copy issues
-	url := '${endpoint}/${g_s3_config.bucket_name}/${key}'
+	url := '${endpoint}/${a.config.bucket_name}/${key}'
 
 	headers := a.sign_request('DELETE', key, '', []u8{})
 
@@ -167,9 +206,19 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 		url:    url
 		method: .delete
 		header: headers
-	}) or { return error('S3 DELETE failed: ${err}') }
+	}) or {
+		// 메트릭: S3 에러
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
+		return error('S3 DELETE failed: ${err}')
+	}
 
 	if resp.status_code !in [200, 204] {
+		// 메트릭: S3 에러
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
 		return error('S3 DELETE failed with status ${resp.status_code}')
 	}
 }
@@ -184,9 +233,10 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 	}
 
 	// 병렬 삭제 (최대 20개 동시 처리)
-	ch := chan bool{cap: objects.len}
+	// 채널 버퍼 크기를 max_concurrent로 제한하여 메모리 사용량 제어
+	max_concurrent := max_delete_concurrent
+	ch := chan bool{cap: max_concurrent}
 	mut active := 0
-	max_concurrent := 20
 
 	for obj in objects {
 		// 동시 실행 제한
@@ -198,7 +248,10 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 		active++
 		spawn fn [mut a, obj, ch] () {
 			a.delete_object(obj.key) or {
-				eprintln('[S3] Failed to delete object ${obj.key}: ${err}')
+				log_message(.error, 'S3Client', 'Failed to delete object', {
+					'object_key': obj.key
+					'error':      err.msg()
+				})
 			}
 			ch <- true
 		}()
@@ -214,16 +267,24 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 /// ListObjectsV2 API를 사용하여 객체 목록을 가져옵니다.
 /// OpenSSL 에러 등의 네트워크 문제에 대비하여 재시도 로직을 포함합니다.
 fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
+	// 메트릭: S3 LIST 요청
+	a.metrics_lock.@lock()
+	a.metrics.s3_list_count++
+	a.metrics_lock.unlock()
+
 	endpoint := a.get_endpoint()
 	query := 'prefix=${prefix}&list-type=2'
-	// Use global config to work around V struct copy issues
-	url := '${endpoint}/${g_s3_config.bucket_name}?${query}'
+	url := '${endpoint}/${a.config.bucket_name}?${query}'
 
 	mut last_err := ''
 
 	for attempt in 0 .. max_retries {
 		if attempt > 0 {
-			eprintln('[S3] LIST retry ${attempt}/${max_retries} for prefix="${prefix}"')
+			log_message(.debug, 'S3Client', 'LIST retry', {
+				'attempt': (attempt + 1).str()
+				'max':     max_retries.str()
+				'prefix':  prefix
+			})
 		}
 
 		headers := a.sign_request('GET', '', query, []u8{})
@@ -234,15 +295,24 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 			header: headers
 		}) or {
 			last_err = 'S3 LIST failed: ${err}'
-			eprintln('[S3] LIST error (attempt ${attempt + 1}): ${err}')
+			log_message(.error, 'S3Client', 'LIST error', {
+				'attempt': (attempt + 1).str()
+				'error':   err.msg()
+			})
 
 			if attempt < max_retries - 1 {
 				// 지수 백오프: 100ms, 200ms, 400ms
 				backoff_ms := initial_backoff_ms * (1 << attempt)
-				eprintln('[S3] Waiting ${backoff_ms}ms before retry...')
+				log_message(.debug, 'S3Client', 'Waiting before retry', {
+					'backoff_ms': backoff_ms.str()
+				})
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)
 				continue
 			}
+			// 메트릭: S3 에러
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
 			return error(last_err)
 		}
 
@@ -254,7 +324,9 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		// 503 (Service Unavailable) 및 500 (Server Error)에서 재시도
 		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
 			last_err = 'S3 LIST failed with status ${resp.status_code}'
-			eprintln('[S3] LIST status ${resp.status_code}, retrying...')
+			log_message(.warn, 'S3Client', 'LIST status error, retrying', {
+				'status_code': resp.status_code.str()
+			})
 
 			// 지터가 있는 지수 백오프
 			backoff_ms := initial_backoff_ms * (1 << attempt) +
@@ -263,9 +335,17 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 			continue
 		}
 
+		// 메트릭: S3 에러
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
 		return error('S3 LIST failed with status ${resp.status_code}')
 	}
 
+	// 메트릭: S3 에러
+	a.metrics_lock.@lock()
+	a.metrics.s3_error_count++
+	a.metrics_lock.unlock()
 	return error(last_err)
 }
 
@@ -298,18 +378,17 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 		h.add_custom('Content-Length', body.len.str()) or {}
 	}
 
-	// Use global config to work around V struct copy issues
-	if g_s3_config.access_key.len == 0 || g_s3_config.secret_key.len == 0 {
+	if a.config.access_key.len == 0 || a.config.secret_key.len == 0 {
 		return h
 	}
 
 	// Canonical Request
 	canonical_uri := if key == '' {
-		'/${g_s3_config.bucket_name}'
+		'/${a.config.bucket_name}'
 	} else if key.starts_with('/') {
-		'/${g_s3_config.bucket_name}${key}'
+		'/${a.config.bucket_name}${key}'
 	} else {
-		'/${g_s3_config.bucket_name}/${key}'
+		'/${a.config.bucket_name}/${key}'
 	}
 	canonical_querystring := a.canonicalize_query(query)
 
@@ -320,22 +399,22 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 
 	// String to Sign
 	algorithm := 'AWS4-HMAC-SHA256'
-	credential_scope := '${date_day}/${g_s3_config.region}/s3/aws4_request'
+	credential_scope := '${date_day}/${a.config.region}/s3/aws4_request'
 	canonical_request_hash := sha256.sum(canonical_request.bytes()).hex()
 
 	string_to_sign := '${algorithm}\n${date_str}\n${credential_scope}\n${canonical_request_hash}'
 
 	// Signing Key
-	k_date := hmac.new(('AWS4' + g_s3_config.secret_key).bytes(), date_day.bytes(), sha256.sum,
-		64)
-	k_region := hmac.new(k_date, g_s3_config.region.bytes(), sha256.sum, 64)
-	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, 64)
-	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, 64)
+	k_date := hmac.new(('AWS4' + a.config.secret_key).bytes(), date_day.bytes(), sha256.sum,
+		hmac_block_size)
+	k_region := hmac.new(k_date, a.config.region.bytes(), sha256.sum, hmac_block_size)
+	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, hmac_block_size)
+	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, hmac_block_size)
 
 	// Signature
-	signature := hmac.new(k_signing, string_to_sign.bytes(), sha256.sum, 64).hex()
+	signature := hmac.new(k_signing, string_to_sign.bytes(), sha256.sum, hmac_block_size).hex()
 
-	auth_header := '${algorithm} Credential=${g_s3_config.access_key}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}'
+	auth_header := '${algorithm} Credential=${a.config.access_key}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}'
 	h.add_custom('Authorization', auth_header) or {}
 
 	return h
@@ -345,25 +424,23 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 /// 사용자 정의 엔드포인트(MinIO/LocalStack)가 설정되면 해당 값을 사용합니다.
 /// 그렇지 않으면 AWS S3 엔드포인트를 경로 스타일 또는 가상 호스트 스타일로 반환합니다.
 fn (a &S3StorageAdapter) get_endpoint() string {
-	// Use global config to work around V struct copy issues
-	if g_s3_config.endpoint.len > 0 {
-		return g_s3_config.endpoint
+	if a.config.endpoint.len > 0 {
+		return a.config.endpoint
 	}
-	if g_s3_config.use_path_style {
-		return 'https://s3.${g_s3_config.region}.amazonaws.com'
+	if a.config.use_path_style {
+		return 'https://s3.${a.config.region}.amazonaws.com'
 	} else {
-		return 'https://${g_s3_config.bucket_name}.s3.${g_s3_config.region}.amazonaws.com'
+		return 'https://${a.config.bucket_name}.s3.${a.config.region}.amazonaws.com'
 	}
 }
 
 /// get_host는 S3 요청의 Host 헤더 값을 반환합니다.
 /// SigV4 서명에서 Host 헤더는 필수 서명 헤더입니다.
 fn (a &S3StorageAdapter) get_host() string {
-	// Use global config to work around V struct copy issues
-	if g_s3_config.endpoint.len > 0 {
-		return g_s3_config.endpoint.replace('http://', '').replace('https://', '').split('/')[0]
+	if a.config.endpoint.len > 0 {
+		return a.config.endpoint.replace('http://', '').replace('https://', '').split('/')[0]
 	}
-	return 's3.${g_s3_config.region}.amazonaws.com'
+	return 's3.${a.config.region}.amazonaws.com'
 }
 
 /// canonicalize_query는 AWS SigV4를 위해 쿼리 파라미터를 정렬하고 인코딩합니다.

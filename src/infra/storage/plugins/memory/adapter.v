@@ -9,6 +9,98 @@ import sync
 import time
 import rand
 
+// ============================================================
+// 로깅 (Logging)
+// ============================================================
+
+/// LogLevel은 로그 레벨을 정의합니다.
+enum LogLevel {
+	debug
+	info
+	warn
+	error
+}
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level LogLevel, component string, message string, context map[string]string) {
+	level_str := match level {
+		.debug { '[DEBUG]' }
+		.info { '[INFO]' }
+		.warn { '[WARN]' }
+		.error { '[ERROR]' }
+	}
+
+	timestamp := time.now().format_ss()
+	mut ctx_str := ''
+	if context.len > 0 {
+		mut parts := []string{}
+		for key, value in context {
+			parts << '${key}=${value}'
+		}
+		ctx_str = ' {${parts.join(', ')}}'
+	}
+
+	eprintln('${timestamp} ${level_str} [Memory:${component}] ${message}${ctx_str}')
+}
+
+// ============================================================
+// 메트릭 (Metrics)
+// ============================================================
+
+/// MemoryMetrics는 메모리 스토리지 작업의 메트릭을 추적합니다.
+struct MemoryMetrics {
+mut:
+	// 토픽 작업 메트릭
+	topic_create_count i64
+	topic_delete_count i64
+	topic_lookup_count i64
+	// 레코드 작업 메트릭
+	append_count         i64
+	append_record_count  i64
+	append_bytes         i64
+	fetch_count          i64
+	fetch_record_count   i64
+	delete_records_count i64
+	// 오프셋 작업 메트릭
+	offset_commit_count i64
+	offset_fetch_count  i64
+	// 그룹 작업 메트릭
+	group_save_count   i64
+	group_load_count   i64
+	group_delete_count i64
+	// 에러 메트릭
+	error_count i64
+}
+
+/// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
+fn (mut m MemoryMetrics) reset() {
+	m.topic_create_count = 0
+	m.topic_delete_count = 0
+	m.topic_lookup_count = 0
+	m.append_count = 0
+	m.append_record_count = 0
+	m.append_bytes = 0
+	m.fetch_count = 0
+	m.fetch_record_count = 0
+	m.delete_records_count = 0
+	m.offset_commit_count = 0
+	m.offset_fetch_count = 0
+	m.group_save_count = 0
+	m.group_load_count = 0
+	m.group_delete_count = 0
+	m.error_count = 0
+}
+
+/// get_summary는 메트릭 요약을 문자열로 반환합니다.
+fn (m &MemoryMetrics) get_summary() string {
+	return '[Memory Metrics]
+  Topics: create=${m.topic_create_count}, delete=${m.topic_delete_count}, lookup=${m.topic_lookup_count}
+  Records: append=${m.append_count} (${m.append_record_count} records, ${m.append_bytes} bytes), fetch=${m.fetch_count} (${m.fetch_record_count} records), delete=${m.delete_records_count}
+  Offsets: commit=${m.offset_commit_count}, fetch=${m.offset_fetch_count}
+  Groups: save=${m.group_save_count}, load=${m.group_load_count}, delete=${m.group_delete_count}
+  Errors: ${m.error_count}'
+}
+
 /// MemoryStorageAdapter는 port.StoragePort를 구현합니다.
 /// 메모리 기반 스토리지로 파티션별 락킹을 통해 동시성을 제어합니다.
 pub struct MemoryStorageAdapter {
@@ -20,6 +112,9 @@ mut:
 	groups         map[string]domain.ConsumerGroup
 	offsets        map[string]map[string]i64
 	global_lock    sync.RwMutex
+	// 메트릭
+	metrics      MemoryMetrics
+	metrics_lock sync.Mutex
 }
 
 /// MemoryConfig는 메모리 스토리지 설정을 담습니다.
@@ -88,10 +183,22 @@ pub fn new_memory_adapter_with_config(config MemoryConfig) &MemoryStorageAdapter
 /// create_topic은 새로운 토픽을 생성합니다.
 /// UUID v4 형식의 topic_id를 자동 생성합니다.
 pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+	// 메트릭: 토픽 생성 시작
+	a.metrics_lock.@lock()
+	a.metrics.topic_create_count++
+	a.metrics_lock.unlock()
+
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
 
 	if name in a.topics {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
+		log_message(.error, 'Topic', 'Topic already exists', {
+			'topic': name
+		})
 		return error('topic already exists')
 	}
 
@@ -116,6 +223,15 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 				sync_on_write: a.config.sync_on_append
 			}
 			mmap_part := new_mmap_partition(mmap_config) or {
+				// 메트릭: 에러
+				a.metrics_lock.@lock()
+				a.metrics.error_count++
+				a.metrics_lock.unlock()
+				log_message(.error, 'Topic', 'Failed to create mmap partition', {
+					'topic':     name
+					'partition': i.str()
+					'error':     err.msg()
+				})
 				return error('failed to create mmap partition: ${err}')
 			}
 			mmap_partition_stores << mmap_part
@@ -151,20 +267,41 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 	// topic_id -> name 매핑을 캐시에 저장 (O(1) 조회용)
 	a.topic_id_index[topic_id.hex()] = name
 
+	log_message(.info, 'Topic', 'Topic created', {
+		'topic':      name
+		'partitions': partitions.str()
+		'use_mmap':   a.config.use_mmap.str()
+	})
+
 	return metadata
 }
 
 /// delete_topic은 토픽을 삭제합니다.
 pub fn (mut a MemoryStorageAdapter) delete_topic(name string) ! {
+	// 메트릭: 토픽 삭제
+	a.metrics_lock.@lock()
+	a.metrics.topic_delete_count++
+	a.metrics_lock.unlock()
+
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
 
-	topic := a.topics[name] or { return error('topic not found') }
+	topic := a.topics[name] or {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
+		return error('topic not found')
+	}
 
 	// topic_id_index 캐시에서 제거
 	a.topic_id_index.delete(topic.metadata.topic_id.hex())
 
 	a.topics.delete(name)
+
+	log_message(.info, 'Topic', 'Topic deleted', {
+		'topic': name
+	})
 }
 
 /// list_topics는 모든 토픽 목록을 반환합니다.
@@ -181,12 +318,22 @@ pub fn (mut a MemoryStorageAdapter) list_topics() ![]domain.TopicMetadata {
 
 /// get_topic은 토픽 메타데이터를 조회합니다.
 pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata {
+	// 메트릭: 토픽 조회
+	a.metrics_lock.@lock()
+	a.metrics.topic_lookup_count++
+	a.metrics_lock.unlock()
+
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
 
 	if topic := a.topics[name] {
 		return topic.metadata
 	}
+
+	// 메트릭: 에러
+	a.metrics_lock.@lock()
+	a.metrics.error_count++
+	a.metrics_lock.unlock()
 	return error('topic not found')
 }
 
@@ -262,10 +409,20 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 /// append는 파티션에 레코드를 추가합니다.
 /// 파티션 수준 락킹으로 동시성을 제어합니다.
 pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
+	// 메트릭: append 시작
+	a.metrics_lock.@lock()
+	a.metrics.append_count++
+	a.metrics.append_record_count += i64(records.len)
+	a.metrics_lock.unlock()
+
 	// 읽기 락으로 토픽 조회
 	a.global_lock.rlock()
 	topic := a.topics[topic_name] or {
 		a.global_lock.runlock()
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('topic not found')
 	}
 	a.global_lock.runlock()
@@ -276,6 +433,10 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	}
 
 	if partition < 0 || partition >= topic.partitions.len {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('partition out of range')
 	}
 
@@ -287,6 +448,9 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	base_offset := part.high_watermark
 	now := time.now()
 
+	// 바이트 수 계산
+	mut bytes_written := i64(0)
+
 	// 타임스탬프와 함께 레코드 추가
 	for record in records {
 		mut r := record
@@ -297,8 +461,14 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 			}
 		}
 		part.records << r
+		bytes_written += i64(r.key.len + r.value.len)
 	}
 	part.high_watermark += i64(records.len)
+
+	// 메트릭: 바이트 수 추가
+	a.metrics_lock.@lock()
+	a.metrics.append_bytes += bytes_written
+	a.metrics_lock.unlock()
 
 	// 보존 정책 적용 (최대 메시지 수)
 	if a.config.max_messages_per_partition > 0 {
@@ -307,6 +477,11 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 			// 슬라이스를 사용하여 clone 없이 제자리에서 요소 이동
 			part.records = part.records[excess..]
 			part.base_offset += i64(excess)
+			log_message(.debug, 'Append', 'Applied retention policy', {
+				'topic':         topic_name
+				'partition':     partition.str()
+				'deleted_count': excess.str()
+			})
 		}
 	}
 
@@ -361,10 +536,19 @@ fn (mut a MemoryStorageAdapter) append_mmap(topic &TopicStore, partition int, re
 
 /// fetch는 파티션에서 레코드를 조회합니다.
 pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	// 메트릭: fetch 시작
+	a.metrics_lock.@lock()
+	a.metrics.fetch_count++
+	a.metrics_lock.unlock()
+
 	// 읽기 락으로 토픽 조회
 	a.global_lock.rlock()
 	topic := a.topics[topic_name] or {
 		a.global_lock.runlock()
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('topic not found')
 	}
 	a.global_lock.runlock()
@@ -375,6 +559,10 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 	}
 
 	if partition < 0 || partition >= topic.partitions.len {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('partition out of range')
 	}
 
@@ -421,8 +609,15 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 		}
 	}
 
+	fetched_records := part.records[start_idx..end_idx]
+
+	// 메트릭: fetch된 레코드 수
+	a.metrics_lock.@lock()
+	a.metrics.fetch_record_count += i64(fetched_records.len)
+	a.metrics_lock.unlock()
+
 	return domain.FetchResult{
-		records:            part.records[start_idx..end_idx]
+		records:            fetched_records
 		high_watermark:     part.high_watermark
 		last_stable_offset: part.high_watermark
 		log_start_offset:   part.base_offset
@@ -569,6 +764,11 @@ pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partit
 
 /// save_group은 컨슈머 그룹을 저장합니다.
 pub fn (mut a MemoryStorageAdapter) save_group(group domain.ConsumerGroup) ! {
+	// 메트릭: 그룹 저장
+	a.metrics_lock.@lock()
+	a.metrics.group_save_count++
+	a.metrics_lock.unlock()
+
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
 
@@ -577,25 +777,48 @@ pub fn (mut a MemoryStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 
 /// load_group은 컨슈머 그룹을 로드합니다.
 pub fn (mut a MemoryStorageAdapter) load_group(group_id string) !domain.ConsumerGroup {
+	// 메트릭: 그룹 로드
+	a.metrics_lock.@lock()
+	a.metrics.group_load_count++
+	a.metrics_lock.unlock()
+
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
 
 	if group := a.groups[group_id] {
 		return group
 	}
+
+	// 메트릭: 에러
+	a.metrics_lock.@lock()
+	a.metrics.error_count++
+	a.metrics_lock.unlock()
 	return error('group not found')
 }
 
 /// delete_group은 컨슈머 그룹을 삭제합니다.
 pub fn (mut a MemoryStorageAdapter) delete_group(group_id string) ! {
+	// 메트릭: 그룹 삭제
+	a.metrics_lock.@lock()
+	a.metrics.group_delete_count++
+	a.metrics_lock.unlock()
+
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
 
 	if group_id !in a.groups {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('group not found')
 	}
 	a.groups.delete(group_id)
 	a.offsets.delete(group_id)
+
+	log_message(.info, 'Group', 'Group deleted', {
+		'group_id': group_id
+	})
 }
 
 /// list_groups는 모든 컨슈머 그룹 목록을 반환합니다.
@@ -626,6 +849,11 @@ pub fn (mut a MemoryStorageAdapter) list_groups() ![]domain.GroupInfo {
 
 /// commit_offsets는 오프셋을 커밋합니다.
 pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
+	// 메트릭: 오프셋 커밋
+	a.metrics_lock.@lock()
+	a.metrics.offset_commit_count += i64(offsets.len)
+	a.metrics_lock.unlock()
+
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
 
@@ -637,10 +865,20 @@ pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []do
 		key := '${offset.topic}:${offset.partition}'
 		a.offsets[group_id][key] = offset.offset
 	}
+
+	log_message(.debug, 'Offset', 'Offsets committed', {
+		'group_id': group_id
+		'count':    offsets.len.str()
+	})
 }
 
 /// fetch_offsets는 커밋된 오프셋을 조회합니다.
 pub fn (mut a MemoryStorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+	// 메트릭: 오프셋 조회
+	a.metrics_lock.@lock()
+	a.metrics.offset_fetch_count += i64(partitions.len)
+	a.metrics_lock.unlock()
+
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
 
@@ -738,6 +976,37 @@ pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 		total_bytes:      total_bytes
 		group_count:      a.groups.len
 	}
+}
+
+// ============================================================
+// 메트릭 조회 (Metrics Query)
+// ============================================================
+
+/// get_metrics는 현재 메트릭 스냅샷을 반환합니다.
+pub fn (mut a MemoryStorageAdapter) get_metrics() MemoryMetrics {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	return a.metrics
+}
+
+/// get_metrics_summary는 메트릭 요약 문자열을 반환합니다.
+pub fn (mut a MemoryStorageAdapter) get_metrics_summary() string {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	return a.metrics.get_summary()
+}
+
+/// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
+pub fn (mut a MemoryStorageAdapter) reset_metrics() {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	a.metrics.reset()
 }
 
 /// clear는 모든 데이터를 삭제합니다 (테스트용).

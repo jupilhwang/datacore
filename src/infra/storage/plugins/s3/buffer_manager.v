@@ -58,14 +58,22 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	// S3에 세그먼트 쓰기
 	a.put_object(segment_key, segment_data) or {
 		// 실패 시 재시도하지 않으면 데이터 손실. 현재는 로깅 후 에러 반환.
-		eprintln('[S3] ASYNC FLUSH FAILED for ${partition_key}: Segment put failed: ${err}')
+		log_message(.error, 'AsyncFlush', 'Segment put failed', {
+			'partition_key': partition_key
+			'segment_key':   segment_key
+			'error':         err.msg()
+		})
 		return error('Segment put failed during async flush: ${err}')
 	}
 
 	// 4. 새 세그먼트로 파티션 인덱스 업데이트
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
 		end_offset, segment_data.len) or {
-		eprintln('[S3] ASYNC FLUSH FAILED for ${partition_key}: Index update failed: ${err}')
+		log_message(.error, 'AsyncFlush', 'Index update failed', {
+			'partition_key': partition_key
+			'segment_key':   segment_key
+			'error':         err.msg()
+		})
 		return error('Index update failed during async flush: ${err}')
 	}
 }
@@ -75,7 +83,7 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 /// batch_timeout_ms 간격으로 실행되며, compactor_running이 false가 되면 종료됩니다.
 fn (mut a S3StorageAdapter) flush_worker() {
 	for a.compactor_running { // compactor_running 플래그를 사용하여 두 워커 모두 중지
-		time.sleep(g_s3_config.batch_timeout_ms * time.millisecond)
+		time.sleep(a.config.batch_timeout_ms * time.millisecond)
 
 		// 락을 유지한 채 각 파티션의 버퍼 처리
 		// 키 수집과 플러시 사이에 append가 버퍼를 수정하는 경쟁 조건 방지
@@ -111,18 +119,25 @@ fn (mut a S3StorageAdapter) flush_worker() {
 				continue
 			}
 			a.flush_buffer_to_s3(key, buffer_data) or {
-				eprintln('[S3] Flush failed for ${key}: ${err}')
+				log_message(.error, 'FlushWorker', 'Flush failed', {
+					'partition_key': key
+					'record_count':  buffer_data.len.str()
+					'error':         err.msg()
+				})
 				// 실패 시 데이터 손실 방지를 위해 버퍼 데이터 복원
+				// 메모리 효율을 위해 in-place 병합 사용
 				a.buffer_lock.lock()
 				if mut tp_buffer := a.topic_partition_buffers[key] {
-					// 실패한 데이터를 기존 버퍼 앞에 추가
-					mut restored := buffer_data.clone()
-					restored << tp_buffer.records
-					tp_buffer.records = restored
+					// 실패한 데이터를 기존 버퍼 앞에 추가 (in-place)
+					// 새 배열 할당 대신 기존 버퍼를 재사용
+					old_records := tp_buffer.records
+					tp_buffer.records = []StoredRecord{cap: buffer_data.len + old_records.len}
+					tp_buffer.records << buffer_data
+					tp_buffer.records << old_records
 					// 크기 재계산
 					mut size := i64(0)
 					for rec in tp_buffer.records {
-						size += i64(rec.value.len + rec.key.len + 30)
+						size += i64(rec.value.len + rec.key.len + record_overhead_bytes)
 					}
 					tp_buffer.current_size_bytes = size
 					a.topic_partition_buffers[key] = tp_buffer
@@ -130,15 +145,19 @@ fn (mut a S3StorageAdapter) flush_worker() {
 					// 버퍼가 삭제됨, 재생성
 					mut size := i64(0)
 					for rec in buffer_data {
-						size += i64(rec.value.len + rec.key.len + 30)
+						size += i64(rec.value.len + rec.key.len + record_overhead_bytes)
 					}
 					a.topic_partition_buffers[key] = TopicPartitionBuffer{
-						records:            buffer_data.clone()
+						records:            buffer_data
 						current_size_bytes: size
 					}
 				}
 				a.buffer_lock.unlock()
-				eprintln('[S3] Buffer restored for ${key} with ${buffer_data.len} records')
+				log_message(.warn, 'FlushWorker', 'Buffer restored after flush failure',
+					{
+					'partition_key': key
+					'record_count':  buffer_data.len.str()
+				})
 			}
 		}
 	}
@@ -148,12 +167,27 @@ fn (mut a S3StorageAdapter) flush_worker() {
 /// 세그먼트를 S3에 저장하고 파티션 인덱스를 업데이트합니다.
 /// 동시 인덱스 업데이트로 인한 손상을 방지하기 위해 index_update_lock을 사용합니다.
 fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data []StoredRecord) ! {
+	start_time := time.now()
+
+	// 메트릭: 플러시 시작
+	a.metrics_lock.@lock()
+	a.metrics.flush_count++
+	a.metrics_lock.unlock()
+
 	parts := partition_key.split(':')
 	if parts.len != 2 {
+		// 메트릭: 플러시 실패
+		a.metrics_lock.@lock()
+		a.metrics.flush_error_count++
+		a.metrics_lock.unlock()
 		return error('Invalid partition key for flush: ${partition_key}')
 	}
 	topic := parts[0]
 	partition_i64 := strconv.atoi64(parts[1]) or {
+		// 메트릭: 플러시 실패
+		a.metrics_lock.@lock()
+		a.metrics.flush_error_count++
+		a.metrics_lock.unlock()
 		return error('Invalid partition number in key: ${parts[1]}')
 	}
 	partition := int(partition_i64)
@@ -168,9 +202,23 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 
 	// S3에 세그먼트 쓰기
 	a.put_object(segment_key, segment_data) or {
-		eprintln('[S3] FLUSH FAILED for ${partition_key}: Segment put failed: ${err}')
+		log_message(.error, 'Flush', 'Segment put failed', {
+			'partition_key': partition_key
+			'segment_key':   segment_key
+			'error':         err.msg()
+		})
+		// 메트릭: 플러시 실패
+		a.metrics_lock.@lock()
+		a.metrics.flush_error_count++
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
 		return error('Segment put failed during flush: ${err}')
 	}
+
+	// 메트릭: S3 PUT 성공
+	a.metrics_lock.@lock()
+	a.metrics.s3_put_count++
+	a.metrics_lock.unlock()
 
 	// 새 세그먼트로 파티션 인덱스 업데이트
 	// 동시 인덱스 업데이트로 인한 인덱스 손상 방지를 위해 락 사용
@@ -181,9 +229,24 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
 		end_offset, segment_data.len) or {
-		eprintln('[S3] FLUSH FAILED for ${partition_key}: Index update failed: ${err}')
+		log_message(.error, 'Flush', 'Index update failed', {
+			'partition_key': partition_key
+			'segment_key':   segment_key
+			'error':         err.msg()
+		})
+		// 메트릭: 플러시 실패
+		a.metrics_lock.@lock()
+		a.metrics.flush_error_count++
+		a.metrics_lock.unlock()
 		return error('Index update failed during flush: ${err}')
 	}
+
+	// 메트릭: 플러시 성공
+	elapsed_ms := time.since(start_time).milliseconds()
+	a.metrics_lock.@lock()
+	a.metrics.flush_success_count++
+	a.metrics.flush_total_ms += elapsed_ms
+	a.metrics_lock.unlock()
 }
 
 /// update_partition_index_with_segment는 파티션 인덱스에 새 세그먼트를 추가합니다.

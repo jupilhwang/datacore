@@ -6,25 +6,35 @@ import json
 import time
 
 // Compaction worker 설정 상수
-const max_consecutive_failures = 5
-const failure_backoff_duration = 5 * time.minute
+const max_consecutive_failures = 5 // 컴팩션 최대 연속 실패 횟수
+const failure_backoff_duration = 5 * time.minute // 연속 실패 시 백오프 시간
+const compaction_sequential_threshold = 3 // 순차 처리 임계값 (파티션 수)
+const max_compaction_concurrent = 10 // 컴팩션 최대 동시 실행 수
+const compaction_size_threshold_divisor = 2 // 컴팩션 크기 임계값 계수 (target_segment_bytes / 2)
 
 /// compaction_worker는 주기적으로 병합할 세그먼트를 확인하고 컴팩션을 수행합니다.
 fn (mut a S3StorageAdapter) compaction_worker() {
 	mut consecutive_failures := 0
 
 	for a.compactor_running {
-		time.sleep(g_s3_config.compaction_interval_ms * time.millisecond)
+		time.sleep(a.config.compaction_interval_ms * time.millisecond)
 
-		eprintln('[S3] Starting compaction cycle...')
+		log_message(.debug, 'Compaction', 'Starting compaction cycle', {})
 
 		a.compact_all_partitions() or {
 			consecutive_failures++
-			eprintln('[S3] Compaction failed (${consecutive_failures}/${max_consecutive_failures}): ${err}')
+			log_message(.error, 'Compaction', 'Compaction cycle failed', {
+				'consecutive_failures': consecutive_failures.str()
+				'max_failures':         max_consecutive_failures.str()
+				'error':                err.msg()
+			})
 
 			// 연속 실패가 너무 많으면 백오프 증가
 			if consecutive_failures >= max_consecutive_failures {
-				eprintln('[S3] Too many consecutive failures, backing off for ${failure_backoff_duration}...')
+				log_message(.warn, 'Compaction', 'Too many consecutive failures, backing off',
+					{
+					'backoff_duration': failure_backoff_duration.str()
+				})
 				time.sleep(failure_backoff_duration)
 				consecutive_failures = 0
 			}
@@ -33,7 +43,9 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 
 		// 성공 시 카운터 리셋
 		if consecutive_failures > 0 {
-			eprintln('[S3] Compaction succeeded after ${consecutive_failures} failures')
+			log_message(.info, 'Compaction', 'Compaction succeeded after failures', {
+				'previous_failures': consecutive_failures.str()
+			})
 			consecutive_failures = 0
 		}
 	}
@@ -53,7 +65,7 @@ fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 	}
 
 	// 병렬 컴팩션 (최대 10개 동시 처리)
-	if partition_keys.len <= 3 {
+	if partition_keys.len <= compaction_sequential_threshold {
 		// 작은 배치: 순차 처리
 		for key in partition_keys {
 			parts := key.split(':')
@@ -61,15 +73,19 @@ fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 				topic := parts[0]
 				partition := parts[1].int()
 				a.compact_partition(topic, partition) or {
-					eprintln('[S3] Compaction failed for ${key}: ${err}')
+					log_message(.error, 'Compaction', 'Partition compaction failed', {
+						'partition_key': key
+						'error':         err.msg()
+					})
 				}
 			}
 		}
 	} else {
 		// 큰 배치: 병렬 처리 (채널 사용)
-		ch := chan bool{cap: partition_keys.len}
+		// 채널 버퍼 크기를 max_concurrent로 제한하여 메모리 사용량 제어
+		max_concurrent := max_compaction_concurrent
+		ch := chan bool{cap: max_concurrent}
 		mut active := 0
-		max_concurrent := 10
 
 		for key in partition_keys {
 			// 동시 실행 제한
@@ -85,7 +101,11 @@ fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 					topic := parts[0]
 					partition := parts[1].int()
 					a.compact_partition(topic, partition) or {
-						eprintln('[S3] Compaction failed for ${key}: ${err}')
+						log_message(.error, 'Compaction', 'Partition compaction failed',
+							{
+							'partition_key': key
+							'error':         err.msg()
+						})
 					}
 				}
 				ch <- true
@@ -101,6 +121,13 @@ fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 
 /// compact_partition은 특정 파티션의 세그먼트를 컴팩션합니다.
 fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
+	start_time := time.now()
+
+	// 메트릭: 컴팩션 시작
+	a.metrics_lock.@lock()
+	a.metrics.compaction_count++
+	a.metrics_lock.unlock()
+
 	// 1. 현재 인덱스 조회
 	mut index := a.get_partition_index(topic, partition)!
 
@@ -109,12 +136,12 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 	mut total_size := i64(0)
 
 	for seg in index.log_segments {
-		if total_size >= g_s3_config.target_segment_bytes {
+		if total_size >= a.config.target_segment_bytes {
 			break
 		}
 
 		// 목표 크기보다 작은 세그먼트만 고려
-		if seg.size_bytes < g_s3_config.target_segment_bytes {
+		if seg.size_bytes < a.config.target_segment_bytes {
 			segments_to_compact << seg
 			total_size += seg.size_bytes
 		}
@@ -122,13 +149,27 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 
 	// 충분한 작은 세그먼트가 있는지 확인
 	if segments_to_compact.len < a.min_segment_count_to_compact
-		|| total_size < g_s3_config.target_segment_bytes / 2 {
+		|| total_size < a.config.target_segment_bytes / compaction_size_threshold_divisor {
 		return
 	}
 
 	// 3. 컴팩션 수행
 	// 세그먼트 병합 후 새로운 큰 세그먼트를 S3에 업로드
-	a.merge_segments(topic, partition, mut index, segments_to_compact)!
+	a.merge_segments(topic, partition, mut index, segments_to_compact) or {
+		// 메트릭: 컴팩션 실패
+		a.metrics_lock.@lock()
+		a.metrics.compaction_error_count++
+		a.metrics_lock.unlock()
+		return err
+	}
+
+	// 메트릭: 컴팩션 성공
+	elapsed_ms := time.since(start_time).milliseconds()
+	a.metrics_lock.@lock()
+	a.metrics.compaction_success_count++
+	a.metrics.compaction_total_ms += elapsed_ms
+	a.metrics.compaction_bytes_merged += total_size
+	a.metrics_lock.unlock()
 }
 
 /// merge_segments는 여러 세그먼트를 하나의 큰 세그먼트로 병합합니다.
@@ -159,7 +200,10 @@ fn (mut a S3StorageAdapter) download_segments_parallel(segments []LogSegment) ![
 	for seg in segments {
 		spawn fn [mut a, seg, ch] () {
 			data, _ := a.get_object(seg.key, -1, -1) or {
-				eprintln('[S3] Failed to download segment ${seg.key}: ${err}')
+				log_message(.error, 'Compaction', 'Failed to download segment', {
+					'segment_key': seg.key
+					'error':       err.msg()
+				})
 				ch <- []u8{}
 				return
 			}
@@ -246,7 +290,10 @@ fn (mut a S3StorageAdapter) delete_segments_parallel(segments []LogSegment) {
 	for seg in segments {
 		spawn fn [mut a, seg, ch] () {
 			a.delete_object(seg.key) or {
-				eprintln('[S3] Failed to delete old segment ${seg.key}: ${err}')
+				log_message(.error, 'Compaction', 'Failed to delete old segment', {
+					'segment_key': seg.key
+					'error':       err.msg()
+				})
 			}
 			ch <- true
 		}()

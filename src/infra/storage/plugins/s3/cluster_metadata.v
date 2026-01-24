@@ -371,30 +371,30 @@ pub fn (a &S3ClusterMetadataAdapter) get_capability() domain.StorageCapability {
 
 /// broker_key는 브로커 정보의 S3 키를 반환합니다.
 fn (a &S3ClusterMetadataAdapter) broker_key(broker_id i32) string {
-	return '${g_s3_config.prefix}__cluster/brokers/${broker_id}.json'
+	return '${a.adapter.config.prefix}__cluster/brokers/${broker_id}.json'
 }
 
 /// brokers_prefix는 브로커 목록 조회용 S3 접두사를 반환합니다.
 fn (a &S3ClusterMetadataAdapter) brokers_prefix() string {
-	return '${g_s3_config.prefix}__cluster/brokers/'
+	return '${a.adapter.config.prefix}__cluster/brokers/'
 }
 
 /// cluster_metadata_key는 클러스터 메타데이터의 S3 키를 반환합니다.
 fn (a &S3ClusterMetadataAdapter) cluster_metadata_key() string {
-	return '${g_s3_config.prefix}__cluster/metadata.json'
+	return '${a.adapter.config.prefix}__cluster/metadata.json'
 }
 
 /// partition_assignment_key는 파티션 할당의 S3 키를 반환합니다.
 fn (a &S3ClusterMetadataAdapter) partition_assignment_key(topic_name string, partition i32) string {
-	return '${g_s3_config.prefix}__cluster/partitions/${topic_name}/${partition}.json'
+	return '${a.adapter.config.prefix}__cluster/partitions/${topic_name}/${partition}.json'
 }
 
 /// partition_assignments_prefix는 파티션 할당 목록 조회용 S3 접두사를 반환합니다.
 fn (a &S3ClusterMetadataAdapter) partition_assignments_prefix(topic_name string) string {
-	return '${g_s3_config.prefix}__cluster/partitions/${topic_name}/'
+	return '${a.adapter.config.prefix}__cluster/partitions/${topic_name}/'
 }
 
 /// lock_key는 분산 락의 S3 키를 반환합니다.
 fn (a &S3ClusterMetadataAdapter) lock_key(lock_name string) string {
-	return '${g_s3_config.prefix}__cluster/locks/${lock_name}.json'
+	return '${a.adapter.config.prefix}__cluster/locks/${lock_name}.json'
 }

@@ -3,7 +3,6 @@ module s3
 import time
 import json
 import domain
-import config
 
 struct MockS3Client {
 mut:
@@ -73,14 +72,13 @@ fn test_encode_decode_large_record() {
 }
 
 fn test_s3_key_helpers() {
-	// Set global config for testing (required since adapter uses g_s3_config)
-	g_s3_config = S3Config{
+	config := S3Config{
 		prefix:      'test-prefix/'
 		bucket_name: 'my-bucket'
 		region:      'us-east-1'
 	}
 	adapter := S3StorageAdapter{
-		config: g_s3_config
+		config: config
 	}
 
 	// Topic metadata key
@@ -144,20 +142,20 @@ fn test_partition_index_serialization() {
 
 fn test_s3_endpoint_generation() {
 	// Test AWS S3 endpoint
-	g_s3_config = S3Config{
+	config1 := S3Config{
 		region: 'us-west-2'
 	}
 	adapter1 := S3StorageAdapter{
-		config: g_s3_config
+		config: config1
 	}
 	assert adapter1.get_endpoint() == 'https://s3.us-west-2.amazonaws.com'
 
 	// Custom endpoint (MinIO)
-	g_s3_config = S3Config{
+	config2 := S3Config{
 		endpoint: 'http://localhost:9000'
 	}
 	adapter2 := S3StorageAdapter{
-		config: g_s3_config
+		config: config2
 	}
 	assert adapter2.get_endpoint() == 'http://localhost:9000'
 }

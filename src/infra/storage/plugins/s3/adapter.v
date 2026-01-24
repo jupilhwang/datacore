@@ -10,14 +10,34 @@ import json
 import crypto.md5
 import sync
 
-// Global config storage to work around V struct copy issues
-__global g_s3_config = S3Config{}
-
 // 참고: S3 HTTP 클라이언트 함수들 (sign_request, get_object, put_object 등)은 s3_client.v에 있습니다.
 // 참고: PartitionIndex, LogSegment, CachedPartitionIndex는 partition_index.v에 정의되어 있습니다.
 // 참고: StoredRecord, TopicPartitionBuffer는 s3_record_codec.v와 buffer_manager.v에 정의되어 있습니다.
 // 참고: 버퍼 관리 함수들은 buffer_manager.v에 있습니다.
 // 참고: 컴팩션 함수들은 compaction.v에 있습니다.
+
+// ============================================================
+// 설정 상수 (Configuration Constants)
+// ============================================================
+
+// 토픽 제한
+const max_topic_name_length = 255 // 토픽 이름 최대 길이 (문자)
+const max_partition_count = 10000 // 토픽당 최대 파티션 수
+
+// 캐시 TTL
+const topic_cache_ttl = 5 * time.minute // 토픽 메타데이터 캐시 유지 시간
+const group_cache_ttl = 30 * time.second // 컨슈머 그룹 캐시 유지 시간
+
+// 레코드 크기 추정
+const record_overhead_bytes = 30 // 레코드당 메타데이터 오버헤드 추정치 (오프셋, 타임스탬프, 길이 등)
+
+// Fetch 최적화
+const fetch_size_multiplier = 2 // fetch 시 세그먼트 크기 배수
+const fetch_offset_estimate_divisor = 100 // 오프셋 추정을 위한 바이트당 레코드 수 추정치
+
+// 오프셋 커밋 병렬 처리
+const max_offset_commit_buffer = 100 // 오프셋 커밋 채널 최대 버퍼 크기
+const max_offset_commit_concurrent = 50 // 오프셋 커밋 최대 동시 실행 수
 
 /// s3_capability는 S3 어댑터의 스토리지 기능을 정의합니다.
 pub const s3_capability = domain.StorageCapability{
@@ -73,6 +93,9 @@ pub mut:
 	// 컴팩션 설정
 	min_segment_count_to_compact int = 5 // 컴팩션을 위한 최소 세그먼트 수
 	compactor_running            bool
+	// 메트릭
+	metrics      S3Metrics
+	metrics_lock sync.Mutex
 }
 
 /// CachedTopic은 캐시된 토픽 정보를 담습니다.
@@ -89,6 +112,123 @@ struct CachedGroup {
 	cached_at time.Time
 }
 
+// ============================================================
+// 메트릭 (Metrics)
+// ============================================================
+
+/// LogLevel은 로그 레벨을 정의합니다.
+enum LogLevel {
+	debug
+	info
+	warn
+	error
+}
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level LogLevel, component string, message string, context map[string]string) {
+	level_str := match level {
+		.debug { '[DEBUG]' }
+		.info { '[INFO]' }
+		.warn { '[WARN]' }
+		.error { '[ERROR]' }
+	}
+
+	timestamp := time.now().format_ss()
+	mut ctx_str := ''
+	if context.len > 0 {
+		mut parts := []string{}
+		for key, value in context {
+			parts << '${key}=${value}'
+		}
+		ctx_str = ' {${parts.join(', ')}}'
+	}
+
+	eprintln('${timestamp} ${level_str} [S3:${component}] ${message}${ctx_str}')
+}
+
+/// S3Metrics는 S3 스토리지 작업의 메트릭을 추적합니다.
+struct S3Metrics {
+mut:
+	// 플러시 메트릭
+	flush_count         i64 // 총 플러시 작업 수
+	flush_success_count i64 // 성공한 플러시 작업 수
+	flush_error_count   i64 // 실패한 플러시 작업 수
+	flush_total_ms      i64 // 총 플러시 시간 (밀리초)
+	// 컴팩션 메트릭
+	compaction_count         i64 // 총 컴팩션 작업 수
+	compaction_success_count i64 // 성공한 컴팩션 작업 수
+	compaction_error_count   i64 // 실패한 컴팩션 작업 수
+	compaction_total_ms      i64 // 총 컴팩션 시간 (밀리초)
+	compaction_bytes_merged  i64 // 병합된 총 바이트 수
+	// S3 API 메트릭
+	s3_get_count    i64 // S3 GET 요청 수
+	s3_put_count    i64 // S3 PUT 요청 수
+	s3_delete_count i64 // S3 DELETE 요청 수
+	s3_list_count   i64 // S3 LIST 요청 수
+	s3_error_count  i64 // S3 API 에러 수
+	// 캐시 메트릭
+	cache_hit_count  i64 // 캐시 히트 수
+	cache_miss_count i64 // 캐시 미스 수
+	// 오프셋 커밋 메트릭
+	offset_commit_count         i64 // 총 오프셋 커밋 수
+	offset_commit_success_count i64 // 성공한 오프셋 커밋 수
+	offset_commit_error_count   i64 // 실패한 오프셋 커밋 수
+}
+
+/// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
+fn (mut m S3Metrics) reset() {
+	m.flush_count = 0
+	m.flush_success_count = 0
+	m.flush_error_count = 0
+	m.flush_total_ms = 0
+	m.compaction_count = 0
+	m.compaction_success_count = 0
+	m.compaction_error_count = 0
+	m.compaction_total_ms = 0
+	m.compaction_bytes_merged = 0
+	m.s3_get_count = 0
+	m.s3_put_count = 0
+	m.s3_delete_count = 0
+	m.s3_list_count = 0
+	m.s3_error_count = 0
+	m.cache_hit_count = 0
+	m.cache_miss_count = 0
+	m.offset_commit_count = 0
+	m.offset_commit_success_count = 0
+	m.offset_commit_error_count = 0
+}
+
+/// get_summary는 메트릭 요약을 문자열로 반환합니다.
+fn (m &S3Metrics) get_summary() string {
+	flush_success_rate := if m.flush_count > 0 {
+		f64(m.flush_success_count) / f64(m.flush_count) * 100.0
+	} else {
+		0.0
+	}
+	compaction_success_rate := if m.compaction_count > 0 {
+		f64(m.compaction_success_count) / f64(m.compaction_count) * 100.0
+	} else {
+		0.0
+	}
+	cache_hit_rate := if m.cache_hit_count + m.cache_miss_count > 0 {
+		f64(m.cache_hit_count) / f64(m.cache_hit_count + m.cache_miss_count) * 100.0
+	} else {
+		0.0
+	}
+	offset_commit_success_rate := if m.offset_commit_count > 0 {
+		f64(m.offset_commit_success_count) / f64(m.offset_commit_count) * 100.0
+	} else {
+		0.0
+	}
+
+	return '[S3 Metrics]
+  Flush: ${m.flush_count} total, ${m.flush_success_count} success (${flush_success_rate:.1f}%), ${m.flush_total_ms}ms
+  Compaction: ${m.compaction_count} total, ${m.compaction_success_count} success (${compaction_success_rate:.1f}%), ${m.compaction_bytes_merged} bytes merged, ${m.compaction_total_ms}ms
+  S3 API: GET=${m.s3_get_count}, PUT=${m.s3_put_count}, DELETE=${m.s3_delete_count}, LIST=${m.s3_list_count}, errors=${m.s3_error_count}
+  Cache: ${m.cache_hit_count} hits, ${m.cache_miss_count} misses (${cache_hit_rate:.1f}% hit rate)
+  Offset Commit: ${m.offset_commit_count} total, ${m.offset_commit_success_count} success (${offset_commit_success_rate:.1f}%)'
+}
+
 // 참고: CachedPartitionIndex는 partition_index.v에 정의되어 있습니다.
 
 // S3 객체 키 구조:
@@ -100,11 +240,8 @@ struct CachedGroup {
 
 /// new_s3_adapter는 새로운 S3 스토리지 어댑터를 생성합니다.
 pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
-	// Store config in global to work around V struct copy issues
-	g_s3_config = config
-
 	return &S3StorageAdapter{
-		config:                  g_s3_config
+		config:                  config
 		topic_cache:             map[string]CachedTopic{}
 		group_cache:             map[string]CachedGroup{}
 		offset_cache:            map[string]map[string]i64{}
@@ -119,6 +256,26 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 
 /// create_topic은 S3에 새로운 토픽을 생성합니다.
 pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+	// 입력 검증
+	if name.len == 0 {
+		return error('Topic name cannot be empty')
+	}
+	if name.len > max_topic_name_length {
+		return error('Topic name too long: ${name.len} > ${max_topic_name_length}')
+	}
+	// 토픽 이름에 허용되지 않는 문자 확인
+	for ch in name {
+		if !ch.is_alnum() && ch != `_` && ch != `-` && ch != `.` {
+			return error('Invalid character in topic name: ${ch.ascii_str()}')
+		}
+	}
+	if partitions <= 0 {
+		return error('Partition count must be positive: ${partitions}')
+	}
+	if partitions > max_partition_count {
+		return error('Partition count too large: ${partitions} > ${max_partition_count}')
+	}
+
 	// 토픽 존재 여부 확인
 	existing := a.get_topic(name) or { domain.TopicMetadata{} }
 	if existing.name.len > 0 {
@@ -184,7 +341,7 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 	}
 
 	// 토픽 접두사로 시작하는 모든 객체 삭제
-	prefix := '${g_s3_config.prefix}topics/${name}/'
+	prefix := '${a.config.prefix}topics/${name}/'
 	a.delete_objects_with_prefix(prefix)!
 
 	// 캐시에서 제거
@@ -195,7 +352,7 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 
 /// list_topics는 S3에서 모든 토픽 목록을 조회합니다.
 pub fn (mut a S3StorageAdapter) list_topics() ![]domain.TopicMetadata {
-	prefix := '${g_s3_config.prefix}topics/'
+	prefix := '${a.config.prefix}topics/'
 	objects := a.list_objects(prefix)!
 
 	mut topics := []domain.TopicMetadata{}
@@ -236,12 +393,22 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	// 캐시 먼저 확인
 	a.topic_lock.rlock()
 	if cached := a.topic_cache[name] {
-		if time.since(cached.cached_at) < time.minute * 5 {
+		if time.since(cached.cached_at) < topic_cache_ttl {
 			a.topic_lock.runlock()
+			// 캐시 히트 메트릭
+			a.metrics_lock.@lock()
+			a.metrics.cache_hit_count++
+			a.metrics_lock.unlock()
 			return cached.meta
 		}
 	}
 	a.topic_lock.runlock()
+
+	// 캐시 미스 메트릭
+	a.metrics_lock.@lock()
+	a.metrics.cache_miss_count++
+	a.metrics.s3_get_count++
+	a.metrics_lock.unlock()
 
 	// S3에서 조회
 	key := a.topic_metadata_key(name)
@@ -326,9 +493,15 @@ pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
 	key := a.topic_metadata_key(name)
 	a.put_object(key, json.encode(updated_meta).bytes())!
 
-	// 캐시 무효화
+	// 캐시 업데이트 (무효화 대신 직접 업데이트)
 	a.topic_lock.@lock()
-	a.topic_cache.delete(name)
+	if cached := a.topic_cache[name] {
+		a.topic_cache[name] = CachedTopic{
+			meta:      updated_meta
+			etag:      cached.etag
+			cached_at: time.now()
+		}
+	}
 	a.topic_lock.unlock()
 }
 
@@ -365,7 +538,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 		}
 		stored_records << srec
 		// 간단한 크기 추정 (실제 크기는 메타데이터 인코딩으로 인해 더 큼)
-		bytes_to_add += i64(srec.value.len + srec.key.len + 30) // 30은 오프셋, 타임스탬프, 길이 등의 대략적인 오버헤드
+		bytes_to_add += i64(srec.value.len + srec.key.len + record_overhead_bytes)
 	}
 
 	// 3. 인메모리 버퍼 업데이트 및 플러시 확인
@@ -381,7 +554,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	tp_buffer.records << stored_records
 	tp_buffer.current_size_bytes += bytes_to_add
 
-	if tp_buffer.current_size_bytes >= g_s3_config.batch_max_bytes {
+	if tp_buffer.current_size_bytes >= a.config.batch_max_bytes {
 		should_flush = true
 	}
 
@@ -397,7 +570,9 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 
 	// 5. 응답을 위해 인메모리 high_watermark 즉시 업데이트
 	// 다음 append가 올바른 오프셋을 받도록 캐시도 업데이트
+	// index_update_lock을 사용하여 flush와의 경쟁 조건 방지
 	new_high_watermark := base_offset + i64(records.len)
+	a.index_update_lock.@lock()
 	a.topic_lock.@lock()
 	if cached := a.topic_index_cache[partition_key] {
 		mut updated_index := cached.index
@@ -409,6 +584,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 		}
 	}
 	a.topic_lock.unlock()
+	a.index_update_lock.unlock()
 
 	return domain.AppendResult{
 		base_offset:      base_offset
@@ -438,7 +614,7 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		if seg.end_offset < offset {
 			continue
 		}
-		if seg.start_offset > offset + i64(max_bytes / 100) { // 대략적인 추정
+		if seg.start_offset > offset + i64(max_bytes / fetch_offset_estimate_divisor) { // 대략적인 추정
 			break
 		}
 
@@ -446,7 +622,7 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		// 최적화: 세그먼트 시작부터 읽는 경우 Range Request 사용
 		mut data := []u8{}
 		if offset == seg.start_offset && max_bytes > 0 {
-			mut fetch_size := i64(max_bytes) * 2
+			mut fetch_size := i64(max_bytes) * fetch_size_multiplier
 			if fetch_size > seg.size_bytes {
 				fetch_size = -1 // 전체 읽기
 			}
@@ -584,7 +760,7 @@ pub fn (mut a S3StorageAdapter) load_group(group_id string) !domain.ConsumerGrou
 	// 캐시 확인
 	a.group_lock.rlock()
 	if cached := a.group_cache[group_id] {
-		if time.since(cached.cached_at) < time.second * 30 {
+		if time.since(cached.cached_at) < group_cache_ttl {
 			a.group_lock.runlock()
 			return cached.group
 		}
@@ -614,7 +790,7 @@ pub fn (mut a S3StorageAdapter) delete_group(group_id string) ! {
 	a.delete_object(key)!
 
 	// 오프셋도 삭제
-	offsets_prefix := '${g_s3_config.prefix}offsets/${group_id}/'
+	offsets_prefix := '${a.config.prefix}offsets/${group_id}/'
 	a.delete_objects_with_prefix(offsets_prefix)!
 
 	// 캐시에서 제거
@@ -625,7 +801,7 @@ pub fn (mut a S3StorageAdapter) delete_group(group_id string) ! {
 
 /// list_groups는 모든 컨슈머 그룹 목록을 반환합니다.
 pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
-	prefix := '${g_s3_config.prefix}groups/'
+	prefix := '${a.config.prefix}groups/'
 	objects := a.list_objects(prefix)!
 
 	mut groups := []domain.GroupInfo{}
@@ -705,21 +881,60 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 		return
 	}
 
+	// 메트릭: 커밋 시작
+	a.metrics_lock.@lock()
+	a.metrics.offset_commit_count += i64(offsets.len)
+	a.metrics_lock.unlock()
+
 	mut failed := []string{}
 	mut succeeded := []domain.PartitionOffset{}
 
 	// 병렬 커밋 (채널 사용)
-	ch := chan CommitResult{cap: offsets.len}
+	// 채널 버퍼 크기를 합리적인 수준으로 제한 (최대 100)
+	cap_size := if offsets.len > max_offset_commit_buffer {
+		max_offset_commit_buffer
+	} else {
+		offsets.len
+	}
+	ch := chan CommitResult{cap: cap_size}
+	mut active := 0
+	max_concurrent := max_offset_commit_concurrent
 
 	for offset in offsets {
+		// 동시 실행 제한
+		for active >= max_concurrent {
+			result := <-ch
+			active--
+			if result.success {
+				succeeded << result.offset
+			} else {
+				failed << '${result.offset.topic}:${result.offset.partition}'
+				log_message(.error, 'OffsetCommit', 'Offset commit failed', {
+					'group_id':  group_id
+					'topic':     result.offset.topic
+					'partition': result.offset.partition.str()
+					'error':     result.error
+				})
+			}
+		}
+
+		active++
 		spawn fn [mut a, group_id, offset, ch] () {
 			key := a.offset_key(group_id, offset.topic, offset.partition)
 			data := json.encode(offset)
+			// S3에 오프셋 저장 (재시도 포함)
 			a.put_object(key, data.bytes()) or {
+				error_msg := 'S3 put failed for offset ${offset.topic}:${offset.partition} at offset ${offset.offset}: ${err}'
+				log_message(.error, 'OffsetCommit', error_msg, {
+					'group_id':  group_id
+					'topic':     offset.topic
+					'partition': offset.partition.str()
+					'offset':    offset.offset.str()
+				})
 				ch <- CommitResult{
 					offset:  offset
 					success: false
-					error:   err.msg()
+					error:   error_msg
 				}
 				return
 			}
@@ -731,14 +946,19 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 		}()
 	}
 
-	// 결과 수집
-	for _ in 0 .. offsets.len {
+	// 남은 결과 수집
+	for _ in 0 .. active {
 		result := <-ch
 		if result.success {
 			succeeded << result.offset
 		} else {
 			failed << '${result.offset.topic}:${result.offset.partition}'
-			eprintln('[WARN] Failed to commit offset for ${result.offset.topic}:${result.offset.partition}: ${result.error}')
+			log_message(.error, 'OffsetCommit', 'Offset commit failed', {
+				'group_id':  group_id
+				'topic':     result.offset.topic
+				'partition': result.offset.partition.str()
+				'error':     result.error
+			})
 		}
 	}
 
@@ -753,16 +973,39 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 			a.offset_cache[group_id][cache_key] = offset.offset
 		}
 		a.offset_lock.unlock()
+		log_message(.info, 'OffsetCommit', 'Successfully committed offsets', {
+			'group_id': group_id
+			'count':    succeeded.len.str()
+		})
+
+		// 메트릭: 성공 카운트
+		a.metrics_lock.@lock()
+		a.metrics.offset_commit_success_count += i64(succeeded.len)
+		a.metrics.s3_put_count += i64(succeeded.len)
+		a.metrics_lock.unlock()
+	}
+
+	// 실패한 커밋 메트릭
+	if failed.len > 0 {
+		a.metrics_lock.@lock()
+		a.metrics.offset_commit_error_count += i64(failed.len)
+		a.metrics.s3_error_count += i64(failed.len)
+		a.metrics_lock.unlock()
 	}
 
 	// 모든 커밋이 실패한 경우에만 에러 반환
 	if failed.len == offsets.len {
-		return error('all offset commits failed: ${failed.join(', ')}')
+		return error('All ${offsets.len} offset commits failed for group ${group_id}: ${failed.join(', ')}')
 	}
 
-	// 부분 성공은 허용됨
+	// 부분 성공은 허용하되 경고 로그
 	if failed.len > 0 {
-		eprintln('[WARN] Partial offset commit success: ${succeeded.len} succeeded, ${failed.len} failed')
+		log_message(.warn, 'OffsetCommit', 'Partial offset commit', {
+			'group_id':       group_id
+			'succeeded':      succeeded.len.str()
+			'failed':         failed.len.str()
+			'failed_offsets': failed.join(', ')
+		})
 	}
 }
 
@@ -843,7 +1086,7 @@ pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []doma
 /// health_check는 스토리지 상태를 확인합니다.
 pub fn (mut a S3StorageAdapter) health_check() !port.HealthStatus {
 	// 소수의 객체 목록 조회 시도
-	_ := a.list_objects(g_s3_config.prefix) or { return .unhealthy }
+	_ := a.list_objects(a.config.prefix) or { return .unhealthy }
 	return .healthy
 }
 
@@ -870,27 +1113,27 @@ pub fn (mut a S3StorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetada
 
 /// topic_metadata_key는 토픽 메타데이터의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) topic_metadata_key(name string) string {
-	return '${g_s3_config.prefix}topics/${name}/metadata.json'
+	return '${a.config.prefix}topics/${name}/metadata.json'
 }
 
 /// partition_index_key는 파티션 인덱스의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) partition_index_key(topic string, partition int) string {
-	return '${g_s3_config.prefix}topics/${topic}/partitions/${partition}/index.json'
+	return '${a.config.prefix}topics/${topic}/partitions/${partition}/index.json'
 }
 
 /// log_segment_key는 로그 세그먼트의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) log_segment_key(topic string, partition int, start i64, end i64) string {
-	return '${g_s3_config.prefix}topics/${topic}/partitions/${partition}/log-${start:016}-${end:016}.bin'
+	return '${a.config.prefix}topics/${topic}/partitions/${partition}/log-${start:016}-${end:016}.bin'
 }
 
 /// group_key는 컨슈머 그룹의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) group_key(group_id string) string {
-	return '${g_s3_config.prefix}groups/${group_id}/state.json'
+	return '${a.config.prefix}groups/${group_id}/state.json'
 }
 
 /// offset_key는 오프셋의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int) string {
-	return '${g_s3_config.prefix}offsets/${group_id}/${topic}:${partition}.json'
+	return '${a.config.prefix}offsets/${group_id}/${topic}:${partition}.json'
 }
 
 // ============================================================
@@ -918,6 +1161,37 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 	a.compactor_running = true
 	go a.flush_worker()
 	go a.compaction_worker()
+}
+
+// ============================================================
+// 메트릭 조회 (Metrics Query)
+// ============================================================
+
+/// get_metrics는 현재 메트릭 스냅샷을 반환합니다.
+pub fn (mut a S3StorageAdapter) get_metrics() S3Metrics {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	return a.metrics
+}
+
+/// get_metrics_summary는 메트릭 요약 문자열을 반환합니다.
+pub fn (mut a S3StorageAdapter) get_metrics_summary() string {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	return a.metrics.get_summary()
+}
+
+/// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
+pub fn (mut a S3StorageAdapter) reset_metrics() {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	a.metrics.reset()
 }
 
 // 참고: compaction_worker, compact_all_partitions, compact_partition, merge_segments는
