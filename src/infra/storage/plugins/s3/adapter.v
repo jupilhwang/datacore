@@ -7,6 +7,7 @@ import time
 import json
 import crypto.md5
 import sync
+import net.http
 
 // NOTE: S3 client functions in s3_client.v; index types in partition_index.v;
 // buffer types in buffer_manager.v; compaction in compaction.v
@@ -93,6 +94,12 @@ struct CachedTopic {
 struct CachedGroup {
 	group     domain.ConsumerGroup
 	etag      string
+	cached_at time.Time
+}
+
+/// CachedSignature는 캐시된 서명 정보를 담습니다.
+struct CachedSignature {
+	header    http.Header
 	cached_at time.Time
 }
 
