@@ -176,10 +176,6 @@ pub fn parse_options(args []string) CliOptions {
 	return opts
 }
 
-// ============================================================
-// PID 파일 관리
-// ============================================================
-
 /// write_pid는 현재 프로세스 PID를 파일에 씁니다.
 pub fn write_pid(path string) ! {
 	pid := os.getpid()
@@ -211,10 +207,6 @@ pub fn check_pid_running(pid int) bool {
 	}
 	return false
 }
-
-// ============================================================
-// 배너 및 UI
-// ============================================================
 
 /// print_banner는 시작 배너를 출력합니다.
 pub fn print_banner(app &App) {
@@ -249,10 +241,6 @@ pub fn print_shutdown() {
 pub fn print_shutdown_complete() {
 	println('\x1b[32m✓\x1b[0m Broker stopped.')
 }
-
-// ============================================================
-// 상태 표시
-// ============================================================
 
 /// BrokerStatus는 브로커 상태 정보를 담는 구조체입니다.
 pub struct BrokerStatus {
@@ -306,10 +294,6 @@ fn format_duration(d time.Duration) string {
 	return '${secs}s'
 }
 
-// ============================================================
-// 진행 상태 및 스피너
-// ============================================================
-
 /// print_progress는 진행 상태 표시기를 출력합니다.
 pub fn print_progress(message string) {
 	print('\x1b[90m⏳ ${message}...\x1b[0m')
@@ -325,10 +309,6 @@ pub fn print_failed(err string) {
 	println(' \x1b[31m✗\x1b[0m')
 	println('\x1b[31mError:\x1b[0m ${err}')
 }
-
-// ============================================================
-// 확인 프롬프트
-// ============================================================
 
 /// confirm은 사용자 확인을 요청합니다.
 pub fn confirm(message string) bool {

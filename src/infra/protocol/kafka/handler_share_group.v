@@ -6,9 +6,7 @@ module kafka
 import domain
 import service.group
 
-// ============================================================================
 // 핸들러
-// ============================================================================
 
 // handle_share_group_heartbeat는 ShareGroupHeartbeat 요청을 처리합니다 (API Key 76)
 fn (mut h Handler) handle_share_group_heartbeat(body []u8, version i16) ![]u8 {

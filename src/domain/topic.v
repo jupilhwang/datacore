@@ -24,6 +24,7 @@ pub:
 /// cleanup_policy: 정리 정책 ('delete' 또는 'compact')
 /// min_insync_replicas: 최소 동기화 레플리카 수
 /// max_message_bytes: 최대 메시지 크기
+/// compression_type: 압축 타입 ('none', 'gzip', 'snappy', 'lz4', 'zstd')
 pub struct TopicConfig {
 pub:
 	retention_ms        i64    = 604800000  // 7일
@@ -32,6 +33,7 @@ pub:
 	cleanup_policy      string = 'delete'
 	min_insync_replicas int    = 1
 	max_message_bytes   int    = 1048576 // 1MB
+	compression_type    string = 'none'  // 압축 타입
 }
 
 /// TopicMetadata는 API 응답을 위한 토픽 메타데이터를 나타냅니다.

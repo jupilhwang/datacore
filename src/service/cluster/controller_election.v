@@ -7,9 +7,7 @@ import service.port
 import sync
 import time
 
-// ============================================================================
 // 컨트롤러 선출 상수
-// ============================================================================
 
 // 컨트롤러 선출을 위한 락 이름
 const controller_lock_name = 'controller-election'
@@ -20,9 +18,7 @@ const controller_lock_ttl_ms = i64(30000) // 30초
 // 컨트롤러 갱신 주기 (TTL보다 짧아야 함)
 const controller_refresh_interval_ms = 10000 // 10초
 
-// ============================================================================
 // 컨트롤러 선출기
-// ============================================================================
 
 /// ControllerElector는 멀티 브로커 모드에서 컨트롤러 선출을 관리한다
 pub struct ControllerElector {
@@ -66,9 +62,7 @@ pub fn new_controller_elector(config ControllerElectorConfig, metadata_port ?por
 	}
 }
 
-// ============================================================================
 // 선출 작업
-// ============================================================================
 
 /// try_become_controller는 컨트롤러가 되기를 시도한다
 /// 이 브로커가 컨트롤러가 되면 true를 반환한다
@@ -172,9 +166,7 @@ fn (mut e ControllerElector) lose_controller_internal() {
 	}
 }
 
-// ============================================================================
 // 조회 작업
-// ============================================================================
 
 /// is_controller는 이 브로커가 컨트롤러인지 반환한다
 pub fn (e &ControllerElector) is_controller() bool {
@@ -206,9 +198,7 @@ pub fn (mut e ControllerElector) discover_controller() !i32 {
 	return e.broker_id
 }
 
-// ============================================================================
 // 백그라운드 워커
-// ============================================================================
 
 /// start는 컨트롤러 선출 백그라운드 워커를 시작한다
 pub fn (mut e ControllerElector) start() {
@@ -251,9 +241,7 @@ fn (mut e ControllerElector) election_loop() {
 	}
 }
 
-// ============================================================================
 // 콜백
-// ============================================================================
 
 /// set_on_become_controller는 이 브로커가 컨트롤러가 될 때의 콜백을 설정한다
 pub fn (mut e ControllerElector) set_on_become_controller(callback fn ()) {
@@ -270,9 +258,7 @@ pub fn (mut e ControllerElector) set_on_controller_changed(callback fn (i32)) {
 	e.on_controller_changed = callback
 }
 
-// ============================================================================
 // 컨트롤러 태스크 (컨트롤러에서만 실행)
-// ============================================================================
 
 /// ControllerTask는 컨트롤러에서만 실행되어야 하는 태스크를 나타낸다
 pub struct ControllerTask {

@@ -6,12 +6,11 @@
 // 토픽/파티션별 오프셋 기반 데이터 조회를 지원합니다.
 module kafka
 
+import infra.compression
 import infra.observability
 import time
 
-// ============================================================================
 // Fetch (API Key 1) - 메시지 조회 API
-// ============================================================================
 
 /// Fetch 요청 - 컨슈머가 브로커에서 메시지를 가져오기 위한 요청
 ///
@@ -313,6 +312,7 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 
 // Fetch 요청을 처리합니다 (Frame 기반).
 // 요청된 토픽/파티션에서 메시지를 조회하여 응답을 생성합니다.
+// 압축 지원: 토픽 설정에 따라 레코드를 압축하여 전송합니다.
 fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	start_time := time.now()
 
@@ -323,6 +323,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	mut topics := []FetchResponseTopic{}
 	mut total_records := 0
 	mut total_bytes := i64(0)
+	mut total_bytes_saved := i64(0)
 
 	for t in req.topics {
 		mut topic_name := t.name
@@ -334,6 +335,9 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 				topic_id = topic_meta.topic_id.clone()
 			}
 		}
+
+		// 토픽 설정에서 압축 타입 조회
+		preferred_compression := h.get_topic_compression_type(topic_name)
 
 		// 각 파티션에서 데이터 조회
 		mut partitions := []FetchResponsePartition{}
@@ -367,11 +371,18 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			// 조회된 레코드를 RecordBatch 형식으로 인코딩
 			records_data := encode_record_batch_zerocopy(result.records, p.fetch_offset)
 			total_records += result.records.len
-			total_bytes += records_data.len
+
+			// 압축 처리
+			compressed_result := h.compress_records_for_fetch(records_data, preferred_compression,
+				topic_name, p.partition)
+			final_records_data := compressed_result.data
+			total_bytes_saved += compressed_result.bytes_saved
+
+			total_bytes += final_records_data.len
 
 			h.logger.trace('Fetch partition success', observability.field_string('topic',
 				topic_name), observability.field_int('partition', p.partition), observability.field_int('records',
-				result.records.len), observability.field_bytes('response_size', records_data.len))
+				result.records.len), observability.field_bytes('response_size', final_records_data.len))
 
 			partitions << FetchResponsePartition{
 				partition_index:    p.partition
@@ -379,7 +390,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 				high_watermark:     result.high_watermark
 				last_stable_offset: result.last_stable_offset
 				log_start_offset:   result.log_start_offset
-				records:            records_data
+				records:            final_records_data
 			}
 		}
 		topics << FetchResponseTopic{
@@ -392,7 +403,8 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	elapsed := time.since(start_time)
 	h.logger.debug('Fetch request completed', observability.field_int('topics', topics.len),
 		observability.field_int('total_records', total_records), observability.field_bytes('total_bytes',
-		total_bytes), observability.field_duration('latency', elapsed))
+		total_bytes), observability.field_bytes('bytes_saved', total_bytes_saved), observability.field_duration('latency',
+		elapsed))
 
 	return FetchResponse{
 		throttle_time_ms: 0
@@ -400,6 +412,89 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 		session_id:       0
 		topics:           topics
 		node_endpoints:   []NodeEndpoint{} // v16+에서 사용, 현재는 빈 배열
+	}
+}
+
+// get_topic_compression_type은 토픽의 압축 타입을 조회합니다.
+// 토픽 설정에서 compression.type을 읽어 CompressionType으로 변환합니다.
+fn (mut h Handler) get_topic_compression_type(topic_name string) compression.CompressionType {
+	// 기본값은 none
+	mut compression_type := compression.CompressionType.none
+
+	// 토픽 메타데이터에서 설정 조회 (TopicMetadata.config는 map[string]string)
+	if topic_meta := h.storage.get_topic(topic_name) {
+		// Kafka 표준 설정 키: compression.type
+		compression_str := topic_meta.config['compression.type']
+		if compression_str.len > 0 && compression_str != 'none' {
+			if ct := compression.compression_type_from_string(compression_str) {
+				compression_type = ct
+			}
+		}
+	}
+
+	return compression_type
+}
+
+// CompressionResult는 압축 결과를 나타냅니다.
+struct CompressionResult {
+pub:
+	data        []u8 // 압축된 데이터 또는 원본 데이터
+	bytes_saved i64  // 절약된 바이트 수 (0 if no compression)
+}
+
+// compress_records_for_fetch는 Fetch 응답용으로 레코드를 압축합니다.
+// 압축이 유효하지 않은 경우(크기 증가) 원본 데이터를 반환합니다.
+fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_type compression.CompressionType, topic_name string, partition i32) CompressionResult {
+	// 압축이 필요 없는 경우
+	if compression_type == .none || records_data.len == 0 {
+		return CompressionResult{
+			data:        records_data
+			bytes_saved: 0
+		}
+	}
+
+	// 작은 데이터는 압축하지 않음 (임계값: 256바이트)
+	if records_data.len < 256 {
+		return CompressionResult{
+			data:        records_data
+			bytes_saved: 0
+		}
+	}
+
+	// 압축 수행
+	compressed := h.compression_service.compress(records_data, compression_type) or {
+		h.logger.warn('Compression failed, returning uncompressed data', observability.field_string('topic',
+			topic_name), observability.field_int('partition', partition), observability.field_string('compression_type',
+			compression_type.str()), observability.field_err_str(err.str()))
+		return CompressionResult{
+			data:        records_data
+			bytes_saved: 0
+		}
+	}
+
+	// 압축이 크기를 증가시키는 경우 원본 반환
+	if compressed.len >= records_data.len {
+		h.logger.debug('Compression increased size, using uncompressed data', observability.field_string('topic',
+			topic_name), observability.field_int('partition', partition), observability.field_int('original_size',
+			records_data.len), observability.field_int('compressed_size', compressed.len))
+		return CompressionResult{
+			data:        records_data
+			bytes_saved: 0
+		}
+	}
+
+	// 압축 성공 - 바이트 절약량 계산
+	bytes_saved := records_data.len - compressed.len
+
+	h.logger.debug('Records compressed for fetch', observability.field_string('topic',
+		topic_name), observability.field_int('partition', partition), observability.field_string('compression_type',
+		compression_type.str()), observability.field_int('original_size', records_data.len),
+		observability.field_int('compressed_size', compressed.len), observability.field_int('bytes_saved',
+		bytes_saved))
+
+	return CompressionResult{
+		data:        compressed
+		bytes_saved: bytes_saved
 	}
 }
 
@@ -465,9 +560,7 @@ fn simple_fetch_to_fetch_request(simple SimpleFetchRequest) FetchRequest {
 	}
 }
 
-// ============================================================================
 // SimpleFetchRequest 파서 (Fetch 요청 파싱용)
-// ============================================================================
 
 /// SimpleFetchRequest - 경량 Fetch 요청 구조체
 /// zerocopy_fetch.v와의 호환성을 위해 사용됩니다.

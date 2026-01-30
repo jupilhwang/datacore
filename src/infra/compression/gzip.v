@@ -4,7 +4,7 @@ module compression
 
 import compress.gzip
 
-/// GzipCompressor는 Gzip 압축 알고리즘을 구현합니다.
+/// Gzip 압축 알고리즘 구현.
 pub struct GzipCompressor {
 	level int
 }

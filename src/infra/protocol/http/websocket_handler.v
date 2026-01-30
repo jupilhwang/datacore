@@ -11,9 +11,7 @@ import service.port
 import time
 import infra.observability
 
-// ============================================================================
 // 로깅 (Logging)
-// ============================================================================
 
 /// log_message는 구조화된 로그 메시지를 출력합니다.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
@@ -27,9 +25,7 @@ fn log_message(level observability.LogLevel, component string, message string, c
 	}
 }
 
-// ============================================================================
 // WebSocket 핸들러
-// ============================================================================
 
 /// WebSocketHandler는 WebSocket HTTP 요청을 처리합니다.
 pub struct WebSocketHandler {
@@ -52,9 +48,7 @@ pub fn new_websocket_handler(storage port.StoragePort, config domain.WebSocketCo
 	}
 }
 
-// ============================================================================
 // WebSocket 업그레이드 처리
-// ============================================================================
 
 /// handle_upgrade는 WebSocket 업그레이드 요청을 처리합니다.
 pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map[string]string, client_ip string) !string {
@@ -163,9 +157,7 @@ fn generate_accept_key(key string) string {
 	return base64.encode(hash)
 }
 
-// ============================================================================
 // WebSocket 프레임 처리
-// ============================================================================
 
 /// WebSocketOpcode는 WebSocket 프레임 opcode를 나타냅니다.
 enum WebSocketOpcode {
@@ -263,9 +255,7 @@ fn (mut h WebSocketHandler) poll_loop(conn_id string) {
 	}
 }
 
-// ============================================================================
 // 프레임 읽기
-// ============================================================================
 
 /// read_frame은 연결에서 WebSocket 프레임을 읽습니다.
 fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
@@ -329,9 +319,7 @@ fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
 	}
 }
 
-// ============================================================================
 // 프레임 쓰기
-// ============================================================================
 
 /// send_text_frame은 텍스트 프레임을 전송합니다.
 fn (mut h WebSocketHandler) send_text_frame(mut conn net.TcpConn, message string) ! {
@@ -381,9 +369,7 @@ fn (mut h WebSocketHandler) send_frame(mut conn net.TcpConn, opcode WebSocketOpc
 	conn.write(frame) or { return error('Failed to write frame') }
 }
 
-// ============================================================================
 // 메시지 처리
-// ============================================================================
 
 /// handle_text_message는 텍스트 메시지를 처리합니다.
 fn (mut h WebSocketHandler) handle_text_message(conn_id string, payload []u8) {
@@ -434,9 +420,7 @@ fn (mut h WebSocketHandler) handle_close(conn_id string, mut conn net.TcpConn, p
 	h.send_close(mut conn, code, '') or {}
 }
 
-// ============================================================================
 // JSON 파싱
-// ============================================================================
 
 /// parse_ws_message는 JSON에서 WebSocket 메시지를 파싱합니다.
 fn parse_ws_message(json_str string) !domain.WebSocketMessage {
@@ -637,9 +621,7 @@ fn unescape_json_string(s string) string {
 	return result
 }
 
-// ============================================================================
 // 통계
-// ============================================================================
 
 /// get_stats는 WebSocket 서비스 통계를 반환합니다.
 pub fn (mut h WebSocketHandler) get_stats() streaming.WebSocketStats {

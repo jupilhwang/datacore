@@ -23,9 +23,7 @@ import os
 import service.port
 import time
 
-// ============================================================================
 // REST API 서버
-// ============================================================================
 
 /// RestServerConfig는 REST 서버 설정을 담는 구조체입니다.
 pub struct RestServerConfig {
@@ -39,7 +37,8 @@ pub:
 	ws_config       domain.WebSocketConfig // WebSocket 설정
 }
 
-/// default_rest_config는 기본 REST 서버 설정을 반환합니다.
+/// default_rest_config - returns default REST server configuration
+/// default_rest_config - returns default REST server configuration
 pub fn default_rest_config() RestServerConfig {
 	return RestServerConfig{
 		sse_config: domain.default_sse_config()
@@ -61,7 +60,8 @@ mut:
 	ready       bool // 트래픽 수신 준비 상태
 }
 
-/// new_rest_server는 새로운 REST API 서버를 생성합니다.
+/// new_rest_server - creates a new REST API server
+/// new_rest_server - creates a new REST API server
 pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestServer {
 	return &RestServer{
 		config:      config
@@ -75,7 +75,8 @@ pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestS
 	}
 }
 
-/// start는 REST API 서버를 시작합니다 (블로킹).
+/// start - starts the REST API server (blocking)
+/// start - starts the REST API server (blocking)
 pub fn (mut s RestServer) start() ! {
 	mut listener := net.listen_tcp(.ip, '${s.config.host}:${s.config.port}')!
 	s.running = true
@@ -108,14 +109,16 @@ pub fn (mut s RestServer) start() ! {
 	listener.close() or {}
 }
 
-/// start_background는 REST API 서버를 백그라운드에서 시작합니다.
+/// start_background - starts the REST API server in background
+/// start_background - starts the REST API server in background
 pub fn (mut s RestServer) start_background() {
 	spawn fn [mut s] () {
 		s.start() or { eprintln('[REST] Failed to start server: ${err}') }
 	}()
 }
 
-/// stop은 REST API 서버를 중지합니다.
+/// stop - stops the REST API server
+/// stop - stops the REST API server
 pub fn (mut s RestServer) stop() {
 	s.running = false
 	println('[REST] Server stopped')
@@ -155,7 +158,7 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 	for {
 		header_line := reader.read_line() or { break }
 		trimmed := header_line.trim_right('\r\n')
-		if trimmed.len == 0 {
+		if trimmed == '' {
 			break
 		}
 		if idx := trimmed.index(':') {
@@ -237,9 +240,7 @@ fn (mut s RestServer) route_request(method string, path string, query map[string
 	conn.close() or {}
 }
 
-// ============================================================================
 // WebSocket 핸들러
-// ============================================================================
 
 // handle_websocket은 WebSocket 업그레이드 요청을 처리합니다.
 fn (mut s RestServer) handle_websocket(headers map[string]string, client_ip string, mut conn net.TcpConn) {
@@ -268,9 +269,7 @@ fn (mut s RestServer) handle_ws_stats(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// ============================================================================
 // SSE 핸들러
-// ============================================================================
 
 // handle_sse는 SSE 스트리밍 요청을 처리합니다.
 fn (mut s RestServer) handle_sse(path string, query map[string]string, headers map[string]string, client_ip string, mut conn net.TcpConn) {
@@ -296,7 +295,7 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 
 	// 헤더에서 연결 ID 가져오기
 	conn_id := resp_headers['X-SSE-Connection-Id'] or { '' }
-	if conn_id.len == 0 {
+	if conn_id == '' {
 		s.send_error(mut conn, 500, 'Failed to create SSE connection')
 		conn.close() or {}
 		return
@@ -344,9 +343,7 @@ fn (mut s RestServer) handle_sse_stats(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// ============================================================================
 // 헬스 & 메트릭 핸들러
-// ============================================================================
 
 // handle_health는 /health 엔드포인트를 처리합니다.
 // 스토리지 상태를 포함한 전체 헬스 상태를 반환합니다.
@@ -429,9 +426,7 @@ fn (s &RestServer) handle_metrics(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// ============================================================================
 // Topics API 핸들러
-// ============================================================================
 
 // handle_topics_api는 토픽 REST API 요청을 처리합니다.
 fn (mut s RestServer) handle_topics_api(method string, path string, query map[string]string, mut conn net.TcpConn) {
@@ -487,9 +482,7 @@ fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// ============================================================================
 // 응답 헬퍼
-// ============================================================================
 
 // send_json은 JSON 응답을 전송합니다.
 fn (s &RestServer) send_json(mut conn net.TcpConn, status int, body string) {
@@ -515,9 +508,7 @@ fn (s &RestServer) send_error(mut conn net.TcpConn, status int, message string) 
 	s.send_json(mut conn, status, body)
 }
 
-// ============================================================================
 // 헬퍼 함수
-// ============================================================================
 
 // serve_static_file은 정적 디렉토리에서 정적 파일을 서빙합니다.
 fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
@@ -583,7 +574,7 @@ fn get_content_type(path string) string {
 // parse_query_string은 URL 쿼리 문자열을 맵으로 파싱합니다.
 fn parse_query_string(query string) map[string]string {
 	mut result := map[string]string{}
-	if query.len == 0 {
+	if query == '' {
 		return result
 	}
 

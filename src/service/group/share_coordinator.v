@@ -9,9 +9,7 @@ import sync
 import time
 import rand
 
-// ============================================================================
 // Share 그룹 코디네이터
-// ============================================================================
 
 /// ShareGroupCoordinator는 share 그룹을 관리합니다.
 /// 멤버십 관리, 파티션 할당, 레코드 상태 추적을 담당합니다.
@@ -45,9 +43,7 @@ pub fn new_share_group_coordinator(storage port.StoragePort, config domain.Share
 	}
 }
 
-// ============================================================================
 // 그룹 관리
-// ============================================================================
 
 /// get_or_create_group은 share 그룹을 가져오거나 생성합니다.
 pub fn (mut c ShareGroupCoordinator) get_or_create_group(group_id string) &domain.ShareGroup {
@@ -106,9 +102,7 @@ pub fn (mut c ShareGroupCoordinator) list_groups() []string {
 	return groups
 }
 
-// ============================================================================
 // 멤버 관리
-// ============================================================================
 
 /// ShareGroupHeartbeatRequest는 하트비트 요청을 나타냅니다.
 pub struct ShareGroupHeartbeatRequest {
@@ -296,9 +290,7 @@ pub fn (mut c ShareGroupCoordinator) remove_expired_members() {
 	}
 }
 
-// ============================================================================
 // 할당
-// ============================================================================
 
 /// compute_assignment는 모든 멤버에 대한 파티션 할당을 계산합니다.
 fn (mut c ShareGroupCoordinator) compute_assignment(mut group domain.ShareGroup) {
@@ -348,9 +340,7 @@ fn (mut c ShareGroupCoordinator) get_or_create_group_internal(group_id string) &
 	return new_group
 }
 
-// ============================================================================
 // 파티션 관리 (위임)
-// ============================================================================
 
 /// get_or_create_partition은 share 파티션을 가져오거나 생성합니다.
 pub fn (mut c ShareGroupCoordinator) get_or_create_partition(group_id string, topic_name string, partition i32) &domain.SharePartition {
@@ -362,9 +352,7 @@ pub fn (mut c ShareGroupCoordinator) get_partition(group_id string, topic_name s
 	return c.partition_manager.get_partition(group_id, topic_name, partition)
 }
 
-// ============================================================================
 // 레코드 획득 (위임)
-// ============================================================================
 
 /// acquire_records는 컨슈머를 위해 레코드를 획득합니다.
 pub fn (mut c ShareGroupCoordinator) acquire_records(group_id string, member_id string, topic_name string, partition i32, max_records int) []domain.AcquiredRecordInfo {
@@ -412,9 +400,7 @@ pub fn (mut c ShareGroupCoordinator) release_expired_locks() {
 	c.partition_manager.release_expired_locks_with_limits(group_limits)
 }
 
-// ============================================================================
 // 세션 관리 (위임)
-// ============================================================================
 
 /// get_or_create_session은 share 세션을 가져오거나 생성합니다.
 pub fn (mut c ShareGroupCoordinator) get_or_create_session(group_id string, member_id string) &domain.ShareSession {
@@ -435,9 +421,7 @@ pub fn (mut c ShareGroupCoordinator) close_session(group_id string, member_id st
 	c.session_manager.close_session(group_id, member_id)
 }
 
-// ============================================================================
 // 통계
-// ============================================================================
 
 /// ShareGroupStats는 share 그룹의 통계를 담습니다.
 pub struct ShareGroupStats {
@@ -476,9 +460,7 @@ pub fn (mut c ShareGroupCoordinator) get_stats(group_id string) ShareGroupStats 
 	}
 }
 
-// ============================================================================
 // 헬퍼 함수
-// ============================================================================
 
 /// generate_member_id는 UUID 형식의 멤버 ID를 생성합니다.
 fn generate_member_id() string {

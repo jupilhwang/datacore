@@ -5,10 +5,8 @@ module schema
 
 import domain
 
-// ============================================================================
 // Protobuf Binary Encoder
 // Implements Protocol Buffers wire format encoding
-// ============================================================================
 
 pub struct ProtobufEncoder {}
 
@@ -311,9 +309,7 @@ fn (e &ProtobufEncoder) skip_field(mut reader ProtoReader, wire_type int) ! {
 	}
 }
 
-// ============================================================================
 // Protobuf Encoding Helpers
-// ============================================================================
 
 fn proto_encode_varint(val u64) []u8 {
 	mut result := []u8{}
@@ -368,9 +364,7 @@ fn proto_encode_fixed64(val u64) []u8 {
 	]
 }
 
-// ============================================================================
 // Protobuf Decoding Helpers
-// ============================================================================
 
 struct ProtoReader {
 mut:
@@ -459,9 +453,7 @@ fn get_wire_type(field_type string) int {
 	}
 }
 
-// ============================================================================
 // Protobuf Schema Parsing
-// ============================================================================
 
 struct ProtoMessage {
 mut:

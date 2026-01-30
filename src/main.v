@@ -15,6 +15,7 @@ import domain
 import interface.server
 import interface.cli
 import interface.rest
+import infra.compression
 import infra.protocol.kafka
 import infra.storage.plugins.memory
 import infra.storage.plugins.s3
@@ -225,11 +226,19 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	cli.print_done()
 
-	// 2. Create Protocol Handler with storage injection
+	// 2. Create Compression Service
+	cli.print_progress('Initializing compression service')
+	compression_service := compression.new_default_compression_service() or {
+		cli.print_failed('Failed to initialize compression service: ${err}')
+		exit(1)
+	}
+	cli.print_done()
+
+	// 3. Create Protocol Handler with storage and compression injection
 	cli.print_progress('Initializing Kafka protocol handler')
 	// Pass advertised host/port to handler so metadata responses contain the correct connect string
 	mut protocol_handler := kafka.new_handler(conf.broker.broker_id, conf.broker.advertised_host,
-		conf.broker.port, conf.broker.cluster_id, storage)
+		conf.broker.port, conf.broker.cluster_id, storage, compression_service)
 	cli.print_done()
 
 	// 3. Initialize Broker Registry for multi-broker mode (S3 storage)

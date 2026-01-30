@@ -118,11 +118,6 @@ pub fn run_group_describe(opts GroupOptions) ! {
 	println('  Use kafka-consumer-groups.sh for complete information')
 }
 
-// ============================================================
-// Kafka 프로토콜 헬퍼
-// ============================================================
-
-// build_list_groups_request는 ListGroups 요청을 생성합니다.
 fn build_list_groups_request() []u8 {
 	mut body := []u8{}
 

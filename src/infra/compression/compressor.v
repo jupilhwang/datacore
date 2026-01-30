@@ -2,7 +2,7 @@
 /// Kafka 프로토콜과 호환되는 압축 타입 및 Compressor 인터페이스 정의
 module compression
 
-/// CompressionType은 Kafka 프로토콜과 호환되는 압축 알고리즘 타입입니다.
+/// 압축 알고리즘 타입.
 pub enum CompressionType {
 	none   = 0
 	gzip   = 1
@@ -34,7 +34,7 @@ pub fn compression_type_from_string(s string) !CompressionType {
 	}
 }
 
-/// Compressor는 압축/해제 기능을 제공하는 인터페이스입니다.
+/// 인터페이스.
 pub interface Compressor {
 	compress(data []u8) ![]u8
 	decompress(data []u8) ![]u8

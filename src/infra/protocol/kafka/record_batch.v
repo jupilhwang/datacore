@@ -5,9 +5,7 @@ module kafka
 import domain
 import infra.protocol.kafka.crc32c
 
-// ============================================================================
 // 헬퍼 함수
-// ============================================================================
 
 /// varint_size는 varint의 인코딩된 크기를 계산합니다.
 /// 정확성을 위해 codec.v의 write_varint와 동일한 ZigZag 인코딩을 사용합니다.
@@ -62,9 +60,7 @@ fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.R
 	return size
 }
 
-// ============================================================================
 // RecordBatch 인코딩
-// ============================================================================
 
 /// encode_record_batch_zerocopy는 레코드를 Kafka RecordBatch 형식으로 인코딩합니다.
 /// RecordBatch 형식 (v2):
@@ -210,9 +206,7 @@ fn estimate_batch_size(records []domain.Record) int {
 	return size
 }
 
-// ============================================================================
 // CRC32-C 체크섬 (crc32c 모듈 사용)
-// ============================================================================
 
 /// calculate_crc32c는 Castagnoli 다항식을 사용하여 CRC32-C 체크섬을 계산합니다.
 /// Kafka RecordBatch 검증에 필수적인 함수입니다.

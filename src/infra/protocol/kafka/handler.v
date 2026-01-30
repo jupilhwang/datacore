@@ -6,6 +6,7 @@
 // 응답을 생성합니다.
 module kafka
 
+import infra.compression
 import infra.observability
 import rand
 import service.cluster
@@ -38,14 +39,15 @@ mut:
 	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
 	share_group_coordinator ?&group.ShareGroupCoordinator       // Optional: Share group coordinator (KIP-932)
 	logger                  &observability.Logger
-	metrics                 &observability.ProtocolMetrics // Protocol metrics collector
+	metrics                 &observability.ProtocolMetrics  // Protocol metrics collector
+	compression_service     &compression.CompressionService // Compression service for record decompression
 }
 
 /// 스토리지와 함께 새로운 Kafka 프로토콜 핸들러를 생성합니다.
 ///
 /// 기본 핸들러로, 인증이나 ACL 없이 스토리지만 사용합니다.
 /// 개발/테스트 환경에 적합합니다.
-pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
+pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
 	metrics := observability.new_protocol_metrics()
@@ -65,13 +67,14 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 		share_group_coordinator: none
 		logger:                  logger
 		metrics:                 metrics
+		compression_service:     compression_service
 	}
 }
 
 /// 스토리지와 인증 매니저를 포함한 새로운 Kafka 프로토콜 핸들러를 생성합니다.
 ///
 /// SASL 인증이 필요한 환경에서 사용합니다.
-pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager) Handler {
+pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
 	metrics := observability.new_protocol_metrics()
@@ -91,13 +94,14 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 		share_group_coordinator: none
 		logger:                  logger
 		metrics:                 metrics
+		compression_service:     compression_service
 	}
 }
 
 /// 모든 컴포넌트를 포함한 완전한 Kafka 프로토콜 핸들러를 생성합니다.
 ///
 /// 프로덕션 환경에서 인증, ACL, 트랜잭션을 모두 지원할 때 사용합니다.
-pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator) Handler {
+pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
 	metrics := observability.new_protocol_metrics()
@@ -117,13 +121,14 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 		share_group_coordinator: none
 		logger:                  logger
 		metrics:                 metrics
+		compression_service:     compression_service
 	}
 }
 
 /// Share Group 지원을 포함한 Kafka 프로토콜 핸들러를 생성합니다 (KIP-932).
 ///
 /// 큐 기반 메시지 소비 패턴을 지원합니다.
-pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator) Handler {
+pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
 	metrics := observability.new_protocol_metrics()
@@ -143,6 +148,7 @@ pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32
 		share_group_coordinator: share_coordinator
 		logger:                  logger
 		metrics:                 metrics
+		compression_service:     compression_service
 	}
 }
 
@@ -541,10 +547,6 @@ fn generate_uuid() []u8 {
 	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 변형
 	return uuid
 }
-
-// ============================================================
-// 메트릭 조회 (Metrics Query)
-// ============================================================
 
 /// get_metrics_summary는 프로토콜 메트릭 요약을 반환합니다.
 pub fn (mut h Handler) get_metrics_summary() string {

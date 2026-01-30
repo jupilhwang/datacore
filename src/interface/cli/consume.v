@@ -187,11 +187,6 @@ pub fn run_consume(opts ConsumeOptions) ! {
 	println('\x1b[32m✓\x1b[0m Consumed ${message_count} message(s)')
 }
 
-// ============================================================
-// 타입 정의
-// ============================================================
-
-// ConsumedRecord는 소비된 레코드를 나타내는 구조체입니다.
 struct ConsumedRecord {
 	offset    i64  // 오프셋
 	key       []u8 // 키
@@ -199,11 +194,6 @@ struct ConsumedRecord {
 	timestamp i64  // 타임스탬프
 }
 
-// ============================================================
-// 오프셋 관리
-// ============================================================
-
-// get_starting_offset은 시작 오프셋을 결정합니다.
 fn get_starting_offset(mut conn net.TcpConn, opts ConsumeOptions) !i64 {
 	// 옵션에 따라 오프셋 결정
 	if opts.offset == 'earliest' || opts.from_beginning {
@@ -304,11 +294,6 @@ fn parse_list_offsets_response(response []u8) !i64 {
 	return 0
 }
 
-// ============================================================
-// Fetch 요청/응답
-// ============================================================
-
-// build_fetch_request는 Fetch 요청을 생성합니다.
 fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, timeout_ms int) []u8 {
 	mut body := []u8{}
 
@@ -488,10 +473,6 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 
 	return records
 }
-
-// ============================================================
-// 도움말
-// ============================================================
 
 /// print_consume_help는 소비 명령어 도움말을 출력합니다.
 pub fn print_consume_help() {

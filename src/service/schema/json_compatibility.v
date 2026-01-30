@@ -2,9 +2,7 @@
 // Provides compatibility checking for JSON Schema
 module schema
 
-// ============================================================================
 // JSON Schema Types
-// ============================================================================
 
 // JsonSchemaInfo represents parsed JSON Schema information for compatibility checking
 struct JsonSchemaInfo {
@@ -37,9 +35,7 @@ mut:
 	enum_values []string
 }
 
-// ============================================================================
 // JSON Schema Compatibility
-// ============================================================================
 
 fn check_json_backward_compatible(old_schema string, new_schema string) bool {
 	// JSON Schema backward compatibility:

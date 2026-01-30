@@ -7,12 +7,11 @@
 module kafka
 
 import domain
+import infra.compression
 import infra.observability
 import time
 
-// ============================================================================
 // Produce (API Key 0) - 메시지 전송 API
-// ============================================================================
 
 /// Produce 요청 - 프로듀서가 브로커에 메시지를 전송하기 위한 요청
 ///
@@ -325,8 +324,86 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 
 		mut partitions := []ProduceResponsePartition{}
 		for p in t.partition_data {
-			// RecordBatch 파싱
-			parsed := parse_record_batch(p.records) or {
+			// 압축 해제 및 RecordBatch 파싱
+			records_to_parse := p.records.clone()
+			mut decompressed_data := []u8{}
+			mut was_compressed := false
+
+			// Kafka RecordBatch v2 헤더 파싱 (61바이트)
+			if records_to_parse.len >= 61 {
+				mut header_reader := new_reader(records_to_parse)
+				_ := header_reader.read_i64() or { 0 } // base_offset
+				_ := header_reader.read_i32() or { 0 } // batch_length
+				_ := header_reader.read_i32() or { 0 } // partition_leader_epoch
+				magic := header_reader.read_i8() or { 0 } // magic
+
+				h.logger.debug('Processing RecordBatch', observability.field_string('topic',
+					topic_name), observability.field_int('partition', int(p.index)), observability.field_int('buffer_size',
+					records_to_parse.len), observability.field_int('magic', int(magic)))
+
+				if magic == 2 && records_to_parse.len >= 61 { // RecordBatch v2
+					_ := header_reader.read_i32() or { 0 } // crc
+					attributes := header_reader.read_i16() or { 0 }
+					_ := header_reader.read_i32() or { 0 } // last_offset_delta
+					_ := header_reader.read_i64() or { 0 } // base_timestamp
+					_ := header_reader.read_i64() or { 0 } // max_timestamp
+					_ := header_reader.read_i64() or { 0 } // producer_id
+					_ := header_reader.read_i16() or { 0 } // producer_epoch
+					_ := header_reader.read_i32() or { 0 } // base_sequence
+
+					// 압축 타입은 attributes의 하위 3비트에 저장됨
+					compression_type_val := attributes & 0x07
+
+					h.logger.debug('Compression check', observability.field_int('attributes',
+						int(attributes)), observability.field_int('compression_type',
+						compression_type_val))
+
+					if compression_type_val != 0 {
+						// 압축된 데이터 - 압축 해제 필요
+						// Kafka 압축 RecordBatch: header(61 bytes) + compressed_records (nested RecordBatch)
+						compression_type := unsafe { compression.CompressionType(compression_type_val) }
+
+						// 헤더(61바이트) 제외하고 데이터 부분만 압축 해제
+						header_size := 61
+						compressed_data := records_to_parse[header_size..]
+
+						decompress_start := time.now()
+						decompressed_data = h.compression_service.decompress(compressed_data,
+							compression_type) or {
+							h.logger.error('Failed to decompress records', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_string('compression_type', compression_type.str()),
+								observability.field_err_str(err.str()))
+							partitions << ProduceResponsePartition{
+								index:            p.index
+								error_code:       i16(ErrorCode.corrupt_message)
+								base_offset:      -1
+								log_append_time:  -1
+								log_start_offset: -1
+							}
+							continue
+						}
+						decompress_time := time.since(decompress_start)
+						was_compressed = true
+
+						// 압축률 메트릭 계산 및 로깅
+						if compressed_data.len > 0 {
+							ratio := f64(decompressed_data.len) / f64(compressed_data.len)
+							h.logger.debug('Records decompressed', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_string('compression_type', compression_type.str()),
+								observability.field_int('compressed_size', compressed_data.len),
+								observability.field_int('decompressed_size', decompressed_data.len),
+								observability.field_float('ratio', ratio), observability.field_duration('decompress_time',
+								decompress_time))
+						}
+					}
+				}
+			}
+
+			// 압축 해제된 데이터 또는 원본 데이터로 RecordBatch 파싱
+			data_to_parse := if was_compressed { decompressed_data } else { records_to_parse }
+			parsed := parse_record_batch(data_to_parse) or {
 				partitions << ProduceResponsePartition{
 					index:            p.index
 					error_code:       i16(ErrorCode.corrupt_message)

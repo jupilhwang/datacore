@@ -210,22 +210,12 @@ pub fn run_topic_delete(opts TopicOptions) ! {
 	println('\x1b[32m✓\x1b[0m Topic "${opts.topic}" deleted successfully')
 }
 
-// ============================================================
-// 토픽 정보 구조체
-// ============================================================
-
-// TopicInfo는 토픽 정보를 담는 내부 구조체입니다.
 struct TopicInfo {
 	name        string // 토픽 이름
 	partitions  int    // 파티션 수
 	is_internal bool   // 내부 토픽 여부
 }
 
-// ============================================================
-// Kafka 프로토콜 헬퍼
-// ============================================================
-
-// connect_broker는 브로커에 TCP 연결을 생성합니다.
 fn connect_broker(addr string) !&net.TcpConn {
 	parts := addr.split(':')
 	host := if parts.len > 0 { parts[0] } else { 'localhost' }
@@ -327,11 +317,6 @@ fn read_kafka_response(mut conn net.TcpConn) ![]u8 {
 	return response
 }
 
-// ============================================================
-// 요청 빌더
-// ============================================================
-
-// build_create_topic_request는 CreateTopics 요청을 생성합니다.
 fn build_create_topic_request(name string, partitions int, replication int, timeout_ms int) []u8 {
 	mut body := []u8{}
 
@@ -444,11 +429,6 @@ fn build_delete_topic_request(name string, timeout_ms int) []u8 {
 	return body
 }
 
-// ============================================================
-// 응답 파서
-// ============================================================
-
-// check_create_topic_response는 CreateTopics 응답을 확인합니다.
 fn check_create_topic_response(response []u8, expected_topic string) ! {
 	if response.len < 4 {
 		return error('Invalid response: too short')

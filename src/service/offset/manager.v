@@ -175,9 +175,7 @@ pub fn (mut m OffsetManager) fetch_offsets_by_topic_id(group_id string, topic_id
 	})
 }
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 /// create_fetch_result_with_topic_id는 TopicId를 포함한 OffsetFetchResult를 생성합니다.
 fn create_fetch_result_with_topic_id(f domain.OffsetFetchResult, topic_id ?[]u8) OffsetFetchResult {

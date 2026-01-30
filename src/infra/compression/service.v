@@ -5,7 +5,8 @@ module compression
 import infra.observability
 import time
 
-/// CompressionService는 여러 Compressor를 관리하고 메트릭을 수집하는 서비스입니다.
+/// 서비스.
+@[heap]
 pub struct CompressionService {
 mut:
 	default_compression CompressionType
@@ -145,12 +146,12 @@ pub fn (mut s CompressionService) set_default_compression(ct CompressionType) {
 	s.logger.info('default compression changed', observability.field_string('type', ct.str()))
 }
 
-/// get_metrics는 현재 메트릭을 반환합니다.
+/// 현재 메트릭 반환.
 pub fn (s &CompressionService) get_metrics() CompressionMetrics {
 	return s.metrics
 }
 
-/// get_compression_ratio는 특정 타입의 평균 압축률을 반환합니다.
+/// 특정 타입의 평균 압축률 반환.
 pub fn (s &CompressionService) get_compression_ratio(compression_type CompressionType) f64 {
 	// 메트릭에서 압축률 히스토그램의 평균을 계산
 	// 간단한 구현: 마지막 값 반환

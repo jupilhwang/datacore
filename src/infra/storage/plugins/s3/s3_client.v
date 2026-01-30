@@ -25,10 +25,6 @@ pub:
 	etag          string    // ETag (객체 무결성 검증용 해시)
 }
 
-// ============================================================
-// S3 HTTP 작업 (S3 HTTP Operations)
-// ============================================================
-
 /// get_object는 S3에서 객체를 조회합니다.
 /// start와 end 파라미터로 Range 요청을 지원합니다.
 /// 반환값: (객체 데이터, ETag)
@@ -349,10 +345,6 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 	return error(last_err)
 }
 
-// ============================================================
-// AWS SigV4 서명 (AWS SigV4 Signing)
-// ============================================================
-
 /// sign_request는 AWS Signature V4를 사용하여 HTTP 요청에 서명합니다.
 /// AWS S3 API 호출에 필요한 인증 헤더를 생성합니다.
 /// 서명 과정: Canonical Request -> String to Sign -> Signing Key -> Signature
@@ -481,10 +473,6 @@ fn (a &S3StorageAdapter) canonicalize_query(query string) string {
 	return result.join('&')
 }
 
-// ============================================================
-// URL 인코딩 유틸리티 (URL Encoding Utilities)
-// ============================================================
-
 /// url_decode는 퍼센트 인코딩된 문자열을 디코딩합니다.
 /// 예: %20 -> 공백, %2F -> /
 fn url_decode(s string) string {
@@ -572,10 +560,6 @@ fn url_encode_for_sigv4(s string) string {
 	}
 	return result.bytestr()
 }
-
-// ============================================================
-// XML 응답 파싱 (XML Response Parsing)
-// ============================================================
 
 /// parse_list_objects_response는 S3 ListObjectsV2 XML 응답을 파싱합니다.
 /// 단순화된 XML 파싱으로 <Key> 태그만 추출합니다.

@@ -2,9 +2,7 @@
 // JSON parsing utilities for Avro encoding/decoding
 module schema
 
-// ============================================================================
 // JSON Value Parsing
-// ============================================================================
 
 fn parse_json_bool(s string) ?bool {
 	trimmed := s.trim_space()
@@ -56,9 +54,7 @@ fn is_json_null(s string) bool {
 	return s.trim_space() == 'null'
 }
 
-// ============================================================================
 // JSON Escape/Unescape
-// ============================================================================
 
 fn unescape_json_bytes(s string) []u8 {
 	mut result := []u8{}
@@ -159,9 +155,7 @@ fn format_json_bytes(data []u8) string {
 	return result
 }
 
-// ============================================================================
 // JSON Field Extraction
-// ============================================================================
 
 fn extract_json_field(json_str string, field_name string) ?string {
 	// Find "field_name": value
@@ -269,9 +263,7 @@ fn read_json_value(s string, start int) ?string {
 	return none
 }
 
-// ============================================================================
 // JSON Array/Map Parsing
-// ============================================================================
 
 fn parse_json_array(s string) ?[]string {
 	trimmed := s.trim_space()

@@ -4,11 +4,9 @@ module schema
 
 import domain
 
-// ============================================================================
 // JSON 스키마 인코더
 // JSON Schema에 따라 JSON 데이터를 검증하고 인코딩합니다
 // https://json-schema.org/draft/2020-12/json-schema-validation.html
-// ============================================================================
 
 pub struct JsonSchemaEncoder {}
 
@@ -247,9 +245,7 @@ fn (e &JsonSchemaEncoder) validate_number(json_str string, schema &JsonSchema) !
 	}
 }
 
-// ============================================================================
 // JSON Schema Parsing
-// ============================================================================
 
 struct JsonSchema {
 mut:
@@ -405,9 +401,8 @@ fn parse_schema_properties(props_json string) map[string]&JsonSchema {
 	return result
 }
 
-// ============================================================================
 // JSON Utility Functions
-// ============================================================================
+
 // Note: extract_json_object_value, extract_json_number, extract_json_float
 // are defined in json_utils.v to avoid duplication
 

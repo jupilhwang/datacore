@@ -4,7 +4,7 @@ module compression
 
 import infra.observability
 
-/// CompressorFactory는 Compressor 인스턴스를 생성하는 팩토리입니다.
+/// 팩토리.
 pub struct CompressorFactory {
 	logger &observability.Logger
 }
@@ -72,7 +72,7 @@ pub fn is_compressor_available(compression_type CompressionType) bool {
 	return true
 }
 
-/// list_available_compressors는 사용 가능한 모든 압축 타입을 반환합니다.
+/// 사용 가능한 모든 압축 타입 반환.
 pub fn list_available_compressors() []CompressionType {
 	return [
 		CompressionType.none,

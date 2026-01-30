@@ -2,9 +2,7 @@
 // Protobuf 스키마의 호환성 검사를 제공합니다
 module schema
 
-// ============================================================================
 // Protobuf Schema Types
-// ============================================================================
 
 // ProtoFieldInfo represents parsed protobuf field information
 struct ProtoFieldInfo {
@@ -29,9 +27,7 @@ mut:
 	enums           []string
 }
 
-// ============================================================================
 // Protobuf Schema Compatibility
-// ============================================================================
 
 fn check_protobuf_backward_compatible(old_schema string, new_schema string) bool {
 	// Protobuf backward compatibility rules:

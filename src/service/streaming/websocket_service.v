@@ -7,9 +7,7 @@ import service.port
 import sync
 import time
 
-// ============================================================================
 // WebSocket Service
-// ============================================================================
 
 // WebSocketService manages WebSocket connections and subscriptions
 pub struct WebSocketService {
@@ -58,9 +56,7 @@ pub fn new_websocket_service(storage port.StoragePort, config domain.WebSocketCo
 	}
 }
 
-// ============================================================================
 // Connection Management
-// ============================================================================
 
 // register_connection registers a new WebSocket connection
 pub fn (mut s WebSocketService) register_connection(conn domain.WebSocketConnection) !string {
@@ -138,9 +134,7 @@ pub fn (mut s WebSocketService) get_send_channel(conn_id string) !chan string {
 	return state.send_chan
 }
 
-// ============================================================================
 // Message Handling
-// ============================================================================
 
 // handle_message processes an incoming WebSocket message
 pub fn (mut s WebSocketService) handle_message(conn_id string, msg domain.WebSocketMessage) !domain.WebSocketResponse {
@@ -324,9 +318,7 @@ fn (mut s WebSocketService) handle_ping(conn_id string) !domain.WebSocketRespons
 	return domain.new_ws_pong_response()
 }
 
-// ============================================================================
 // Message Broadcasting
-// ============================================================================
 
 // send_message sends a message to a specific connection
 pub fn (mut s WebSocketService) send_message(conn_id string, response domain.WebSocketResponse) ! {
@@ -415,9 +407,7 @@ fn (mut s WebSocketService) poll_subscription(conn_id string, sub_id string, sub
 	}
 }
 
-// ============================================================================
 // Ping/Pong Management
-// ============================================================================
 
 // send_pings sends ping messages to all connections
 pub fn (mut s WebSocketService) send_pings() {
@@ -482,9 +472,7 @@ pub fn (mut s WebSocketService) cleanup_stale_connections() []string {
 	return to_remove
 }
 
-// ============================================================================
 // Statistics
-// ============================================================================
 
 // get_stats returns WebSocket service statistics
 pub fn (mut s WebSocketService) get_stats() WebSocketStats {
@@ -493,9 +481,7 @@ pub fn (mut s WebSocketService) get_stats() WebSocketStats {
 	return s.stats
 }
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 fn (mut s WebSocketService) add_topic_subscription(topic string, conn_id string) {
 	if topic in s.topic_subs {

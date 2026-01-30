@@ -46,9 +46,7 @@ fn parse_describe_groups_request(mut reader BinaryReader, version i16, is_flexib
 	}
 }
 
-// ============================================================================
 // ListGroups Response (API Key 16)
-// ============================================================================
 
 pub struct ListGroupsResponse {
 pub:
@@ -106,9 +104,7 @@ pub fn (r ListGroupsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // DescribeGroups Response (API Key 15)
-// ============================================================================
 
 pub struct DescribeGroupsResponse {
 pub:
@@ -394,9 +390,7 @@ fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i1
 	}
 }
 
-// ============================================================================
 // DeleteGroups Request/Response (API Key 42) v0-v2
-// ============================================================================
 
 /// DeleteGroups 요청
 pub struct DeleteGroupsRequest {

@@ -2,9 +2,7 @@
 // Avro 프리미티브 타입을 위한 저수준 바이너리 인코딩/디코딩
 module schema
 
-// ============================================================================
 // Varint Encoding/Decoding
-// ============================================================================
 
 // encode_varint_zigzag encodes an i64 using variable-length zigzag encoding
 fn encode_varint_zigzag(val i64) []u8 {
@@ -75,9 +73,7 @@ fn decode_varint(mut reader AvroReader) !u64 {
 	return result
 }
 
-// ============================================================================
 // Float/Double Encoding/Decoding
-// ============================================================================
 
 // encode_float encodes a f32 in little-endian IEEE 754 format
 fn encode_float(val f32) []u8 {
@@ -133,9 +129,7 @@ fn decode_double(mut reader AvroReader) !f64 {
 	return *unsafe { &f64(&bits) }
 }
 
-// ============================================================================
 // Bytes/String Encoding/Decoding
-// ============================================================================
 
 // encode_bytes encodes bytes with length prefix
 fn encode_bytes(data []u8) []u8 {

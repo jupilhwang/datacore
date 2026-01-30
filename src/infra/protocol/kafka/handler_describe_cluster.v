@@ -4,9 +4,7 @@ module kafka
 
 import domain
 
-// ============================================================================
 // DescribeCluster (API Key 60)
-// ============================================================================
 
 pub struct DescribeClusterRequest {
 pub:

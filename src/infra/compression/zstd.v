@@ -5,7 +5,7 @@ module compression
 
 import infra.observability
 
-/// ZstdCompressor는 ZSTD 압축 알고리즘을 구현합니다.
+/// ZSTD 압축 알고리즘 구현.
 pub struct ZstdCompressor {
 	level int
 }
@@ -37,7 +37,7 @@ pub fn new_zstd_compressor_with_level(level int) &ZstdCompressor {
 }
 
 /// compress는 데이터를 ZSTD 프레임 형식으로 압축합니다.
-/// 현재는 간단한 프레임 래퍼 구현을 사용합니다.
+/// 간단한 프레임 래퍼 구현 사용.
 pub fn (c &ZstdCompressor) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}

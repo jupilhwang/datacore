@@ -6,9 +6,7 @@ module kafka
 import infra.observability
 import time
 
-// ============================================================================
 // DescribeConfigs (API Key 32)
-// ============================================================================
 
 pub struct DescribeConfigsRequest {
 pub:
@@ -195,9 +193,7 @@ pub fn (r DescribeConfigsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // DescribeConfigs 핸들러
-// ============================================================================
 
 // DescribeConfigs 핸들러
 fn (mut h Handler) handle_describe_configs(body []u8, version i16) ![]u8 {

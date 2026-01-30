@@ -9,9 +9,7 @@ import net
 import time
 import infra.observability
 
-// ============================================================================
 // 로깅 (Logging)
-// ============================================================================
 
 /// sse_log_message는 구조화된 로그 메시지를 출력합니다.
 fn sse_log_message(level observability.LogLevel, component string, message string, context map[string]string) {
@@ -25,9 +23,7 @@ fn sse_log_message(level observability.LogLevel, component string, message strin
 	}
 }
 
-// ============================================================================
 // SSE 핸들러
-// ============================================================================
 
 /// SSEHandler는 SSE HTTP 요청을 처리합니다.
 pub struct SSEHandler {
@@ -50,9 +46,7 @@ pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHa
 	}
 }
 
-// ============================================================================
 // HTTP 요청 처리
-// ============================================================================
 
 /// handle_sse_request는 SSE HTTP 요청을 처리합니다.
 /// 반환값: (상태 코드, 헤더, 스트리밍 여부)
@@ -202,9 +196,7 @@ pub fn (mut h SSEHandler) start_streaming(conn_id string, mut writer SSEResponse
 	h.sse_service.unregister_connection(conn_id) or {}
 }
 
-// ============================================================================
 // SSE 요청/응답 타입
-// ============================================================================
 
 /// SSERequest는 SSE HTTP 요청을 나타냅니다.
 pub struct SSERequest {
@@ -276,9 +268,7 @@ pub fn parse_sse_request(path string, query map[string]string, headers map[strin
 	}
 }
 
-// ============================================================================
 // SSE 응답 Writer
-// ============================================================================
 
 /// SSEResponseWriter는 SSE 쓰기를 위해 연결을 래핑합니다.
 pub struct SSEResponseWriter {
@@ -339,9 +329,7 @@ pub fn (mut w SSEResponseWriter) close() ! {
 	w.conn.close() or {}
 }
 
-// ============================================================================
 // 통계
-// ============================================================================
 
 /// get_stats는 SSE 서비스 통계를 반환합니다.
 pub fn (mut h SSEHandler) get_stats() port.StreamingStats {

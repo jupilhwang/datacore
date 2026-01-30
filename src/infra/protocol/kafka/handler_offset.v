@@ -194,9 +194,7 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 	}
 }
 
-// ============================================================================
 // OffsetCommit Response (API Key 8)
-// ============================================================================
 
 pub struct OffsetCommitResponse {
 pub:
@@ -257,9 +255,7 @@ pub fn (r OffsetCommitResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // OffsetFetch Response (API Key 9)
-// ============================================================================
 
 pub struct OffsetFetchResponse {
 pub:
@@ -717,9 +713,7 @@ fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !Of
 	}
 }
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 /// build_commit_response_from_results는 서비스 응답을 OffsetCommit 프로토콜 응답으로 변환합니다.
 fn build_commit_response_from_results(results []offset.OffsetCommitResult) []OffsetCommitResponseTopic {

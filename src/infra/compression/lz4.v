@@ -5,7 +5,7 @@ module compression
 
 import infra.observability
 
-/// Lz4Compressor는 LZ4 압축 알고리즘을 구현합니다.
+/// LZ4 압축 알고리즘 구현.
 pub struct Lz4Compressor {
 }
 
@@ -16,13 +16,14 @@ const lz4_magic_number = [u8(0x04), 0x22, 0x4d, 0x18]
 const lz4_frame_version = u8(0x40) // 버전 1.0
 const lz4_block_default = u8(0x40) // 64KB 블록 크기
 
-/// new_lz4_compressor는 새 Lz4Compressor를 생성합니다.
+/// new_lz4_compressor - creates a new Lz4Compressor
+/// new_lz4_compressor - creates a new Lz4Compressor
 pub fn new_lz4_compressor() &Lz4Compressor {
 	return &Lz4Compressor{}
 }
 
-/// compress는 데이터를 LZ4 프레임 형식으로 압축합니다.
-/// 현재는 간단한 프레임 래퍼 구현을 사용합니다.
+/// compress - compresses data to LZ4 frame format
+/// compress - compresses data to LZ4 frame format
 pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
@@ -85,7 +86,8 @@ pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 	return result
 }
 
-/// decompress는 LZ4 프레임 형식의 데이터를 해제합니다.
+/// decompress - decompresses LZ4 frame format data
+/// decompress - decompresses LZ4 frame format data
 pub fn (c &Lz4Compressor) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
@@ -164,12 +166,13 @@ pub fn (c &Lz4Compressor) decompress(data []u8) ![]u8 {
 	return result
 }
 
-/// compression_type은 압축 타입을 반환합니다.
+/// compression_type - returns the compression type
+/// compression_type - returns the compression type
 pub fn (c &Lz4Compressor) compression_type() CompressionType {
 	return CompressionType.lz4
 }
 
-/// calculate_header_checksum는 LZ4 프레임 헤더의 체크섬을 계산합니다.
+/// LZ4 프레임 헤더의 체크섬 계산.
 fn calculate_header_checksum(header []u8) u8 {
 	// 간단한 체크섬 (실제로는 xxh32 사용)
 	mut sum := u32(0)

@@ -2,9 +2,7 @@
 // Provides compatibility checking for Avro schemas
 module schema
 
-// ============================================================================
 // Avro Schema Types
-// ============================================================================
 
 // AvroField represents a parsed Avro record field
 struct AvroField {
@@ -33,9 +31,7 @@ pub mut:
 	fixed_size  int         // for fixed type
 }
 
-// ============================================================================
 // Avro Schema Compatibility
-// ============================================================================
 
 fn check_avro_backward_compatible(old_schema string, new_schema string) bool {
 	// Parse both schemas
@@ -233,9 +229,7 @@ fn is_avro_type_compatible(old_field AvroField, new_field AvroField) bool {
 	return false
 }
 
-// ============================================================================
 // Avro Schema Parsing
-// ============================================================================
 
 fn parse_avro_schema(schema_str string) !AvroSchema {
 	// Simple JSON-based Avro schema parser

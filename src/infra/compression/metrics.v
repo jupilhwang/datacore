@@ -5,7 +5,7 @@ module compression
 import infra.observability
 import time
 
-/// CompressionMetrics는 압축 작업에 대한 메트릭을 수집합니다.
+/// 압축 작업에 대한 메트릭 수집.
 pub struct CompressionMetrics {
 pub mut:
 	// 압축 작업 카운터
@@ -28,7 +28,7 @@ pub mut:
 	bytes_decompressed &observability.Metric
 }
 
-/// new_compression_metrics는 새 압축 메트릭을 생성합니다.
+/// 새 압축 메트릭 생성.
 pub fn new_compression_metrics() CompressionMetrics {
 	mut reg := observability.get_registry()
 
@@ -54,7 +54,7 @@ pub fn new_compression_metrics() CompressionMetrics {
 	}
 }
 
-/// record_compress는 압축 작업을 기록합니다.
+/// 압축 작업 기록.
 pub fn (mut m CompressionMetrics) record_compress(original_size i64, compressed_size i64, duration time.Duration, success bool) {
 	m.compress_total.inc()
 	m.bytes_compressed.inc_by(f64(original_size))
@@ -73,7 +73,7 @@ pub fn (mut m CompressionMetrics) record_compress(original_size i64, compressed_
 	}
 }
 
-/// record_decompress는 해제 작업을 기록합니다.
+/// 해제 작업 기록.
 pub fn (mut m CompressionMetrics) record_decompress(compressed_size i64, decompressed_size i64, duration time.Duration, success bool) {
 	m.decompress_total.inc()
 	m.bytes_decompressed.inc_by(f64(compressed_size))
@@ -87,7 +87,7 @@ pub fn (mut m CompressionMetrics) record_decompress(compressed_size i64, decompr
 	m.decompress_duration.observe(seconds)
 }
 
-/// CompressionTimer는 압축 작업 시간 측정을 위한 타이머입니다.
+/// 압축 작업 시간 측정을 위한 타이머.
 pub struct CompressionTimer {
 	start_time time.Time
 	metrics    &CompressionMetrics

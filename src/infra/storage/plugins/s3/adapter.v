@@ -1,6 +1,4 @@
-// Infra Layer - S3 스토리지 어댑터
-// S3 백엔드를 사용한 StoragePort 인터페이스 구현
-// 조건부 쓰기(ETag)를 통한 동시성 제어 지원
+// S3 storage adapter with ETag-based concurrency control
 module s3
 
 import domain
@@ -10,34 +8,20 @@ import json
 import crypto.md5
 import sync
 
-// 참고: S3 HTTP 클라이언트 함수들 (sign_request, get_object, put_object 등)은 s3_client.v에 있습니다.
-// 참고: PartitionIndex, LogSegment, CachedPartitionIndex는 partition_index.v에 정의되어 있습니다.
-// 참고: StoredRecord, TopicPartitionBuffer는 s3_record_codec.v와 buffer_manager.v에 정의되어 있습니다.
-// 참고: 버퍼 관리 함수들은 buffer_manager.v에 있습니다.
-// 참고: 컴팩션 함수들은 compaction.v에 있습니다.
+// NOTE: S3 client functions in s3_client.v; index types in partition_index.v;
+// buffer types in buffer_manager.v; compaction in compaction.v
 
-// ============================================================
-// 설정 상수 (Configuration Constants)
-// ============================================================
+// Configuration Constants
 
-// 토픽 제한
-const max_topic_name_length = 255 // 토픽 이름 최대 길이 (문자)
-const max_partition_count = 10000 // 토픽당 최대 파티션 수
-
-// 캐시 TTL
-const topic_cache_ttl = 5 * time.minute // 토픽 메타데이터 캐시 유지 시간
-const group_cache_ttl = 30 * time.second // 컨슈머 그룹 캐시 유지 시간
-
-// 레코드 크기 추정
-const record_overhead_bytes = 30 // 레코드당 메타데이터 오버헤드 추정치 (오프셋, 타임스탬프, 길이 등)
-
-// Fetch 최적화
-const fetch_size_multiplier = 2 // fetch 시 세그먼트 크기 배수
-const fetch_offset_estimate_divisor = 100 // 오프셋 추정을 위한 바이트당 레코드 수 추정치
-
-// 오프셋 커밋 병렬 처리
-const max_offset_commit_buffer = 100 // 오프셋 커밋 채널 최대 버퍼 크기
-const max_offset_commit_concurrent = 50 // 오프셋 커밋 최대 동시 실행 수
+const max_topic_name_length = 255
+const max_partition_count = 10000
+const topic_cache_ttl = 5 * time.minute
+const group_cache_ttl = 30 * time.second
+const record_overhead_bytes = 30
+const fetch_size_multiplier = 2
+const fetch_offset_estimate_divisor = 100
+const max_offset_commit_buffer = 100
+const max_offset_commit_concurrent = 50
 
 /// s3_capability는 S3 어댑터의 스토리지 기능을 정의합니다.
 pub const s3_capability = domain.StorageCapability{
@@ -111,10 +95,6 @@ struct CachedGroup {
 	etag      string
 	cached_at time.Time
 }
-
-// ============================================================
-// 메트릭 (Metrics)
-// ============================================================
 
 /// LogLevel은 로그 레벨을 정의합니다.
 enum LogLevel {
@@ -250,14 +230,10 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 	}
 }
 
-// ============================================================
-// 토픽 작업 (Topic Operations)
-// ============================================================
-
 /// create_topic은 S3에 새로운 토픽을 생성합니다.
 pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
 	// 입력 검증
-	if name.len == 0 {
+	if name == '' {
 		return error('Topic name cannot be empty')
 	}
 	if name.len > max_topic_name_length {
@@ -505,11 +481,7 @@ pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
 	a.topic_lock.unlock()
 }
 
-// ============================================================
-// 레코드 작업 (Record Operations)
-// ============================================================
-
-/// append는 파티션에 레코드를 추가합니다 (메모리에 버퍼링, 가득 차면 플러시).
+/// append는 파티션에 레코드를 추가합니다.
 pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
 	if records.len == 0 {
 		return domain.AppendResult{
@@ -718,10 +690,6 @@ pub fn (mut a S3StorageAdapter) delete_records(topic string, partition int, befo
 	a.put_object(index_key, json.encode(index).bytes())!
 }
 
-// ============================================================
-// 파티션 정보 (Partition Info)
-// ============================================================
-
 /// get_partition_info는 파티션 정보를 조회합니다.
 pub fn (mut a S3StorageAdapter) get_partition_info(topic string, partition int) !domain.PartitionInfo {
 	index := a.get_partition_index(topic, partition)!
@@ -734,10 +702,6 @@ pub fn (mut a S3StorageAdapter) get_partition_info(topic string, partition int) 
 		high_watermark:  index.high_watermark
 	}
 }
-
-// ============================================================
-// 컨슈머 그룹 작업 (Consumer Group Operations)
-// ============================================================
 
 /// save_group은 컨슈머 그룹을 저장합니다.
 pub fn (mut a S3StorageAdapter) save_group(group domain.ConsumerGroup) ! {
@@ -869,10 +833,6 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 
 	return groups
 }
-
-// ============================================================
-// 오프셋 작업 (Offset Operations)
-// ============================================================
 
 /// commit_offsets는 오프셋을 커밋합니다.
 /// 병렬 처리를 통해 성능을 최적화합니다.
@@ -1124,20 +1084,12 @@ pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []doma
 	return results
 }
 
-// ============================================================
-// 헬스 체크 (Health Check)
-// ============================================================
-
 /// health_check는 스토리지 상태를 확인합니다.
 pub fn (mut a S3StorageAdapter) health_check() !port.HealthStatus {
 	// 소수의 객체 목록 조회 시도
 	_ := a.list_objects(a.config.prefix) or { return .unhealthy }
 	return .healthy
 }
-
-// ============================================================
-// 멀티 브로커 지원 (Multi-Broker Support)
-// ============================================================
 
 /// get_storage_capability는 스토리지 기능 정보를 반환합니다.
 pub fn (a &S3StorageAdapter) get_storage_capability() domain.StorageCapability {
@@ -1151,10 +1103,6 @@ pub fn (mut a S3StorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetada
 	// Note: &a를 전달하여 원본 adapter의 포인터를 사용
 	return new_s3_cluster_metadata_adapter(&a)
 }
-
-// ============================================================
-// S3 키 헬퍼 (S3 Key Helpers)
-// ============================================================
 
 /// topic_metadata_key는 토픽 메타데이터의 S3 키를 반환합니다.
 fn (a &S3StorageAdapter) topic_metadata_key(name string) string {
@@ -1181,11 +1129,6 @@ fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int
 	return '${a.config.prefix}offsets/${group_id}/${topic}:${partition}.json'
 }
 
-// ============================================================
-// S3 작업 (S3 Operations) - 추상화, 실제 SDK로 구현 예정
-// ============================================================
-
-// 참고: S3 HTTP 작업 (get_object, put_object, delete_object, list_objects, sign_request 등)은
 // s3_client.v로 이동되었습니다.
 
 // 참고: PartitionIndex, LogSegment, get_partition_index는 partition_index.v로 이동되었습니다.
@@ -1193,10 +1136,6 @@ fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int
 // 참고: StoredRecord와 TopicPartitionBuffer는 s3_record_codec.v와 buffer_manager.v에 정의되어 있습니다.
 
 // 참고: async_flush_partition, flush_worker, flush_buffer_to_s3는 buffer_manager.v로 이동되었습니다.
-
-// ============================================================
-// 워커 관리 (Worker Management)
-// ============================================================
 
 /// start_workers는 플러시 및 컴팩션 워커를 시작합니다.
 pub fn (mut a S3StorageAdapter) start_workers() {
@@ -1207,10 +1146,6 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 	go a.flush_worker()
 	go a.compaction_worker()
 }
-
-// ============================================================
-// 메트릭 조회 (Metrics Query)
-// ============================================================
 
 /// get_metrics는 현재 메트릭 스냅샷을 반환합니다.
 pub fn (mut a S3StorageAdapter) get_metrics() S3Metrics {

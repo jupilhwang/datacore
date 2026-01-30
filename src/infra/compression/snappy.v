@@ -5,7 +5,7 @@ module compression
 
 import infra.observability
 
-/// SnappyCompressor는 Snappy 압축 알고리즘을 구현합니다.
+/// Snappy 압축 알고리즘 구현.
 pub struct SnappyCompressor {
 }
 
@@ -15,7 +15,7 @@ pub fn new_snappy_compressor() &SnappyCompressor {
 }
 
 /// compress는 데이터를 Snappy 형식으로 압축합니다.
-/// 현재는 간단한 LZ77 기반 구현을 사용합니다.
+/// 간단한 LZ77 기반 구현 사용.
 pub fn (c &SnappyCompressor) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}

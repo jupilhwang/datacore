@@ -5,36 +5,32 @@ module group
 
 import domain
 
-// ============================================================================
 // SimpleAssignor (KIP-932)
-// ============================================================================
 
 /// ShareMemberSubscription은 멤버의 구독 정보를 담습니다.
 pub struct ShareMemberSubscription {
 pub:
-	member_id string   // 멤버 ID
-	rack_id   string   // 랙 ID
-	topics    []string // 구독 토픽 목록
+	member_id string
+	rack_id   string
+	topics    []string
 }
 
 /// ShareTopicMetadata는 할당을 위한 토픽 정보를 담습니다.
 pub struct ShareTopicMetadata {
 pub:
-	topic_id        []u8   // 토픽 ID (UUID)
-	topic_name      string // 토픽 이름
-	partition_count int    // 파티션 수
+	topic_id        []u8
+	topic_name      string
+	partition_count int
 }
 
 /// ShareGroupSimpleAssignor는 KIP-932의 SimpleAssignor를 구현합니다.
 /// 각 파티션에 할당된 컨슈머 수의 균형을 맞춥니다.
 pub struct ShareGroupSimpleAssignor {}
 
-/// new_simple_assignor는 새로운 SimpleAssignor를 생성합니다.
 pub fn new_simple_assignor() &ShareGroupSimpleAssignor {
 	return &ShareGroupSimpleAssignor{}
 }
 
-/// name은 할당자 이름을 반환합니다.
 pub fn (a &ShareGroupSimpleAssignor) name() string {
 	return 'simple'
 }

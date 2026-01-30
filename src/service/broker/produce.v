@@ -40,9 +40,8 @@ pub:
 }
 
 /// execute는 produce 요청을 처리합니다.
-/// 유효성 검사 후 스토리지에 레코드를 기록합니다.
 pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
-	// 요청 유효성 검사: 토픽 이름
+	// 유효성 검사
 	if req.topic.len == 0 {
 		return ProduceResponse{
 			topic:      req.topic
@@ -51,7 +50,6 @@ pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 		}
 	}
 
-	// 요청 유효성 검사: 레코드 존재 여부
 	if req.records.len == 0 {
 		return ProduceResponse{
 			topic:      req.topic
@@ -60,7 +58,7 @@ pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 		}
 	}
 
-	// 토픽 존재 여부 확인
+	// 토픽 존재 확인
 	_ := u.storage.get_topic(req.topic) or {
 		return ProduceResponse{
 			topic:      req.topic
@@ -69,7 +67,7 @@ pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 		}
 	}
 
-	// 스토리지에 레코드 추가
+	// 스토리지에 레코드 저장
 	result := u.storage.append(req.topic, req.partition, req.records) or {
 		return ProduceResponse{
 			topic:      req.topic

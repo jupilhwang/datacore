@@ -7,9 +7,7 @@ import service.port
 import sync
 import time
 
-// ============================================================================
 // SSE Service
-// ============================================================================
 
 // SSEService manages SSE connections and subscriptions
 pub struct SSEService {
@@ -45,9 +43,7 @@ pub fn new_sse_service(storage port.StoragePort, config domain.SSEConfig) &SSESe
 	}
 }
 
-// ============================================================================
 // Connection Management
-// ============================================================================
 
 // register_connection registers a new SSE connection
 pub fn (mut s SSEService) register_connection(conn domain.SSEConnection) !string {
@@ -130,9 +126,7 @@ pub fn (mut s SSEService) set_writer(conn_id string, writer &port.SSEWriterPort)
 	}
 }
 
-// ============================================================================
 // Subscription Management
-// ============================================================================
 
 // subscribe adds a subscription to a connection
 pub fn (mut s SSEService) subscribe(conn_id string, sub domain.Subscription) ! {
@@ -213,9 +207,7 @@ pub fn (mut s SSEService) get_subscriptions(conn_id string) []domain.Subscriptio
 	return state.subscriptions.values()
 }
 
-// ============================================================================
 // Message Streaming
-// ============================================================================
 
 // send_event sends an SSE event to a specific connection
 pub fn (mut s SSEService) send_event(conn_id string, event domain.SSEEvent) ! {
@@ -409,9 +401,7 @@ pub fn (mut s SSEService) poll_messages_for_connection(conn_id string) !(int, i6
 	return total_messages, total_bytes
 }
 
-// ============================================================================
 // Heartbeat Management
-// ============================================================================
 
 // send_heartbeats sends heartbeat events to all connections
 pub fn (mut s SSEService) send_heartbeats() {
@@ -477,9 +467,7 @@ pub fn (mut s SSEService) cleanup_stale_connections() {
 	}
 }
 
-// ============================================================================
 // Statistics
-// ============================================================================
 
 // get_stats returns streaming statistics
 pub fn (mut s SSEService) get_stats() port.StreamingStats {
@@ -488,9 +476,7 @@ pub fn (mut s SSEService) get_stats() port.StreamingStats {
 	return s.stats
 }
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 fn (mut s SSEService) add_topic_subscription(topic string, conn_id string) {
 	if topic in s.topic_subs {

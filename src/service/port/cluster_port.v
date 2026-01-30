@@ -9,10 +9,6 @@ import domain
 /// 멀티 브로커 모드를 지원하는 스토리지 어댑터에서 구현됩니다.
 pub interface ClusterMetadataPort {
 mut:
-
-	// ============================================================
-	// 브로커 등록
-	// ============================================================
 	/// 클러스터에 브로커를 등록합니다.
 	/// 반환값: 할당된 broker_id (충돌 시 요청과 다를 수 있음)
 	register_broker(info domain.BrokerInfo) !domain.BrokerInfo
@@ -31,20 +27,12 @@ mut:
 
 	/// 활성 상태의 브로커만 반환합니다 (dead/shutdown 제외).
 	list_active_brokers() ![]domain.BrokerInfo
-
-	// ============================================================
-	// 클러스터 메타데이터
-	// ============================================================
 	/// 현재 클러스터 메타데이터를 반환합니다.
 	get_cluster_metadata() !domain.ClusterMetadata
 
 	/// 낙관적 잠금을 사용하여 클러스터 메타데이터를 업데이트합니다.
 	/// 버전 불일치 시 (동시 수정) 오류를 반환합니다.
 	update_cluster_metadata(metadata domain.ClusterMetadata) !
-
-	// ============================================================
-	// 파티션 할당
-	// ============================================================
 	/// 특정 파티션의 할당 정보를 반환합니다.
 	get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment
 
@@ -53,10 +41,6 @@ mut:
 
 	/// 파티션 할당 정보를 업데이트합니다.
 	update_partition_assignment(assignment domain.PartitionAssignment) !
-
-	// ============================================================
-	// 분산 잠금 (조정용)
-	// ============================================================
 	/// 분산 잠금 획득을 시도합니다.
 	/// 반환값: 잠금 획득 성공 시 true, 다른 곳에서 보유 중이면 false
 	try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool
@@ -66,16 +50,8 @@ mut:
 
 	/// 보유 중인 잠금의 TTL을 연장합니다.
 	refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool
-
-	// ============================================================
-	// 상태 모니터링
-	// ============================================================
 	/// 브로커를 dead 상태로 표시합니다 (하트비트 누락).
 	mark_broker_dead(broker_id i32) !
-
-	// ============================================================
-	// 기능 정보 (불변)
-	// ============================================================
 	/// 스토리지 기능 정보를 반환합니다.
 	get_capability() domain.StorageCapability
 }

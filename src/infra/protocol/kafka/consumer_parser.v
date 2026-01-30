@@ -2,9 +2,7 @@
 // JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat 파싱 함수
 module kafka
 
-// ============================================================================
 // JoinGroup 요청 파서 (API Key 11)
-// ============================================================================
 
 fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bool) !JoinGroupRequest {
 	group_id := reader.read_flex_string(is_flexible)!
@@ -61,9 +59,7 @@ fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bo
 	}
 }
 
-// ============================================================================
 // SyncGroup 요청 파서 (API Key 14)
-// ============================================================================
 
 fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bool) !SyncGroupRequest {
 	group_id := reader.read_flex_string(is_flexible)!
@@ -120,9 +116,7 @@ fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bo
 	}
 }
 
-// ============================================================================
 // Heartbeat 요청 파서 (API Key 12)
-// ============================================================================
 
 fn parse_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !HeartbeatRequest {
 	group_id := reader.read_flex_string(is_flexible)!
@@ -146,9 +140,7 @@ fn parse_heartbeat_request(mut reader BinaryReader, version i16, is_flexible boo
 	}
 }
 
-// ============================================================================
 // LeaveGroup 요청 파서 (API Key 13)
-// ============================================================================
 
 fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible bool) !LeaveGroupRequest {
 	group_id := reader.read_flex_string(is_flexible)!
@@ -206,9 +198,7 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
-// ============================================================================
 // ConsumerGroupHeartbeat 요청 파서 (API Key 68) - KIP-848
-// ============================================================================
 
 fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !ConsumerGroupHeartbeatRequest {
 	// ConsumerGroupHeartbeat는 항상 flexible (v0+)
@@ -284,9 +274,7 @@ fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, 
 	}
 }
 
-// ============================================================================
 // ConsumerGroupDescribe 요청 파서 (API Key 69) - KIP-848
-// ============================================================================
 
 fn parse_consumer_group_describe_request(mut reader BinaryReader, version i16, is_flexible bool) !ConsumerGroupDescribeRequest {
 	// ConsumerGroupDescribe는 항상 flexible (v0+)

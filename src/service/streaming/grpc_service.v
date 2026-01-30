@@ -7,9 +7,7 @@ import service.port
 import sync
 import time
 
-// ============================================================================
 // gRPC Service
-// ============================================================================
 
 // GrpcService manages gRPC connections and operations
 pub struct GrpcService {
@@ -61,9 +59,7 @@ pub fn new_grpc_service(storage port.StoragePort, config domain.GrpcConfig) &Grp
 	}
 }
 
-// ============================================================================
 // Connection Management
-// ============================================================================
 
 // register_connection registers a new gRPC connection
 pub fn (mut s GrpcService) register_connection(conn domain.GrpcConnection) !string {
@@ -141,9 +137,7 @@ pub fn (mut s GrpcService) get_send_channel(conn_id string) !chan domain.GrpcStr
 	return state.send_chan
 }
 
-// ============================================================================
 // Produce Operations
-// ============================================================================
 
 // produce handles a produce request
 pub fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest) domain.GrpcProduceResponse {
@@ -217,9 +211,7 @@ pub fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest
 		req.records.len)
 }
 
-// ============================================================================
 // Consume Operations (Server Streaming)
-// ============================================================================
 
 // subscribe adds a subscription for server streaming
 pub fn (mut s GrpcService) subscribe(conn_id string, req domain.GrpcConsumeRequest) !domain.GrpcConsumeResponse {
@@ -413,9 +405,7 @@ fn (mut s GrpcService) poll_subscription(conn_id string, sub_id string, sub doma
 	s.mutex.unlock()
 }
 
-// ============================================================================
 // Bidirectional Streaming
-// ============================================================================
 
 // handle_stream_request handles a bidirectional stream request
 pub fn (mut s GrpcService) handle_stream_request(conn_id string, req domain.GrpcStreamRequest) domain.GrpcStreamResponse {
@@ -541,9 +531,7 @@ fn (s &GrpcService) create_error_response(code i32, msg string) domain.GrpcStrea
 	}
 }
 
-// ============================================================================
 // Keepalive Management
-// ============================================================================
 
 // send_keepalives sends keepalive pings to all connections
 pub fn (mut s GrpcService) send_keepalives() {
@@ -619,9 +607,7 @@ pub fn (mut s GrpcService) cleanup_stale_connections() []string {
 	return to_remove
 }
 
-// ============================================================================
 // Statistics
-// ============================================================================
 
 // get_stats returns gRPC service statistics
 pub fn (mut s GrpcService) get_stats() GrpcStats {
@@ -630,9 +616,7 @@ pub fn (mut s GrpcService) get_stats() GrpcStats {
 	return s.stats
 }
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 fn (mut s GrpcService) add_topic_subscription(topic string, conn_id string) {
 	if topic in s.topic_subs {

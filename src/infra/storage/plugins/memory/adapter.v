@@ -9,10 +9,6 @@ import sync
 import time
 import rand
 
-// ============================================================
-// 로깅 (Logging)
-// ============================================================
-
 /// LogLevel은 로그 레벨을 정의합니다.
 enum LogLevel {
 	debug
@@ -42,10 +38,6 @@ fn log_message(level LogLevel, component string, message string, context map[str
 
 	eprintln('${timestamp} ${level_str} [Memory:${component}] ${message}${ctx_str}')
 }
-
-// ============================================================
-// 메트릭 (Metrics)
-// ============================================================
 
 /// MemoryMetrics는 메모리 스토리지 작업의 메트릭을 추적합니다.
 struct MemoryMetrics {
@@ -175,10 +167,6 @@ pub fn new_memory_adapter_with_config(config MemoryConfig) &MemoryStorageAdapter
 		offsets:        map[string]map[string]i64{}
 	}
 }
-
-// ============================================================
-// 토픽 작업 (Topic Operations)
-// ============================================================
 
 /// create_topic은 새로운 토픽을 생성합니다.
 /// UUID v4 형식의 topic_id를 자동 생성합니다.
@@ -401,10 +389,6 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 		partition_count: new_count
 	}
 }
-
-// ============================================================
-// 레코드 작업 (Record Operations) - 파티션 수준 락킹
-// ============================================================
 
 /// append는 파티션에 레코드를 추가합니다.
 /// 파티션 수준 락킹으로 동시성을 제어합니다.
@@ -712,10 +696,6 @@ pub fn (mut a MemoryStorageAdapter) delete_records(topic_name string, partition 
 	}
 }
 
-// ============================================================
-// 오프셋 작업 (Offset Operations)
-// ============================================================
-
 /// get_partition_info는 파티션 정보를 조회합니다.
 pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partition int) !domain.PartitionInfo {
 	a.global_lock.rlock()
@@ -757,10 +737,6 @@ pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partit
 		high_watermark:  part.high_watermark
 	}
 }
-
-// ============================================================
-// 컨슈머 그룹 작업 (Consumer Group Operations)
-// ============================================================
 
 /// save_group은 컨슈머 그룹을 저장합니다.
 pub fn (mut a MemoryStorageAdapter) save_group(group domain.ConsumerGroup) ! {
@@ -843,10 +819,6 @@ pub fn (mut a MemoryStorageAdapter) list_groups() ![]domain.GroupInfo {
 	return result
 }
 
-// ============================================================
-// 오프셋 커밋/조회 (Offset Commit/Fetch)
-// ============================================================
-
 /// commit_offsets는 오프셋을 커밋합니다.
 pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
 	// 메트릭: 오프셋 커밋
@@ -912,18 +884,10 @@ pub fn (mut a MemoryStorageAdapter) fetch_offsets(group_id string, partitions []
 	return results
 }
 
-// ============================================================
-// 헬스 체크 (Health Check)
-// ============================================================
-
 /// health_check는 스토리지 상태를 확인합니다.
 pub fn (mut a MemoryStorageAdapter) health_check() !port.HealthStatus {
 	return .healthy
 }
-
-// ============================================================
-// 멀티 브로커 지원 (Multi-Broker Support)
-// ============================================================
 
 /// get_storage_capability는 스토리지 기능 정보를 반환합니다.
 pub fn (a &MemoryStorageAdapter) get_storage_capability() domain.StorageCapability {
@@ -935,10 +899,6 @@ pub fn (a &MemoryStorageAdapter) get_storage_capability() domain.StorageCapabili
 pub fn (a &MemoryStorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
-
-// ============================================================
-// 통계 및 유틸리티 (Stats and Utilities)
-// ============================================================
 
 /// StorageStats는 스토리지 통계를 제공합니다.
 pub struct StorageStats {
@@ -978,10 +938,6 @@ pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 	}
 }
 
-// ============================================================
-// 메트릭 조회 (Metrics Query)
-// ============================================================
-
 /// get_metrics는 현재 메트릭 스냅샷을 반환합니다.
 pub fn (mut a MemoryStorageAdapter) get_metrics() MemoryMetrics {
 	a.metrics_lock.@lock()
@@ -1020,10 +976,7 @@ pub fn (mut a MemoryStorageAdapter) clear() {
 	a.offsets.clear()
 }
 
-// ============================================================
-// SharedAdapter - 동시성 테스트를 위한 스레드 안전 래퍼
 // V 언어는 스레드 간 접근에 'shared' 키워드가 필요합니다.
-// ============================================================
 
 /// SharedAdapter는 V에서 동시 접근을 위해 MemoryStorageAdapter를 래핑합니다.
 /// 사용법: shared adapter := SharedAdapter{ inner: new_memory_adapter() }

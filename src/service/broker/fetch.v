@@ -69,7 +69,6 @@ const parallel_fetch_timeout_ms = 30000
 /// execute는 fetch 요청을 처리합니다.
 /// 파티션 수에 따라 순차 또는 병렬 처리를 선택합니다.
 pub fn (u &FetchUseCase) execute(req FetchRequest) FetchResponse {
-	// 여러 파티션인 경우 병렬 fetch 사용
 	if req.partitions.len > parallel_threshold {
 		return u.execute_parallel(req)
 	}
@@ -94,10 +93,7 @@ fn (u &FetchUseCase) execute_sequential(req FetchRequest) FetchResponse {
 /// execute_parallel은 spawn을 사용하여 fetch 요청을 병렬로 처리합니다.
 /// 타임아웃 처리를 포함합니다.
 fn (u &FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
-	// 결과를 위한 채널 생성
 	ch := chan FetchPartitionResponse{cap: req.partitions.len}
-
-	// 각 파티션에 대해 fetch 태스크 생성
 	for part_req in req.partitions {
 		spawn u.fetch_partition_async(part_req, ch)
 	}
@@ -164,7 +160,6 @@ fn (u &FetchUseCase) fetch_partition_async(part_req FetchPartitionRequest, ch ch
 
 /// fetch_partition은 단일 파티션에서 레코드를 가져옵니다.
 fn (u &FetchUseCase) fetch_partition(part_req FetchPartitionRequest) FetchPartitionResponse {
-	// 토픽 존재 여부 확인
 	_ := u.storage.get_topic(part_req.topic) or {
 		return FetchPartitionResponse{
 			topic:      part_req.topic
@@ -172,8 +167,6 @@ fn (u &FetchUseCase) fetch_partition(part_req FetchPartitionRequest) FetchPartit
 			error_code: i16(domain.ErrorCode.unknown_topic_or_partition)
 		}
 	}
-
-	// 레코드 fetch
 	result := u.storage.fetch(part_req.topic, part_req.partition, part_req.fetch_offset,
 		part_req.max_bytes) or {
 		return FetchPartitionResponse{

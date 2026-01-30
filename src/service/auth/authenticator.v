@@ -9,9 +9,7 @@ import infra.observability
 import sync
 import time
 
-// ============================================================================
 // 로깅 (Logging)
-// ============================================================================
 
 /// log_message는 구조화된 로그 메시지를 출력합니다.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
@@ -25,9 +23,7 @@ fn log_message(level observability.LogLevel, component string, message string, c
 	}
 }
 
-// ============================================================================
 // 메트릭 (Metrics)
-// ============================================================================
 
 /// AuthMetrics는 인증 작업의 메트릭을 추적합니다.
 pub struct AuthMetrics {
@@ -326,9 +322,7 @@ fn parse_plain_auth(data []u8) ?PlainAuthData {
 	}
 }
 
-// ============================================================================
 // 메트릭 조회 (Metrics Query)
-// ============================================================================
 
 /// get_metrics_summary는 인증 메트릭 요약을 반환합니다.
 pub fn (mut s AuthService) get_metrics_summary() string {

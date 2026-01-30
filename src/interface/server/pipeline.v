@@ -37,8 +37,8 @@ mut:
 	total_completed u64              // 총 완료된 요청 수 (통계)
 }
 
-/// new_pipeline은 새로운 요청 파이프라인을 생성합니다.
-/// max_pending은 동시에 대기할 수 있는 최대 요청 수를 지정합니다.
+/// new_pipeline - creates a new request pipeline
+/// new_pipeline - creates a new request pipeline
 pub fn new_pipeline(max_pending int) &RequestPipeline {
 	return &RequestPipeline{
 		max_pending: max_pending
@@ -46,8 +46,8 @@ pub fn new_pipeline(max_pending int) &RequestPipeline {
 	}
 }
 
-/// enqueue는 새로운 요청을 파이프라인에 추가합니다.
-/// 파이프라인이 가득 차면 에러를 반환합니다.
+/// enqueue - adds a new request to the pipeline
+/// enqueue - adds a new request to the pipeline
 pub fn (mut p RequestPipeline) enqueue(correlation_id i32, api_key i16, api_version i16, data []u8) ! {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -66,7 +66,8 @@ pub fn (mut p RequestPipeline) enqueue(correlation_id i32, api_key i16, api_vers
 	p.total_enqueued += 1
 }
 
-/// complete는 요청을 응답과 함께 완료 처리합니다.
+/// complete - completes a request with a response
+/// complete - completes a request with a response
 pub fn (mut p RequestPipeline) complete(correlation_id i32, response []u8) ! {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -83,7 +84,8 @@ pub fn (mut p RequestPipeline) complete(correlation_id i32, response []u8) ! {
 	return error('correlation_id ${correlation_id} not found in pipeline')
 }
 
-/// complete_with_error는 요청을 에러와 함께 완료 처리합니다.
+/// complete_with_error - completes a request with an error
+/// complete_with_error - completes a request with an error
 pub fn (mut p RequestPipeline) complete_with_error(correlation_id i32, err_msg string) ! {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -100,9 +102,8 @@ pub fn (mut p RequestPipeline) complete_with_error(correlation_id i32, err_msg s
 	return error('correlation_id ${correlation_id} not found in pipeline')
 }
 
-/// get_ready_responses는 전송 준비된 응답을 순서대로 반환합니다.
-/// 앞에서부터 연속으로 완료된 요청만 반환합니다.
-/// 예: [완료, 완료, 미완료, 완료] -> [완료, 완료]만 반환
+/// get_ready_responses - returns ready responses in order
+/// get_ready_responses - returns ready responses in order
 pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -131,7 +132,8 @@ pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 	return ready
 }
 
-/// peek_first는 첫 번째 대기 요청을 제거하지 않고 반환합니다.
+/// peek_first - returns the first pending request without removing it
+/// peek_first - returns the first pending request without removing it
 pub fn (mut p RequestPipeline) peek_first() ?PendingRequest {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -142,7 +144,8 @@ pub fn (mut p RequestPipeline) peek_first() ?PendingRequest {
 	return none
 }
 
-/// pending_count는 대기 중인 요청 수를 반환합니다.
+/// pending_count - returns the number of pending requests
+/// pending_count - returns the number of pending requests
 pub fn (mut p RequestPipeline) pending_count() int {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -150,7 +153,8 @@ pub fn (mut p RequestPipeline) pending_count() int {
 	return p.pending.len
 }
 
-/// is_full은 파이프라인이 더 이상 요청을 받을 수 없는지 확인합니다.
+/// is_full - checks if the pipeline cannot accept more requests
+/// is_full - checks if the pipeline cannot accept more requests
 pub fn (mut p RequestPipeline) is_full() bool {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -158,7 +162,8 @@ pub fn (mut p RequestPipeline) is_full() bool {
 	return p.pending.len >= p.max_pending
 }
 
-/// clear는 모든 대기 요청을 제거합니다.
+/// clear - removes all pending requests
+/// clear - removes all pending requests
 pub fn (mut p RequestPipeline) clear() {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -166,7 +171,8 @@ pub fn (mut p RequestPipeline) clear() {
 	p.pending.clear()
 }
 
-/// get_stats는 파이프라인 통계를 반환합니다.
+/// get_stats - returns pipeline statistics
+/// get_stats - returns pipeline statistics
 pub fn (mut p RequestPipeline) get_stats() PipelineStats {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -188,9 +194,8 @@ pub:
 	total_completed u64 // 총 완료된 요청 수
 }
 
-/// oldest_pending_age는 가장 오래된 대기 요청의 나이를 밀리초로 반환합니다.
-/// 대기 요청이 없으면 0을 반환합니다.
-/// 타임아웃 감지에 사용됩니다.
+/// oldest_pending_age - returns the age of the oldest pending request in milliseconds
+/// oldest_pending_age - returns the age of the oldest pending request in milliseconds
 pub fn (mut p RequestPipeline) oldest_pending_age() i64 {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -202,8 +207,8 @@ pub fn (mut p RequestPipeline) oldest_pending_age() i64 {
 	return (time.now() - p.pending[0].received_at).milliseconds()
 }
 
-/// has_timed_out은 대기 요청 중 타임아웃된 것이 있는지 확인합니다.
-/// timeout_ms를 초과한 요청이 하나라도 있으면 true를 반환합니다.
+/// has_timed_out - checks if any pending request has timed out
+/// has_timed_out - checks if any pending request has timed out
 pub fn (mut p RequestPipeline) has_timed_out(timeout_ms i64) bool {
 	p.lock.@lock()
 	defer { p.lock.unlock() }

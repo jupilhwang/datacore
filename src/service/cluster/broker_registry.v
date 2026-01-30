@@ -8,9 +8,7 @@ import infra.observability
 import sync
 import time
 
-// ============================================================================
 // 브로커 레지스트리
-// ============================================================================
 
 /// MetricsProvider는 외부에서 브로커 부하 메트릭을 제공하는 콜백 함수 타입입니다.
 /// 연결 수, 초당 바이트 입출력 등의 메트릭을 반환합니다.
@@ -124,9 +122,7 @@ pub fn (mut r BrokerRegistry) set_on_broker_change(callback fn (changes BrokerCh
 	r.on_broker_change_cb = callback
 }
 
-// ============================================================================
 // 등록
-// ============================================================================
 
 /// register는 로컬 브로커를 클러스터에 등록합니다.
 pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
@@ -192,9 +188,7 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 	r.brokers.delete(r.local_broker.broker_id)
 }
 
-// ============================================================================
 // 하트비트
-// ============================================================================
 
 /// send_heartbeat는 로컬 브로커의 하트비트를 전송합니다.
 pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
@@ -222,9 +216,7 @@ pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 	r.brokers[r.local_broker.broker_id] = r.local_broker
 }
 
-// ============================================================================
 // 조회
-// ============================================================================
 
 /// get_local_broker는 로컬 브로커 정보를 반환합니다.
 pub fn (r &BrokerRegistry) get_local_broker() domain.BrokerInfo {
@@ -289,9 +281,7 @@ pub fn (mut r BrokerRegistry) list_active_brokers() ![]domain.BrokerInfo {
 	return result
 }
 
-// ============================================================================
 // 상태 모니터링
-// ============================================================================
 
 /// check_expired_brokers는 하트비트를 놓친 브로커를 확인합니다.
 pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
@@ -358,9 +348,7 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 	return expired
 }
 
-// ============================================================================
 // 백그라운드 워커
-// ============================================================================
 
 /// start_heartbeat_worker는 백그라운드 하트비트 워커를 시작합니다.
 pub fn (mut r BrokerRegistry) start_heartbeat_worker() {
@@ -397,9 +385,7 @@ fn (mut r BrokerRegistry) heartbeat_loop() {
 	}
 }
 
-// ============================================================================
 // 클러스터 메타데이터
-// ============================================================================
 
 /// get_cluster_metadata는 현재 클러스터 메타데이터를 반환합니다.
 pub fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
@@ -432,9 +418,7 @@ pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 	return r.capability
 }
 
-// ============================================================================
 // 브로커 변경 처리 (파티션 리밸런싱 트리거)
-// ============================================================================
 
 /// on_broker_change는 브로커 목록 변경 시 호출됩니다.
 /// 파티션 리밸런싱을 트리거하고 콜백을 호출합니다.

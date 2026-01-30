@@ -10,9 +10,7 @@ import crypto.hmac
 import encoding.base64
 import rand
 
-// ============================================================================
 // SCRAM-SHA-256 Constants
-// ============================================================================
 
 /// SCRAM 인증에 사용되는 기본 iteration 횟수
 const default_iterations = 4096
@@ -20,9 +18,7 @@ const default_iterations = 4096
 /// SCRAM nonce 길이 (바이트)
 const nonce_length = 24
 
-// ============================================================================
 // SCRAM-SHA-256 Authenticator
-// ============================================================================
 
 /// ScramState는 SCRAM 인증의 현재 상태를 나타냅니다.
 pub enum ScramState {
@@ -51,7 +47,8 @@ mut:
 	server_key      []u8           // 서버 키 (비밀번호에서 파생)
 }
 
-/// new_scram_sha256_authenticator는 새로운 SCRAM-SHA-256 인증자를 생성합니다.
+/// new_scram_sha256_authenticator - creates a new SCRAM-SHA-256 authenticator
+/// new_scram_sha256_authenticator - creates a new SCRAM-SHA-256 authenticator
 pub fn new_scram_sha256_authenticator(user_store port.UserStore) &ScramSha256Authenticator {
 	return &ScramSha256Authenticator{
 		user_store: user_store
@@ -60,13 +57,14 @@ pub fn new_scram_sha256_authenticator(user_store port.UserStore) &ScramSha256Aut
 	}
 }
 
-/// mechanism은 SASL 메커니즘 타입을 반환합니다.
+/// mechanism - returns the SASL mechanism type
+/// mechanism - returns the SASL mechanism type
 pub fn (a &ScramSha256Authenticator) mechanism() domain.SaslMechanism {
 	return .scram_sha_256
 }
 
-/// authenticate는 SCRAM-SHA-256 인증의 첫 번째 단계를 처리합니다.
-/// 클라이언트의 client-first-message를 받아 server-first-message를 반환합니다.
+/// authenticate - handles the first step of SCRAM-SHA-256 authentication
+/// authenticate - handles the first step of SCRAM-SHA-256 authentication
 pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.AuthResult {
 	if a.state != .initial {
 		return domain.auth_failure(.illegal_sasl_state, 'SCRAM authenticator already in use')
@@ -119,8 +117,8 @@ pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.Au
 	}
 }
 
-/// step은 SCRAM 인증의 후속 단계를 처리합니다.
-/// client-final-message를 받아 server-final-message를 반환합니다.
+/// step - handles subsequent steps of SCRAM authentication
+/// step - handles subsequent steps of SCRAM authentication
 pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 	if a.state != .server_first_sent {
 		return domain.auth_failure(.illegal_sasl_state, 'Invalid SCRAM state for step')
@@ -184,9 +182,7 @@ pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 	}
 }
 
-// ============================================================================
 // SCRAM Message Parsing
-// ============================================================================
 
 /// ClientFirstMessage는 파싱된 client-first-message를 나타냅니다.
 struct ClientFirstMessage {
@@ -201,7 +197,7 @@ struct ClientFirstMessage {
 /// gs2-header: n,, 또는 y,, 또는 p=... (채널 바인딩)
 /// client-first-message-bare: n=username,r=nonce
 fn parse_client_first_message(msg string) ?ClientFirstMessage {
-	if msg.len == 0 {
+	if msg == '' {
 		return none
 	}
 
@@ -239,7 +235,7 @@ fn parse_client_first_message(msg string) ?ClientFirstMessage {
 		}
 	}
 
-	if username.len == 0 || nonce.len == 0 {
+	if username == '' || nonce == '' {
 		return none
 	}
 
@@ -262,7 +258,7 @@ struct ClientFinalMessage {
 /// parse_client_final_message는 client-final-message를 파싱합니다.
 /// 형식: c=channel-binding,r=nonce,p=proof
 fn parse_client_final_message(msg string) ?ClientFinalMessage {
-	if msg.len == 0 {
+	if msg == '' {
 		return none
 	}
 
@@ -283,7 +279,7 @@ fn parse_client_final_message(msg string) ?ClientFinalMessage {
 		}
 	}
 
-	if channel_binding.len == 0 || nonce.len == 0 || proof.len == 0 {
+	if channel_binding == '' || nonce == '' || proof == '' {
 		return none
 	}
 
@@ -302,9 +298,7 @@ fn build_server_first_message(combined_nonce string, salt []u8, iterations int) 
 	return 'r=${combined_nonce},s=${salt_b64},i=${iterations}'
 }
 
-// ============================================================================
 // Cryptographic Functions
-// ============================================================================
 
 /// generate_nonce는 SCRAM 인증을 위한 랜덤 nonce를 생성합니다.
 fn generate_nonce() string {

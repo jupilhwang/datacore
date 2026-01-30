@@ -29,9 +29,7 @@ pub fn new_schema_api(registry &schema.SchemaRegistry) &SchemaAPI {
 	}
 }
 
-// ============================================================================
 // API 요청/응답 구조체
-// ============================================================================
 
 // RegisterSchemaRequest는 POST /subjects/{subject}/versions 요청 구조체입니다.
 struct RegisterSchemaRequest {
@@ -88,9 +86,7 @@ struct ErrorResponse {
 	message    string @[json: 'message']    // 에러 메시지
 }
 
-// ============================================================================
 // HTTP 엔드포인트 핸들러
-// ============================================================================
 
 /// handle_request는 요청을 적절한 핸들러로 라우팅합니다.
 pub fn (mut api SchemaAPI) handle_request(method string, path string, body string) (int, string) {
@@ -110,9 +106,7 @@ pub fn (mut api SchemaAPI) handle_request(method string, path string, body strin
 	}
 }
 
-// ============================================================================
 // Subjects 엔드포인트
-// ============================================================================
 
 // handle_subjects는 /subjects 엔드포인트를 처리합니다.
 fn (mut api SchemaAPI) handle_subjects(method string, parts []string, body string) (int, string) {
@@ -166,9 +160,7 @@ fn (mut api SchemaAPI) handle_subjects(method string, parts []string, body strin
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// ============================================================================
 // Schemas 엔드포인트
-// ============================================================================
 
 // handle_schemas는 /schemas 엔드포인트를 처리합니다.
 fn (mut api SchemaAPI) handle_schemas(method string, parts []string, body string) (int, string) {
@@ -193,9 +185,7 @@ fn (mut api SchemaAPI) handle_schemas(method string, parts []string, body string
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// ============================================================================
 // Config 엔드포인트
-// ============================================================================
 
 // handle_config는 /config 엔드포인트를 처리합니다.
 fn (mut api SchemaAPI) handle_config(method string, parts []string, body string) (int, string) {
@@ -221,9 +211,7 @@ fn (mut api SchemaAPI) handle_config(method string, parts []string, body string)
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// ============================================================================
 // Compatibility 엔드포인트
-// ============================================================================
 
 // handle_compatibility는 /compatibility 엔드포인트를 처리합니다.
 fn (mut api SchemaAPI) handle_compatibility(method string, parts []string, body string) (int, string) {
@@ -240,9 +228,7 @@ fn (mut api SchemaAPI) handle_compatibility(method string, parts []string, body 
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// ============================================================================
 // 핸들러 구현
-// ============================================================================
 
 // list_subjects는 모든 서브젝트 목록을 반환합니다.
 fn (mut api SchemaAPI) list_subjects() (int, string) {

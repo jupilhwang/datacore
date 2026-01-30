@@ -431,9 +431,7 @@ pub fn (mut r SchemaRegistry) get_stats() RegistryStats {
 	}
 }
 
-// ============================================================================
 // 비공개 헬퍼 메서드
-// ============================================================================
 
 /// find_schema_by_fingerprint는 지문으로 스키마를 찾습니다.
 fn (r &SchemaRegistry) find_schema_by_fingerprint(subject string, fingerprint string) ?int {
@@ -535,9 +533,7 @@ fn (mut r SchemaRegistry) persist_schema(subject string, schema domain.Schema, v
 	}
 }
 
-// ============================================================================
 // 유틸리티 함수
-// ============================================================================
 
 /// normalize_schema는 일관된 지문 생성을 위해 공백을 제거합니다.
 fn normalize_schema(schema_str string) string {

@@ -8,9 +8,7 @@ import service.port
 import sync
 import time
 
-// ============================================================================
 // Share 파티션 매니저
-// ============================================================================
 
 /// SharePartitionManager는 share 파티션과 레코드 상태를 관리합니다.
 /// 레코드 획득, 확인, 해제 등의 작업을 처리합니다.
@@ -32,9 +30,7 @@ pub fn new_share_partition_manager(storage port.StoragePort) &SharePartitionMana
 	}
 }
 
-// ============================================================================
 // 파티션 관리
-// ============================================================================
 
 /// get_or_create_partition은 share 파티션을 가져오거나 생성합니다.
 pub fn (mut m SharePartitionManager) get_or_create_partition(group_id string, topic_name string, partition i32) &domain.SharePartition {
@@ -94,9 +90,7 @@ pub fn (mut m SharePartitionManager) get_partition_stats(group_id string) (int, 
 	return partition_count, total_acquired, total_acknowledged, total_released, total_rejected
 }
 
-// ============================================================================
 // 레코드 획득
-// ============================================================================
 
 /// acquire_records는 컨슈머를 위해 레코드를 획득합니다.
 /// 획득된 레코드는 지정된 기간 동안 해당 컨슈머에게 잠깁니다.
@@ -156,9 +150,7 @@ pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id 
 	return acquired
 }
 
-// ============================================================================
 // 레코드 확인
-// ============================================================================
 
 /// acknowledge_records는 레코드에 대한 확인을 처리합니다.
 /// accept, release, reject 세 가지 타입을 지원합니다.
@@ -220,9 +212,7 @@ pub fn (mut m SharePartitionManager) acknowledge_records(group_id string, member
 	}
 }
 
-// ============================================================================
 // 레코드 해제
-// ============================================================================
 
 /// release_expired_locks_with_limits는 획득 잠금이 만료된 레코드를 해제합니다.
 /// 제공된 맵의 배달 시도 제한을 사용합니다.
@@ -291,9 +281,7 @@ pub fn (mut m SharePartitionManager) release_member_records_internal(group_id st
 	}
 }
 
-// ============================================================================
 // 내부 헬퍼
-// ============================================================================
 
 /// get_or_create_partition_internal은 잠금 없이 파티션을 가져오거나 생성합니다.
 fn (mut m SharePartitionManager) get_or_create_partition_internal(group_id string, topic_name string, partition i32) &domain.SharePartition {

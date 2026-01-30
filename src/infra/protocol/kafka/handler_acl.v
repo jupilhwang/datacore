@@ -7,9 +7,7 @@ import domain
 import infra.observability
 import time
 
-// ============================================================================
 // DescribeAcls (API Key 29)
-// ============================================================================
 
 pub struct DescribeAclsRequest {
 pub:
@@ -134,9 +132,7 @@ pub fn (r DescribeAclsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // CreateAcls (API Key 30)
-// ============================================================================
 
 pub struct CreateAclsRequest {
 pub:
@@ -230,9 +226,7 @@ pub fn (r CreateAclsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // DeleteAcls (API Key 31)
-// ============================================================================
 
 pub struct DeleteAclsRequest {
 pub:
@@ -377,9 +371,7 @@ pub fn (r DeleteAclsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // ACL 핸들러
-// ============================================================================
 
 // DescribeAcls 핸들러
 fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {

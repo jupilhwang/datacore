@@ -2,9 +2,7 @@
 // Handles record, array, map, enum, fixed, and union types
 module schema
 
-// ============================================================================
 // Complex Type Encoding
-// ============================================================================
 
 // encode_record encodes a JSON object as an Avro record
 fn (e &AvroEncoder) encode_record(json_str string, schema AvroSchema) ![]u8 {
@@ -179,9 +177,7 @@ fn (e &AvroEncoder) encode_union(json_str string, schema AvroSchema) ![]u8 {
 	return error('value does not match any union type')
 }
 
-// ============================================================================
 // Complex Type Decoding
-// ============================================================================
 
 // decode_record decodes an Avro record to JSON
 fn (e &AvroEncoder) decode_record(mut reader AvroReader, schema AvroSchema) !string {

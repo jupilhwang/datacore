@@ -2,9 +2,7 @@
 // JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat 인코딩 메서드
 module kafka
 
-// ============================================================================
 // JoinGroup 응답 인코더 (API Key 11)
-// ============================================================================
 
 pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 6
@@ -74,9 +72,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // SyncGroup 응답 인코더 (API Key 14)
-// ============================================================================
 
 pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
@@ -107,9 +103,7 @@ pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // Heartbeat 응답 인코더 (API Key 12)
-// ============================================================================
 
 pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
@@ -126,9 +120,7 @@ pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // LeaveGroup 응답 인코더 (API Key 13)
-// ============================================================================
 
 pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
@@ -167,9 +159,7 @@ pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // ConsumerGroupHeartbeat 응답 인코더 (API Key 68) - KIP-848
-// ============================================================================
 
 pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
 	// ConsumerGroupHeartbeat는 항상 flexible (v0+)
@@ -226,9 +216,7 @@ pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // ConsumerGroupDescribe 응답 인코더 (API Key 69) - KIP-848
-// ============================================================================
 
 pub fn (r ConsumerGroupDescribeResponse) encode(version i16) []u8 {
 	// ConsumerGroupDescribe는 항상 flexible (v0+)

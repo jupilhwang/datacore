@@ -18,9 +18,7 @@ import sync
 import time
 import infra.observability
 
-// ============================================================================
 // 로깅 (Logging)
-// ============================================================================
 
 /// log_message는 구조화된 로그 메시지를 출력합니다.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {

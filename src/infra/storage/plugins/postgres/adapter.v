@@ -11,10 +11,6 @@ import rand
 import sync
 import encoding.hex
 
-// ============================================================
-// 로깅 (Logging)
-// ============================================================
-
 /// LogLevel은 로그 레벨을 정의합니다.
 enum LogLevel {
 	debug
@@ -44,10 +40,6 @@ fn log_message(level LogLevel, component string, message string, context map[str
 
 	eprintln('${timestamp} ${level_str} [Postgres:${component}] ${message}${ctx_str}')
 }
-
-// ============================================================
-// 메트릭 (Metrics)
-// ============================================================
 
 /// PostgresMetrics는 PostgreSQL 스토리지 작업의 메트릭을 추적합니다.
 struct PostgresMetrics {
@@ -465,10 +457,6 @@ fn (mut a PostgresStorageAdapter) load_topic_cache() ! {
 	}
 }
 
-// ============================================================
-// 토픽 작업 (Topic Operations)
-// ============================================================
-
 /// create_topic은 새로운 토픽을 생성합니다.
 /// UUID v4 형식의 topic_id를 자동 생성합니다.
 pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
@@ -650,10 +638,6 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 	}
 	a.cache_lock.unlock()
 }
-
-// ============================================================
-// 레코드 작업 (Record Operations)
-// ============================================================
 
 /// append는 파티션에 레코드를 추가합니다.
 /// 행 락(FOR UPDATE)을 사용하여 동시성을 제어합니다.
@@ -874,10 +858,6 @@ pub fn (mut a PostgresStorageAdapter) delete_records(topic_name string, partitio
 	db.commit()!
 }
 
-// ============================================================
-// 오프셋 작업 (Offset Operations)
-// ============================================================
-
 /// get_partition_info는 파티션 정보를 조회합니다.
 pub fn (mut a PostgresStorageAdapter) get_partition_info(topic_name string, partition int) !domain.PartitionInfo {
 	a.cache_lock.rlock()
@@ -915,10 +895,6 @@ pub fn (mut a PostgresStorageAdapter) get_partition_info(topic_name string, part
 		high_watermark:  high_watermark
 	}
 }
-
-// ============================================================
-// 컨슈머 그룹 작업 (Consumer Group Operations)
-// ============================================================
 
 /// save_group은 컨슈머 그룹을 저장합니다.
 pub fn (mut a PostgresStorageAdapter) save_group(group domain.ConsumerGroup) ! {
@@ -1029,10 +1005,6 @@ pub fn (mut a PostgresStorageAdapter) list_groups() ![]domain.GroupInfo {
 	return result
 }
 
-// ============================================================
-// 오프셋 커밋/조회 (Offset Commit/Fetch)
-// ============================================================
-
 /// commit_offsets는 오프셋을 커밋합니다.
 pub fn (mut a PostgresStorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
 	mut db := a.pool.acquire()!
@@ -1111,10 +1083,6 @@ pub fn (mut a PostgresStorageAdapter) fetch_offsets(group_id string, partitions 
 	return results
 }
 
-// ============================================================
-// 헬스 체크 (Health Check)
-// ============================================================
-
 /// health_check는 스토리지 상태를 확인합니다.
 pub fn (mut a PostgresStorageAdapter) health_check() !port.HealthStatus {
 	mut db := a.pool.acquire()!
@@ -1123,10 +1091,6 @@ pub fn (mut a PostgresStorageAdapter) health_check() !port.HealthStatus {
 	db.exec('SELECT 1')!
 	return .healthy
 }
-
-// ============================================================
-// 멀티 브로커 지원 (Multi-Broker Support)
-// ============================================================
 
 /// get_storage_capability는 스토리지 기능 정보를 반환합니다.
 pub fn (a &PostgresStorageAdapter) get_storage_capability() domain.StorageCapability {
@@ -1141,10 +1105,6 @@ pub fn (a &PostgresStorageAdapter) get_cluster_metadata_port() ?&port.ClusterMet
 	}
 	return none
 }
-
-// ============================================================
-// 통계 및 유틸리티 (Stats and Utilities)
-// ============================================================
 
 /// StorageStats는 스토리지 통계를 제공합니다.
 /// 데이터베이스의 현재 상태를 요약한 정보를 담습니다.
@@ -1180,10 +1140,6 @@ pub fn (mut a PostgresStorageAdapter) get_stats() !StorageStats {
 pub fn (mut a PostgresStorageAdapter) close() {
 	a.pool.close()
 }
-
-// ============================================================
-// 메트릭 조회 (Metrics Query)
-// ============================================================
 
 /// get_metrics는 현재 메트릭 스냅샷을 반환합니다.
 pub fn (mut a PostgresStorageAdapter) get_metrics() PostgresMetrics {

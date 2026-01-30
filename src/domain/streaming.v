@@ -4,9 +4,7 @@ module domain
 
 import time
 
-// ============================================================================
 // SSE 이벤트 타입
-// ============================================================================
 
 /// SSEEventType은 SSE 이벤트의 유형을 나타냅니다.
 pub enum SSEEventType {
@@ -92,9 +90,7 @@ pub fn (e &SSEEvent) encode() string {
 	return result
 }
 
-// ============================================================================
 // SSE 메시지 데이터
-// ============================================================================
 
 /// SSEMessageData는 SSE 메시지 이벤트의 데이터 페이로드를 나타냅니다.
 pub struct SSEMessageData {
@@ -108,9 +104,7 @@ pub:
 	headers   map[string]string // 메시지 헤더
 }
 
-// ============================================================================
 // 구독 모델
-// ============================================================================
 
 /// SubscriptionOffset은 소비 시작 위치를 나타냅니다.
 pub enum SubscriptionOffset {
@@ -166,9 +160,7 @@ fn generate_subscription_id() string {
 	return 'sub-${time.now().unix_nano()}'
 }
 
-// ============================================================================
 // SSE 연결 상태
-// ============================================================================
 
 /// SSEConnectionState는 SSE 연결의 상태를 나타냅니다.
 pub enum SSEConnectionState {
@@ -212,9 +204,7 @@ pub fn new_sse_connection(client_ip string, user_agent string) SSEConnection {
 	}
 }
 
-// ============================================================================
 // SSE 설정
-// ============================================================================
 
 /// SSEConfig는 SSE 서버 설정을 보관합니다.
 pub struct SSEConfig {
@@ -232,9 +222,7 @@ pub fn default_sse_config() SSEConfig {
 	return SSEConfig{}
 }
 
-// ============================================================================
 // WebSocket 모델
-// ============================================================================
 
 /// WebSocketAction은 WebSocket을 통한 클라이언트 액션을 나타냅니다.
 pub enum WebSocketAction {
@@ -399,9 +387,7 @@ fn escape_json_str(s string) string {
 	return result
 }
 
-// ============================================================================
 // WebSocket 연결 상태
-// ============================================================================
 
 /// WebSocketConnectionState는 WebSocket 연결의 상태를 나타냅니다.
 pub enum WebSocketConnectionState {
@@ -450,9 +436,7 @@ pub fn new_ws_connection(client_ip string, user_agent string) WebSocketConnectio
 	}
 }
 
-// ============================================================================
 // WebSocket 설정
-// ============================================================================
 
 /// WebSocketConfig는 WebSocket 서버 설정을 보관합니다.
 pub struct WebSocketConfig {

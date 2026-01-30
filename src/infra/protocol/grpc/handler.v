@@ -9,10 +9,6 @@ import service.streaming
 import time
 import infra.observability
 
-// ============================================================
-// 로깅 (Logging)
-// ============================================================
-
 /// log_message는 구조화된 로그 메시지를 출력합니다.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	logger := observability.get_named_logger('grpc.${component}')
@@ -24,9 +20,7 @@ fn log_message(level observability.LogLevel, component string, message string, c
 	}
 }
 
-// ============================================================================
 // gRPC 핸들러
-// ============================================================================
 
 // GrpcHandler는 HTTP/2를 통한 gRPC 연결을 처리합니다.
 pub struct GrpcHandler {
@@ -49,9 +43,7 @@ pub fn new_grpc_handler(storage port.StoragePort, config domain.GrpcConfig) &Grp
 	}
 }
 
-// ============================================================================
 // 연결 처리
-// ============================================================================
 
 /// handle_connection은 새로운 gRPC 연결을 처리합니다.
 pub fn (mut h GrpcHandler) handle_connection(mut conn net.TcpConn, client_ip string) {
@@ -128,9 +120,7 @@ fn (mut h GrpcHandler) poll_loop(conn_id string) {
 	}
 }
 
-// ============================================================================
 // 프레임 읽기/쓰기
-// ============================================================================
 
 /// GrpcFrame은 gRPC 프레임을 나타냅니다.
 struct GrpcFrame {
@@ -197,9 +187,7 @@ fn (mut h GrpcHandler) send_frame(mut conn net.TcpConn, data []u8, compressed bo
 	conn.write(frame) or { return error('Failed to write frame') }
 }
 
-// ============================================================================
 // 요청 처리
-// ============================================================================
 
 /// handle_frame은 gRPC 프레임을 파싱하고 처리합니다.
 fn (mut h GrpcHandler) handle_frame(conn_id string, frame GrpcFrame) domain.GrpcStreamResponse {
@@ -507,9 +495,7 @@ fn (h &GrpcHandler) parse_ack_request(data []u8) !domain.GrpcStreamRequest {
 	}
 }
 
-// ============================================================================
 // 응답 인코딩
-// ============================================================================
 
 /// send_response는 응답을 인코딩하여 전송합니다.
 fn (mut h GrpcHandler) send_response(mut conn net.TcpConn, response domain.GrpcStreamResponse) ! {
@@ -756,9 +742,7 @@ fn (mut h GrpcHandler) send_error(mut conn net.TcpConn, code i32, message string
 	h.send_frame(mut conn, data, false) or {}
 }
 
-// ============================================================================
 // 통계
-// ============================================================================
 
 /// get_stats는 gRPC 서비스 통계를 반환합니다.
 pub fn (mut h GrpcHandler) get_stats() streaming.GrpcStats {
@@ -770,9 +754,7 @@ pub fn (mut h GrpcHandler) get_connections() []domain.GrpcConnection {
 	return h.grpc_service.list_connections()
 }
 
-// ============================================================================
 // 메트릭 조회 (Metrics Query)
-// ============================================================================
 
 /// get_metrics_summary는 gRPC 프로토콜 메트릭 요약을 반환합니다.
 pub fn (mut h GrpcHandler) get_metrics_summary() string {

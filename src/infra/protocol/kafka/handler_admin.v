@@ -6,9 +6,7 @@ module kafka
 import infra.observability
 import time
 
-// ============================================================================
 // AlterConfigs Request/Response (API Key 33)
-// ============================================================================
 
 pub struct AlterConfigsRequest {
 pub:
@@ -125,9 +123,7 @@ pub fn (r AlterConfigsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // CreatePartitions Request/Response (API Key 37)
-// ============================================================================
 
 pub struct CreatePartitionsRequest {
 pub:
@@ -248,9 +244,7 @@ pub fn (r CreatePartitionsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // DeleteRecords Request/Response (API Key 21)
-// ============================================================================
 
 pub struct DeleteRecordsRequest {
 pub:
@@ -379,9 +373,7 @@ pub fn (r DeleteRecordsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // 핸들러 함수
-// ============================================================================
 
 // handle_alter_configs - AlterConfigs API (Key 33) 처리
 pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {

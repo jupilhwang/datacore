@@ -9,9 +9,7 @@ import sync
 import time
 import rand
 
-// ============================================================================
 // 파티션 할당 서비스
-// ============================================================================
 
 /// PartitionAssigner는 파티션-브로커 할당을 관리하는 서비스입니다.
 /// 라운드로빈 및 스티키 할당 전략을 지원하며, 브로커 변화 시 재할당을 처리합니다.
@@ -65,9 +63,7 @@ pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_po
 	}
 }
 
-// ============================================================================
 // 초기 할당
-// ============================================================================
 
 /// assign_partitions는 새로운 토픽의 파티션을 브로커에 초기 할당합니다.
 /// topic_name: 토픽 이름
@@ -123,9 +119,7 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 	return assignments
 }
 
-// ============================================================================
 // 리밸런싱
-// ============================================================================
 
 /// rebalance_partitions는 브로커 변화에 따라 파티션을 재할당합니다.
 /// topic_name: 토픽 이름
@@ -421,9 +415,7 @@ fn (mut a PartitionAssigner) rebalance_even_distribution(current []domain.Partit
 	return result
 }
 
-// ============================================================================
 // 조회 메서드
-// ============================================================================
 
 /// get_partition_leader는 특정 파티션의 현재 리더 브로커 ID를 반환합니다.
 pub fn (mut a PartitionAssigner) get_partition_leader(topic_name string, partition i32) !i32 {
@@ -464,9 +456,7 @@ pub fn (mut a PartitionAssigner) list_partition_assignments(topic_name string) !
 	return []domain.PartitionAssignment{}
 }
 
-// ============================================================================
 // 재할당 계획
-// ============================================================================
 
 /// generate_reassignment_plan은 브로커 변화에 따른 재할당 계획을 생성합니다.
 /// changes: 브로커 변화 정보 (추가/제거된 브로커)
@@ -506,9 +496,7 @@ pub:
 	removed []domain.BrokerInfo // 제거된 브로커
 }
 
-// ============================================================================
 // 설정 변경
-// ============================================================================
 
 /// set_strategy는 할당 전략을 변경합니다.
 pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy) {

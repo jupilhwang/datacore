@@ -15,9 +15,7 @@
 /// - ARM CRC32 명령어 지원
 module crc32c
 
-// ============================================================================
 // CRC32-C 테이블 (Castagnoli 다항식)
-// ============================================================================
 
 /// 기본 CRC32-C 다항식 테이블 (256 엔트리)
 const crc32c_table = [
@@ -279,31 +277,25 @@ const crc32c_table = [
 	0xAD7D5351,
 ]
 
-// ============================================================================
 // CPU 기능 감지
-// ============================================================================
 
-/// 하드웨어 CRC32-C 가속이 사용 가능한지 확인합니다.
-/// 현재는 항상 false를 반환합니다 (순수 V 구현 사용).
-/// 향후 C 인터롭을 통해 실제 하드웨어 가속을 추가할 수 있습니다.
+/// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
+/// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
 pub fn cpu_supports_hw_crc32c() bool {
 	// TODO: C 인터롭을 통한 하드웨어 가속 지원 시 true 반환
 	return false
 }
 
-// 호환성을 위한 별칭
-/// cpu_supports_sse42는 SSE4.2 CRC32-C 지원 여부를 반환합니다.
-/// cpu_supports_hw_crc32c의 별칭입니다.
+/// cpu_supports_sse42 - checks if SSE4.2 CRC32-C support is available
+/// cpu_supports_sse42 - checks if SSE4.2 CRC32-C support is available
 pub fn cpu_supports_sse42() bool {
 	return cpu_supports_hw_crc32c()
 }
 
-// ============================================================================
 // CRC32-C 구현
-// ============================================================================
 
-/// crc32c_sw는 소프트웨어 기반 CRC32-C 계산 (테이블 룩업)을 수행합니다.
-/// 바이트 단위 처리로 정확하고 안정적인 구현을 제공합니다.
+/// crc32c_sw - software-based CRC32-C calculation using table lookup
+/// crc32c_sw - software-based CRC32-C calculation using table lookup
 pub fn crc32c_sw(data []u8) u32 {
 	mut crc := u32(0xFFFFFFFF)
 	for b in data {
@@ -344,18 +336,10 @@ fn crc32c_slicing8(data []u8) u32 {
 	return crc ^ 0xFFFFFFFF
 }
 
-// ============================================================================
 // 공개 API
-// ============================================================================
 
-/// CRC32-C 체크섬을 계산합니다.
-/// 8바이트 이상 데이터에는 Slicing-by-8 알고리즘을 사용합니다.
-///
-/// 예제:
-/// ```v
-/// data := [u8(0x01), 0x02, 0x03, 0x04]
-/// checksum := crc32c.calculate(data)
-/// ```
+/// calculate - calculates CRC32-C checksum
+/// calculate - calculates CRC32-C checksum
 pub fn calculate(data []u8) u32 {
 	if data.len == 0 {
 		return 0
@@ -368,13 +352,14 @@ pub fn calculate(data []u8) u32 {
 	return crc32c_sw(data)
 }
 
-/// init은 증분 CRC32-C 계산을 위한 초기값을 반환합니다.
+/// init - returns initial value for incremental CRC32-C calculation
+/// init - returns initial value for incremental CRC32-C calculation
 pub fn init() u32 {
 	return 0xFFFFFFFF
 }
 
-/// update는 기존 CRC 값에 데이터를 추가하여 업데이트합니다.
-/// 스트리밍 데이터의 체크섬 계산에 유용합니다.
+/// update - updates existing CRC value with additional data
+/// update - updates existing CRC value with additional data
 pub fn update(crc u32, data []u8) u32 {
 	if data.len == 0 {
 		return crc
@@ -388,12 +373,14 @@ pub fn update(crc u32, data []u8) u32 {
 	return c
 }
 
-/// finalize는 증분 CRC 계산을 완료하고 최종 체크섬을 반환합니다.
+/// finalize - completes incremental CRC calculation and returns final checksum
+/// finalize - completes incremental CRC calculation and returns final checksum
 pub fn finalize(crc u32) u32 {
 	return crc ^ 0xFFFFFFFF
 }
 
-/// is_hardware_accelerated는 하드웨어 가속이 사용 가능한지 확인합니다.
+/// is_hardware_accelerated - checks if hardware acceleration is available
+/// is_hardware_accelerated - checks if hardware acceleration is available
 pub fn is_hardware_accelerated() bool {
 	return cpu_supports_hw_crc32c()
 }

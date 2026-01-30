@@ -1,25 +1,14 @@
 // KIP-848 서버 측 파티션 할당자
 // KIP-848 프로토콜을 위한 다양한 파티션 할당 전략을 구현합니다.
 //
-// ============================================================================
-// DataCore 무상태 아키텍처 참고
-// ============================================================================
-// DataCore는 모든 브로커가 공유 스토리지(S3, PostgreSQL 등)에 접근하는
-// 무상태 브로커 아키텍처를 사용합니다. 이는 파티션 할당을 단순화합니다:
-//
-// - 브로커-파티션 친화성 없음: 모든 브로커가 모든 파티션을 서비스 가능
-// - 리밸런싱 비용 없음: 할당 변경이 데이터 이동을 유발하지 않음
-// - 단순 할당자: Sticky/Cooperative 알고리즘이 이점을 제공하지 않음
-//
-// 아래 할당자들은 Kafka 프로토콜 호환성을 유지하지만 내부적으로는
-// 단순 라운드 로빈 분배를 사용합니다. 복잡한 sticky 로직은 무상태
-// 아키텍처에서 이점이 없으므로 의도적으로 생략되었습니다.
-// ============================================================================
+// DataCore Stateless Architecture Note:
+// All brokers access shared storage (S3, PostgreSQL), eliminating
+// broker-partition affinity. Complex sticky algorithms provide no benefit.
+// Below assignors maintain Kafka protocol compatibility but use simple
+// round-robin distribution for simplicity in stateless architecture.
 module group
 
-// ============================================================================
-// Range 할당자
-// ============================================================================
+// Range Assignor
 
 /// RangeAssignor는 범위 기반 파티션 할당을 구현합니다.
 /// 각 토픽에 대해 파티션을 멤버 수로 나누어 연속된 범위를 할당합니다.
@@ -85,9 +74,7 @@ pub fn (a &RangeAssignor) assign(members []MemberSubscription, topics map[string
 	return assignments
 }
 
-// ============================================================================
-// Round Robin 할당자
-// ============================================================================
+// Round Robin Assignor
 
 /// RoundRobinAssignor는 라운드 로빈 파티션 할당을 구현합니다.
 /// 모든 파티션을 순환하며 멤버에게 할당합니다.
@@ -162,15 +149,9 @@ pub fn (a &RoundRobinAssignor) assign(members []MemberSubscription, topics map[s
 	return assignments
 }
 
-// ============================================================================
-// Sticky 할당자 (무상태 아키텍처용 단순화)
-// ============================================================================
-// 참고: DataCore는 모든 브로커가 모든 파티션에 접근할 수 있는 무상태
-// 아키텍처를 사용합니다. 복잡한 sticky/cooperative 알고리즘은 보존할
-// 브로커-파티션 친화성이 없으므로 이점을 제공하지 않습니다.
-// 이것은 Kafka 클라이언트 호환성을 위해 'sticky'로 별칭된
-// 단순 라운드 로빈 구현입니다.
-// ============================================================================
+// Sticky Assignor (simplified for stateless architecture)
+// Note: All brokers access shared storage, eliminating broker-partition affinity.
+// This is a simple round-robin implementation with 'sticky' alias for Kafka compatibility.
 
 /// StickyAssignor는 sticky 파티션 할당을 구현합니다.
 /// DataCore의 무상태 아키텍처에서는 단순 라운드 로빈을 사용합니다.
@@ -242,9 +223,7 @@ pub fn (a &StickyAssignor) assign(members []MemberSubscription, topics map[strin
 	return assignments
 }
 
-// ============================================================================
-// Cooperative Sticky 할당자 (호환성을 위한 별칭)
-// ============================================================================
+// Cooperative Sticky Assignor (compatibility alias)
 
 /// CooperativeStickyAssignor는 cooperative sticky 할당을 구현합니다.
 /// 내부적으로 StickyAssignor를 사용합니다.
@@ -267,9 +246,7 @@ pub fn (a &CooperativeStickyAssignor) assign(members []MemberSubscription, topic
 	return a.inner.assign(members, topics)
 }
 
-// ============================================================================
-// Uniform 할당자 (KIP-848) - 라운드 로빈 별칭
-// ============================================================================
+// Uniform Assignor (KIP-848) - round-robin alias
 
 /// UniformAssignor는 KIP-848의 uniform 할당을 구현합니다.
 /// 모든 파티션을 멤버에게 균등하게 분배합니다.

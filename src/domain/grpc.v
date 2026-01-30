@@ -4,10 +4,8 @@ module domain
 
 import time
 
-// ============================================================================
 // gRPC 요청/응답 타입
 // V에서 Protocol Buffer 메시지에 해당하는 구조체들
-// ============================================================================
 
 /// GrpcProduceRequest는 gRPC produce 요청을 나타냅니다.
 pub struct GrpcProduceRequest {
@@ -63,9 +61,7 @@ pub fn new_grpc_produce_error(topic string, partition i32, code i32, msg string)
 	}
 }
 
-// ============================================================================
 // Consume 스트리밍
-// ============================================================================
 
 /// GrpcConsumeRequest는 gRPC consume 요청을 나타냅니다.
 pub struct GrpcConsumeRequest {
@@ -114,9 +110,7 @@ pub fn new_grpc_consume_error(topic string, partition i32, code i32, msg string)
 	}
 }
 
-// ============================================================================
 // 양방향 스트리밍
-// ============================================================================
 
 /// GrpcStreamRequest는 양방향 스트림 요청을 나타냅니다.
 pub struct GrpcStreamRequest {
@@ -225,9 +219,7 @@ pub:
 	timestamp i64 // 서버 타임스탬프
 }
 
-// ============================================================================
 // gRPC 연결 상태
-// ============================================================================
 
 /// GrpcConnectionState는 gRPC 연결의 상태를 나타냅니다.
 pub enum GrpcConnectionState {
@@ -281,9 +273,7 @@ pub fn new_grpc_connection(client_ip string, stream_type GrpcStreamType) GrpcCon
 	}
 }
 
-// ============================================================================
 // gRPC 설정
-// ============================================================================
 
 /// GrpcConfig는 gRPC 서버 설정을 보관합니다.
 pub struct GrpcConfig {
@@ -304,9 +294,7 @@ pub fn default_grpc_config() GrpcConfig {
 	return GrpcConfig{}
 }
 
-// ============================================================================
 // gRPC 에러 코드 (Kafka 호환)
-// ============================================================================
 
 pub const grpc_error_none = 0
 pub const grpc_error_unknown = -1
@@ -347,9 +335,7 @@ pub fn grpc_error_message(code i32) string {
 	}
 }
 
-// ============================================================================
 // 바이너리 인코딩 헬퍼 (gRPC 와이어 포맷용)
-// ============================================================================
 
 /// encode는 GrpcRecord를 바이트로 인코딩합니다.
 pub fn (r &GrpcRecord) encode() []u8 {

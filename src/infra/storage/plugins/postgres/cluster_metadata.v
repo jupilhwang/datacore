@@ -16,7 +16,8 @@ mut:
 	lock       sync.RwMutex
 }
 
-/// new_cluster_metadata_port는 새로운 PostgreSQL 클러스터 메타데이터 포트를 생성합니다.
+/// new_cluster_metadata_port - creates a new PostgreSQL cluster metadata port
+/// new_cluster_metadata_port - creates a new PostgreSQL cluster metadata port
 pub fn new_cluster_metadata_port(pool &pg.ConnectionPool, cluster_id string) !&PostgresClusterMetadataPort {
 	mut cmp := &PostgresClusterMetadataPort{
 		pool:       pool
@@ -113,7 +114,8 @@ fn (mut p PostgresClusterMetadataPort) init_cluster_schema() ! {
 // 브로커 등록
 // ============================================================
 
-/// register_broker는 브로커를 클러스터에 등록합니다.
+/// register_broker - registers a broker in the cluster
+/// register_broker - registers a broker in the cluster
 pub fn (mut p PostgresClusterMetadataPort) register_broker(info domain.BrokerInfo) !domain.BrokerInfo {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -183,7 +185,8 @@ pub fn (mut p PostgresClusterMetadataPort) register_broker(info domain.BrokerInf
 	}
 }
 
-/// deregister_broker는 브로커를 클러스터에서 등록 해제합니다.
+/// deregister_broker - deregisters a broker from the cluster
+/// deregister_broker - deregisters a broker from the cluster
 pub fn (mut p PostgresClusterMetadataPort) deregister_broker(broker_id i32) ! {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -203,7 +206,8 @@ pub fn (mut p PostgresClusterMetadataPort) deregister_broker(broker_id i32) ! {
 	db.commit()!
 }
 
-/// update_broker_heartbeat는 브로커의 하트비트를 업데이트합니다.
+/// update_broker_heartbeat - updates a broker's heartbeat
+/// update_broker_heartbeat - updates a broker.s heartbeat
 pub fn (mut p PostgresClusterMetadataPort) update_broker_heartbeat(heartbeat domain.BrokerHeartbeat) ! {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -216,7 +220,8 @@ pub fn (mut p PostgresClusterMetadataPort) update_broker_heartbeat(heartbeat dom
 		[heartbeat.timestamp.str(), status, heartbeat.broker_id.str()])!
 }
 
-/// get_broker는 특정 브로커의 정보를 조회합니다.
+/// get_broker - retrieves a specific broker's information
+/// get_broker - retrieves a specific broker.s information
 pub fn (mut p PostgresClusterMetadataPort) get_broker(broker_id i32) !domain.BrokerInfo {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -263,7 +268,8 @@ pub fn (mut p PostgresClusterMetadataPort) get_broker(broker_id i32) !domain.Bro
 	return info
 }
 
-/// list_brokers는 등록된 모든 브로커 목록을 조회합니다.
+/// list_brokers - lists all registered brokers
+/// list_brokers - lists all registered brokers
 pub fn (mut p PostgresClusterMetadataPort) list_brokers() ![]domain.BrokerInfo {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -292,7 +298,8 @@ pub fn (mut p PostgresClusterMetadataPort) list_brokers() ![]domain.BrokerInfo {
 	return brokers
 }
 
-/// list_active_brokers는 활성 상태인 브로커 목록만 조회합니다.
+/// list_active_brokers - lists only active brokers
+/// list_active_brokers - lists only active brokers
 pub fn (mut p PostgresClusterMetadataPort) list_active_brokers() ![]domain.BrokerInfo {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -325,7 +332,8 @@ pub fn (mut p PostgresClusterMetadataPort) list_active_brokers() ![]domain.Broke
 // 클러스터 메타데이터
 // ============================================================
 
-/// get_cluster_metadata는 현재 클러스터 메타데이터를 조회합니다.
+/// get_cluster_metadata - retrieves current cluster metadata
+/// get_cluster_metadata - retrieves current cluster metadata
 pub fn (mut p PostgresClusterMetadataPort) get_cluster_metadata() !domain.ClusterMetadata {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -352,8 +360,8 @@ pub fn (mut p PostgresClusterMetadataPort) get_cluster_metadata() !domain.Cluste
 	}
 }
 
-/// update_cluster_metadata는 클러스터 메타데이터를 업데이트합니다.
-/// Optimistic locking을 사용하여 동시 수정을 감지합니다.
+/// update_cluster_metadata - updates cluster metadata
+/// update_cluster_metadata - updates cluster metadata
 pub fn (mut p PostgresClusterMetadataPort) update_cluster_metadata(metadata domain.ClusterMetadata) ! {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -390,7 +398,8 @@ pub fn (mut p PostgresClusterMetadataPort) update_cluster_metadata(metadata doma
 // 파티션 할당
 // ============================================================
 
-/// get_partition_assignment는 특정 토픽-파티션의 할당 정보를 조회합니다.
+/// get_partition_assignment - retrieves partition assignment for a topic-partition
+/// get_partition_assignment - retrieves partition assignment for a topic-partition
 pub fn (mut p PostgresClusterMetadataPort) get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment {
 	start_time := time.now().unix_milli()
 	mut db := p.pool.acquire()!
@@ -431,7 +440,8 @@ pub fn (mut p PostgresClusterMetadataPort) get_partition_assignment(topic_name s
 	}
 }
 
-/// list_partition_assignments는 특정 토픽의 모든 파티션 할당을 조회합니다.
+/// list_partition_assignments - lists all partition assignments for a topic
+/// list_partition_assignments - lists all partition assignments for a topic
 pub fn (mut p PostgresClusterMetadataPort) list_partition_assignments(topic_name string) ![]domain.PartitionAssignment {
 	start_time := time.now().unix_milli()
 	mut db := p.pool.acquire()!
@@ -468,8 +478,8 @@ pub fn (mut p PostgresClusterMetadataPort) list_partition_assignments(topic_name
 	return assignments
 }
 
-/// update_partition_assignment는 파티션 할당을 업데이트합니다.
-/// UPSERT (INSERT ... ON CONFLICT UPDATE)를 사용하여 배열 필드를 포함한 모든 필드를 업데이트합니다.
+/// update_partition_assignment - updates a partition assignment
+/// update_partition_assignment - updates a partition assignment
 pub fn (mut p PostgresClusterMetadataPort) update_partition_assignment(assignment domain.PartitionAssignment) ! {
 	start_time := time.now().unix_milli()
 	mut db := p.pool.acquire()!
@@ -513,7 +523,8 @@ pub fn (mut p PostgresClusterMetadataPort) update_partition_assignment(assignmen
 	})
 }
 
-/// list_all_partition_assignments는 모든 토픽의 모든 파티션 할당을 조회합니다.
+/// list_all_partition_assignments - lists all partition assignments for all topics
+/// list_all_partition_assignments - lists all partition assignments for all topics
 pub fn (mut p PostgresClusterMetadataPort) list_all_partition_assignments() ![]domain.PartitionAssignment {
 	start_time := time.now().unix_milli()
 	mut db := p.pool.acquire()!
@@ -552,8 +563,8 @@ pub fn (mut p PostgresClusterMetadataPort) list_all_partition_assignments() ![]d
 // 분산 락 (Distributed Locking)
 // ============================================================
 
-/// try_acquire_lock은 분산 락 획득을 시도합니다.
-/// TTL이 만료되면 락은 자동으로 해제됩니다.
+/// try_acquire_lock - attempts to acquire a distributed lock
+/// try_acquire_lock - attempts to acquire a distributed lock
 pub fn (mut p PostgresClusterMetadataPort) try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -584,7 +595,8 @@ pub fn (mut p PostgresClusterMetadataPort) try_acquire_lock(lock_name string, ho
 	return rows.len > 0
 }
 
-/// release_lock은 분산 락을 해제합니다.
+/// release_lock - releases a distributed lock
+/// release_lock - releases a distributed lock
 pub fn (mut p PostgresClusterMetadataPort) release_lock(lock_name string, holder_id string) ! {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -595,7 +607,8 @@ pub fn (mut p PostgresClusterMetadataPort) release_lock(lock_name string, holder
 		[lock_name, holder_id])!
 }
 
-/// refresh_lock은 분산 락의 TTL을 갱신합니다.
+/// refresh_lock - refreshes the TTL of a distributed lock
+/// refresh_lock - refreshes the TTL of a distributed lock
 pub fn (mut p PostgresClusterMetadataPort) refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -617,7 +630,8 @@ pub fn (mut p PostgresClusterMetadataPort) refresh_lock(lock_name string, holder
 // 상태 모니터링 (Health Monitoring)
 // ============================================================
 
-/// mark_broker_dead는 브로커를 dead 상태로 표시합니다.
+/// mark_broker_dead - marks a broker as dead
+/// mark_broker_dead - marks a broker as dead
 pub fn (mut p PostgresClusterMetadataPort) mark_broker_dead(broker_id i32) ! {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -629,7 +643,8 @@ pub fn (mut p PostgresClusterMetadataPort) mark_broker_dead(broker_id i32) ! {
 // 스토리지 기능 (Capability)
 // ============================================================
 
-/// get_capability는 PostgreSQL 스토리지 기능 정보를 반환합니다.
+/// get_capability - returns PostgreSQL storage capability information
+/// get_capability - returns PostgreSQL storage capability information
 pub fn (p &PostgresClusterMetadataPort) get_capability() domain.StorageCapability {
 	return postgres_capability
 }
@@ -663,13 +678,13 @@ fn string_to_broker_status(s string) domain.BrokerStatus {
 /// parse_pg_int_array는 PostgreSQL int[] 배열 문자열을 []i32로 파싱합니다.
 /// 형식: "{1,2,3}" 또는 빈 배열 "{}"
 fn parse_pg_int_array(s string) []i32 {
-	if s.len == 0 || s == '{}' || s == 'NULL' {
+	if s == '' || s == '{}' || s == 'NULL' {
 		return []i32{}
 	}
 
 	// 중괄호 제거
 	trimmed := s.trim('{}')
-	if trimmed.len == 0 {
+	if trimmed == '' {
 		return []i32{}
 	}
 
@@ -693,7 +708,7 @@ fn parse_pg_int_array(s string) []i32 {
 /// - hex 형식: "\\x0102030405..." (PostgreSQL 기본 출력)
 /// - escape 형식: "\\001\\002..." (레거시)
 fn parse_pg_bytea(s string) []u8 {
-	if s.len == 0 || s == 'NULL' {
+	if s == '' || s == 'NULL' {
 		return []u8{}
 	}
 
@@ -729,7 +744,7 @@ fn parse_pg_bytea(s string) []u8 {
 
 /// parse_hex_string은 16진수 문자열을 바이트 배열로 변환합니다.
 fn parse_hex_string(s string) []u8 {
-	if s.len == 0 || s.len % 2 != 0 {
+	if s == '' || s.len % 2 != 0 {
 		return []u8{}
 	}
 

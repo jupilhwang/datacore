@@ -11,9 +11,8 @@ import domain
 import infra.observability
 import time
 
-// ============================================================================
 // SaslHandshake 요청 (API Key 17)
-// ============================================================================
+
 // 클라이언트와 브로커 간 SASL 메커니즘 협상에 사용
 // v0: 기본 메커니즘 협상
 // v1: 메커니즘 활성화/비활성화 플래그 추가
@@ -32,9 +31,8 @@ fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexibl
 	}
 }
 
-// ============================================================================
 // SaslAuthenticate 요청 (API Key 36)
-// ============================================================================
+
 // 메커니즘 핸드셰이크 후 SASL 인증 수행에 사용
 // v0: 기본 인증
 // v1: 세션 수명 추가
@@ -59,9 +57,8 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 	}
 }
 
-// ============================================================================
 // SaslHandshake 응답 (API Key 17)
-// ============================================================================
+
 // 브로커가 지원하는 SASL 메커니즘 목록 반환
 
 pub struct SaslHandshakeResponse {
@@ -86,9 +83,8 @@ pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // SaslAuthenticate 응답 (API Key 36)
-// ============================================================================
+
 // SASL 인증 결과 반환
 
 pub struct SaslAuthenticateResponse {
@@ -133,9 +129,7 @@ pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // SASL Handlers
-// ============================================================================
 
 // Handle SaslHandshake (API Key 17)
 // Handles SASL mechanism negotiation

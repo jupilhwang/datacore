@@ -20,9 +20,7 @@ fn validate_schema(schema_type domain.SchemaType, schema_str string) ! {
 	}
 }
 
-// ============================================================================
 // Avro 스키마 유효성 검사
-// ============================================================================
 
 /// validate_avro_schema_syntax는 Avro 스키마 구문을 검증합니다.
 fn validate_avro_schema_syntax(schema_str string) ! {
@@ -154,9 +152,7 @@ fn validate_avro_fixed_schema(schema_str string) ! {
 	}
 }
 
-// ============================================================================
 // JSON Schema 유효성 검사
-// ============================================================================
 
 /// validate_json_schema_syntax는 JSON Schema 구문을 검증합니다 (Draft-07 호환).
 fn validate_json_schema_syntax(schema_str string) ! {
@@ -271,9 +267,7 @@ fn validate_json_schema_keywords(schema_str string) ! {
 	}
 }
 
-// ============================================================================
 // Protobuf 스키마 유효성 검사
-// ============================================================================
 
 /// validate_protobuf_schema_syntax는 Protobuf 스키마 구문을 검증합니다.
 fn validate_protobuf_schema_syntax(schema_str string) ! {

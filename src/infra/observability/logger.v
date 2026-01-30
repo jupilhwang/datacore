@@ -19,7 +19,7 @@ pub enum LogLevel {
 	fatal = 5
 }
 
-/// LogLevel을 문자열로 변환합니다.
+/// str() string - converts LogLevel to its string representation
 pub fn (l LogLevel) str() string {
 	return match l {
 		.trace { 'TRACE' }
@@ -31,7 +31,7 @@ pub fn (l LogLevel) str() string {
 	}
 }
 
-/// 문자열에서 LogLevel을 생성합니다.
+/// log_level_from_string(s string) LogLevel - creates LogLevel from string representation
 pub fn log_level_from_string(s string) LogLevel {
 	return match s.to_lower() {
 		'trace' { .trace }
@@ -56,7 +56,7 @@ pub enum LogOutput {
 	none   // 로깅 비활성화 (테스트용)
 }
 
-/// 문자열에서 LogOutput을 생성합니다.
+/// log_output_from_string(s string) LogOutput - creates LogOutput from string representation
 pub fn log_output_from_string(s string) LogOutput {
 	return match s.to_lower() {
 		'stdout', 'console' { .stdout }
@@ -87,6 +87,7 @@ pub fn field_string(key string, value string) LogField {
 	}
 }
 
+/// field_int - creates an integer field
 @[inline]
 pub fn field_int(key string, value i64) LogField {
 	return LogField{
@@ -95,6 +96,7 @@ pub fn field_int(key string, value i64) LogField {
 	}
 }
 
+/// field_uint - creates an unsigned integer field
 @[inline]
 pub fn field_uint(key string, value u64) LogField {
 	return LogField{
@@ -103,6 +105,7 @@ pub fn field_uint(key string, value u64) LogField {
 	}
 }
 
+/// field_float - creates a floating point field
 @[inline]
 pub fn field_float(key string, value f64) LogField {
 	return LogField{
@@ -111,6 +114,7 @@ pub fn field_float(key string, value f64) LogField {
 	}
 }
 
+/// field_bool - creates a boolean field
 @[inline]
 pub fn field_bool(key string, value bool) LogField {
 	return LogField{
@@ -119,6 +123,7 @@ pub fn field_bool(key string, value bool) LogField {
 	}
 }
 
+/// field_error - creates an error field
 @[inline]
 pub fn field_error(err IError) LogField {
 	return LogField{
@@ -127,6 +132,7 @@ pub fn field_error(err IError) LogField {
 	}
 }
 
+/// field_err_str - creates an error message field
 @[inline]
 pub fn field_err_str(err_msg string) LogField {
 	return LogField{
@@ -135,6 +141,7 @@ pub fn field_err_str(err_msg string) LogField {
 	}
 }
 
+/// field_duration - creates a duration field
 @[inline]
 pub fn field_duration(key string, d time.Duration) LogField {
 	ms := f64(d) / f64(time.millisecond)
@@ -144,6 +151,7 @@ pub fn field_duration(key string, d time.Duration) LogField {
 	}
 }
 
+/// field_bytes - creates a byte size field
 @[inline]
 pub fn field_bytes(key string, size i64) LogField {
 	return LogField{
@@ -191,7 +199,7 @@ pub enum OutputFormat {
 	text // 사람이 읽기 쉬운 텍스트 형식 (개발용)
 }
 
-/// 문자열에서 OutputFormat을 생성합니다.
+/// output_format_from_string(s string) OutputFormat - creates OutputFormat from string representation
 pub fn output_format_from_string(s string) OutputFormat {
 	return match s.to_lower() {
 		'json' { .json }
@@ -235,7 +243,7 @@ mut:
 	buffer_lock sync.Mutex
 }
 
-/// new_logger는 설정으로 새 로거를 생성합니다.
+/// new_logger(config LoggerConfig) &Logger - creates a new Logger instance with the given configuration
 pub fn new_logger(config LoggerConfig) &Logger {
 	return &Logger{
 		name:          config.name
@@ -252,12 +260,12 @@ pub fn new_logger(config LoggerConfig) &Logger {
 	}
 }
 
-/// new_default_logger는 기본 설정으로 로거를 생성합니다.
+/// new_default_logger() &Logger - creates a Logger instance with default configuration
 pub fn new_default_logger() &Logger {
 	return new_logger(LoggerConfig{})
 }
 
-/// with_name은 다른 이름을 가진 새 로거를 반환합니다 (하위 컴포넌트용).
+/// with_name(name string) &Logger - returns a new Logger instance with a different name for sub-components
 pub fn (l &Logger) with_name(name string) &Logger {
 	return &Logger{
 		name:          name
@@ -271,7 +279,7 @@ pub fn (l &Logger) with_name(name string) &Logger {
 	}
 }
 
-/// with_context는 컨텍스트가 포함된 새 로거를 반환합니다.
+/// with_context(ctx LogContext) &Logger - returns a new Logger instance with the given context
 pub fn (l &Logger) with_context(ctx LogContext) &Logger {
 	return &Logger{
 		name:          l.name
@@ -285,7 +293,7 @@ pub fn (l &Logger) with_context(ctx LogContext) &Logger {
 	}
 }
 
-/// with_fields는 추가 기본 필드가 포함된 새 로거를 반환합니다.
+/// with_fields(fields ...LogField) &Logger - returns a new Logger instance with additional default fields
 pub fn (l &Logger) with_fields(fields ...LogField) &Logger {
 	mut new_fields := l.fields.clone()
 	new_fields << fields
@@ -312,7 +320,7 @@ pub fn (l &Logger) should_log(level LogLevel) bool {
 	return int(level) >= int(l.level)
 }
 
-/// log는 로그 항목을 작성합니다.
+/// log(level LogLevel, msg string, fields ...LogField) - writes a log entry with the specified level, message, and optional fields
 pub fn (mut l Logger) log(level LogLevel, msg string, fields ...LogField) {
 	// 비활성화된 레벨에 대한 조기 종료 (제로 오버헤드)
 	if !l.should_log(level) {
@@ -366,14 +374,7 @@ pub fn (mut l Logger) log(level LogLevel, msg string, fields ...LogField) {
 	}
 }
 
-/// 성능을 위한 인라인 힌트가 있는 편의 메서드
-@[inline]
-pub fn (mut l Logger) trace(msg string, fields ...LogField) {
-	if int(l.level) <= int(LogLevel.trace) {
-		l.log(.trace, msg, ...fields)
-	}
-}
-
+/// debug - writes a DEBUG level log
 @[inline]
 pub fn (mut l Logger) debug(msg string, fields ...LogField) {
 	if int(l.level) <= int(LogLevel.debug) {
@@ -381,6 +382,7 @@ pub fn (mut l Logger) debug(msg string, fields ...LogField) {
 	}
 }
 
+/// info - writes an INFO level log
 @[inline]
 pub fn (mut l Logger) info(msg string, fields ...LogField) {
 	if int(l.level) <= int(LogLevel.info) {
@@ -388,6 +390,7 @@ pub fn (mut l Logger) info(msg string, fields ...LogField) {
 	}
 }
 
+/// warn - writes a WARN level log
 @[inline]
 pub fn (mut l Logger) warn(msg string, fields ...LogField) {
 	if int(l.level) <= int(LogLevel.warn) {
@@ -395,19 +398,29 @@ pub fn (mut l Logger) warn(msg string, fields ...LogField) {
 	}
 }
 
+/// error - writes an ERROR level log
 @[inline]
 pub fn (mut l Logger) error(msg string, fields ...LogField) {
 	l.log(.error, msg, ...fields)
 }
 
+/// fatal - writes a FATAL level log
 @[inline]
 pub fn (mut l Logger) fatal(msg string, fields ...LogField) {
 	l.log(.fatal, msg, ...fields)
 }
 
-/// flush는 버퍼링된 로그를 OTLP 엔드포인트로 전송합니다.
+/// trace - writes a TRACE level log
+@[inline]
+pub fn (mut l Logger) trace(msg string, fields ...LogField) {
+	if int(l.level) <= int(LogLevel.trace) {
+		l.log(.trace, msg, ...fields)
+	}
+}
+
+/// flush() - sends all buffered logs to the OTLP endpoint
 pub fn (mut l Logger) flush() {
-	if l.otlp_endpoint.len == 0 {
+	if l.otlp_endpoint == '' {
 		return
 	}
 
@@ -438,7 +451,7 @@ mut:
 /// 전역 홀더 인스턴스 (인라인으로 초기화됨)
 const logger_holder = &LoggerHolder{}
 
-/// init_global_logger는 전역 로거를 초기화합니다 (시작 시 한 번 호출).
+/// init_global_logger(config LoggerConfig) - initializes the global logger instance (call once at startup)
 pub fn init_global_logger(config LoggerConfig) {
 	mut holder := unsafe { logger_holder }
 	holder.lock.@lock()
@@ -478,30 +491,35 @@ pub fn log_trace(msg string, fields ...LogField) {
 	logger.trace(msg, ...fields)
 }
 
+/// log_debug - writes a DEBUG level log using the global logger
 @[inline]
 pub fn log_debug(msg string, fields ...LogField) {
 	mut logger := get_logger()
 	logger.debug(msg, ...fields)
 }
 
+/// log_info - writes an INFO level log using the global logger
 @[inline]
 pub fn log_info(msg string, fields ...LogField) {
 	mut logger := get_logger()
 	logger.info(msg, ...fields)
 }
 
+/// log_warn - writes a WARN level log using the global logger
 @[inline]
 pub fn log_warn(msg string, fields ...LogField) {
 	mut logger := get_logger()
 	logger.warn(msg, ...fields)
 }
 
+/// log_error - writes an ERROR level log using the global logger
 @[inline]
 pub fn log_error(msg string, fields ...LogField) {
 	mut logger := get_logger()
 	logger.error(msg, ...fields)
 }
 
+/// log_fatal - writes a FATAL level log using the global logger
 @[inline]
 pub fn log_fatal(msg string, fields ...LogField) {
 	mut logger := get_logger()
@@ -569,7 +587,7 @@ fn format_entry_json(entry LogEntry) string {
 		sb << entry.context.span_id.bytes()
 		sb << '"'.bytes()
 	}
-	if entry.context.service.len > 0 {
+	if entry.context.service != '' {
 		sb << ',"service":"'.bytes()
 		sb << entry.context.service.bytes()
 		sb << '"'.bytes()
@@ -651,7 +669,7 @@ fn get_level_color(level LogLevel) string {
 
 /// export_logs_to_otlp는 로그 항목을 OTLP 엔드포인트로 내보냅니다.
 fn export_logs_to_otlp(endpoint string, service_name string, entries []LogEntry) {
-	if entries.len == 0 || endpoint.len == 0 {
+	if entries.len == 0 || endpoint == '' {
 		return
 	}
 
@@ -738,7 +756,7 @@ fn send_otlp_http(endpoint string, payload string) {
 // 유틸리티: 로그 레벨 심각도 매핑
 // ============================================================
 
-/// severity_to_level은 OTLP 심각도 번호를 LogLevel로 변환합니다.
+/// severity_to_level(severity int) LogLevel - converts an OTLP severity number to a LogLevel
 pub fn severity_to_level(severity int) LogLevel {
 	return match true {
 		severity <= 4 { .trace }

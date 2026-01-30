@@ -304,11 +304,6 @@ pub fn (mut r BinaryReader) skip(n int) ! {
 	r.pos += n
 }
 
-// ============================================================
-// Zero-Copy 뷰 메서드 (고성능 파싱용)
-// ============================================================
-
-// 바이트를 zero-copy 뷰로 읽습니다 (메모리 할당 없음).
 /// read_bytes_view는 n바이트를 zero-copy ByteView로 읽습니다.
 pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
 	if len < 0 {
@@ -384,9 +379,8 @@ pub fn (mut r BinaryReader) skip_tagged_fields() ! {
 	}
 }
 
-// ============================================================================
 // Flexible 버전 헬퍼
-// ============================================================================
+
 // 이 헬퍼들은 flexible/non-flexible 메시지 파싱 시 코드 중복을 줄여줍니다.
 
 /// read_flex_string은 flexible이면 compact 형식, 아니면 표준 형식으로 문자열을 읽습니다.
@@ -576,10 +570,6 @@ pub fn (mut w BinaryWriter) write_tagged_field_header(tag int, size int) {
 pub fn (mut w BinaryWriter) write_raw(b []u8) {
 	w.data << b
 }
-
-// ============================================================
-// RecordBatch 파싱 (Kafka Message Format v2)
-// ============================================================
 
 /// ParsedRecordBatch는 파싱된 Kafka RecordBatch를 나타냅니다.
 pub struct ParsedRecordBatch {
@@ -783,10 +773,6 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 		timestamp: ts
 	}
 }
-
-// ============================================================
-// RecordBatch 인코딩 (Fetch 응답용)
-// ============================================================
 
 /// crc32c_checksum은 CRC-32C (Castagnoli) 체크섬을 계산합니다.
 /// 최적화된 crc32c 모듈을 사용합니다.

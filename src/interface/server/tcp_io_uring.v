@@ -14,9 +14,7 @@ import infra.performance.engines
 import sync
 import time
 
-// ============================================================================
 // io_uring 통합 서버
-// ============================================================================
 
 /// IoUringTcpServer는 io_uring 기반 TCP 서버입니다.
 /// Linux에서는 io_uring을 사용하고, 다른 플랫폼에서는 폴백을 사용합니다.
@@ -61,9 +59,8 @@ pub mut:
 	io_uring_enabled     bool // io_uring 활성화 여부
 }
 
-/// new_io_uring_tcp_server는 io_uring 기반 TCP 서버를 생성합니다.
-/// Linux에서 io_uring을 사용할 수 없는 경우에도 정상적으로 생성되며,
-/// start() 호출 시 폴백 모드로 동작합니다.
+/// new_io_uring_tcp_server - creates an io_uring based TCP server
+/// new_io_uring_tcp_server - creates an io_uring based TCP server
 pub fn new_io_uring_tcp_server(config ServerConfig, handler RequestHandler) &IoUringTcpServer {
 	return &IoUringTcpServer{
 		config:    config
@@ -74,8 +71,8 @@ pub fn new_io_uring_tcp_server(config ServerConfig, handler RequestHandler) &IoU
 	}
 }
 
-/// start는 io_uring TCP 서버를 시작합니다.
-/// Linux에서는 io_uring을, 다른 플랫폼에서는 기존 방식을 사용합니다.
+/// start - starts the io_uring TCP server
+/// start - starts the io_uring TCP server
 pub fn (mut s IoUringTcpServer) start() ! {
 	s.state_lock.@lock()
 	if s.state != .stopped {
@@ -318,7 +315,8 @@ fn (mut s IoUringTcpServer) handle_io_uring_close(fd int) {
 	}
 }
 
-/// stop은 서버를 중지합니다.
+/// stop - stops the server
+/// stop - stops the server
 pub fn (mut s IoUringTcpServer) stop() {
 	s.state_lock.@lock()
 	if s.state != .running {
@@ -349,23 +347,24 @@ pub fn (mut s IoUringTcpServer) stop() {
 	println('  Total bytes sent: ${format_bytes(s.metrics.total_bytes_sent)}')
 }
 
-/// is_running은 서버가 실행 중인지 확인합니다.
+/// is_running - checks if the server is running
+/// is_running - checks if the server is running
 pub fn (mut s IoUringTcpServer) is_running() bool {
 	s.state_lock.@lock()
 	defer { s.state_lock.unlock() }
 	return s.state == .running
 }
 
-/// get_metrics는 서버 메트릭을 반환합니다.
+/// get_metrics - returns server metrics
+/// get_metrics - returns server metrics
 pub fn (s &IoUringTcpServer) get_metrics() IoUringServerMetrics {
 	return s.metrics
 }
 
-// ============================================================================
 // io_uring 사용 가능 여부 확인 함수
-// ============================================================================
 
-/// is_io_uring_available은 현재 플랫폼에서 io_uring을 사용할 수 있는지 확인합니다.
+/// is_io_uring_available - checks if io_uring is available on the current platform
+/// is_io_uring_available - checks if io_uring is available on the current platform
 pub fn is_io_uring_available() bool {
 	$if linux {
 		return engines.is_io_uring_server_available()
@@ -374,7 +373,8 @@ pub fn is_io_uring_available() bool {
 	}
 }
 
-/// get_recommended_server_mode는 권장 서버 모드를 반환합니다.
+/// get_recommended_server_mode - returns the recommended server mode
+/// get_recommended_server_mode - returns the recommended server mode
 pub fn get_recommended_server_mode() string {
 	$if linux {
 		if engines.is_io_uring_server_available() {

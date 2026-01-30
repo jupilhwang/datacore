@@ -14,11 +14,9 @@ pub interface SchemaEncoder {
 	decode(data []u8, schema domain.Schema) ![]u8
 }
 
-// ============================================================================
 // Avro 바이너리 인코더
 // Apache Avro 1.11 사양의 바이너리 인코딩을 구현합니다.
 // https://avro.apache.org/docs/current/spec.html#binary_encoding
-// ============================================================================
 
 /// AvroEncoder는 Avro 바이너리 인코딩/디코딩을 제공합니다.
 pub struct AvroEncoder {}
@@ -55,9 +53,7 @@ pub fn (e &AvroEncoder) decode(data []u8, schema domain.Schema) ![]u8 {
 	return json_result.bytes()
 }
 
-// ============================================================================
 // AvroReader - 바이너리 데이터 리더
-// ============================================================================
 
 /// AvroReader는 바이너리 데이터를 순차적으로 읽는 것을 돕습니다.
 struct AvroReader {
@@ -66,9 +62,7 @@ mut:
 	pos  int  // 현재 위치
 }
 
-// ============================================================================
 // 값 인코딩/디코딩 - 메인 디스패치
-// ============================================================================
 
 /// encode_value는 스키마 타입에 따라 JSON 값을 인코딩합니다.
 fn (e &AvroEncoder) encode_value(json_str string, schema AvroSchema) ![]u8 {

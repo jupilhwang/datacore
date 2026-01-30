@@ -255,7 +255,7 @@ enabled = true
 
 # 로그 레벨
 # 지원값: "trace", "debug", "info", "warn", "error"
-level = "info"
+level = "debug"
 
 # 로그 출력 형식
 # 지원값: "json" (OTel 호환 구조화), "text" (콘솔 가독성)

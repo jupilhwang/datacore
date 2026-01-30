@@ -110,9 +110,7 @@ fn parse_delete_topics_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
-// ============================================================================
 // CreateTopics Response (API Key 19)
-// ============================================================================
 
 pub struct CreateTopicsResponse {
 pub:
@@ -182,9 +180,7 @@ pub fn (r CreateTopicsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ============================================================================
 // DeleteTopics Response (API Key 20)
-// ============================================================================
 
 pub struct DeleteTopicsResponse {
 pub:
