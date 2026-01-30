@@ -11,6 +11,7 @@
 // - v6: Share Groups 지원 (KeyType=2, KIP-932)
 module kafka
 
+import domain
 import infra.observability
 import time
 
@@ -179,6 +180,55 @@ fn (mut h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
+// compute_coordinator_broker는 group_id를 기반으로 코디네이터 브로커를 결정합니다.
+// 파티션 할당 서비스가 있으면 사용하고, 없으면 해시 기반으로 브로커를 선택합니다.
+fn (mut h Handler) compute_coordinator_broker(key string, key_type i8) (i32, string, i32) {
+	// 멀티 브로커 모드에서 활성 브로커 목록 조회
+	mut active_brokers := []domain.BrokerInfo{}
+	if mut registry := h.broker_registry {
+		active_brokers = registry.list_active_brokers() or { []domain.BrokerInfo{} }
+	}
+
+	// 브로커가 없거나 싱글 브로커 모드인 경우 자신을 반환
+	if active_brokers.len == 0 {
+		return h.broker_id, h.host, h.broker_port
+	}
+
+	// 파티션 할당 서비스가 있고 GROUP 타입인 경우 할당 기반 코디네이터 선택
+	if key_type == i8(CoordinatorKeyType.group) {
+		if mut assigner := h.partition_assigner {
+			// group_id를 해시하여 파티션 번호 결정 (0-999 범위)
+			mut hash := i32(0)
+			for c in key.bytes() {
+				hash = (hash * 31 + i32(c)) & 0x7FFFFFFF // 양수로 유지
+			}
+			partition := hash % 1000
+
+			// 할당 서비스에서 해당 파티션의 리더 브로커 조회
+			coordinator_id := assigner.get_partition_leader('__consumer_offsets', partition) or {
+				// 할당이 없으면 해시 기반으로 브로커 선택
+				active_brokers[hash % active_brokers.len].broker_id
+			}
+
+			// 선택된 브로커 정보 찾기
+			for broker in active_brokers {
+				if broker.broker_id == coordinator_id {
+					return broker.broker_id, broker.host, broker.port
+				}
+			}
+		}
+	}
+
+	// 기본: 해시 기반 브로커 선택 (라운드 로빈)
+	mut hash := i32(0)
+	for c in key.bytes() {
+		hash = (hash * 31 + i32(c)) & 0x7FFFFFFF
+	}
+	selected_idx := hash % active_brokers.len
+	selected := active_brokers[selected_idx]
+	return selected.broker_id, selected.host, selected.port
+}
+
 fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version i16) !FindCoordinatorResponse {
 	// v4+: 배치 조회 응답 (v5, v6 포함)
 	// v5는 TRANSACTION_ABORTABLE 에러 코드 지원 추가 (KIP-890)
@@ -208,11 +258,14 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 				}
 			}
 
+			// 코디네이터 브로커 결정 (할당 기반 또는 해시 기반)
+			node_id, host, port := h.compute_coordinator_broker(key, req.key_type)
+
 			coordinators << FindCoordinatorResponseNode{
 				key:           key
-				node_id:       h.broker_id
-				host:          h.host
-				port:          h.broker_port
+				node_id:       node_id
+				host:          host
+				port:          port
 				error_code:    0
 				error_message: none
 			}
@@ -225,13 +278,16 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 	}
 
 	// v0-v3: 단일 응답
+	// 코디네이터 브로커 결정 (할당 기반 또는 해시 기반)
+	node_id, host, port := h.compute_coordinator_broker(req.key, req.key_type)
+
 	return FindCoordinatorResponse{
 		throttle_time_ms: 0
 		error_code:       0
 		error_message:    none
-		node_id:          h.broker_id
-		host:             h.host
-		port:             h.broker_port
+		node_id:          node_id
+		host:             host
+		port:             port
 		coordinators:     []FindCoordinatorResponseNode{}
 	}
 }

@@ -4,6 +4,7 @@ module cluster
 
 import domain
 import service.port
+import infra.observability
 import sync
 import time
 
@@ -30,6 +31,11 @@ mut:
 	prev_bytes_in    u64                       // 이전 입력 바이트 (속도 계산용)
 	prev_bytes_out   u64                       // 이전 출력 바이트 (속도 계산용)
 	prev_time        i64                       // 이전 시간 (속도 계산용)
+	// 파티션 할당 서비스
+	partition_assigner ?&PartitionAssigner   // 파티션 할당 서비스 (v0.40.0)
+	logger             &observability.Logger // 구조화된 로거
+	// 브로커 변경 콜백
+	on_broker_change_cb ?fn (changes BrokerChanges) // 브로커 변경 시 호출될 콜백
 }
 
 /// BrokerRegistryConfig는 레지스트리 설정을 담습니다.
@@ -80,15 +86,18 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 	}
 
 	return &BrokerRegistry{
-		config:         cluster_config
-		local_broker:   local_broker
-		metadata_port:  metadata_port
-		brokers:        map[i32]domain.BrokerInfo{}
-		capability:     capability
-		running:        false
-		prev_bytes_in:  0
-		prev_bytes_out: 0
-		prev_time:      time.now().unix_milli()
+		config:              cluster_config
+		local_broker:        local_broker
+		metadata_port:       metadata_port
+		brokers:             map[i32]domain.BrokerInfo{}
+		capability:          capability
+		running:             false
+		prev_bytes_in:       0
+		prev_bytes_out:      0
+		prev_time:           time.now().unix_milli()
+		partition_assigner:  none
+		logger:              observability.get_named_logger('broker_registry')
+		on_broker_change_cb: none
 	}
 }
 
@@ -96,6 +105,23 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 /// 이 콜백은 heartbeat_loop에서 주기적으로 호출되어 실제 서버 메트릭을 수집합니다.
 pub fn (mut r BrokerRegistry) set_metrics_provider(provider MetricsProvider) {
 	r.metrics_provider = provider
+}
+
+/// set_partition_assigner는 파티션 할당 서비스를 설정합니다.
+pub fn (mut r BrokerRegistry) set_partition_assigner(assigner &PartitionAssigner) {
+	r.lock.@lock()
+	defer { r.lock.unlock() }
+
+	r.partition_assigner = assigner
+	r.logger.info('Partition assigner registered')
+}
+
+/// set_on_broker_change는 브로커 변경 시 호출될 콜백을 설정합니다.
+pub fn (mut r BrokerRegistry) set_on_broker_change(callback fn (changes BrokerChanges)) {
+	r.lock.@lock()
+	defer { r.lock.unlock() }
+
+	r.on_broker_change_cb = callback
 }
 
 // ============================================================================
@@ -119,6 +145,17 @@ pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 			registered := mp.register_broker(r.local_broker)!
 			r.local_broker = registered
 			r.brokers[registered.broker_id] = registered
+
+			// 새 브로커 가입 이벤트 트리거
+			changes := BrokerChanges{
+				reason:  'broker_joined'
+				added:   [registered]
+				removed: []domain.BrokerInfo{}
+			}
+			r.on_broker_change(changes) or {
+				r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
+			}
+
 			return registered
 		}
 	}
@@ -134,6 +171,16 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 	defer { r.lock.unlock() }
 
 	r.local_broker.status = .shutdown
+
+	// 브로커 퇴장 이벤트 트리거 (삭제 전에)
+	changes := BrokerChanges{
+		reason:  'broker_left'
+		added:   []domain.BrokerInfo{}
+		removed: [r.local_broker]
+	}
+	r.on_broker_change(changes) or {
+		r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
+	}
 
 	// 분산 스토리지를 사용하는 멀티 브로커 모드인 경우
 	if r.capability.supports_multi_broker {
@@ -254,6 +301,7 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 	now := time.now().unix_milli()
 	timeout := i64(r.config.broker_session_timeout_ms)
 	mut expired := []i32{}
+	mut expired_brokers := []domain.BrokerInfo{}
 
 	// 멀티 브로커 모드에서는 분산 스토리지 확인
 	if r.capability.supports_multi_broker {
@@ -262,9 +310,23 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 			for broker in brokers {
 				if broker.status == .active && now - broker.last_heartbeat > timeout {
 					expired << broker.broker_id
+					expired_brokers << broker
 					mp.mark_broker_dead(broker.broker_id) or {}
 				}
 			}
+
+			// 만료된 브로커가 있으면 변경 이벤트 트리거
+			if expired.len > 0 {
+				changes := BrokerChanges{
+					reason:  'broker_failed'
+					added:   []domain.BrokerInfo{}
+					removed: expired_brokers
+				}
+				r.on_broker_change(changes) or {
+					r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
+				}
+			}
+
 			return expired
 		}
 	}
@@ -273,10 +335,23 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 	for broker_id, broker in r.brokers {
 		if broker.status == .active && now - broker.last_heartbeat > timeout {
 			expired << broker_id
+			expired_brokers << broker
 			r.brokers[broker_id] = domain.BrokerInfo{
 				...broker
 				status: .dead
 			}
+		}
+	}
+
+	// 만료된 브로커가 있으면 변경 이벤트 트리거
+	if expired.len > 0 {
+		changes := BrokerChanges{
+			reason:  'broker_failed'
+			added:   []domain.BrokerInfo{}
+			removed: expired_brokers
+		}
+		r.on_broker_change(changes) or {
+			r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
 		}
 	}
 
@@ -355,4 +430,85 @@ pub fn (r &BrokerRegistry) is_multi_broker_enabled() bool {
 /// get_capability는 스토리지 기능 정보를 반환합니다.
 pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 	return r.capability
+}
+
+// ============================================================================
+// 브로커 변경 처리 (파티션 리밸런싱 트리거)
+// ============================================================================
+
+/// on_broker_change는 브로커 목록 변경 시 호출됩니다.
+/// 파티션 리밸런싱을 트리거하고 콜백을 호출합니다.
+pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
+	r.lock.@lock()
+	defer { r.lock.unlock() }
+
+	r.logger.info('Broker change detected', observability.field_string('reason', changes.reason),
+		observability.field_int('added', i64(changes.added.len)), observability.field_int('removed',
+		i64(changes.removed.len)))
+
+	// 콜백 호출
+	if cb := r.on_broker_change_cb {
+		spawn cb(changes)
+	}
+
+	// 파티션 할당 서비스가 있으면 리밸런싱 트리거
+	if r.partition_assigner != none {
+		// 활성 브로커 목록 조회
+		active_brokers := r.list_active_brokers_internal() or { []domain.BrokerInfo{} }
+
+		if active_brokers.len == 0 {
+			r.logger.warn('No active brokers available for rebalance')
+			return
+		}
+
+		// TODO: 모든 토픽에 대해 리밸런싱 수행
+		// 현재는 콜백만 호출하고 실제 리밸런싱은 외부에서 처리
+		r.logger.info('Triggering partition rebalance for all topics', observability.field_int('active_brokers',
+			i64(active_brokers.len)))
+	}
+
+	return
+}
+
+/// list_active_brokers_internal는 락을 획득하지 않고 활성 브로커 목록을 반환합니다.
+/// 내부 사용용 (이미 락을 획득한 상태에서 호출)
+fn (mut r BrokerRegistry) list_active_brokers_internal() ![]domain.BrokerInfo {
+	// 분산 스토리지 먼저 시도
+	if r.capability.supports_multi_broker {
+		if mut mp := r.metadata_port {
+			return mp.list_active_brokers()
+		}
+	}
+
+	// 로컬 캐시로 폴백 - 활성 브로커 필터링
+	mut result := []domain.BrokerInfo{}
+	for _, broker in r.brokers {
+		if broker.status == .active {
+			result << broker
+		}
+	}
+	return result
+}
+
+/// trigger_rebalance_for_topic는 특정 토픽에 대해 리밸런싱을 수행합니다.
+pub fn (mut r BrokerRegistry) trigger_rebalance_for_topic(topic_name string) ! {
+	r.lock.@lock()
+	defer { r.lock.unlock() }
+
+	if mut assigner := r.partition_assigner {
+		active_brokers := r.list_active_brokers_internal() or { []domain.BrokerInfo{} }
+
+		if active_brokers.len == 0 {
+			return error('no active brokers available for rebalance')
+		}
+
+		assigner.rebalance_partitions(topic_name, active_brokers) or {
+			return error('rebalance failed: ${err}')
+		}
+
+		r.logger.info('Rebalance completed for topic', observability.field_string('topic',
+			topic_name))
+	} else {
+		return error('partition assigner not configured')
+	}
 }

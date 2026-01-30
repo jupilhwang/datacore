@@ -13,8 +13,8 @@ import infra.observability
 // 로깅 (Logging)
 // ============================================================================
 
-/// log_message는 구조화된 로그 메시지를 출력합니다.
-fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+/// sse_log_message는 구조화된 로그 메시지를 출력합니다.
+fn sse_log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	mut logger := observability.get_named_logger('sse.${component}')
 	match level {
 		.debug { logger.debug(message) }
@@ -59,6 +59,7 @@ pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHa
 pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[string]string, bool) {
 	start_time := time.now()
 	mut success := true
+	mut status_code := 200
 
 	// 토픽 존재 여부 확인
 	_ = h.storage.get_topic(request.topic) or {
@@ -66,7 +67,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		status_code = 404
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		log_message(.error, 'Request', 'Topic not found', {
+		sse_log_message(.error, 'Request', 'Topic not found', {
 			'topic':     request.topic
 			'client_ip': request.client_ip
 		})
@@ -81,7 +82,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 			status_code = 400
 			elapsed_ms := time.since(start_time).milliseconds()
 			h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-			log_message(.error, 'Request', 'Invalid partition', {
+			sse_log_message(.error, 'Request', 'Invalid partition', {
 				'topic':     request.topic
 				'partition': partition.str()
 				'client_ip': request.client_ip
@@ -99,7 +100,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		status_code = 503
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		log_message(.error, 'Request', 'Failed to register connection', {
+		sse_log_message(.error, 'Request', 'Failed to register connection', {
 			'client_ip': request.client_ip
 			'error':     err.msg()
 		})
@@ -119,7 +120,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		h.sse_service.unregister_connection(conn_id) or {}
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		log_message(.error, 'Request', 'Failed to subscribe', {
+		sse_log_message(.error, 'Request', 'Failed to subscribe', {
 			'conn_id': conn_id
 			'topic':   request.topic
 			'error':   err.msg()
@@ -141,13 +142,13 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 	elapsed_ms := time.since(start_time).milliseconds()
 	h.metrics.record_request('sse_request', elapsed_ms, success, 0, headers.len)
 
-	log_message(.info, 'Request', 'SSE request successful', {
+	sse_log_message(.info, 'Request', 'SSE request successful', {
 		'conn_id':   conn_id
 		'topic':     request.topic
 		'client_ip': request.client_ip
 	})
 
-	return 200, headers, true
+	return status_code, headers, true
 }
 
 /// start_streaming은 연결에 대한 SSE 스트리밍 루프를 시작합니다.

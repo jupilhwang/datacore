@@ -273,6 +273,23 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 				protocol_handler.set_broker_registry(broker_registry)
 				broker_registry_opt = broker_registry
 
+				// Initialize PartitionAssigner for consumer group rebalancing
+				cli.print_progress('Initializing partition assigner')
+				assigner_config := cluster.PartitionAssignerServiceConfig{
+					broker_id:     conf.broker.broker_id
+					strategy:      .round_robin
+					rack_aware:    false
+					sticky_assign: true
+				}
+				mut partition_assigner := cluster.new_partition_assigner(assigner_config,
+					cluster_port)
+
+				// Set on broker_registry for rebalance triggers
+				broker_registry.set_partition_assigner(partition_assigner)
+
+				// Set on protocol_handler for metadata responses
+				protocol_handler.set_partition_assigner(partition_assigner)
+
 				cli.print_done()
 			} else {
 				cli.print_failed('Broker registration returned invalid info')

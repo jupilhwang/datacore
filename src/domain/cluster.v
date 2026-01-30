@@ -5,6 +5,88 @@ module domain
 import time
 
 // ============================================================================
+// 파티션 할당 (Partition Assignment)
+// ============================================================================
+
+/// PartitionAssignment은 파티션의 브로커 할당 정보를 나타냅니다.
+/// 토픽의 각 파티션이 어떤 브로커에 할당되었는지 추적합니다.
+/// Stateless 모드에서는 파티션에 고정된 리더가 없습니다.
+/// 데이터가 공유 스토리지에 있으므로 모든 브로커가 모든 파티션을 서비스할 수 있습니다.
+/// 그러나 로드 밸런싱을 위해 "선호" 브로커를 추적합니다.
+pub struct PartitionAssignment {
+pub mut:
+	topic_name       string // 토픽 이름
+	topic_id         []u8   // 토픽 UUID
+	partition        i32    // 파티션 번호
+	preferred_broker i32    // 선호 브로커 (로드 밸런싱 힌트)
+	replica_brokers  []i32  // 레플리카 브로커 목록 (Kafka 프로토콜 호환성용)
+	isr_brokers      []i32  // ISR 브로커 목록 (Stateless 모드에서는 모든 활성 브로커)
+	partition_epoch  i32    // 파티션 에포크
+	assigned_at      i64    // 할당 시간
+	reassigned_at    i64    // 재할당 시간 (있는 경우)
+}
+
+/// PartitionAssignmentSnapshot은 특정 시점의 모든 파티션 할당을 나타냅니다.
+pub struct PartitionAssignmentSnapshot {
+pub mut:
+	cluster_id  string                // 클러스터 ID
+	version     i64                   // 스냅샷 버전
+	assignments []PartitionAssignment // 모든 파티션 할당 목록
+	created_at  i64                   // 생성 시간
+	created_by  i32                   // 생성한 브로커 ID
+}
+
+/// ReassignmentPlan은 파티션 재할당 계획을 나타냅니다.
+pub struct ReassignmentPlan {
+pub mut:
+	plan_id        string                      // 계획 ID
+	cluster_id     string                      // 클러스터 ID
+	trigger_reason string                      // 트리거 원인 ("broker_joined", "broker_left", "manual")
+	changes        []PartitionAssignmentChange // 변경 사항 목록
+	created_at     i64                         // 생성 시간
+	executed_at    i64                         // 실행 시간 (0이면 미실행)
+	status         ReassignmentStatus          // 계획 상태
+}
+
+/// PartitionAssignmentChange는 단일 파티션의 할당 변경을 나타냅니다.
+pub struct PartitionAssignmentChange {
+pub mut:
+	topic_name   string // 토픽 이름
+	partition_id int    // 파티션 ID
+	old_leader   i32    // 이전 리더 브로커 ID
+	new_leader   i32    // 새 리더 브로커 ID
+	reason       string // 변경 사유
+}
+
+/// ReassignmentStatus는 재할당 계획의 상태를 나타냅니다.
+pub enum ReassignmentStatus {
+	pending   // 대기 중
+	executing // 실행 중
+	completed // 완료
+	failed    // 실패
+	cancelled // 취소됨
+}
+
+/// PartitionAssignerConfig는 파티션 할당 설정을 나타냅니다.
+pub struct PartitionAssignerConfig {
+pub mut:
+	strategy      AssignmentStrategy // 할당 전략
+	rack_aware    bool               // 랙 인식 여부
+	sticky_assign bool               // 스티키 할당 여부 (재할당 시 기존 할당 유지)
+}
+
+/// AssignmentStrategy는 파티션 할당 전략을 나타냅니다.
+pub enum AssignmentStrategy {
+	round_robin // 라운드로빈
+	range       // 범위 기반
+	sticky      // 스티키 (최소 이동)
+}
+
+// ============================================================================
+// 브로커 등록
+// ============================================================================
+
+// ============================================================================
 // 브로커 등록
 // ============================================================================
 
@@ -122,38 +204,6 @@ pub fn new_cluster_metadata(cluster_id string) ClusterMetadata {
 		metadata_version: 0
 		updated_at:       time.now().unix_milli()
 	}
-}
-
-// ============================================================================
-// 파티션 할당 (Stateless 멀티 브로커용)
-// ============================================================================
-
-// Stateless 모드에서는 파티션에 고정된 리더가 없습니다.
-// 데이터가 공유 스토리지에 있으므로 모든 브로커가 모든 파티션을 서비스할 수 있습니다.
-// 그러나 로드 밸런싱을 위해 "선호" 브로커를 추적합니다.
-
-/// PartitionAssignment는 멀티 브로커 모드에서 파티션 메타데이터를 나타냅니다.
-/// topic_name: 토픽 이름
-/// topic_id: 토픽 UUID
-/// partition: 파티션 번호
-/// preferred_broker: 선호 브로커 (로드 밸런싱 힌트)
-/// replica_brokers: 레플리카 브로커 목록 (Kafka 프로토콜 호환성용)
-/// isr_brokers: ISR 브로커 목록 (Stateless 모드에서는 모든 활성 브로커)
-/// partition_epoch: 파티션 에포크
-pub struct PartitionAssignment {
-pub mut:
-	topic_name string
-	topic_id   []u8
-	partition  i32
-	// Stateless 모드에서는 모든 활성 브로커가 이 파티션을 서비스할 수 있음
-	// preferred_broker는 로드 밸런싱 힌트로 사용됨
-	preferred_broker i32
-	// Kafka 프로토콜 호환성을 위한 Replicas 필드
-	// Stateless 모드에서는 모든 브로커가 사실상 레플리카임
-	replica_brokers []i32
-	isr_brokers     []i32 // 동기화된 레플리카 (Stateless 모드에서는 모든 활성 브로커)
-	// 파티션 상태 변경을 위한 에포크
-	partition_epoch i32
 }
 
 // ============================================================================

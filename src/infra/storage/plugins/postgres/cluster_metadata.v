@@ -79,6 +79,8 @@ fn (mut p PostgresClusterMetadataPort) init_cluster_schema() ! {
 			replica_brokers INT[] DEFAULT '{}',
 			isr_brokers INT[] DEFAULT '{}',
 			partition_epoch INT DEFAULT 0,
+			assigned_at BIGINT NOT NULL DEFAULT 0,
+			reassigned_at BIGINT DEFAULT 0,
 			PRIMARY KEY (topic_name, partition_id)
 		)
 	")!
@@ -390,20 +392,32 @@ pub fn (mut p PostgresClusterMetadataPort) update_cluster_metadata(metadata doma
 
 /// get_partition_assignment는 특정 토픽-파티션의 할당 정보를 조회합니다.
 pub fn (mut p PostgresClusterMetadataPort) get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment {
+	start_time := time.now().unix_milli()
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
 
 	rows := db.exec_param_many('
-		SELECT topic_name, topic_id, partition_id, preferred_broker, replica_brokers, isr_brokers, partition_epoch
+		SELECT topic_name, topic_id, partition_id, preferred_broker, replica_brokers, isr_brokers, partition_epoch, assigned_at, reassigned_at
 		FROM partition_assignments WHERE topic_name = \$1 AND partition_id = \$2
 	',
 		[topic_name, partition.str()])!
 
 	if rows.len == 0 {
+		log_message(.warn, 'cluster_metadata', 'partition assignment not found', {
+			'topic':     topic_name
+			'partition': partition.str()
+		})
 		return error('partition assignment not found')
 	}
 
 	row := rows[0]
+	elapsed := time.now().unix_milli() - start_time
+	log_message(.debug, 'cluster_metadata', 'partition assignment retrieved', {
+		'topic':     topic_name
+		'partition': partition.str()
+		'elapsed':   elapsed.str() + 'ms'
+	})
+
 	return domain.PartitionAssignment{
 		topic_name:       get_row_str(&row, 0, '')
 		topic_id:         parse_pg_bytea(get_row_str(&row, 1, ''))
@@ -412,16 +426,19 @@ pub fn (mut p PostgresClusterMetadataPort) get_partition_assignment(topic_name s
 		replica_brokers:  parse_pg_int_array(get_row_str(&row, 4, '{}'))
 		isr_brokers:      parse_pg_int_array(get_row_str(&row, 5, '{}'))
 		partition_epoch:  i32(get_row_int(&row, 6, 0))
+		assigned_at:      get_row_i64(&row, 7, 0)
+		reassigned_at:    get_row_i64(&row, 8, 0)
 	}
 }
 
 /// list_partition_assignments는 특정 토픽의 모든 파티션 할당을 조회합니다.
 pub fn (mut p PostgresClusterMetadataPort) list_partition_assignments(topic_name string) ![]domain.PartitionAssignment {
+	start_time := time.now().unix_milli()
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
 
 	rows := db.exec_param('
-		SELECT topic_name, topic_id, partition_id, preferred_broker, replica_brokers, isr_brokers, partition_epoch
+		SELECT topic_name, topic_id, partition_id, preferred_broker, replica_brokers, isr_brokers, partition_epoch, assigned_at, reassigned_at
 		FROM partition_assignments WHERE topic_name = \$1 ORDER BY partition_id
 	',
 		topic_name)!
@@ -436,30 +453,99 @@ pub fn (mut p PostgresClusterMetadataPort) list_partition_assignments(topic_name
 			replica_brokers:  parse_pg_int_array(get_row_str(&row, 4, '{}'))
 			isr_brokers:      parse_pg_int_array(get_row_str(&row, 5, '{}'))
 			partition_epoch:  i32(get_row_int(&row, 6, 0))
+			assigned_at:      get_row_i64(&row, 7, 0)
+			reassigned_at:    get_row_i64(&row, 8, 0)
 		}
 	}
+
+	elapsed := time.now().unix_milli() - start_time
+	log_message(.debug, 'cluster_metadata', 'partition assignments listed', {
+		'topic':   topic_name
+		'count':   assignments.len.str()
+		'elapsed': elapsed.str() + 'ms'
+	})
 
 	return assignments
 }
 
 /// update_partition_assignment는 파티션 할당을 업데이트합니다.
+/// UPSERT (INSERT ... ON CONFLICT UPDATE)를 사용하여 배열 필드를 포함한 모든 필드를 업데이트합니다.
 pub fn (mut p PostgresClusterMetadataPort) update_partition_assignment(assignment domain.PartitionAssignment) ! {
+	start_time := time.now().unix_milli()
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
 
+	// PostgreSQL 배열 형식으로 변환: {1,2,3}
+	replica_array := format_pg_int_array(assignment.replica_brokers)
+	isr_array := format_pg_int_array(assignment.isr_brokers)
+
+	// topic_id를 hex 문자열로 변환
+	topic_id_hex := format_pg_bytea(assignment.topic_id)
+
 	db.exec_param_many('
-		INSERT INTO partition_assignments (topic_name, partition_id, preferred_broker, partition_epoch)
-		VALUES (\$1, \$2, \$3, \$4)
+		INSERT INTO partition_assignments (topic_name, topic_id, partition_id, preferred_broker, replica_brokers, isr_brokers, partition_epoch, assigned_at, reassigned_at)
+		VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9)
 		ON CONFLICT (topic_name, partition_id) DO UPDATE SET
+			topic_id = EXCLUDED.topic_id,
 			preferred_broker = EXCLUDED.preferred_broker,
-			partition_epoch = EXCLUDED.partition_epoch
+			replica_brokers = EXCLUDED.replica_brokers,
+			isr_brokers = EXCLUDED.isr_brokers,
+			partition_epoch = EXCLUDED.partition_epoch,
+			reassigned_at = EXCLUDED.reassigned_at
 	',
 		[
 		assignment.topic_name,
+		topic_id_hex,
 		assignment.partition.str(),
 		assignment.preferred_broker.str(),
+		replica_array,
+		isr_array,
 		assignment.partition_epoch.str(),
+		assignment.assigned_at.str(),
+		assignment.reassigned_at.str(),
 	])!
+
+	elapsed := time.now().unix_milli() - start_time
+	log_message(.debug, 'cluster_metadata', 'partition assignment updated', {
+		'topic':     assignment.topic_name
+		'partition': assignment.partition.str()
+		'elapsed':   elapsed.str() + 'ms'
+	})
+}
+
+/// list_all_partition_assignments는 모든 토픽의 모든 파티션 할당을 조회합니다.
+pub fn (mut p PostgresClusterMetadataPort) list_all_partition_assignments() ![]domain.PartitionAssignment {
+	start_time := time.now().unix_milli()
+	mut db := p.pool.acquire()!
+	defer { p.pool.release(db) }
+
+	rows := db.exec('
+		SELECT topic_name, topic_id, partition_id, preferred_broker, replica_brokers, isr_brokers, partition_epoch, assigned_at, reassigned_at
+		FROM partition_assignments ORDER BY topic_name, partition_id
+	')!
+
+	mut assignments := []domain.PartitionAssignment{}
+	for row in rows {
+		assignments << domain.PartitionAssignment{
+			topic_name:       get_row_str(&row, 0, '')
+			topic_id:         parse_pg_bytea(get_row_str(&row, 1, ''))
+			partition:        i32(get_row_int(&row, 2, 0))
+			preferred_broker: i32(get_row_int(&row, 3, -1))
+			replica_brokers:  parse_pg_int_array(get_row_str(&row, 4, '{}'))
+			isr_brokers:      parse_pg_int_array(get_row_str(&row, 5, '{}'))
+			partition_epoch:  i32(get_row_int(&row, 6, 0))
+			assigned_at:      get_row_i64(&row, 7, 0)
+			reassigned_at:    get_row_i64(&row, 8, 0)
+		}
+	}
+
+	elapsed := time.now().unix_milli() - start_time
+	log_message(.debug, 'cluster_metadata', 'all partition assignments listed', {
+		'count':   assignments.len.str()
+		'elapsed': elapsed.str() + 'ms'
+	})
+
+	return assignments
 }
 
 // ============================================================
@@ -692,4 +778,41 @@ fn parse_octal(s string) int {
 		result = result * 8 + int(c - `0`)
 	}
 	return result
+}
+
+/// format_pg_int_array는 []i32를 PostgreSQL int[] 형식으로 변환합니다.
+/// 형식: "{1,2,3}" 또는 "{}" (빈 배열)
+fn format_pg_int_array(arr []i32) string {
+	if arr.len == 0 {
+		return '{}'
+	}
+	mut parts := []string{}
+	for val in arr {
+		parts << val.str()
+	}
+	return '{${parts.join(',')}}'
+}
+
+/// format_pg_bytea는 []u8을 PostgreSQL bytea hex 형식으로 변환합니다.
+/// 형식: "\\x01020304..."
+fn format_pg_bytea(data []u8) string {
+	if data.len == 0 {
+		return ''
+	}
+	mut hex_parts := []string{}
+	for b in data {
+		high := b >> 4
+		low := b & 0x0F
+		hex_parts << hex_nibble_to_char(high) + hex_nibble_to_char(low)
+	}
+	return '\\x${hex_parts.join('')}'
+}
+
+/// hex_nibble_to_char는 4비트 값을 16진수 문자로 변환합니다.
+fn hex_nibble_to_char(n u8) string {
+	if n < 10 {
+		return (u8(`0`) + n).ascii_str()
+	} else {
+		return (u8(`a`) + (n - 10)).ascii_str()
+	}
 }

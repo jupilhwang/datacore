@@ -15,6 +15,10 @@ import service.port
 import service.transaction
 import time
 
+// PartitionAssigner는 파티션 할당 서비스를 위한 포인터 타입입니다.
+// service.cluster 모듈의 PartitionAssigner를 참조합니다.
+pub type PartitionAssignerPtr = &cluster.PartitionAssigner
+
 /// 프로토콜 핸들러 - Kafka 요청을 처리하고 응답을 생성하는 핵심 구조체
 ///
 /// Handler는 브로커의 모든 Kafka API 요청을 처리합니다.
@@ -28,6 +32,7 @@ mut:
 	storage                 port.StoragePort
 	offset_manager          &offset.OffsetManager               // Offset management service
 	broker_registry         ?&cluster.BrokerRegistry            // Optional: Broker registry for multi-broker mode
+	partition_assigner      ?PartitionAssignerPtr               // Optional: Partition assigner for dynamic partition assignment
 	auth_manager            ?port.AuthManager                   // Optional: SASL authentication manager
 	acl_manager             ?port.AclManager                    // Optional: ACL manager
 	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
@@ -53,6 +58,7 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 		storage:                 storage
 		offset_manager:          offset_mgr
 		broker_registry:         none
+		partition_assigner:      none
 		auth_manager:            none
 		acl_manager:             none
 		txn_coordinator:         none
@@ -78,6 +84,7 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 		storage:                 storage
 		offset_manager:          offset_mgr
 		broker_registry:         none
+		partition_assigner:      none
 		auth_manager:            auth_manager
 		acl_manager:             none
 		txn_coordinator:         none
@@ -103,6 +110,7 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 		storage:                 storage
 		offset_manager:          offset_mgr
 		broker_registry:         none
+		partition_assigner:      none
 		auth_manager:            auth_manager
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
@@ -128,6 +136,7 @@ pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32
 		storage:                 storage
 		offset_manager:          offset_mgr
 		broker_registry:         none
+		partition_assigner:      none
 		auth_manager:            auth_manager
 		acl_manager:             acl_manager
 		txn_coordinator:         txn_coordinator
@@ -147,6 +156,12 @@ pub fn (mut h Handler) set_broker_registry(registry &cluster.BrokerRegistry) {
 /// 핸들러에 Share Group 코디네이터를 설정합니다.
 pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroupCoordinator) {
 	h.share_group_coordinator = coordinator
+}
+
+/// 핸들러에 파티션 할당 서비스를 설정합니다.
+/// 동적 파티션 할당을 위해 사용됩니다.
+pub fn (mut h Handler) set_partition_assigner(assigner PartitionAssignerPtr) {
+	h.partition_assigner = assigner
 }
 
 /// 수신된 요청을 처리하고 응답 바이트를 반환합니다 (레거시 메서드).

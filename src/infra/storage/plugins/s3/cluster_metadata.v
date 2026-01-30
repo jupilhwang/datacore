@@ -22,7 +22,7 @@ pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMeta
 // 클러스터 메타데이터용 S3 키 구조:
 // {prefix}/__cluster/brokers/{broker_id}.json
 // {prefix}/__cluster/metadata.json
-// {prefix}/__cluster/partitions/{topic}/{partition}.json
+// {prefix}/__cluster/assignments/{topic}/{partition}.json
 // {prefix}/__cluster/locks/{lock_name}.json
 
 // ============================================================
@@ -195,42 +195,234 @@ pub fn (mut a S3ClusterMetadataAdapter) update_cluster_metadata(metadata domain.
 // ============================================================
 
 /// get_partition_assignment는 특정 토픽-파티션의 할당 정보를 조회합니다.
+/// S3 키: {prefix}/__cluster/assignments/{topic}/{partition}.json
 pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment {
 	key := a.partition_assignment_key(topic_name, partition)
 
+	log_message(.debug, 'PartitionAssignment', 'Reading partition assignment from S3',
+		{
+		'topic':     topic_name
+		'partition': partition.str()
+		'key':       key
+	})
+
+	// 메트릭 수집
+	a.adapter.metrics_lock.@lock()
+	a.adapter.metrics.s3_get_count++
+	a.adapter.metrics_lock.unlock()
+
 	data, _ := a.adapter.get_object(key, 0, -1) or {
-		return error('partition assignment not found')
+		log_message(.warn, 'PartitionAssignment', 'Partition assignment not found', {
+			'topic':     topic_name
+			'partition': partition.str()
+			'key':       key
+			'error':     err.str()
+		})
+		a.adapter.metrics_lock.@lock()
+		a.adapter.metrics.s3_error_count++
+		a.adapter.metrics_lock.unlock()
+		return error('partition assignment not found: ${topic_name}/${partition}')
 	}
 
-	return json.decode(domain.PartitionAssignment, data.bytestr()) or {
+	assignment := json.decode(domain.PartitionAssignment, data.bytestr()) or {
+		log_message(.error, 'PartitionAssignment', 'Failed to decode partition assignment',
+			{
+			'topic':     topic_name
+			'partition': partition.str()
+			'key':       key
+			'error':     err.str()
+		})
 		return error('failed to decode partition assignment: ${err}')
 	}
+
+	log_message(.debug, 'PartitionAssignment', 'Successfully read partition assignment',
+		{
+		'topic':            topic_name
+		'partition':        partition.str()
+		'preferred_broker': assignment.preferred_broker.str()
+	})
+
+	return assignment
 }
 
 /// list_partition_assignments는 특정 토픽의 모든 파티션 할당을 조회합니다.
+/// S3 접두사: {prefix}/__cluster/assignments/{topic}/
 pub fn (mut a S3ClusterMetadataAdapter) list_partition_assignments(topic_name string) ![]domain.PartitionAssignment {
 	prefix := a.partition_assignments_prefix(topic_name)
+
+	log_message(.debug, 'PartitionAssignment', 'Listing partition assignments for topic',
+		{
+		'topic':  topic_name
+		'prefix': prefix
+	})
+
+	// 메트릭 수집
+	a.adapter.metrics_lock.@lock()
+	a.adapter.metrics.s3_list_count++
+	a.adapter.metrics_lock.unlock()
+
 	objects := a.adapter.list_objects(prefix)!
 
 	mut assignments := []domain.PartitionAssignment{}
+	mut failed_count := 0
+
 	for obj in objects {
 		if !obj.key.ends_with('.json') {
 			continue
 		}
-		data, _ := a.adapter.get_object(obj.key, 0, -1) or { continue }
-		assignment := json.decode(domain.PartitionAssignment, data.bytestr()) or { continue }
+
+		// 메트릭 수집
+		a.adapter.metrics_lock.@lock()
+		a.adapter.metrics.s3_get_count++
+		a.adapter.metrics_lock.unlock()
+
+		data, _ := a.adapter.get_object(obj.key, 0, -1) or {
+			failed_count++
+			a.adapter.metrics_lock.@lock()
+			a.adapter.metrics.s3_error_count++
+			a.adapter.metrics_lock.unlock()
+			continue
+		}
+
+		assignment := json.decode(domain.PartitionAssignment, data.bytestr()) or {
+			failed_count++
+			a.adapter.metrics_lock.@lock()
+			a.adapter.metrics.s3_error_count++
+			a.adapter.metrics_lock.unlock()
+			continue
+		}
+
 		assignments << assignment
 	}
+
+	log_message(.info, 'PartitionAssignment', 'Listed partition assignments for topic',
+		{
+		'topic':  topic_name
+		'count':  assignments.len.str()
+		'failed': failed_count.str()
+	})
+
+	return assignments
+}
+
+/// list_all_partition_assignments는 모든 토픽의 모든 파티션 할당을 조회합니다.
+/// S3 접두사: {prefix}/__cluster/assignments/
+pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]domain.PartitionAssignment {
+	prefix := a.all_assignments_prefix()
+
+	log_message(.debug, 'PartitionAssignment', 'Listing all partition assignments', {
+		'prefix': prefix
+	})
+
+	// 메트릭 수집
+	a.adapter.metrics_lock.@lock()
+	a.adapter.metrics.s3_list_count++
+	a.adapter.metrics_lock.unlock()
+
+	objects := a.adapter.list_objects(prefix)!
+
+	mut assignments := []domain.PartitionAssignment{}
+	mut failed_count := 0
+
+	for obj in objects {
+		if !obj.key.ends_with('.json') {
+			continue
+		}
+
+		// 메트릭 수집
+		a.adapter.metrics_lock.@lock()
+		a.adapter.metrics.s3_get_count++
+		a.adapter.metrics_lock.unlock()
+
+		data, _ := a.adapter.get_object(obj.key, 0, -1) or {
+			failed_count++
+			a.adapter.metrics_lock.@lock()
+			a.adapter.metrics.s3_error_count++
+			a.adapter.metrics_lock.unlock()
+			continue
+		}
+
+		assignment := json.decode(domain.PartitionAssignment, data.bytestr()) or {
+			failed_count++
+			a.adapter.metrics_lock.@lock()
+			a.adapter.metrics.s3_error_count++
+			a.adapter.metrics_lock.unlock()
+			continue
+		}
+
+		assignments << assignment
+	}
+
+	log_message(.info, 'PartitionAssignment', 'Listed all partition assignments', {
+		'total_count': assignments.len.str()
+		'failed':      failed_count.str()
+	})
 
 	return assignments
 }
 
 /// update_partition_assignment는 파티션 할당을 업데이트합니다.
+/// S3 키: {prefix}/__cluster/assignments/{topic}/{partition}.json
+/// 재시도 로직을 포함하여 안정적으로 저장합니다.
 pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment domain.PartitionAssignment) ! {
 	key := a.partition_assignment_key(assignment.topic_name, assignment.partition)
 
+	log_message(.debug, 'PartitionAssignment', 'Updating partition assignment', {
+		'topic':            assignment.topic_name
+		'partition':        assignment.partition.str()
+		'preferred_broker': assignment.preferred_broker.str()
+		'key':              key
+	})
+
 	data := json.encode(assignment).bytes()
-	a.adapter.put_object(key, data)!
+
+	// 재시도 로직
+	mut last_error := ''
+	for retry in 0 .. a.adapter.config.max_retries {
+		if retry > 0 {
+			log_message(.debug, 'PartitionAssignment', 'Retrying partition assignment update',
+				{
+				'topic':     assignment.topic_name
+				'partition': assignment.partition.str()
+				'retry':     retry.str()
+			})
+			time.sleep(a.adapter.config.retry_delay_ms * time.millisecond)
+		}
+
+		a.adapter.put_object(key, data) or {
+			last_error = err.str()
+			continue
+		}
+
+		// 성공 메트릭
+		a.adapter.metrics_lock.@lock()
+		a.adapter.metrics.s3_put_count++
+		a.adapter.metrics_lock.unlock()
+
+		log_message(.info, 'PartitionAssignment', 'Successfully updated partition assignment',
+			{
+			'topic':     assignment.topic_name
+			'partition': assignment.partition.str()
+			'retry':     retry.str()
+		})
+		return
+	}
+
+	// 모든 재시도 실패
+	a.adapter.metrics_lock.@lock()
+	a.adapter.metrics.s3_error_count++
+	a.adapter.metrics_lock.unlock()
+
+	log_message(.error, 'PartitionAssignment', 'Failed to update partition assignment after retries',
+		{
+		'topic':       assignment.topic_name
+		'partition':   assignment.partition.str()
+		'key':         key
+		'error':       last_error
+		'max_retries': a.adapter.config.max_retries.str()
+	})
+
+	return error('failed to update partition assignment after ${a.adapter.config.max_retries} retries: ${last_error}')
 }
 
 // ============================================================
@@ -385,13 +577,21 @@ fn (a &S3ClusterMetadataAdapter) cluster_metadata_key() string {
 }
 
 /// partition_assignment_key는 파티션 할당의 S3 키를 반환합니다.
+/// 형식: {prefix}/__cluster/assignments/{topic_name}/{partition_id}.json
 fn (a &S3ClusterMetadataAdapter) partition_assignment_key(topic_name string, partition i32) string {
-	return '${a.adapter.config.prefix}__cluster/partitions/${topic_name}/${partition}.json'
+	return '${a.adapter.config.prefix}__cluster/assignments/${topic_name}/${partition}.json'
 }
 
-/// partition_assignments_prefix는 파티션 할당 목록 조회용 S3 접두사를 반환합니다.
+/// partition_assignments_prefix는 특정 토픽의 파티션 할당 목록 조회용 S3 접두사를 반환합니다.
+/// 형식: {prefix}/__cluster/assignments/{topic_name}/
 fn (a &S3ClusterMetadataAdapter) partition_assignments_prefix(topic_name string) string {
-	return '${a.adapter.config.prefix}__cluster/partitions/${topic_name}/'
+	return '${a.adapter.config.prefix}__cluster/assignments/${topic_name}/'
+}
+
+/// all_assignments_prefix는 모든 파티션 할당 목록 조회용 S3 접두사를 반환합니다.
+/// 형식: {prefix}/__cluster/assignments/
+fn (a &S3ClusterMetadataAdapter) all_assignments_prefix() string {
+	return '${a.adapter.config.prefix}__cluster/assignments/'
 }
 
 /// lock_key는 분산 락의 S3 키를 반환합니다.

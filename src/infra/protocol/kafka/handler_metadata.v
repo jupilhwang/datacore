@@ -393,12 +393,17 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 			// 파티션 메타데이터 생성
 			mut partitions := []MetadataResponsePartition{}
 			for p in 0 .. topic.partition_count {
-				// 무상태 멀티 브로커 모드에서는 모든 브로커가 모든 파티션을 서빙 가능
-				// 로드 밸런싱을 위해 라운드 로빈 또는 해시 기반 할당 사용
-				leader_id := if active_broker_ids.len > 1 {
-					active_broker_ids[p % active_broker_ids.len]
-				} else {
-					h.broker_id
+				// 파티션 할당 서비스에서 리더 브로커 조회 (동적 할당)
+				mut leader_id := h.broker_id
+				if mut assigner := h.partition_assigner {
+					// 할당 서비스에서 파티션 리더 조회
+					assigned_leader := assigner.get_partition_leader(topic.name, i32(p)) or {
+						h.broker_id
+					}
+					leader_id = assigned_leader
+				} else if active_broker_ids.len > 1 {
+					// 할당 서비스가 없는 경우 라운드 로빈 사용 (backward compatibility)
+					leader_id = active_broker_ids[p % active_broker_ids.len]
 				}
 				partitions << MetadataResponsePartition{
 					error_code:       0
@@ -426,11 +431,17 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		for topic in topic_list {
 			mut partitions := []MetadataResponsePartition{}
 			for p in 0 .. topic.partition_count {
-				// 무상태 멀티 브로커 모드에서는 모든 브로커가 모든 파티션을 서빙 가능
-				leader_id := if active_broker_ids.len > 1 {
-					active_broker_ids[p % active_broker_ids.len]
-				} else {
-					h.broker_id
+				// 파티션 할당 서비스에서 리더 브로커 조회 (동적 할당)
+				mut leader_id := h.broker_id
+				if mut assigner := h.partition_assigner {
+					// 할당 서비스에서 파티션 리더 조회
+					assigned_leader := assigner.get_partition_leader(topic.name, i32(p)) or {
+						h.broker_id
+					}
+					leader_id = assigned_leader
+				} else if active_broker_ids.len > 1 {
+					// 할당 서비스가 없는 경우 라운드 로빈 사용 (backward compatibility)
+					leader_id = active_broker_ids[p % active_broker_ids.len]
 				}
 				partitions << MetadataResponsePartition{
 					error_code:       0

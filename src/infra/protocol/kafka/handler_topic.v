@@ -453,6 +453,30 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 			continue
 		}
 
+		// 파티션 할당 서비스가 있으면 파티션을 브로커에 할당
+		if mut assigner := h.partition_assigner {
+			// 활성 브로커 목록 조회
+			mut brokers := []domain.BrokerInfo{}
+			if mut registry := h.broker_registry {
+				brokers = registry.list_active_brokers() or { []domain.BrokerInfo{} }
+			}
+
+			// 브로커가 없으면 자신을 브로커로 추가
+			if brokers.len == 0 {
+				brokers << domain.BrokerInfo{
+					broker_id: h.broker_id
+					host:      h.host
+					port:      h.broker_port
+				}
+			}
+
+			// 파티션 할당 수행
+			assigner.assign_partitions(t.name, partitions, brokers) or {
+				h.logger.warn('Failed to assign partitions', observability.field_string('topic',
+					t.name), observability.field_int('partitions', partitions), observability.field_err_str(err.str()))
+			}
+		}
+
 		topics << CreateTopicsResponseTopic{
 			name:               t.name
 			topic_id:           created_meta.topic_id
