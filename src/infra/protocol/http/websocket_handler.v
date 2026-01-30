@@ -9,6 +9,23 @@ import net
 import service.streaming
 import service.port
 import time
+import infra.observability
+
+// ============================================================================
+// 로깅 (Logging)
+// ============================================================================
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+	mut logger := observability.get_named_logger('websocket.${component}')
+	fields := observability.fields_from_map(context)
+	match level {
+		.debug { logger.debug(message, fields) }
+		.info { logger.info(message, fields) }
+		.warn { logger.warn(message, fields) }
+		.error { logger.error(message, fields) }
+	}
+}
 
 // ============================================================================
 // WebSocket 핸들러
@@ -20,15 +37,18 @@ pub struct WebSocketHandler {
 pub mut:
 	ws_service &streaming.WebSocketService
 	storage    port.StoragePort
+	metrics    &observability.ProtocolMetrics // WebSocket 메트릭 수집
 }
 
 /// new_websocket_handler는 새로운 WebSocket 핸들러를 생성합니다.
 pub fn new_websocket_handler(storage port.StoragePort, config domain.WebSocketConfig) &WebSocketHandler {
 	ws_service := streaming.new_websocket_service(storage, config)
+	metrics := observability.new_protocol_metrics()
 	return &WebSocketHandler{
 		config:     config
 		ws_service: ws_service
 		storage:    storage
+		metrics:    metrics
 	}
 }
 
@@ -38,24 +58,52 @@ pub fn new_websocket_handler(storage port.StoragePort, config domain.WebSocketCo
 
 /// handle_upgrade는 WebSocket 업그레이드 요청을 처리합니다.
 pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map[string]string, client_ip string) !string {
+	start_time := time.now()
+	mut success := true
+
 	// WebSocket 업그레이드 요청 검증
 	upgrade := headers['Upgrade'] or { headers['upgrade'] or { '' } }
 	if upgrade.to_lower() != 'websocket' {
+		success = false
+		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
+			success, 0, 0)
+		log_message(.error, 'Upgrade', 'Invalid Upgrade header', {
+			'client_ip': client_ip
+		})
 		return error('Invalid Upgrade header')
 	}
 
 	connection := headers['Connection'] or { headers['connection'] or { '' } }
 	if !connection.to_lower().contains('upgrade') {
+		success = false
+		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
+			success, 0, 0)
+		log_message(.error, 'Upgrade', 'Invalid Connection header', {
+			'client_ip': client_ip
+		})
 		return error('Invalid Connection header')
 	}
 
 	ws_key := headers['Sec-WebSocket-Key'] or { headers['sec-websocket-key'] or { '' } }
 	if ws_key.len == 0 {
+		success = false
+		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
+			success, 0, 0)
+		log_message(.error, 'Upgrade', 'Missing Sec-WebSocket-Key header', {
+			'client_ip': client_ip
+		})
 		return error('Missing Sec-WebSocket-Key header')
 	}
 
 	ws_version := headers['Sec-WebSocket-Version'] or { headers['sec-websocket-version'] or { '' } }
 	if ws_version != '13' {
+		success = false
+		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
+			success, 0, 0)
+		log_message(.error, 'Upgrade', 'Unsupported WebSocket version', {
+			'client_ip': client_ip
+			'version':   ws_version
+		})
 		return error('Unsupported WebSocket version')
 	}
 
@@ -68,6 +116,13 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 
 	// 연결 등록
 	conn_id := h.ws_service.register_connection(ws_conn) or {
+		success = false
+		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
+			success, 0, 0)
+		log_message(.error, 'Upgrade', 'Failed to register connection', {
+			'client_ip': client_ip
+			'error':     err.msg()
+		})
 		return error('Failed to register connection: ${err}')
 	}
 
@@ -77,9 +132,25 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		'X-WebSocket-Connection-Id: ${conn_id}\r\n' + '\r\n'
 
 	conn.write_string(response) or {
+		success = false
 		h.ws_service.unregister_connection(conn_id) or {}
+		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
+			success, 0, 0)
+		log_message(.error, 'Upgrade', 'Failed to send upgrade response', {
+			'client_ip': client_ip
+			'conn_id':   conn_id
+		})
 		return error('Failed to send upgrade response')
 	}
+
+	// 메트릭 기록
+	elapsed_ms := time.since(start_time).milliseconds()
+	h.metrics.record_request('ws_upgrade', elapsed_ms, success, 0, response.len)
+
+	log_message(.info, 'Upgrade', 'WebSocket upgrade successful', {
+		'client_ip': client_ip
+		'conn_id':   conn_id
+	})
 
 	return conn_id
 }

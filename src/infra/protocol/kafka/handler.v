@@ -33,6 +33,7 @@ mut:
 	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
 	share_group_coordinator ?&group.ShareGroupCoordinator       // Optional: Share group coordinator (KIP-932)
 	logger                  &observability.Logger
+	metrics                 &observability.ProtocolMetrics // Protocol metrics collector
 }
 
 /// 스토리지와 함께 새로운 Kafka 프로토콜 핸들러를 생성합니다.
@@ -42,6 +43,7 @@ mut:
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
+	metrics := observability.new_protocol_metrics()
 
 	return Handler{
 		broker_id:               broker_id
@@ -56,6 +58,7 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 		txn_coordinator:         none
 		share_group_coordinator: none
 		logger:                  logger
+		metrics:                 metrics
 	}
 }
 
@@ -65,6 +68,7 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
+	metrics := observability.new_protocol_metrics()
 
 	return Handler{
 		broker_id:               broker_id
@@ -79,6 +83,7 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 		txn_coordinator:         none
 		share_group_coordinator: none
 		logger:                  logger
+		metrics:                 metrics
 	}
 }
 
@@ -88,6 +93,7 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
+	metrics := observability.new_protocol_metrics()
 
 	return Handler{
 		broker_id:               broker_id
@@ -102,6 +108,7 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 		txn_coordinator:         txn_coordinator
 		share_group_coordinator: none
 		logger:                  logger
+		metrics:                 metrics
 	}
 }
 
@@ -111,6 +118,7 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
+	metrics := observability.new_protocol_metrics()
 
 	return Handler{
 		broker_id:               broker_id
@@ -125,6 +133,7 @@ pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32
 		txn_coordinator:         txn_coordinator
 		share_group_coordinator: share_coordinator
 		logger:                  logger
+		metrics:                 metrics
 	}
 }
 
@@ -163,90 +172,174 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		correlation_id), observability.field_bytes('request_size', data.len))
 
 	// API 키에 따라 처리
-	response_body := match api_key {
+	mut response_body := []u8{}
+	mut success := true
+
+	response_body = match api_key {
 		.api_versions {
 			h.handle_api_versions(version)
 		}
 		.metadata {
-			h.handle_metadata(req.body, version)!
+			h.handle_metadata(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.find_coordinator {
-			h.handle_find_coordinator(req.body, version)!
+			h.handle_find_coordinator(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.produce {
-			h.handle_produce(req.body, version)!
+			h.handle_produce(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.fetch {
-			h.handle_fetch(req.body, version)!
+			h.handle_fetch(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.list_offsets {
-			h.handle_list_offsets(req.body, version)!
+			h.handle_list_offsets(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.offset_commit {
-			h.handle_offset_commit(req.body, version)!
+			h.handle_offset_commit(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.offset_fetch {
-			h.handle_offset_fetch(req.body, version)!
+			h.handle_offset_fetch(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.join_group {
-			h.handle_join_group(req.body, version)!
+			h.handle_join_group(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.sync_group {
-			h.handle_sync_group(req.body, version)!
+			h.handle_sync_group(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.heartbeat {
-			h.handle_heartbeat(req.body, version)!
+			h.handle_heartbeat(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.leave_group {
-			h.handle_leave_group(req.body, version)!
+			h.handle_leave_group(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.list_groups {
-			h.handle_list_groups(req.body, version)!
+			h.handle_list_groups(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.describe_groups {
-			h.handle_describe_groups(req.body, version)!
+			h.handle_describe_groups(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.delete_groups {
-			h.handle_delete_groups(req.body, version)!
+			h.handle_delete_groups(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.create_topics {
-			h.handle_create_topics(req.body, version)!
+			h.handle_create_topics(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.delete_topics {
-			h.handle_delete_topics(req.body, version)!
+			h.handle_delete_topics(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.init_producer_id {
-			h.handle_init_producer_id(req.body, version)!
+			h.handle_init_producer_id(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.add_partitions_to_txn {
-			h.handle_add_partitions_to_txn(req.body, version)!
+			h.handle_add_partitions_to_txn(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.add_offsets_to_txn {
-			h.handle_add_offsets_to_txn(req.body, version)!
+			h.handle_add_offsets_to_txn(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.end_txn {
-			h.handle_end_txn(req.body, version)!
+			h.handle_end_txn(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.write_txn_markers {
-			h.handle_write_txn_markers(req.body, version)!
+			h.handle_write_txn_markers(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.txn_offset_commit {
-			h.handle_txn_offset_commit(req.body, version)!
+			h.handle_txn_offset_commit(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.consumer_group_heartbeat {
-			h.handle_consumer_group_heartbeat(req.body, version)!
+			h.handle_consumer_group_heartbeat(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.consumer_group_describe {
-			h.handle_consumer_group_describe(req.body, version)!
+			h.handle_consumer_group_describe(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.sasl_handshake {
-			h.handle_sasl_handshake(req.body, version)!
+			h.handle_sasl_handshake(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.sasl_authenticate {
-			h.handle_sasl_authenticate(req.body, version)!
+			h.handle_sasl_authenticate(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.describe_cluster {
-			h.handle_describe_cluster(req.body, version)!
+			h.handle_describe_cluster(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.describe_configs {
 			h.handle_describe_configs(req.body, version)!
@@ -280,11 +373,17 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		}
 		else {
 			h.logger.warn('Unsupported API key', observability.field_int('api_key', int(api_key)))
+			success = false
 			return error('unsupported API key: ${int(api_key)}')
 		}
 	}
 
 	elapsed := time.since(start_time)
+	latency_ms := elapsed.milliseconds()
+
+	// 메트릭 기록
+	h.metrics.record_request(api_key.str(), latency_ms, success, data.len, response_body.len)
+
 	h.logger.debug('Request completed', observability.field_string('api', api_key.str()),
 		observability.field_int('correlation_id', correlation_id), observability.field_bytes('response_size',
 		response_body.len), observability.field_duration('latency', elapsed))
@@ -426,4 +525,23 @@ fn generate_uuid() []u8 {
 	uuid[6] = (uuid[6] & 0x0f) | 0x40 // 버전 4
 	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 변형
 	return uuid
+}
+
+// ============================================================
+// 메트릭 조회 (Metrics Query)
+// ============================================================
+
+/// get_metrics_summary는 프로토콜 메트릭 요약을 반환합니다.
+pub fn (mut h Handler) get_metrics_summary() string {
+	return h.metrics.get_summary()
+}
+
+/// get_metrics는 프로토콜 메트릭 구조체를 반환합니다.
+pub fn (mut h Handler) get_metrics() &observability.ProtocolMetrics {
+	return h.metrics
+}
+
+/// reset_metrics는 모든 프로토콜 메트릭을 초기화합니다.
+pub fn (mut h Handler) reset_metrics() {
+	h.metrics.reset()
 }

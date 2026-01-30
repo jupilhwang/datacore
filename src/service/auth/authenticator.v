@@ -5,6 +5,126 @@ module auth
 
 import domain
 import service.port
+import infra.observability
+import sync
+import time
+
+// ============================================================================
+// 로깅 (Logging)
+// ============================================================================
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+	mut logger := observability.get_named_logger('auth.${component}')
+	fields := observability.fields_from_map(context)
+	match level {
+		.debug { logger.debug(message, fields) }
+		.info { logger.info(message, fields) }
+		.warn { logger.warn(message, fields) }
+		.error { logger.error(message, fields) }
+	}
+}
+
+// ============================================================================
+// 메트릭 (Metrics)
+// ============================================================================
+
+/// AuthMetrics는 인증 작업의 메트릭을 추적합니다.
+pub struct AuthMetrics {
+mut:
+	// 인증 메트릭
+	auth_attempts i64 // 총 인증 시도 횟수
+	auth_success  i64 // 성공한 인증 횟수
+	auth_failures i64 // 실패한 인증 횟수
+	// 메커니즘별 메트릭
+	mechanism_attempts map[string]i64 // 메커니즘별 시도 횟수
+	mechanism_success  map[string]i64 // 메커니즘별 성공 횟수
+	// 지연 시간 메트릭 (밀리초)
+	auth_latency_sum   i64 // 총 지연 시간
+	auth_latency_count i64 // 지연 시간 측정 횟수
+	// 락
+	lock sync.Mutex
+}
+
+/// 새로운 AuthMetrics를 생성합니다.
+pub fn new_auth_metrics() &AuthMetrics {
+	return &AuthMetrics{
+		mechanism_attempts: map[string]i64{}
+		mechanism_success:  map[string]i64{}
+	}
+}
+
+/// 인증 시도를 기록합니다.
+pub fn (mut m AuthMetrics) record_auth_attempt(mechanism string, latency_ms i64, success bool) {
+	m.lock.lock()
+	defer { m.lock.unlock() }
+
+	m.auth_attempts++
+	m.auth_latency_sum += latency_ms
+	m.auth_latency_count++
+
+	// 메커니즘별 카운트
+	if mechanism !in m.mechanism_attempts {
+		m.mechanism_attempts[mechanism] = 0
+		m.mechanism_success[mechanism] = 0
+	}
+	m.mechanism_attempts[mechanism]++
+
+	if success {
+		m.auth_success++
+		m.mechanism_success[mechanism]++
+	} else {
+		m.auth_failures++
+	}
+}
+
+/// 메트릭을 초기화합니다.
+pub fn (mut m AuthMetrics) reset() {
+	m.lock.lock()
+	defer { m.lock.unlock() }
+
+	m.auth_attempts = 0
+	m.auth_success = 0
+	m.auth_failures = 0
+	m.mechanism_attempts.clear()
+	m.mechanism_success.clear()
+	m.auth_latency_sum = 0
+	m.auth_latency_count = 0
+}
+
+/// 메트릭 요약을 문자열로 반환합니다.
+pub fn (m &AuthMetrics) get_summary() string {
+	m.lock.lock()
+	defer { m.lock.unlock() }
+
+	mut result := '[Auth Metrics]\n'
+	result += '  Total: ${m.auth_attempts} attempts, ${m.auth_success} success, ${m.auth_failures} failures'
+
+	if m.auth_attempts > 0 {
+		success_rate := (f64(m.auth_success) / f64(m.auth_attempts)) * 100.0
+		result += ' (${success_rate:.1f}% success)\n'
+	} else {
+		result += '\n'
+	}
+
+	// 평균 지연 시간
+	if m.auth_latency_count > 0 {
+		avg_latency := f64(m.auth_latency_sum) / f64(m.auth_latency_count)
+		result += '  Avg Latency: ${avg_latency:.2f}ms\n'
+	}
+
+	// 메커니즘별 통계
+	if m.mechanism_attempts.len > 0 {
+		result += '  By Mechanism:\n'
+		for mech, count in m.mechanism_attempts {
+			success := m.mechanism_success[mech] or { 0 }
+			rate := if count > 0 { (f64(success) / f64(count)) * 100.0 } else { 0.0 }
+			result += '    ${mech}: ${count} attempts, ${success} success (${rate:.1f}%)\n'
+		}
+	}
+
+	return result
+}
 
 /// AuthService는 브로커의 인증을 관리합니다.
 /// 지원되는 SASL 메커니즘과 인증자를 관리합니다.
@@ -13,6 +133,7 @@ mut:
 	user_store     port.UserStore                    // 사용자 저장소
 	mechanisms     []domain.SaslMechanism            // 지원되는 SASL 메커니즘 목록
 	authenticators map[string]port.SaslAuthenticator // 메커니즘별 인증자 맵
+	metrics        &AuthMetrics                      // 인증 메트릭 수집
 }
 
 /// new_auth_service는 새로운 인증 서비스를 생성합니다.
@@ -35,10 +156,13 @@ pub fn new_auth_service(user_store port.UserStore, mechanisms []domain.SaslMecha
 		}
 	}
 
+	metrics := new_auth_metrics()
+
 	return &AuthService{
 		user_store:     user_store
 		mechanisms:     mechanisms
 		authenticators: authenticators
+		metrics:        metrics
 	}
 }
 
@@ -71,8 +195,40 @@ pub fn (mut s AuthService) get_authenticator(mechanism domain.SaslMechanism) !po
 
 /// authenticate는 지정된 메커니즘을 사용하여 인증을 수행합니다.
 pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_bytes []u8) !domain.AuthResult {
-	mut auth := s.get_authenticator(mechanism)!
-	return auth.authenticate(auth_bytes)
+	start_time := time.now()
+	mech_str := mechanism.str()
+
+	mut auth := s.get_authenticator(mechanism) or {
+		// 메트릭: 실패 기록
+		elapsed_ms := time.since(start_time).milliseconds()
+		s.metrics.record_auth_attempt(mech_str, elapsed_ms, false)
+		log_message(.error, 'Auth', 'Unsupported mechanism', {
+			'mechanism': mech_str
+		})
+		return err
+	}
+
+	result := auth.authenticate(auth_bytes) or {
+		// 메트릭: 실패 기록
+		elapsed_ms := time.since(start_time).milliseconds()
+		s.metrics.record_auth_attempt(mech_str, elapsed_ms, false)
+		log_message(.warn, 'Auth', 'Authentication failed', {
+			'mechanism': mech_str
+			'error':     err.msg()
+		})
+		return err
+	}
+
+	// 메트릭: 성공 기록
+	elapsed_ms := time.since(start_time).milliseconds()
+	s.metrics.record_auth_attempt(mech_str, elapsed_ms, true)
+
+	log_message(.info, 'Auth', 'Authentication successful', {
+		'mechanism': mech_str
+		'user':      result.user_id
+	})
+
+	return result
 }
 
 /// PlainAuthenticator는 SASL PLAIN 인증을 구현합니다.
@@ -168,4 +324,23 @@ fn parse_plain_auth(data []u8) ?PlainAuthData {
 		username: username
 		password: password
 	}
+}
+
+// ============================================================================
+// 메트릭 조회 (Metrics Query)
+// ============================================================================
+
+/// get_metrics_summary는 인증 메트릭 요약을 반환합니다.
+pub fn (mut s AuthService) get_metrics_summary() string {
+	return s.metrics.get_summary()
+}
+
+/// get_metrics는 인증 메트릭 구조체를 반환합니다.
+pub fn (mut s AuthService) get_metrics() &AuthMetrics {
+	return s.metrics
+}
+
+/// reset_metrics는 모든 인증 메트릭을 초기화합니다.
+pub fn (mut s AuthService) reset_metrics() {
+	s.metrics.reset()
 }

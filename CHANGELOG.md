@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.39.0] - 2026-01-30
+
+### Added
+
+- **Extended Observability System** - 추가 모듈에 메트릭 및 로깅 시스템 확장
+  - **Postgres Storage Adapter**:
+    - `PostgresMetrics` 구조체 추가: 쿼리, 토픽, 레코드, 오프셋, 그룹 작업 메트릭
+    - 구조화된 로깅 시스템 구현
+    - 메트릭 조회 API: `get_metrics()`, `get_metrics_summary()`, `reset_metrics()`
+  - **Kafka Protocol Handler**:
+    - `ProtocolMetrics` 통합: API 요청/응답, 지연 시간, 에러 추적
+    - `handle_request()`에 메트릭 수집 추가
+    - API별 성공률 및 평균 지연 시간 계산
+  - **gRPC Handler**:
+    - `ProtocolMetrics` 통합
+    - `handle_frame()`에 메트릭 수집 추가
+    - gRPC 스트리밍 요청/응답 추적
+  - **HTTP Handlers (WebSocket/SSE)**:
+    - WebSocket Handler: 업그레이드 요청 메트릭 및 로깅
+    - SSE Handler: SSE 요청 메트릭 및 로깅
+    - 연결 성공/실패 추적
+  - **Auth Service**:
+    - `AuthMetrics` 구조체 추가: 인증 시도, 성공/실패, 지연 시간
+    - 메커니즘별 통계 (PLAIN, SCRAM 등)
+    - `authenticate()`에 메트릭 수집 추가
+  - **Interface/Server Modules**:
+    - TCP Server: 구조화된 로깅 추가
+    - Connection Manager: 연결 메트릭 (기존 기능 활용)
+
+### Changed
+
+- 버전: 0.38.0 → 0.39.0
+
 ## [0.38.0] - 2026-01-24
 
 ### Added

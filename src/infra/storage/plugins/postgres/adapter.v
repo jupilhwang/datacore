@@ -11,6 +11,102 @@ import rand
 import sync
 import encoding.hex
 
+// ============================================================
+// 로깅 (Logging)
+// ============================================================
+
+/// LogLevel은 로그 레벨을 정의합니다.
+enum LogLevel {
+	debug
+	info
+	warn
+	error
+}
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level LogLevel, component string, message string, context map[string]string) {
+	level_str := match level {
+		.debug { '[DEBUG]' }
+		.info { '[INFO]' }
+		.warn { '[WARN]' }
+		.error { '[ERROR]' }
+	}
+
+	timestamp := time.now().format_ss()
+	mut ctx_str := ''
+	if context.len > 0 {
+		mut parts := []string{}
+		for key, value in context {
+			parts << '${key}=${value}'
+		}
+		ctx_str = ' {${parts.join(', ')}}'
+	}
+
+	eprintln('${timestamp} ${level_str} [Postgres:${component}] ${message}${ctx_str}')
+}
+
+// ============================================================
+// 메트릭 (Metrics)
+// ============================================================
+
+/// PostgresMetrics는 PostgreSQL 스토리지 작업의 메트릭을 추적합니다.
+struct PostgresMetrics {
+mut:
+	// 쿼리 메트릭
+	query_count       i64
+	query_error_count i64
+	query_total_ms    i64
+	// 토픽 작업 메트릭
+	topic_create_count i64
+	topic_delete_count i64
+	topic_lookup_count i64
+	// 레코드 작업 메트릭
+	append_count        i64
+	append_record_count i64
+	fetch_count         i64
+	fetch_record_count  i64
+	// 오프셋 작업 메트릭
+	offset_commit_count i64
+	offset_fetch_count  i64
+	// 그룹 작업 메트릭
+	group_save_count   i64
+	group_load_count   i64
+	group_delete_count i64
+	// 에러 메트릭
+	error_count i64
+}
+
+/// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
+fn (mut m PostgresMetrics) reset() {
+	m.query_count = 0
+	m.query_error_count = 0
+	m.query_total_ms = 0
+	m.topic_create_count = 0
+	m.topic_delete_count = 0
+	m.topic_lookup_count = 0
+	m.append_count = 0
+	m.append_record_count = 0
+	m.fetch_count = 0
+	m.fetch_record_count = 0
+	m.offset_commit_count = 0
+	m.offset_fetch_count = 0
+	m.group_save_count = 0
+	m.group_load_count = 0
+	m.group_delete_count = 0
+	m.error_count = 0
+}
+
+/// get_summary는 메트릭 요약을 문자열로 반환합니다.
+fn (m &PostgresMetrics) get_summary() string {
+	return '[Postgres Metrics]
+  Queries: ${m.query_count} total, ${m.query_error_count} errors, ${m.query_total_ms}ms
+  Topics: create=${m.topic_create_count}, delete=${m.topic_delete_count}, lookup=${m.topic_lookup_count}
+  Records: append=${m.append_count} (${m.append_record_count} records), fetch=${m.fetch_count} (${m.fetch_record_count} records)
+  Offsets: commit=${m.offset_commit_count}, fetch=${m.offset_fetch_count}
+  Groups: save=${m.group_save_count}, load=${m.group_load_count}, delete=${m.group_delete_count}
+  Errors: ${m.error_count}'
+}
+
 /// PostgresStorageAdapter는 port.StoragePort를 구현합니다.
 /// PostgreSQL을 사용하여 토픽, 레코드, 컨슈머 그룹을 저장합니다.
 /// 트랜잭션과 행 락(FOR UPDATE)을 사용하여 동시성을 제어합니다.
@@ -24,6 +120,9 @@ mut:
 	topic_id_idx     map[string]string               // topic_id (hex) -> topic_name 인덱스
 	cache_lock       sync.RwMutex                    // 캐시 동시성 제어용 락
 	initialized      bool // 초기화 완료 여부
+	// 메트릭
+	metrics      PostgresMetrics
+	metrics_lock sync.Mutex
 }
 
 /// PostgresConfig는 PostgreSQL 스토리지 설정을 담습니다.
@@ -373,6 +472,13 @@ fn (mut a PostgresStorageAdapter) load_topic_cache() ! {
 /// create_topic은 새로운 토픽을 생성합니다.
 /// UUID v4 형식의 topic_id를 자동 생성합니다.
 pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+	start_time := time.now()
+
+	// 메트릭: 토픽 생성 시작
+	a.metrics_lock.@lock()
+	a.metrics.topic_create_count++
+	a.metrics_lock.unlock()
+
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
 
@@ -420,6 +526,18 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 	a.topic_cache[name] = metadata
 	a.topic_id_idx[topic_id.hex()] = name
 	a.cache_lock.unlock()
+
+	// 메트릭: 쿼리 시간 기록
+	elapsed_ms := time.since(start_time).milliseconds()
+	a.metrics_lock.@lock()
+	a.metrics.query_count++
+	a.metrics.query_total_ms += elapsed_ms
+	a.metrics_lock.unlock()
+
+	log_message(.info, 'Topic', 'Topic created', {
+		'name':       name
+		'partitions': partitions.str()
+	})
 
 	return metadata
 }
@@ -540,15 +658,31 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 /// append는 파티션에 레코드를 추가합니다.
 /// 행 락(FOR UPDATE)을 사용하여 동시성을 제어합니다.
 pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
+	start_time := time.now()
+
+	// 메트릭: append 시작
+	a.metrics_lock.@lock()
+	a.metrics.append_count++
+	a.metrics.append_record_count += i64(records.len)
+	a.metrics_lock.unlock()
+
 	// 토픽 존재 확인
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('topic not found')
 	}
 	a.cache_lock.runlock()
 
 	if partition < 0 || partition >= topic.partition_count {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('partition out of range')
 	}
 
@@ -567,6 +701,10 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 
 	if rows.len == 0 {
 		db.rollback()!
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('partition metadata not found')
 	}
 
@@ -595,6 +733,13 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 
 	db.commit()!
 
+	// 메트릭: 쿼리 시간 기록
+	elapsed_ms := time.since(start_time).milliseconds()
+	a.metrics_lock.@lock()
+	a.metrics.query_count++
+	a.metrics.query_total_ms += elapsed_ms
+	a.metrics_lock.unlock()
+
 	return domain.AppendResult{
 		base_offset:      start_offset
 		log_append_time:  now.unix()
@@ -605,15 +750,30 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 
 /// fetch는 파티션에서 레코드를 조회합니다.
 pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	start_time := time.now()
+
+	// 메트릭: fetch 시작
+	a.metrics_lock.@lock()
+	a.metrics.fetch_count++
+	a.metrics_lock.unlock()
+
 	// 토픽 존재 확인
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('topic not found')
 	}
 	a.cache_lock.runlock()
 
 	if partition < 0 || partition >= topic.partition_count {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('partition out of range')
 	}
 
@@ -628,6 +788,10 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 		[topic_name, partition.str()])!
 
 	if meta_rows.len == 0 {
+		// 메트릭: 에러
+		a.metrics_lock.@lock()
+		a.metrics.error_count++
+		a.metrics_lock.unlock()
 		return error('partition metadata not found')
 	}
 
@@ -659,6 +823,14 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 
 	// 레코드 디코딩
 	fetched_records := a.decode_record_rows(rows)
+
+	// 메트릭: fetch된 레코드 수 및 쿼리 시간
+	elapsed_ms := time.since(start_time).milliseconds()
+	a.metrics_lock.@lock()
+	a.metrics.fetch_record_count += i64(fetched_records.len)
+	a.metrics.query_count++
+	a.metrics.query_total_ms += elapsed_ms
+	a.metrics_lock.unlock()
 
 	return domain.FetchResult{
 		records:            fetched_records
@@ -1007,4 +1179,35 @@ pub fn (mut a PostgresStorageAdapter) get_stats() !StorageStats {
 /// 어댑터 사용이 끝나면 반드시 호출하여 리소스를 해제해야 합니다.
 pub fn (mut a PostgresStorageAdapter) close() {
 	a.pool.close()
+}
+
+// ============================================================
+// 메트릭 조회 (Metrics Query)
+// ============================================================
+
+/// get_metrics는 현재 메트릭 스냅샷을 반환합니다.
+pub fn (mut a PostgresStorageAdapter) get_metrics() PostgresMetrics {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	return a.metrics
+}
+
+/// get_metrics_summary는 메트릭 요약 문자열을 반환합니다.
+pub fn (mut a PostgresStorageAdapter) get_metrics_summary() string {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	return a.metrics.get_summary()
+}
+
+/// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
+pub fn (mut a PostgresStorageAdapter) reset_metrics() {
+	a.metrics_lock.@lock()
+	defer {
+		a.metrics_lock.unlock()
+	}
+	a.metrics.reset()
 }

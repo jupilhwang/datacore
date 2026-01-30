@@ -7,6 +7,22 @@ import net
 import service.port
 import service.streaming
 import time
+import infra.observability
+
+// ============================================================
+// 로깅 (Logging)
+// ============================================================
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+	logger := observability.get_named_logger('grpc.${component}')
+	match level {
+		.debug { logger.debug(message, context) }
+		.info { logger.info(message, context) }
+		.warn { logger.warn(message, context) }
+		.error { logger.error(message, context) }
+	}
+}
 
 // ============================================================================
 // gRPC 핸들러
@@ -18,15 +34,18 @@ pub struct GrpcHandler {
 pub mut:
 	grpc_service &streaming.GrpcService
 	storage      port.StoragePort
+	metrics      &observability.ProtocolMetrics // gRPC 메트릭 수집
 }
 
 /// new_grpc_handler는 새로운 gRPC 핸들러를 생성합니다.
 pub fn new_grpc_handler(storage port.StoragePort, config domain.GrpcConfig) &GrpcHandler {
 	grpc_service := streaming.new_grpc_service(storage, config)
+	metrics := observability.new_protocol_metrics()
 	return &GrpcHandler{
 		config:       config
 		grpc_service: grpc_service
 		storage:      storage
+		metrics:      metrics
 	}
 }
 
@@ -184,8 +203,13 @@ fn (mut h GrpcHandler) send_frame(mut conn net.TcpConn, data []u8, compressed bo
 
 /// handle_frame은 gRPC 프레임을 파싱하고 처리합니다.
 fn (mut h GrpcHandler) handle_frame(conn_id string, frame GrpcFrame) domain.GrpcStreamResponse {
+	start_time := time.now()
+	mut success := true
+	mut api_name := 'unknown'
+
 	// 프레임 데이터를 스트림 요청으로 파싱
 	req := h.parse_stream_request(frame.data) or {
+		success = false
 		return domain.GrpcStreamResponse{
 			response_type: .error
 			error:         domain.GrpcErrorResponse{
@@ -195,8 +219,29 @@ fn (mut h GrpcHandler) handle_frame(conn_id string, frame GrpcFrame) domain.Grpc
 		}
 	}
 
+	// API 이름 설정
+	api_name = match req.request_type {
+		.produce { 'produce' }
+		.subscribe { 'subscribe' }
+		.commit { 'commit' }
+		.ack { 'ack' }
+		.ping { 'ping' }
+	}
+
 	// 요청 처리
-	return h.grpc_service.handle_stream_request(conn_id, req)
+	response := h.grpc_service.handle_stream_request(conn_id, req)
+
+	// 에러 확인
+	if response.response_type == .error {
+		success = false
+	}
+
+	// 메트릭 기록
+	elapsed_ms := time.since(start_time).milliseconds()
+	h.metrics.record_request('grpc_${api_name}', elapsed_ms, success, frame.data.len,
+		response.encode().len)
+
+	return response
 }
 
 /// parse_stream_request는 바이너리 데이터를 GrpcStreamRequest로 파싱합니다.
@@ -723,4 +768,23 @@ pub fn (mut h GrpcHandler) get_stats() streaming.GrpcStats {
 /// get_connections는 모든 활성 gRPC 연결을 반환합니다.
 pub fn (mut h GrpcHandler) get_connections() []domain.GrpcConnection {
 	return h.grpc_service.list_connections()
+}
+
+// ============================================================================
+// 메트릭 조회 (Metrics Query)
+// ============================================================================
+
+/// get_metrics_summary는 gRPC 프로토콜 메트릭 요약을 반환합니다.
+pub fn (mut h GrpcHandler) get_metrics_summary() string {
+	return h.metrics.get_summary()
+}
+
+/// get_metrics는 gRPC 프로토콜 메트릭 구조체를 반환합니다.
+pub fn (mut h GrpcHandler) get_metrics() &observability.ProtocolMetrics {
+	return h.metrics
+}
+
+/// reset_metrics는 모든 gRPC 프로토콜 메트릭을 초기화합니다.
+pub fn (mut h GrpcHandler) reset_metrics() {
+	h.metrics.reset()
 }

@@ -16,6 +16,23 @@ module server
 import net
 import sync
 import time
+import infra.observability
+
+// ============================================================================
+// 로깅 (Logging)
+// ============================================================================
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+	mut logger := observability.get_named_logger('tcp.${component}')
+	fields := observability.fields_from_map(context)
+	match level {
+		.debug { logger.debug(message, fields) }
+		.info { logger.info(message, fields) }
+		.warn { logger.warn(message, fields) }
+		.error { logger.error(message, fields) }
+	}
+}
 
 /// ServerConfig는 서버 설정을 담는 구조체입니다.
 /// TCP 서버의 동작을 제어하는 다양한 옵션을 포함합니다.

@@ -7,6 +7,23 @@ import service.port
 import service.streaming
 import net
 import time
+import infra.observability
+
+// ============================================================================
+// 로깅 (Logging)
+// ============================================================================
+
+/// log_message는 구조화된 로그 메시지를 출력합니다.
+fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+	mut logger := observability.get_named_logger('sse.${component}')
+	fields := observability.fields_from_map(context)
+	match level {
+		.debug { logger.debug(message, fields) }
+		.info { logger.info(message, fields) }
+		.warn { logger.warn(message, fields) }
+		.error { logger.error(message, fields) }
+	}
+}
 
 // ============================================================================
 // SSE 핸들러
@@ -18,15 +35,18 @@ pub struct SSEHandler {
 pub mut:
 	sse_service &streaming.SSEService
 	storage     port.StoragePort
+	metrics     &observability.ProtocolMetrics // SSE 메트릭 수집
 }
 
 /// new_sse_handler는 새로운 SSE 핸들러를 생성합니다.
 pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHandler {
 	sse_service := streaming.new_sse_service(storage, config)
+	metrics := observability.new_protocol_metrics()
 	return &SSEHandler{
 		config:      config
 		sse_service: sse_service
 		storage:     storage
+		metrics:     metrics
 	}
 }
 
@@ -37,13 +57,36 @@ pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHa
 /// handle_sse_request는 SSE HTTP 요청을 처리합니다.
 /// 반환값: (상태 코드, 헤더, 스트리밍 여부)
 pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[string]string, bool) {
+	start_time := time.now()
+	mut success := true
+	mut status_code := 200
+
 	// 토픽 존재 여부 확인
-	_ = h.storage.get_topic(request.topic) or { return 404, map[string]string{}, false }
+	_ = h.storage.get_topic(request.topic) or {
+		success = false
+		status_code = 404
+		elapsed_ms := time.since(start_time).milliseconds()
+		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
+		log_message(.error, 'Request', 'Topic not found', {
+			'topic':     request.topic
+			'client_ip': request.client_ip
+		})
+		return 404, map[string]string{}, false
+	}
 
 	// 파티션이 지정된 경우 유효성 검사
 	if partition := request.partition {
 		topic_meta := h.storage.get_topic(request.topic)!
 		if partition < 0 || partition >= topic_meta.partition_count {
+			success = false
+			status_code = 400
+			elapsed_ms := time.since(start_time).milliseconds()
+			h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
+			log_message(.error, 'Request', 'Invalid partition', {
+				'topic':     request.topic
+				'partition': partition.str()
+				'client_ip': request.client_ip
+			})
 			return 400, map[string]string{}, false
 		}
 	}
@@ -52,7 +95,17 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 	conn := domain.new_sse_connection(request.client_ip, request.user_agent)
 
 	// 연결 등록
-	conn_id := h.sse_service.register_connection(conn) or { return 503, map[string]string{}, false }
+	conn_id := h.sse_service.register_connection(conn) or {
+		success = false
+		status_code = 503
+		elapsed_ms := time.since(start_time).milliseconds()
+		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
+		log_message(.error, 'Request', 'Failed to register connection', {
+			'client_ip': request.client_ip
+			'error':     err.msg()
+		})
+		return 503, map[string]string{}, false
+	}
 
 	// 구독 생성
 	offset_type := domain.subscription_offset_from_str(request.offset_str)
@@ -63,7 +116,16 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 
 	// 구독 추가
 	h.sse_service.subscribe(conn_id, sub) or {
+		success = false
+		status_code = 400
 		h.sse_service.unregister_connection(conn_id) or {}
+		elapsed_ms := time.since(start_time).milliseconds()
+		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
+		log_message(.error, 'Request', 'Failed to subscribe', {
+			'conn_id': conn_id
+			'topic':   request.topic
+			'error':   err.msg()
+		})
 		return 400, map[string]string{}, false
 	}
 
@@ -76,6 +138,16 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		'Access-Control-Allow-Origin': '*'
 		'X-SSE-Connection-Id':         conn_id
 	}
+
+	// 메트릭 기록
+	elapsed_ms := time.since(start_time).milliseconds()
+	h.metrics.record_request('sse_request', elapsed_ms, success, 0, headers.len)
+
+	log_message(.info, 'Request', 'SSE request successful', {
+		'conn_id':   conn_id
+		'topic':     request.topic
+		'client_ip': request.client_ip
+	})
 
 	return 200, headers, true
 }
