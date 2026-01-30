@@ -16,12 +16,12 @@ import infra.observability
 /// log_message는 구조화된 로그 메시지를 출력합니다.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	mut logger := observability.get_named_logger('sse.${component}')
-	fields := observability.fields_from_map(context)
 	match level {
-		.debug { logger.debug(message, fields) }
-		.info { logger.info(message, fields) }
-		.warn { logger.warn(message, fields) }
-		.error { logger.error(message, fields) }
+		.debug { logger.debug(message) }
+		.info { logger.info(message) }
+		.warn { logger.warn(message) }
+		.error { logger.error(message) }
+		else {}
 	}
 }
 
@@ -59,7 +59,6 @@ pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHa
 pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[string]string, bool) {
 	start_time := time.now()
 	mut success := true
-	mut status_code := 200
 
 	// 토픽 존재 여부 확인
 	_ = h.storage.get_topic(request.topic) or {
@@ -117,7 +116,6 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 	// 구독 추가
 	h.sse_service.subscribe(conn_id, sub) or {
 		success = false
-		status_code = 400
 		h.sse_service.unregister_connection(conn_id) or {}
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)

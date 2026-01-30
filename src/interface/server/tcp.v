@@ -25,12 +25,12 @@ import infra.observability
 /// log_message는 구조화된 로그 메시지를 출력합니다.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	mut logger := observability.get_named_logger('tcp.${component}')
-	fields := observability.fields_from_map(context)
 	match level {
-		.debug { logger.debug(message, fields) }
-		.info { logger.info(message, fields) }
-		.warn { logger.warn(message, fields) }
-		.error { logger.error(message, fields) }
+		.debug { logger.debug(message) }
+		.info { logger.info(message) }
+		.warn { logger.warn(message) }
+		.error { logger.error(message) }
+		else {}
 	}
 }
 

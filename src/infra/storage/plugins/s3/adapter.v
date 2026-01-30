@@ -881,130 +881,26 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 		return
 	}
 
-	// 메트릭: 커밋 시작
-	a.metrics_lock.@lock()
-	a.metrics.offset_commit_count += i64(offsets.len)
-	a.metrics_lock.unlock()
-
+	a.record_commit_start_metrics(offsets.len)
 	mut failed := []string{}
 	mut succeeded := []domain.PartitionOffset{}
 
-	// 병렬 커밋 (채널 사용)
-	// 채널 버퍼 크기를 합리적인 수준으로 제한 (최대 100)
-	cap_size := if offsets.len > max_offset_commit_buffer {
-		max_offset_commit_buffer
-	} else {
-		offsets.len
-	}
-	ch := chan CommitResult{cap: cap_size}
+	ch := a.create_commit_channel(offsets.len)
 	mut active := 0
-	max_concurrent := max_offset_commit_concurrent
 
 	for offset in offsets {
-		// 동시 실행 제한
-		for active >= max_concurrent {
-			result := <-ch
-			active--
-			if result.success {
-				succeeded << result.offset
-			} else {
-				failed << '${result.offset.topic}:${result.offset.partition}'
-				log_message(.error, 'OffsetCommit', 'Offset commit failed', {
-					'group_id':  group_id
-					'topic':     result.offset.topic
-					'partition': result.offset.partition.str()
-					'error':     result.error
-				})
-			}
-		}
-
+		active = a.wait_for_slot(ch, active, mut succeeded, mut failed, group_id)
 		active++
-		spawn fn [mut a, group_id, offset, ch] () {
-			key := a.offset_key(group_id, offset.topic, offset.partition)
-			data := json.encode(offset)
-			// S3에 오프셋 저장 (재시도 포함)
-			a.put_object(key, data.bytes()) or {
-				error_msg := 'S3 put failed for offset ${offset.topic}:${offset.partition} at offset ${offset.offset}: ${err}'
-				log_message(.error, 'OffsetCommit', error_msg, {
-					'group_id':  group_id
-					'topic':     offset.topic
-					'partition': offset.partition.str()
-					'offset':    offset.offset.str()
-				})
-				ch <- CommitResult{
-					offset:  offset
-					success: false
-					error:   error_msg
-				}
-				return
-			}
-			ch <- CommitResult{
-				offset:  offset
-				success: true
-				error:   ''
-			}
-		}()
+		spawn a.commit_single_offset(group_id, offset, ch)
 	}
 
-	// 남은 결과 수집
-	for _ in 0 .. active {
-		result := <-ch
-		if result.success {
-			succeeded << result.offset
-		} else {
-			failed << '${result.offset.topic}:${result.offset.partition}'
-			log_message(.error, 'OffsetCommit', 'Offset commit failed', {
-				'group_id':  group_id
-				'topic':     result.offset.topic
-				'partition': result.offset.partition.str()
-				'error':     result.error
-			})
-		}
-	}
-
-	// 성공적으로 커밋된 오프셋에 대해 로컬 캐시 업데이트
-	if succeeded.len > 0 {
-		a.offset_lock.@lock()
-		if group_id !in a.offset_cache {
-			a.offset_cache[group_id] = map[string]i64{}
-		}
-		for offset in succeeded {
-			cache_key := '${offset.topic}:${offset.partition}'
-			a.offset_cache[group_id][cache_key] = offset.offset
-		}
-		a.offset_lock.unlock()
-		log_message(.info, 'OffsetCommit', 'Successfully committed offsets', {
+	a.collect_remaining_results(ch, active, mut succeeded, mut failed, group_id)
+	a.update_offset_cache_and_metrics(group_id, succeeded, failed)
+	a.handle_commit_result(offsets.len, failed, group_id) or {
+		// 부분 실패는 허용, 에러는 로깅만
+		log_message(.warn, 'OffsetCommit', 'Some offsets failed to commit', {
 			'group_id': group_id
-			'count':    succeeded.len.str()
-		})
-
-		// 메트릭: 성공 카운트
-		a.metrics_lock.@lock()
-		a.metrics.offset_commit_success_count += i64(succeeded.len)
-		a.metrics.s3_put_count += i64(succeeded.len)
-		a.metrics_lock.unlock()
-	}
-
-	// 실패한 커밋 메트릭
-	if failed.len > 0 {
-		a.metrics_lock.@lock()
-		a.metrics.offset_commit_error_count += i64(failed.len)
-		a.metrics.s3_error_count += i64(failed.len)
-		a.metrics_lock.unlock()
-	}
-
-	// 모든 커밋이 실패한 경우에만 에러 반환
-	if failed.len == offsets.len {
-		return error('All ${offsets.len} offset commits failed for group ${group_id}: ${failed.join(', ')}')
-	}
-
-	// 부분 성공은 허용하되 경고 로그
-	if failed.len > 0 {
-		log_message(.warn, 'OffsetCommit', 'Partial offset commit', {
-			'group_id':       group_id
-			'succeeded':      succeeded.len.str()
-			'failed':         failed.len.str()
-			'failed_offsets': failed.join(', ')
+			'failed':   failed.len.str()
 		})
 	}
 }
@@ -1014,6 +910,155 @@ struct CommitResult {
 	offset  domain.PartitionOffset
 	success bool
 	error   string
+}
+
+/// record_commit_start_metrics는 커밋 시작 메트릭을 기록합니다.
+fn (mut a S3StorageAdapter) record_commit_start_metrics(count int) {
+	a.metrics_lock.@lock()
+	a.metrics.offset_commit_count += i64(count)
+	a.metrics_lock.unlock()
+}
+
+/// create_commit_channel는 커밋 결과 채널을 생성합니다.
+fn (a &S3StorageAdapter) create_commit_channel(offset_count int) chan CommitResult {
+	cap_size := if offset_count > max_offset_commit_buffer {
+		max_offset_commit_buffer
+	} else {
+		offset_count
+	}
+	return chan CommitResult{cap: cap_size}
+}
+
+/// wait_for_slot는 사용 가능한 슬롯을 기다립니다.
+fn (mut a S3StorageAdapter) wait_for_slot(ch chan CommitResult, active int, mut succeeded []domain.PartitionOffset, mut failed []string, group_id string) int {
+	mut current_active := active
+	for current_active >= max_offset_commit_concurrent {
+		result := <-ch
+		current_active--
+		if result.success {
+			succeeded << result.offset
+		} else {
+			failed << '${result.offset.topic}:${result.offset.partition}'
+			a.log_commit_error(result, group_id)
+		}
+	}
+	return current_active
+}
+
+/// log_commit_error는 커밋 에러를 로깅합니다.
+fn (a &S3StorageAdapter) log_commit_error(result CommitResult, group_id string) {
+	log_message(.error, 'OffsetCommit', 'Offset commit failed', {
+		'group_id':  group_id
+		'topic':     result.offset.topic
+		'partition': result.offset.partition.str()
+		'error':     result.error
+	})
+}
+
+/// commit_single_offset는 단일 오프셋을 커밋합니다.
+fn (mut a S3StorageAdapter) commit_single_offset(group_id string, offset domain.PartitionOffset, ch chan CommitResult) {
+	key := a.offset_key(group_id, offset.topic, offset.partition)
+	data := json.encode(offset)
+
+	a.put_object(key, data.bytes()) or {
+		error_msg := 'S3 put failed for offset ${offset.topic}:${offset.partition}: ${err}'
+		a.log_single_commit_error(group_id, offset, error_msg)
+		ch <- CommitResult{
+			offset:  offset
+			success: false
+			error:   error_msg
+		}
+		return
+	}
+
+	ch <- CommitResult{
+		offset:  offset
+		success: true
+		error:   ''
+	}
+}
+
+/// log_single_commit_error는 단일 커밋 에러를 로깅합니다.
+fn (a &S3StorageAdapter) log_single_commit_error(group_id string, offset domain.PartitionOffset, error_msg string) {
+	log_message(.error, 'OffsetCommit', error_msg, {
+		'group_id':  group_id
+		'topic':     offset.topic
+		'partition': offset.partition.str()
+		'offset':    offset.offset.str()
+	})
+}
+
+/// collect_remaining_results는 남은 결과를 수집합니다.
+fn (mut a S3StorageAdapter) collect_remaining_results(ch chan CommitResult, active int, mut succeeded []domain.PartitionOffset, mut failed []string, group_id string) {
+	for _ in 0 .. active {
+		result := <-ch
+		if result.success {
+			succeeded << result.offset
+		} else {
+			failed << '${result.offset.topic}:${result.offset.partition}'
+			a.log_commit_error(result, group_id)
+		}
+	}
+}
+
+/// update_offset_cache_and_metrics는 캐시와 메트릭을 업데이트합니다.
+fn (mut a S3StorageAdapter) update_offset_cache_and_metrics(group_id string, succeeded []domain.PartitionOffset, failed []string) {
+	if succeeded.len > 0 {
+		a.update_offset_cache(group_id, succeeded)
+		a.record_commit_success_metrics(succeeded.len)
+	}
+
+	if failed.len > 0 {
+		a.record_commit_failure_metrics(failed.len)
+	}
+}
+
+/// update_offset_cache는 오프셋 캐시를 업데이트합니다.
+fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []domain.PartitionOffset) {
+	a.offset_lock.@lock()
+	if group_id !in a.offset_cache {
+		a.offset_cache[group_id] = map[string]i64{}
+	}
+	for offset in succeeded {
+		cache_key := '${offset.topic}:${offset.partition}'
+		a.offset_cache[group_id][cache_key] = offset.offset
+	}
+	a.offset_lock.unlock()
+
+	log_message(.info, 'OffsetCommit', 'Successfully committed offsets', {
+		'group_id': group_id
+		'count':    succeeded.len.str()
+	})
+}
+
+/// record_commit_success_metrics는 성공 메트릭을 기록합니다.
+fn (mut a S3StorageAdapter) record_commit_success_metrics(count int) {
+	a.metrics_lock.@lock()
+	a.metrics.offset_commit_success_count += i64(count)
+	a.metrics.s3_put_count += i64(count)
+	a.metrics_lock.unlock()
+}
+
+/// record_commit_failure_metrics는 실패 메트릭을 기록합니다.
+fn (mut a S3StorageAdapter) record_commit_failure_metrics(count int) {
+	a.metrics_lock.@lock()
+	a.metrics.offset_commit_error_count += i64(count)
+	a.metrics.s3_error_count += i64(count)
+	a.metrics_lock.unlock()
+}
+
+/// handle_commit_result는 커밋 결과를 처리합니다.
+fn (a &S3StorageAdapter) handle_commit_result(total_count int, failed []string, group_id string) ! {
+	if failed.len == total_count {
+		return error('All ${total_count} offset commits failed for group ${group_id}')
+	}
+
+	if failed.len > 0 {
+		log_message(.warn, 'OffsetCommit', 'Partial offset commit', {
+			'group_id': group_id
+			'failed':   failed.len.str()
+		})
+	}
 }
 
 /// fetch_offsets는 커밋된 오프셋을 조회합니다.
