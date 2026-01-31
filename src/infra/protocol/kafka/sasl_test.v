@@ -2,6 +2,7 @@
 module kafka_test
 
 import domain
+import infra.compression
 import infra.protocol.kafka
 import infra.auth as infra_auth
 import service.auth
@@ -237,11 +238,16 @@ fn create_test_handler_with_auth() kafka.Handler {
 
 	auth_service := auth.new_auth_service(user_store, [.plain])
 
+	// Create compression service
+	compression_service := compression.new_default_compression_service() or {
+		panic('failed to create compression service: ${err}')
+	}
+
 	return kafka.new_handler_with_auth(1, // broker_id
 	 '127.0.0.1', // host
 	 9092, // port
 	 'test-cluster', // cluster_id
-	 storage, auth_service)
+	 storage, auth_service, compression_service)
 }
 
 fn create_mock_storage() port.StoragePort {

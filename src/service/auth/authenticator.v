@@ -89,7 +89,7 @@ pub fn (mut m AuthMetrics) reset() {
 }
 
 /// 메트릭 요약을 문자열로 반환합니다.
-pub fn (m &AuthMetrics) get_summary() string {
+pub fn (mut m AuthMetrics) get_summary() string {
 	m.lock.lock()
 	defer { m.lock.unlock() }
 
@@ -221,7 +221,7 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 
 	log_message(.info, 'Auth', 'Authentication successful', {
 		'mechanism': mech_str
-		'user':      result.user_id
+		'user':      if principal := result.principal { principal.name } else { 'unknown' }
 	})
 
 	return result

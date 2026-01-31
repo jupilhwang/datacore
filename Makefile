@@ -7,8 +7,8 @@ BUILD_DIR = bin
 SRC_DIR = src
 
 # Build flags
-V_FLAGS = -prod -enable-globals -d use_openssl
-V_FLAGS_DEV = -enable-globals -d use_openssl
+V_FLAGS = -prod -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib -lsnappy -llz4 -lzstd"
+V_FLAGS_DEV = -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib -lsnappy -llz4 -lzstd"
 
 # Platforms
 PLATFORMS = linux-amd64 linux-arm64 darwin-amd64 darwin-arm64

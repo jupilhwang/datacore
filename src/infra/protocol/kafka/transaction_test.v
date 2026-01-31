@@ -1,6 +1,7 @@
 module kafka_test
 
 import domain
+import infra.compression
 import infra.protocol.kafka
 import infra.transaction as infra_txn
 import service.transaction
@@ -12,9 +13,14 @@ fn create_test_handler_with_transaction() kafka.Handler {
 	txn_store := infra_txn.new_memory_transaction_store()
 	txn_coordinator := transaction.new_transaction_coordinator(txn_store)
 
+	// Create compression service
+	compression_service := compression.new_default_compression_service() or {
+		panic('failed to create compression service: ${err}')
+	}
+
 	// Use new_handler_full
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		none, *txn_coordinator)
+		none, *txn_coordinator, compression_service)
 }
 
 struct TransactionMockStorage {}
@@ -301,7 +307,7 @@ fn test_handler_end_txn_commit() {
 
 fn test_handler_write_txn_markers() {
 	// Create a handler with a mock storage that supports topics
-	mut handler := create_test_handler_with_write_txn_markers_storage()
+	mut handler := create_test_handler_with_write_txn_markers_storage()!
 
 	// WriteTxnMarkers (API Key 27) v1 is flexible
 	mut request := kafka.new_writer()
@@ -427,12 +433,13 @@ fn test_write_txn_markers_unknown_topic() {
 }
 
 // 헬퍼: WriteTxnMarkers 지원 mock storage로 핸들러 생성
-fn create_test_handler_with_write_txn_markers_storage() kafka.Handler {
+fn create_test_handler_with_write_txn_markers_storage() !kafka.Handler {
 	storage := WriteTxnMarkersMockStorage{}
 	txn_store := infra_txn.new_memory_transaction_store()
 	txn_coordinator := transaction.new_transaction_coordinator(txn_store)
+	compression_service := compression.new_compression_service(compression.CompressionConfig{})!
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		none, *txn_coordinator)
+		none, *txn_coordinator, compression_service)
 }
 
 // WriteTxnMarkers 테스트용 토픽 지원 Mock storage

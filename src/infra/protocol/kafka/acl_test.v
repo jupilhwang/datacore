@@ -1,6 +1,7 @@
 module kafka_test
 
 import domain
+import infra.compression
 import infra.protocol.kafka
 import infra.auth as infra_auth
 import service.port
@@ -9,10 +10,13 @@ import service.port
 fn create_test_handler_with_acl() kafka.Handler {
 	storage := AclMockStorage{}
 	acl_manager := infra_auth.new_memory_acl_manager()
+	compression_service := compression.new_default_compression_service() or {
+		panic('failed to create compression service: ${err}')
+	}
 
-	// Use new_handler_full (8 args: broker_id, host, port, cluster_id, storage, auth_manager, acl_manager, txn_coordinator)
+	// Use new_handler_full (9 args: broker_id, host, port, cluster_id, storage, auth_manager, acl_manager, txn_coordinator, compression_service)
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		acl_manager, none)
+		acl_manager, none, compression_service)
 }
 
 struct AclMockStorage {}

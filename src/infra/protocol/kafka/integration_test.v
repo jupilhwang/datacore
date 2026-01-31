@@ -3,6 +3,7 @@
 module kafka_test
 
 import domain
+import infra.compression
 import infra.protocol.kafka
 import infra.auth as infra_auth
 import infra.transaction as infra_txn
@@ -32,11 +33,16 @@ fn create_full_integration_handler() kafka.Handler {
 	txn_store := infra_txn.new_memory_transaction_store()
 	txn_coordinator := transaction.new_transaction_coordinator(txn_store)
 
+	// Compression Service
+	compression_service := compression.new_default_compression_service() or {
+		panic('failed to create compression service: ${err}')
+	}
+
 	return kafka.new_handler_full(1, // broker_id
 	 '127.0.0.1', // host
 	 9092, // port
 	 'integration-test-cluster', // cluster_id
-	 storage, auth_service, acl_manager, *txn_coordinator)
+	 storage, auth_service, acl_manager, *txn_coordinator, compression_service)
 }
 
 // 통합 테스트용 Mock Storage

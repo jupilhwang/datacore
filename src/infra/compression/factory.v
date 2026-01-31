@@ -17,6 +17,7 @@ pub fn new_compressor_factory() &CompressorFactory {
 }
 
 /// new_compressor는 지정된 CompressionType에 맞는 Compressor를 생성합니다.
+/// C 라이브러리를 사용한 고성능 구현을 반환합니다.
 pub fn new_compressor(compression_type CompressionType) !Compressor {
 	match compression_type {
 		.none {
@@ -26,13 +27,16 @@ pub fn new_compressor(compression_type CompressionType) !Compressor {
 			return new_gzip_compressor()
 		}
 		.snappy {
-			return new_snappy_compressor()
+			// C 라이브러리 사용
+			return new_snappy_compressor_c()
 		}
 		.lz4 {
-			return new_lz4_compressor()
+			// C 라이브러리 사용
+			return new_lz4_compressor_c()
 		}
 		.zstd {
-			return new_zstd_compressor()
+			// C 라이브러리 사용
+			return new_zstd_compressor_c()
 		}
 	}
 	return error('unsupported compression type: ${compression_type}')

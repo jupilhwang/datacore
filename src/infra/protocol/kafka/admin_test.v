@@ -2,6 +2,7 @@
 module kafka
 
 import domain
+import infra.compression
 import service.port
 
 // 테스트용 Mock Storage
@@ -12,6 +13,12 @@ mut:
 	call_count  int
 	fail_create bool
 	fail_delete bool
+}
+
+fn get_test_compression_service() &compression.CompressionService {
+	return compression.new_default_compression_service() or {
+		panic('failed to create compression service: ${err}')
+	}
 }
 
 fn new_mock_storage() &MockStorage {
@@ -316,7 +323,8 @@ fn test_delete_topics_response_encoding() {
 // Handler CreateTopics 성공 테스트
 fn test_handler_create_topics_success() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request
 	mut writer := new_writer()
@@ -341,6 +349,7 @@ fn test_handler_create_topics_success() {
 // Handler CreateTopics - 토픽 이미 존재 테스트
 fn test_handler_create_topics_already_exists() {
 	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
 
 	// 토픽 미리 생성
 	storage.topics['existing-topic'] = domain.TopicMetadata{
@@ -348,7 +357,7 @@ fn test_handler_create_topics_already_exists() {
 		partition_count: 1
 	}
 
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// 기존 토픽에 대한 요청 빌드
 	mut writer := new_writer()
@@ -380,6 +389,7 @@ fn test_handler_create_topics_already_exists() {
 // Handler DeleteTopics 성공 테스트
 fn test_handler_delete_topics_success() {
 	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
 
 	// 토픽 미리 생성
 	storage.topics['to-delete'] = domain.TopicMetadata{
@@ -387,7 +397,7 @@ fn test_handler_delete_topics_success() {
 		partition_count: 1
 	}
 
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request
 	mut writer := new_writer()
@@ -407,7 +417,8 @@ fn test_handler_delete_topics_success() {
 // Handler DeleteTopics - 토픽 없음 테스트
 fn test_handler_delete_topics_not_found() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// 존재하지 않는 토픽에 대한 요청 빌드
 	mut writer := new_writer()
@@ -432,7 +443,8 @@ fn test_handler_delete_topics_not_found() {
 // 단일 요청에 여러 토픽 테스트
 fn test_handler_create_multiple_topics() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// 3개 토픽으로 요청 빌드
 	mut writer := new_writer()
@@ -500,7 +512,8 @@ fn test_parse_list_groups_request() {
 // ListGroups Handler 테스트
 fn test_handler_list_groups() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// 요청 빌드 (v0에는 본문 없음)
 	mut writer := new_writer()
@@ -547,7 +560,8 @@ fn test_parse_describe_groups_request() {
 // DescribeGroups Handler - 그룹 찾음 테스트
 fn test_handler_describe_groups_found() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// 기존 그룹에 대한 요청 빌드
 	mut writer := new_writer()
@@ -579,7 +593,8 @@ fn test_handler_describe_groups_found() {
 // DescribeGroups Handler - 그룹 없음 테스트
 fn test_handler_describe_groups_not_found() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// 존재하지 않는 그룹에 대한 요청 빌드
 	mut writer := new_writer()
@@ -690,6 +705,7 @@ fn test_parse_alter_configs_request() {
 
 fn test_handler_alter_configs_success() {
 	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
 
 	// Pre-create topic
 	storage.topics['test-topic'] = domain.TopicMetadata{
@@ -697,7 +713,7 @@ fn test_handler_alter_configs_success() {
 		partition_count: 3
 	}
 
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request
 	mut writer := new_writer()
@@ -730,7 +746,8 @@ fn test_handler_alter_configs_success() {
 
 fn test_handler_alter_configs_topic_not_found() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request for non-existent topic
 	mut writer := new_writer()
@@ -795,6 +812,7 @@ fn test_parse_create_partitions_request() {
 
 fn test_handler_create_partitions_success() {
 	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
 
 	// Pre-create topic with 3 partitions
 	storage.topics['test-topic'] = domain.TopicMetadata{
@@ -802,7 +820,7 @@ fn test_handler_create_partitions_success() {
 		partition_count: 3
 	}
 
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request to increase to 10 partitions
 	mut writer := new_writer()
@@ -840,7 +858,8 @@ fn test_handler_create_partitions_success() {
 
 fn test_handler_create_partitions_topic_not_found() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request for non-existent topic
 	mut writer := new_writer()
@@ -868,6 +887,7 @@ fn test_handler_create_partitions_topic_not_found() {
 
 fn test_handler_create_partitions_invalid_count() {
 	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
 
 	// Pre-create topic with 10 partitions
 	storage.topics['test-topic'] = domain.TopicMetadata{
@@ -875,7 +895,7 @@ fn test_handler_create_partitions_invalid_count() {
 		partition_count: 10
 	}
 
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request to decrease to 5 partitions (invalid)
 	mut writer := new_writer()
@@ -947,6 +967,7 @@ fn test_parse_delete_records_request() {
 
 fn test_handler_delete_records_success() {
 	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
 
 	// Pre-create topic
 	storage.topics['test-topic'] = domain.TopicMetadata{
@@ -954,7 +975,7 @@ fn test_handler_delete_records_success() {
 		partition_count: 3
 	}
 
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request
 	mut writer := new_writer()
@@ -998,7 +1019,8 @@ fn test_handler_delete_records_success() {
 
 fn test_handler_delete_records_topic_not_found() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request for non-existent topic
 	mut writer := new_writer()
@@ -1190,7 +1212,8 @@ fn test_delete_groups_response_encoding_v2_flexible() {
 
 fn test_handler_delete_groups_success_empty_group() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// empty-group은 Empty 상태이므로 삭제 가능
 	assert 'empty-group' in storage.groups
@@ -1227,7 +1250,8 @@ fn test_handler_delete_groups_success_empty_group() {
 
 fn test_handler_delete_groups_non_empty_group() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// test-group-1은 Stable 상태이고 멤버가 있으므로 삭제 불가
 	assert 'test-group-1' in storage.groups
@@ -1259,7 +1283,8 @@ fn test_handler_delete_groups_non_empty_group() {
 
 fn test_handler_delete_groups_not_found() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request for non-existent group
 	mut writer := new_writer()
@@ -1283,7 +1308,8 @@ fn test_handler_delete_groups_not_found() {
 
 fn test_handler_delete_groups_empty_group_id() {
 	mut storage := new_mock_storage()
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request with empty group id
 	mut writer := new_writer()
@@ -1307,6 +1333,7 @@ fn test_handler_delete_groups_empty_group_id() {
 
 fn test_handler_delete_groups_multiple() {
 	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
 
 	// dead-group 추가 (삭제 가능)
 	storage.groups['dead-group'] = domain.ConsumerGroup{
@@ -1319,7 +1346,7 @@ fn test_handler_delete_groups_multiple() {
 		members:       []
 	}
 
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request with multiple groups
 	// empty-group: 삭제 가능 (Empty 상태)
