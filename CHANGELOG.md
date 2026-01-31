@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.40.0] - 2026-01-31
+
+### Added
+
+- **Compression Decoders** - C 라이브러리를 사용한 Snappy, LZ4, Zstd 압축 해제 지원
+  - Snappy, LZ4, Zstd 디코더 구현 (C 라이브러리 연동)
+  - 압축 팩토리 업데이트로 새로운 디코더 통합
+  - Makefile에 C 라이브러리 링크 플래그 추가
+
+- **Integration Tests** - 포괄적인 통합 테스트 스위트 확장
+  - 스토리지 타입 호환성 테스트 (memory, S3)
+  - 메시지 포맷 테스트 (JSON, AVRO, Protobuf, JSON Schema)
+  - Admin API 테스트 (topics, consumer groups, brokers, ACLs)
+
+### Fixed
+
+- **Unit Test Fixes** - 테스트 안정성 및 정확성 개선
+  - 핸들러 함수 시그니처 수정 (compression_service 파라미터 추가)
+  - AuthMetrics.get_summary() 가변 락 문제 수정
+  - result.user_id → result.principal 변경
+  - 7개 테스트 파일 업데이트: integration_test.v, acl_test.v, admin_test.v, sasl_test.v, transaction_test.v, authenticator_test.v, scram_test.v
+
+### Performance
+
+- **S3 Optimizations** - S3 스토리지 성능 최적화
+  - HTTP 연결 풀링 구현
+  - 서명 캐싱 인프라 구축
+
 ## [0.39.0] - 2026-01-30
 
 ### Added
