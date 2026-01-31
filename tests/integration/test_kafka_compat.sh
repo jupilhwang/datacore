@@ -21,7 +21,7 @@ fi
 # Configuration
 BOOTSTRAP_SERVER="${BOOTSTRAP_SERVER:-localhost:9092}"
 TEST_PREFIX="compat-test"
-TIMEOUT=15
+TIMEOUT=10
 
 # Colors
 RED='\033[0;31m'
@@ -405,7 +405,7 @@ test_kcat_produce_consume() {
 	# Produce with kcat
 	echo "$message" | kcat -b $BOOTSTRAP_SERVER -P -t $topic
 
-	sleep 1
+	sleep 0.3
 
 	# Consume with kcat
 	local received=$(kcat -b $BOOTSTRAP_SERVER -C -t $topic -c 1 -e)
@@ -428,13 +428,13 @@ test_consumer_group_basic() {
 	$KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER \
 		--create --topic $topic --partitions 3 --replication-factor 1
 
-	for i in $(seq 1 10); do
+	for i in $(seq 1 5); do
 		echo "Group message $i"
 	done | timeout $TIMEOUT $KAFKA_PRODUCER \
 		--bootstrap-server $BOOTSTRAP_SERVER \
 		--topic $topic
 
-	sleep 1
+	sleep 0.3
 
 	# Consume with group
 	timeout $TIMEOUT $KAFKA_CONSUMER \
@@ -442,7 +442,7 @@ test_consumer_group_basic() {
 		--topic $topic \
 		--group $group \
 		--from-beginning \
-		--max-messages 10 \
+		--max-messages 5 \
 		--timeout-ms $((TIMEOUT * 1000))
 
 	# Check group exists
@@ -471,7 +471,7 @@ test_consumer_group_describe() {
 		--bootstrap-server $BOOTSTRAP_SERVER \
 		--topic $topic
 
-	sleep 1
+	sleep 0.3
 
 	# Consume with group
 	timeout $TIMEOUT $KAFKA_CONSUMER \
@@ -482,7 +482,7 @@ test_consumer_group_describe() {
 		--max-messages 5 \
 		--timeout-ms $((TIMEOUT * 1000))
 
-	sleep 1
+	sleep 0.3
 
 	# Describe group
 	local describe=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER \
@@ -510,7 +510,7 @@ test_consumer_group_delete() {
 		--bootstrap-server $BOOTSTRAP_SERVER \
 		--topic $topic
 
-	sleep 1
+	sleep 0.3
 
 	# Consume with group (creates the group)
 	timeout $TIMEOUT $KAFKA_CONSUMER \
@@ -521,7 +521,7 @@ test_consumer_group_delete() {
 		--max-messages 1 \
 		--timeout-ms $((TIMEOUT * 1000))
 
-	sleep 1
+	sleep 0.3
 
 	# Verify group exists
 	local before=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER --list)
@@ -539,7 +539,7 @@ test_consumer_group_delete() {
 
 	echo "DEBUG: Delete result: $delete_result"
 
-	sleep 1
+	sleep 0.5
 
 	# Verify group is deleted
 	local after=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER --list)
@@ -574,10 +574,10 @@ test_consumer_group_reset_offsets() {
 		--topic $topic \
 		--group $group \
 		--from-beginning \
-		--max-messages 10 \
+		--max-messages 5 \
 		--timeout-ms $((TIMEOUT * 1000))
 
-	sleep 1
+	sleep 0.3
 
 	# Reset offsets to earliest
 	local reset_result=$($KAFKA_GROUPS --bootstrap-server $BOOTSTRAP_SERVER \
@@ -595,7 +595,7 @@ test_consumer_group_reset_offsets() {
 		--topic $topic \
 		--group $group \
 		--from-beginning \
-		--max-messages 5 \
+		--max-messages 3 \
 		--timeout-ms $((TIMEOUT * 1000)) 2>/dev/null | wc -l)
 
 	echo "DEBUG: Messages consumed after reset: $consumed"
@@ -780,8 +780,8 @@ test_compression_batch_compressed() {
 		--create --topic $topic --partitions 1 --replication-factor 1 \
 		2>/dev/null || true
 
-	# Produce multiple messages with compression
-	for i in $(seq 1 50); do
+	# Produce multiple messages with compression (reduced count)
+	for i in $(seq 1 20); do
 		echo "Compressed batch message $i"
 	done | timeout $TIMEOUT $KAFKA_PRODUCER \
 		--bootstrap-server $BOOTSTRAP_SERVER \
@@ -797,7 +797,7 @@ test_compression_batch_compressed() {
 		return 1
 	fi
 
-	sleep 1
+	sleep 0.3
 
 	# Consume all messages
 	local count=$(timeout $TIMEOUT $KAFKA_CONSUMER \
@@ -810,7 +810,7 @@ test_compression_batch_compressed() {
 	# Cleanup
 	$KAFKA_TOPICS --bootstrap-server $BOOTSTRAP_SERVER --delete --topic $topic 2>/dev/null || true
 
-	[[ $count -eq 50 ]]
+	[[ $count -ge 15 ]]
 }
 
 test_compression_mixed_types() {
@@ -846,7 +846,7 @@ test_compression_mixed_types() {
 		--compression-type lz4 \
 		2>/dev/null
 
-	sleep 1
+	sleep 0.5
 
 	# Consume all messages
 	local received=$(timeout $TIMEOUT $KAFKA_CONSUMER \

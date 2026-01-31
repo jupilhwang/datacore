@@ -194,7 +194,11 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 	a.metrics_lock.unlock()
 
 	endpoint := a.get_endpoint()
-	url := '${endpoint}/${a.config.bucket_name}/${key}'
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
+	} else {
+		'${endpoint}/${key}'
+	}
 
 	headers := a.sign_request('DELETE', key, '', []u8{})
 
@@ -428,11 +432,23 @@ fn (a &S3StorageAdapter) get_endpoint() string {
 
 /// get_host는 S3 요청의 Host 헤더 값을 반환합니다.
 /// SigV4 서명에서 Host 헤더는 필수 서명 헤더입니다.
+/// 가상 호스트 스타일(virtual-hosted style)을 사용할 때 bucket 이름을 호스트에 포함합니다.
 fn (a &S3StorageAdapter) get_host() string {
 	if a.config.endpoint.len > 0 {
+		// 사용자 정의 엔드포인트(MinIO/LocalStack 등)의 경우
+		// 가상 호스트 스타일이면 bucket 이름을 호스트에 포함
+		if !a.config.use_path_style {
+			return '${a.config.bucket_name}.${a.config.endpoint.replace('http://', '').replace('https://',
+				'').split('/')[0]}'
+		}
 		return a.config.endpoint.replace('http://', '').replace('https://', '').split('/')[0]
 	}
-	return 's3.${a.config.region}.amazonaws.com'
+	// AWS S3의 경우
+	if a.config.use_path_style {
+		return 's3.${a.config.region}.amazonaws.com'
+	} else {
+		return '${a.config.bucket_name}.s3.${a.config.region}.amazonaws.com'
+	}
 }
 
 /// canonicalize_query는 AWS SigV4를 위해 쿼리 파라미터를 정렬하고 인코딩합니다.

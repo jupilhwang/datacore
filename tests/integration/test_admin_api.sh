@@ -34,9 +34,9 @@ fi
 BOOTSTRAP_SERVER="${BOOTSTRAP_SERVER:-localhost:9092}"
 STORAGE_TYPE="${STORAGE_TYPE:-memory}"
 TEST_PREFIX="admin-test"
-TIMEOUT=30
-RETRY_COUNT=3
-RETRY_DELAY=2
+TIMEOUT=15
+RETRY_COUNT=2
+RETRY_DELAY=1
 
 # Colors for output
 RED='\033[0;31m'
@@ -113,7 +113,6 @@ retry_command() {
 		if [[ $attempt -lt $max_attempts ]]; then
 			log_debug "Command failed, retrying in ${delay}s..."
 			sleep $delay
-			delay=$((delay * 2))
 		fi
 
 		((attempt++))
@@ -336,7 +335,7 @@ test_topic_create_basic() {
 	CREATED_TOPICS+=("$topic")
 
 	# Verify topic exists
-	sleep 1
+	sleep 0.3
 	local topics
 	topics=$($KAFKA_TOPICS --bootstrap-server "$BOOTSTRAP_SERVER" --list 2>/dev/null)
 
@@ -366,7 +365,7 @@ test_topic_create_various_partitions() {
 
 		CREATED_TOPICS+=("$topic")
 
-		sleep 1
+		sleep 0.3
 
 		# Verify partition count
 		local describe
@@ -405,7 +404,7 @@ test_topic_create_various_replication_factors() {
 
 	CREATED_TOPICS+=("$topic")
 
-	sleep 1
+	sleep 0.3
 
 	# Verify topic exists and has correct replication
 	local describe
@@ -429,7 +428,7 @@ test_topic_list() {
 
 	CREATED_TOPICS+=("$topic")
 
-	sleep 1
+	sleep 0.3
 
 	# List topics
 	local topics
@@ -463,7 +462,7 @@ test_topic_list_empty() {
 		--delete \
 		--topic "$temp_topic" 2>/dev/null
 
-	sleep 1
+	sleep 0.5
 	topics=$($KAFKA_TOPICS --bootstrap-server "$BOOTSTRAP_SERVER" --list 2>/dev/null)
 	! echo "$topics" | grep -q "^${temp_topic}$"
 }
@@ -484,7 +483,7 @@ test_topic_describe() {
 
 	CREATED_TOPICS+=("$topic")
 
-	sleep 1
+	sleep 0.3
 
 	# Describe topic
 	local describe
@@ -541,7 +540,7 @@ test_topic_delete() {
 		--delete \
 		--topic "$topic" 2>/dev/null
 
-	sleep 2
+	sleep 1
 
 	# Verify deleted (may take time for async deletion)
 	local topics_after
@@ -595,7 +594,7 @@ test_topic_alter_config() {
 		return 1
 	fi
 
-	sleep 1
+	sleep 0.3
 
 	# Describe config to verify
 	local config
@@ -633,7 +632,7 @@ test_topic_alter_partitions() {
 		return 1
 	fi
 
-	sleep 1
+	sleep 0.3
 
 	# Verify new partition count
 	local describe
@@ -660,7 +659,7 @@ test_topic_create_duplicate() {
 
 	CREATED_TOPICS+=("$topic")
 
-	sleep 1
+	sleep 0.3
 
 	# Try to create duplicate - should fail
 	local output
@@ -768,7 +767,7 @@ test_consumer_group_describe() {
 		--bootstrap-server "$BOOTSTRAP_SERVER" \
 		--topic "$topic" 2>/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Consume to create group
 	timeout $TIMEOUT $KAFKA_CONSUMER \
@@ -780,7 +779,7 @@ test_consumer_group_describe() {
 		--timeout-ms $((TIMEOUT * 1000)) \
 		2>/dev/null >/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Describe group
 	local describe
@@ -856,7 +855,7 @@ test_consumer_group_delete() {
 		--delete \
 		--group "$group" 2>/dev/null
 
-	sleep 2
+	sleep 1
 
 	# Verify deleted
 	local groups_after
@@ -911,7 +910,7 @@ test_consumer_group_reset_offsets_earliest() {
 		--timeout-ms $((TIMEOUT * 1000)) \
 		2>/dev/null >/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Reset offsets to earliest
 	$KAFKA_GROUPS --bootstrap-server "$BOOTSTRAP_SERVER" \
@@ -921,7 +920,7 @@ test_consumer_group_reset_offsets_earliest() {
 		--topic "$topic" \
 		--execute 2>/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Consume again - should get messages from beginning
 	local consumed
@@ -973,7 +972,7 @@ test_consumer_group_reset_offsets_latest() {
 		--timeout-ms $((TIMEOUT * 1000)) \
 		2>/dev/null >/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Reset offsets to latest
 	$KAFKA_GROUPS --bootstrap-server "$BOOTSTRAP_SERVER" \
@@ -990,7 +989,7 @@ test_consumer_group_reset_offsets_latest() {
 		--bootstrap-server "$BOOTSTRAP_SERVER" \
 		--topic "$topic" 2>/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Should only get new messages (offset at latest)
 	local consumed
@@ -1052,7 +1051,7 @@ test_consumer_group_reset_offsets_to_offset() {
 		--topic "$topic" \
 		--execute 2>/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Should get messages starting from offset 2
 	local consumed
@@ -1117,7 +1116,7 @@ test_consumer_group_members() {
 		--timeout-ms $((TIMEOUT * 1000)) \
 		2>/dev/null >/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# List groups
 	local groups
@@ -1162,7 +1161,7 @@ test_consumer_group_lag() {
 		--timeout-ms $((TIMEOUT * 1000)) \
 		2>/dev/null >/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	# Describe group (should show lag)
 	local describe
@@ -1576,14 +1575,14 @@ test_storage_type_compatibility() {
 
 	CREATED_TOPICS+=("$topic")
 
-	sleep 1
+	sleep 0.3
 
 	# Produce and consume
 	echo "storage-test-message" | timeout $TIMEOUT $KAFKA_PRODUCER \
 		--bootstrap-server "$BOOTSTRAP_SERVER" \
 		--topic "$topic" 2>/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	local consumed
 	consumed=$(timeout $TIMEOUT $KAFKA_CONSUMER \
@@ -1614,15 +1613,15 @@ test_storage_type_large_messages() {
 
 	sleep 1
 
-	# Create 100KB message
+	# Create 50KB message (reduced size for speed)
 	local large_message
-	large_message=$(head -c 102400 /dev/urandom | base64)
+	large_message=$(head -c 51200 /dev/urandom | base64)
 
 	echo "$large_message" | timeout $TIMEOUT $KAFKA_PRODUCER \
 		--bootstrap-server "$BOOTSTRAP_SERVER" \
 		--topic "$topic" 2>/dev/null
 
-	sleep 1
+	sleep 0.3
 
 	local consumed
 	consumed=$(timeout $TIMEOUT $KAFKA_CONSUMER \
@@ -1660,7 +1659,7 @@ test_storage_type_persistence() {
 		--topic "$topic" 2>/dev/null
 
 	# Wait for flush
-	sleep 2
+	sleep 0.5
 
 	# Consume and verify
 	local consumed

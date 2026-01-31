@@ -10,7 +10,7 @@ set -e
 BOOTSTRAP_SERVERS="${BOOTSTRAP_SERVERS:-localhost:9092}"
 SCHEMA_REGISTRY_URL="${SCHEMA_REGISTRY_URL:-http://localhost:8081}"
 KAFKA_HOME="${KAFKA_HOME:-/opt/kafka}"
-TIMEOUT=30
+TIMEOUT=15
 TEST_PREFIX="test-msg-format-$(date +%s)"
 
 # Colors
@@ -119,6 +119,21 @@ create_topic() {
 	"$KAFKA_HOME/bin/kafka-topics.sh" --bootstrap-server "$BOOTSTRAP_SERVERS" \
 		--create --topic "$topic" --partitions 1 --replication-factor 1 \
 		--config retention.ms=86400000 2>/dev/null || true
+}
+
+# Check broker connectivity with health check
+check_broker_health() {
+	local max_attempts=10
+	local attempt=0
+
+	while [[ $attempt -lt $max_attempts ]]; do
+		if timeout 2 bash -c "echo > /dev/tcp/${BOOTSTRAP_SERVERS%%:*}/${BOOTSTRAP_SERVERS##*:}" 2>/dev/null; then
+			return 0
+		fi
+		sleep 0.3
+		((attempt++))
+	done
+	return 1
 }
 
 delete_topic() {
@@ -332,14 +347,14 @@ test_avro_basic() {
 	local avro_payload='{"id": 1, "name": "avro-user", "email": {"string": "avro@example.com"}}'
 
 	if [ -x "$KAFKA_HOME/bin/kafka-avro-console-producer.sh" ]; then
-		echo "$avro_payload" | timeout 15 \
+		echo "$avro_payload" | timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-producer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
 			--property schema.registry.url="$SCHEMA_REGISTRY_URL" \
 			--property value.schema="$avro_schema" 2>/dev/null
 
-		local result=$(timeout 15 \
+		local result=$(timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-consumer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -430,14 +445,14 @@ test_avro_complex_schema() {
             "status": "PROCESSING"
         }'
 
-		echo "$avro_payload" | timeout 15 \
+		echo "$avro_payload" | timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-producer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
 			--property schema.registry.url="$SCHEMA_REGISTRY_URL" \
 			--property value.schema="$avro_schema" 2>/dev/null
 
-		local result=$(timeout 15 \
+		local result=$(timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-consumer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -489,14 +504,14 @@ test_avro_union_types() {
             "value": {"Nested": {"inner": "nested-value"}}
         }'
 
-		echo "$avro_payload" | timeout 15 \
+		echo "$avro_payload" | timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-producer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
 			--property schema.registry.url="$SCHEMA_REGISTRY_URL" \
 			--property value.schema="$avro_schema" 2>/dev/null
 
-		local result=$(timeout 15 \
+		local result=$(timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-consumer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -538,7 +553,7 @@ test_avro_schema_evolution() {
 	if [ -x "$KAFKA_HOME/bin/kafka-avro-console-producer.sh" ]; then
 		# Produce with V1 schema
 		local v1_payload='{"id": 1, "name": "event-v1"}'
-		echo "$v1_payload" | timeout 15 \
+		echo "$v1_payload" | timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-producer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -567,7 +582,7 @@ test_avro_schema_evolution() {
 
 		# Produce with V2 schema
 		local v2_payload='{"id": 2, "name": "event-v2", "description": {"string": "new event"}}'
-		echo "$v2_payload" | timeout 15 \
+		echo "$v2_payload" | timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-producer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -575,7 +590,7 @@ test_avro_schema_evolution() {
 			--property value.schema="$schema_v2" 2>/dev/null
 
 		# Consume and verify both messages are readable
-		local result=$(timeout 15 \
+		local result=$(timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-avro-console-consumer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -621,14 +636,14 @@ message User {
 		# we use JSON representation that the CLI tool converts
 		local proto_payload='{"id": 1, "name": "proto-user", "email": "proto@example.com", "active": true}'
 
-		echo "$proto_payload" | timeout 15 \
+		echo "$proto_payload" | timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-protobuf-console-producer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
 			--property schema.registry.url="$SCHEMA_REGISTRY_URL" \
 			--property protobuf.schema="$proto_schema" 2>/dev/null
 
-		local result=$(timeout 15 \
+		local result=$(timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-protobuf-console-consumer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -796,14 +811,14 @@ test_json_schema_basic() {
 	local valid_payload='{"id": 1, "name": "json-schema-user", "active": true}'
 
 	if [ -x "$KAFKA_HOME/bin/kafka-json-schema-console-producer.sh" ]; then
-		echo "$valid_payload" | timeout 15 \
+		echo "$valid_payload" | timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-json-schema-console-producer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
 			--property schema.registry.url="$SCHEMA_REGISTRY_URL" \
 			--property value.schema="$json_schema" 2>/dev/null
 
-		local result=$(timeout 15 \
+		local result=$(timeout "$TIMEOUT" \
 			"$KAFKA_HOME/bin/kafka-json-schema-console-consumer.sh" \
 			--bootstrap-server "$BOOTSTRAP_SERVERS" \
 			--topic "$topic" \
@@ -1115,7 +1130,7 @@ main() {
 
 	# Check connectivity
 	log_info "Checking Kafka connectivity..."
-	if ! timeout 5 bash -c "echo > /dev/tcp/${BOOTSTRAP_SERVERS%%:*}/${BOOTSTRAP_SERVERS##*:}" 2>/dev/null; then
+	if ! check_broker_health; then
 		echo -e "${RED}Error: Cannot connect to Kafka at $BOOTSTRAP_SERVERS${NC}"
 		echo "Please ensure Kafka broker is running."
 		exit 1

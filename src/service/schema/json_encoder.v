@@ -2,9 +2,42 @@
 // JSON Schema를 위한 검증 기반 인코딩/디코딩을 제공합니다
 module schema
 
-// JSON 스키마 인코더
-// JSON Schema에 따라 JSON 데이터를 검증하고 인코딩합니다
-// https://json-schema.org/draft/2020-12/json-schema-validation.html
+// JsonEncoder provides JSON schema validation and encoding
+pub struct JsonEncoder {}
+
+// new_json_encoder creates a new JSON encoder
+pub fn new_json_encoder() !JsonEncoder {
+	return JsonEncoder{}
+}
+
+// format returns the encoding format
+pub fn (mut e JsonEncoder) format() Format {
+	return Format.json
+}
+
+// encode validates and encodes JSON data (passthrough for JSON)
+pub fn (mut e JsonEncoder) encode(data []u8, schema_str string) ![]u8 {
+	// Parse and validate the schema
+	schema := parse_json_schema(schema_str) or {
+		return error('failed to parse JSON schema: ${err}')
+	}
+
+	// Validate the data
+	json_str := data.bytestr()
+	validate(json_str, schema) or { return error('JSON validation failed: ${err}') }
+
+	// For JSON schema, we just return the data as-is (already valid JSON)
+	return data
+}
+
+// decode decodes JSON data (passthrough for JSON)
+pub fn (mut e JsonEncoder) decode(data []u8, schema_str string) ![]u8 {
+	// Parse and validate the schema
+	_ = parse_json_schema(schema_str) or { return error('failed to parse JSON schema: ${err}') }
+
+	// For JSON schema, we just return the data as-is
+	return data
+}
 
 // validate checks if JSON data conforms to schema
 fn validate(json_str string, schema &JsonSchema) ! {
@@ -365,9 +398,6 @@ fn parse_schema_properties(props_json string) map[string]&JsonSchema {
 }
 
 // JSON Utility Functions
-
-// Note: extract_json_object_value, extract_json_number, extract_json_float
-// are defined in json_utils.v to avoid duplication
 
 fn detect_json_type(s string) string {
 	trimmed := s.trim_space()

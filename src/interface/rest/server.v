@@ -29,25 +29,16 @@ import time
 /// RestServerConfig는 REST 서버 설정을 담는 구조체입니다.
 pub struct RestServerConfig {
 pub:
-	host            string = '0.0.0.0'   // 바인드 호스트
-	port            int    = 8080        // 바인드 포트
-	max_connections int    = 1000        // 최대 연결 수
-	request_timeout int    = 30000       // 요청 타임아웃 (30초)
-	static_dir      string = 'tests/web' // 정적 파일 디렉토리
-	sse_config      domain.SSEConfig       // SSE 설정
-	ws_config       domain.WebSocketConfig // WebSocket 설정
+	host            string
+	port            int
+	max_connections int
+	static_dir      string
+pub mut:
+	sse_config domain.SSEConfig
+	ws_config  domain.WebSocketConfig
 }
 
-/// default_rest_config - returns default REST server configuration
-/// default_rest_config - returns default REST server configuration
-pub fn default_rest_config() RestServerConfig {
-	return RestServerConfig{
-		sse_config: domain.default_sse_config()
-		ws_config:  domain.default_ws_config()
-	}
-}
-
-/// RestServer는 HTTP REST API 서버입니다.
+/// RestServer는 HTTP 기반 REST API 서버를 제공합니다.
 /// SSE와 WebSocket 스트리밍을 지원합니다.
 pub struct RestServer {
 	config RestServerConfig
@@ -55,7 +46,7 @@ mut:
 	storage     port.StoragePort
 	sse_handler &proto_http.SSEHandler
 	ws_handler  &proto_http.WebSocketHandler
-	schema_api  &schema.SchemaAPI
+	schema_api  &SchemaAPI
 	metrics     observability.DataCoreMetrics
 	start_time  time.Time
 	running     bool
@@ -70,7 +61,7 @@ pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestS
 		storage:     storage
 		sse_handler: proto_http.new_sse_handler(storage, config.sse_config)
 		ws_handler:  proto_http.new_websocket_handler(storage, config.ws_config)
-		schema_api:  &schema.SchemaAPI(0)
+		schema_api:  &SchemaAPI(unsafe { nil })
 		metrics:     observability.new_datacore_metrics()
 		start_time:  time.now()
 		running:     false
@@ -78,9 +69,24 @@ pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestS
 	}
 }
 
+/// default_rest_config - returns default REST server configuration
+/// default_rest_config - returns default REST server configuration
+pub fn default_rest_config() RestServerConfig {
+	return RestServerConfig{
+		host:            '0.0.0.0'
+		port:            8080
+		max_connections: 1000
+		static_dir:      ''
+		sse_config:      domain.default_sse_config()
+		ws_config:       domain.default_ws_config()
+	}
+}
+
 /// set_schema_api - sets the Schema API handler
-pub fn (mut s RestServer) set_schema_api(api &schema.SchemaAPI) {
-	s.schema_api = api
+pub fn (mut s RestServer) set_schema_api(api &SchemaAPI) {
+	unsafe {
+		s.schema_api = api
+	}
 }
 
 /// start - starts the REST API server (blocking)
@@ -501,18 +507,19 @@ fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 
 // handle_schema_api는 스키마 레지스트리 REST API 요청을 처리합니다.
 fn (mut s RestServer) handle_schema_api(method string, path string, headers map[string]string, mut conn net.TcpConn) {
-	if s.schema_api == 0 {
-		s.send_error(mut conn, 503, 'Schema Registry not available')
-		conn.close() or {}
-		return
+	unsafe {
+		if s.schema_api == 0 {
+			s.send_error(mut conn, 503, 'Schema Registry not available')
+			conn.close() or {}
+			return
+		}
 	}
-
 	mut body := ''
 	// Read request body for POST/PUT requests
 	if method == 'POST' || method == 'PUT' {
 		content_length := s.get_content_length(headers) or { 0 }
 		if content_length > 0 && content_length < 1024 * 1024 {
-			mut buf := []byte{len: content_length}
+			mut buf := []u8{len: content_length}
 			conn.read(mut buf) or {}
 			body = buf.bytestr()
 		}

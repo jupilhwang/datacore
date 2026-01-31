@@ -175,7 +175,7 @@ pub fn (mut h Handler) set_schema_registry(registry &schema.SchemaRegistry) {
 
 /// get_topic_schema는 토픽의 스키마 설정을 조회합니다.
 fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
-	if registry := h.schema_registry {
+	if mut registry := h.schema_registry {
 		// 토픽 메타데이터에서 스키마 설정 조회
 		if topic_meta := h.storage.get_topic(topic_name) {
 			schema_subject := topic_meta.config['schema.subject'] or { return none }
@@ -183,7 +183,7 @@ fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 			schema_version := schema_version_str.int()
 
 			// 스키마 조회 (version -1은 최신 버전)
-			return registry.get_schema_by_subject(schema_subject, schema_version)
+			return registry.get_schema_by_subject(schema_subject, schema_version) or { return none }
 		}
 	}
 	return none
@@ -192,10 +192,10 @@ fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 /// encode_record_with_schema는 레코드를 스키마에 따라 인코딩합니다.
 /// 현재는 스키마 구성을 확인하고 로깅만 수행합니다.
 /// 실제 인코딩은 encoder 모듈이 수정된 후 활성화됩니다.
-fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema &domain.Schema) ![]u8 {
+fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema_obj &domain.Schema) ![]u8 {
 	// 스키마 로깅 (인코딩은 encoder 모듈 수정 후 구현)
 	h.logger.debug('Schema encoding configured', observability.field_string('schema_type',
-		schema.schema_type.str()), observability.field_int('schema_id', schema.id))
+		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
 	// 현재는 원본 레코드 값을 반환 (encoder 모듈 수정 후 실제 인코딩 구현)
 	return record.value
@@ -204,10 +204,10 @@ fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema &doma
 /// decode_record_with_schema는 스키마에 따라 레코드를 디코딩합니다.
 /// 현재는 스키마 구성을 확인하고 로깅만 수행합니다.
 /// 실제 디코딩은 encoder 모듈이 수정된 후 활성화됩니다.
-fn (mut h Handler) decode_record_with_schema(record_data []u8, schema &domain.Schema) ![]u8 {
+fn (mut h Handler) decode_record_with_schema(record_data []u8, schema_obj &domain.Schema) ![]u8 {
 	// 스키마 로깅 (디코딩은 encoder 모듈 수정 후 구현)
 	h.logger.debug('Schema decoding configured', observability.field_string('schema_type',
-		schema.schema_type.str()), observability.field_int('schema_id', schema.id))
+		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
 	// 현재는 원본 데이터를 반환 (encoder 모듈 수정 후 실제 디코딩 구현)
 	return record_data

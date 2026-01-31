@@ -2,36 +2,20 @@
 // JSON parsing utilities for Avro encoding/decoding
 module schema
 
-// JSON Value Parsing
+// Note: The following functions are defined in avro_encoder.v:
+// - parse_json_bool
+// - parse_json_long
+// - parse_json_float
+// - parse_json_double
+// - parse_json_bytes
+// - is_json_null
+// - format_json_bytes
 
-fn parse_json_bool(s string) ?bool {
-	trimmed := s.trim_space()
-	if trimmed == 'true' {
-		return true
-	} else if trimmed == 'false' {
-		return false
-	}
-	return none
-}
+// Only functions unique to this module are kept here
 
 fn parse_json_int(s string) ?int {
 	trimmed := s.trim_space()
 	return trimmed.int()
-}
-
-fn parse_json_long(s string) ?i64 {
-	trimmed := s.trim_space()
-	return trimmed.i64()
-}
-
-fn parse_json_float(s string) ?f32 {
-	trimmed := s.trim_space()
-	return f32(trimmed.f64())
-}
-
-fn parse_json_double(s string) ?f64 {
-	trimmed := s.trim_space()
-	return trimmed.f64()
 }
 
 fn parse_json_string_value(s string) ?string {
@@ -40,18 +24,6 @@ fn parse_json_string_value(s string) ?string {
 		return trimmed[1..trimmed.len - 1]
 	}
 	return none
-}
-
-fn parse_json_bytes(s string) ?[]u8 {
-	// Bytes can be encoded as:
-	// 1. Base64 string: "\u0001\u0002..."
-	// 2. JSON string with escape sequences
-	str := parse_json_string_value(s)?
-	return unescape_json_bytes(str)
-}
-
-fn is_json_null(s string) bool {
-	return s.trim_space() == 'null'
 }
 
 // JSON Escape/Unescape
@@ -129,30 +101,6 @@ fn hex_to_int(s string) int {
 fn escape_json_str(s string) string {
 	return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r',
 		'\\r').replace('\t', '\\t')
-}
-
-fn format_json_bytes(data []u8) string {
-	// Format bytes as JSON string with unicode escapes
-	mut result := '"'
-	for b in data {
-		if b < 32 || b > 126 {
-			// Unicode escape for non-printable
-			hex := b.hex()
-			if hex.len == 1 {
-				result += '\\u000${hex}'
-			} else {
-				result += '\\u00${hex}'
-			}
-		} else if b == `"` {
-			result += '\\"'
-		} else if b == `\\` {
-			result += '\\\\'
-		} else {
-			result += rune(b).str()
-		}
-	}
-	result += '"'
-	return result
 }
 
 // JSON Field Extraction
@@ -264,6 +212,7 @@ fn read_json_value(s string, start int) ?string {
 }
 
 // JSON Array/Map Parsing
+// Note: parse_json_array and parse_json_map are defined in avro_encoder.v
 
 fn parse_json_array(s string) ?[]string {
 	trimmed := s.trim_space()
