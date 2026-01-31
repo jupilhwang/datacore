@@ -13,8 +13,11 @@ import service.cluster
 import service.group
 import service.offset
 import service.port
+import service.schema
 import service.transaction
 import time
+import json
+import domain
 
 // PartitionAssigner는 파티션 할당 서비스를 위한 포인터 타입입니다.
 // service.cluster 모듈의 PartitionAssigner를 참조합니다.
@@ -38,6 +41,7 @@ mut:
 	acl_manager             ?port.AclManager                    // Optional: ACL manager
 	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
 	share_group_coordinator ?&group.ShareGroupCoordinator       // Optional: Share group coordinator (KIP-932)
+	schema_registry         ?&schema.SchemaRegistry             // Optional: Schema registry for schema encoding/decoding
 	logger                  &observability.Logger
 	metrics                 &observability.ProtocolMetrics  // Protocol metrics collector
 	compression_service     &compression.CompressionService // Compression service for record decompression
@@ -162,6 +166,51 @@ pub fn (mut h Handler) set_broker_registry(registry &cluster.BrokerRegistry) {
 /// 핸들러에 Share Group 코디네이터를 설정합니다.
 pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroupCoordinator) {
 	h.share_group_coordinator = coordinator
+}
+
+/// 핸들러에 스키마 레지스트리를 설정합니다.
+pub fn (mut h Handler) set_schema_registry(registry &schema.SchemaRegistry) {
+	h.schema_registry = registry
+}
+
+/// get_topic_schema는 토픽의 스키마 설정을 조회합니다.
+fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
+	if registry := h.schema_registry {
+		// 토픽 메타데이터에서 스키마 설정 조회
+		if topic_meta := h.storage.get_topic(topic_name) {
+			schema_subject := topic_meta.config['schema.subject'] or { return none }
+			schema_version_str := topic_meta.config['schema.version'] or { '1' }
+			schema_version := schema_version_str.int()
+
+			// 스키마 조회 (version -1은 최신 버전)
+			return registry.get_schema_by_subject(schema_subject, schema_version)
+		}
+	}
+	return none
+}
+
+/// encode_record_with_schema는 레코드를 스키마에 따라 인코딩합니다.
+/// 현재는 스키마 구성을 확인하고 로깅만 수행합니다.
+/// 실제 인코딩은 encoder 모듈이 수정된 후 활성화됩니다.
+fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema &domain.Schema) ![]u8 {
+	// 스키마 로깅 (인코딩은 encoder 모듈 수정 후 구현)
+	h.logger.debug('Schema encoding configured', observability.field_string('schema_type',
+		schema.schema_type.str()), observability.field_int('schema_id', schema.id))
+
+	// 현재는 원본 레코드 값을 반환 (encoder 모듈 수정 후 실제 인코딩 구현)
+	return record.value
+}
+
+/// decode_record_with_schema는 스키마에 따라 레코드를 디코딩합니다.
+/// 현재는 스키마 구성을 확인하고 로깅만 수행합니다.
+/// 실제 디코딩은 encoder 모듈이 수정된 후 활성화됩니다.
+fn (mut h Handler) decode_record_with_schema(record_data []u8, schema &domain.Schema) ![]u8 {
+	// 스키마 로깅 (디코딩은 encoder 모듈 수정 후 구현)
+	h.logger.debug('Schema decoding configured', observability.field_string('schema_type',
+		schema.schema_type.str()), observability.field_int('schema_id', schema.id))
+
+	// 현재는 원본 데이터를 반환 (encoder 모듈 수정 후 실제 디코딩 구현)
+	return record_data
 }
 
 /// 핸들러에 파티션 할당 서비스를 설정합니다.

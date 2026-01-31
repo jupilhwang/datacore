@@ -22,6 +22,7 @@ import infra.storage.plugins.s3
 import infra.observability
 import service.cluster
 import service.port
+import service.schema
 
 fn main() {
 	args := os.args[1..]
@@ -339,6 +340,35 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 			}
 		}
 		mut rest_server := rest.new_rest_server(rest_config, storage)
+
+		// Initialize and register Schema Registry API if enabled
+		if conf.schema_registry.enabled {
+			cli.print_progress('Initializing schema registry')
+
+			// Create schema registry configuration
+			schema_config := schema.RegistryConfig{
+				default_compatibility: .backward
+				auto_register:         true
+			}
+
+			// Create schema registry with storage adapter
+			mut schema_registry := schema.new_registry(storage, schema_config)
+
+			// Load existing schemas from storage
+			schema_registry.load_from_storage() or {
+				logger.warn('Failed to load schemas from storage', observability.field_string('error',
+					'${err}'))
+			}
+
+			logger.info('Schema registry initialized', observability.field_string('topic',
+				conf.schema_registry.topic))
+
+			// Register schema API with REST server
+			schema_api := rest.new_schema_api(schema_registry)
+			rest_server.set_schema_api(schema_api)
+			logger.info('Schema Registry API registered with REST server')
+		}
+
 		rest_server.start_background()
 		cli.print_done()
 		logger.info('REST API server started', observability.field_string('host', conf.rest.host),

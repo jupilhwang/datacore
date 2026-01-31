@@ -10,6 +10,7 @@ import domain
 import infra.compression
 import infra.observability
 import time
+import json
 
 // Produce (API Key 0) - 메시지 전송 API
 
@@ -416,8 +417,38 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 
 			total_records += parsed.records.len
 
+			// 스키마 인코딩이 필요한 경우 처리
+			mut records_to_store := parsed.records.clone()
+			if schema := h.get_topic_schema(topic_name) {
+				h.logger.debug('Encoding records with schema', observability.field_string('topic',
+					topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
+
+				mut encoded_records := []domain.Record{}
+				for record in parsed.records {
+					encoded_value := h.encode_record_with_schema(&record, &schema) or {
+						h.logger.error('Failed to encode record with schema', observability.field_string('topic',
+							topic_name), observability.field_err_str(err.str()))
+						partitions << ProduceResponsePartition{
+							index:            p.index
+							error_code:       i16(ErrorCode.corrupt_message)
+							base_offset:      -1
+							log_append_time:  -1
+							log_start_offset: -1
+						}
+						continue
+					}
+					encoded_records << domain.Record{
+						key:       record.key
+						value:     encoded_value
+						timestamp: record.timestamp
+						headers:   record.headers
+					}
+				}
+				records_to_store = encoded_records.clone()
+			}
+
 			// 빈 레코드 배치 처리
-			if parsed.records.len == 0 {
+			if records_to_store.len == 0 {
 				partitions << ProduceResponsePartition{
 					index:            p.index
 					error_code:       0
@@ -429,7 +460,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 			}
 
 			// 스토리지에 레코드 저장
-			result := h.storage.append(topic_name, int(p.index), parsed.records) or {
+			result := h.storage.append(topic_name, int(p.index), records_to_store) or {
 				// 토픽이 존재하지 않으면 자동 생성 시도
 				if err.str().contains('not found') {
 					num_partitions := if int(p.index) >= 1 { int(p.index) + 1 } else { 1 }
@@ -444,7 +475,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						continue
 					}
 					// 토픽 생성 후 재시도
-					retry_result := h.storage.append(topic_name, int(p.index), parsed.records) or {
+					retry_result := h.storage.append(topic_name, int(p.index), records_to_store) or {
 						partitions << ProduceResponsePartition{
 							index:            p.index
 							error_code:       i16(ErrorCode.unknown_server_error)

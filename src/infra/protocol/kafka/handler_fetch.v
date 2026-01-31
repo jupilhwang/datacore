@@ -9,6 +9,8 @@ module kafka
 import infra.compression
 import infra.observability
 import time
+import json
+import domain
 
 // Fetch (API Key 1) - 메시지 조회 API
 
@@ -372,9 +374,36 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			records_data := encode_record_batch_zerocopy(result.records, p.fetch_offset)
 			total_records += result.records.len
 
+			// 스키마 디코딩이 필요한 경우 처리
+			mut records_for_compression := records_data.clone()
+			if schema := h.get_topic_schema(topic_name) {
+				h.logger.debug('Decoding records with schema', observability.field_string('topic',
+					topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
+
+				mut decoded_records := []domain.Record{}
+				for record in result.records {
+					decoded_value := h.decode_record_with_schema(record.value, &schema) or {
+						h.logger.warn('Failed to decode record with schema, returning raw data',
+							observability.field_string('topic', topic_name), observability.field_err_str(err.str()))
+						// 디코딩 실패 시 원본 데이터 반환
+						decoded_records << record
+						continue
+					}
+					decoded_records << domain.Record{
+						key:       record.key
+						value:     decoded_value
+						timestamp: record.timestamp
+						headers:   record.headers
+					}
+				}
+				// 디코딩된 레코드를 RecordBatch로 재인코딩
+				records_for_compression = encode_record_batch_zerocopy(decoded_records,
+					p.fetch_offset)
+			}
+
 			// 압축 처리
-			compressed_result := h.compress_records_for_fetch(records_data, preferred_compression,
-				topic_name, p.partition)
+			compressed_result := h.compress_records_for_fetch(records_for_compression,
+				preferred_compression, topic_name, p.partition)
 			final_records_data := compressed_result.data
 			total_bytes_saved += compressed_result.bytes_saved
 

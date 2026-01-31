@@ -1,0 +1,804 @@
+// Service Layer - Avro Binary Encoder
+// Provides binary encoding/decoding for Avro schemas
+// https://avro.apache.org/docs/current/specification/
+module schema
+
+// AvroEncoder provides binary encoding and decoding for Avro data
+pub struct AvroEncoder {
+mut:
+	schema AvroSchema
+}
+
+// new_avro_encoder creates a new Avro encoder with the given schema
+pub fn new_avro_encoder(schema_str string) !AvroEncoder {
+	schema := parse_avro_schema(schema_str) or {
+		return error('failed to parse Avro schema: ${err}')
+	}
+
+	return AvroEncoder{
+		schema: schema
+	}
+}
+
+// encode encodes JSON data to Avro binary format
+pub fn (mut e AvroEncoder) encode(json_str string) ![]u8 {
+	// Parse JSON data
+	data := parse_json_map(json_str) or { return error('invalid JSON object') }
+
+	// Encode based on schema type
+	match e.schema.schema_type {
+		'record' {
+			return e.encode_record(data)
+		}
+		'enum' {
+			return e.encode_enum_value(json_str)
+		}
+		'array' {
+			return e.encode_array(json_str)
+		}
+		'map' {
+			return e.encode_map(json_str)
+		}
+		'string' {
+			str := parse_json_string_value(json_str) or { return error('invalid string') }
+			return encode_string(str)
+		}
+		'bytes' {
+			bytes := parse_json_bytes(json_str) or { return error('invalid bytes') }
+			return encode_bytes(bytes)
+		}
+		'int', 'long' {
+			val := parse_json_long(json_str) or { return error('invalid integer') }
+			return encode_varint_zigzag(val)
+		}
+		'float' {
+			val := parse_json_float(json_str) or { return error('invalid float') }
+			return encode_float(val)
+		}
+		'double' {
+			val := parse_json_double(json_str) or { return error('invalid double') }
+			return encode_double(val)
+		}
+		'boolean' {
+			val := parse_json_bool(json_str) or { return error('invalid boolean') }
+			return if val { [u8(1)] } else { [u8(0)] }
+		}
+		'null' {
+			return []u8{}
+		}
+		else {
+			return error('unsupported schema type: ${e.schema.schema_type}')
+		}
+	}
+}
+
+// decode decodes Avro binary data to JSON
+pub fn (mut e AvroEncoder) decode(data []u8) !string {
+	mut reader := AvroReader{
+		data: data
+		pos:  0
+	}
+
+	// Decode based on schema type
+	match e.schema.schema_type {
+		'record' {
+			return e.decode_record(mut reader)
+		}
+		'enum' {
+			return e.decode_enum(mut reader)
+		}
+		'array' {
+			return e.decode_array(mut reader)
+		}
+		'map' {
+			return e.decode_map(mut reader)
+		}
+		'string' {
+			str := decode_string(mut reader)!
+			return escape_json_string(str)
+		}
+		'bytes' {
+			bytes := decode_bytes(mut reader)!
+			return format_json_bytes(bytes)
+		}
+		'int', 'long' {
+			val := decode_varint_zigzag(mut reader)!
+			return '${val}'
+		}
+		'float' {
+			val := decode_float(mut reader)!
+			return '${val}'
+		}
+		'double' {
+			val := decode_double(mut reader)!
+			return '${val}'
+		}
+		'boolean' {
+			val := decode_bool(mut reader)!
+			return if val { 'true' } else { 'false' }
+		}
+		'null' {
+			return 'null'
+		}
+		else {
+			return error('unsupported schema type: ${e.schema.schema_type}')
+		}
+	}
+}
+
+// Record encoding/decoding
+
+fn (mut e AvroEncoder) encode_record(data map[string]string) ![]u8 {
+	mut result := []u8{}
+
+	for field in e.schema.fields {
+		value := data[field.name] or {
+			// Field not present - use default if available
+			if field.has_default {
+				result << e.encode_field_value(field, field.field_type, field.is_nullable,
+					field.union_types, '')!
+				continue
+			}
+			// Skip optional fields
+			if field.is_nullable {
+				// Encode null for nullable fields not present
+				if field.is_union {
+					result << e.encode_union_value('', field.union_types)!
+				} else {
+					result << [u8(0)] // null marker for union
+				}
+				continue
+			}
+			continue
+		}
+
+		if is_json_null(value) {
+			if field.is_nullable || field.is_union {
+				if field.is_union {
+					result << e.encode_union_value('', field.union_types)!
+				} else {
+					result << [u8(0)] // null marker
+				}
+			}
+			continue
+		}
+
+		result << e.encode_field_value(field, field.field_type, field.is_nullable, field.union_types,
+			value)!
+	}
+
+	return result
+}
+
+fn (mut e AvroEncoder) decode_record(mut reader AvroReader) !string {
+	mut fields := map[string]string{}
+
+	for field in e.schema.fields {
+		// For nullable fields, check if next byte indicates null
+		if field.is_nullable || field.is_union {
+			if reader.pos >= reader.data.len {
+				// Use default if available
+				if field.has_default {
+					fields[field.name] = field.field_type // Simplified
+				}
+				continue
+			}
+		}
+
+		value := e.decode_field_value(field, mut reader) or {
+			if field.has_default {
+				fields[field.name] = field.field_type // Simplified default
+				continue
+			}
+			return error('failed to decode field ${field.name}: ${err}')
+		}
+
+		fields[field.name] = value
+	}
+
+	// Build JSON object
+	mut parts := []string{}
+	for name, value in fields {
+		parts << '"${name}":${value}'
+	}
+
+	return '{${parts.join(',')}}'
+}
+
+fn (mut e AvroEncoder) encode_field_value(field AvroField, field_type string, is_nullable bool, union_types []string, value string) ![]u8 {
+	if field.is_union {
+		return e.encode_union_value(value, union_types)
+	}
+
+	return e.encode_value_by_type(field_type, value)
+}
+
+fn (mut e AvroEncoder) encode_value_by_type(field_type string, value string) ![]u8 {
+	match field_type {
+		'string' {
+			str := parse_json_string_value(value) or { return error('invalid string') }
+			return encode_string(str)
+		}
+		'bytes' {
+			bytes := parse_json_bytes(value) or { return error('invalid bytes') }
+			return encode_bytes(bytes)
+		}
+		'int' {
+			val := parse_json_int(value) or { return error('invalid int') }
+			return encode_varint_zigzag(i64(val))
+		}
+		'long' {
+			val := parse_json_long(value) or { return error('invalid long') }
+			return encode_varint_zigzag(val)
+		}
+		'float' {
+			val := parse_json_float(value) or { return error('invalid float') }
+			return encode_float(val)
+		}
+		'double' {
+			val := parse_json_double(value) or { return error('invalid double') }
+			return encode_double(val)
+		}
+		'boolean' {
+			val := parse_json_bool(value) or { return error('invalid boolean') }
+			return if val { [u8(1)] } else { [u8(0)] }
+		}
+		'record' {
+			// Handle nested record
+			return e.encode_record(parse_json_map(value) or {
+				return error('invalid nested record')
+			})!
+		}
+		'array' {
+			return e.encode_array(value)
+		}
+		'map' {
+			return e.encode_map(value)
+		}
+		'null' {
+			return []u8{}
+		}
+		else {
+			// Check if it's an enum
+			if field_type in e.schema.symbols {
+				return e.encode_enum_value(value)
+			}
+			return error('unsupported field type: ${field_type}')
+		}
+	}
+}
+
+fn (mut e AvroEncoder) decode_field_value(field AvroField, mut reader AvroReader) !string {
+	if field.is_union {
+		return e.decode_union_value(field.union_types, mut reader)
+	}
+
+	return e.decode_value_by_type(field.field_type, mut reader)
+}
+
+fn (mut e AvroEncoder) decode_value_by_type(field_type string, mut reader AvroReader) !string {
+	match field_type {
+		'string' {
+			str := decode_string(mut reader)!
+			return escape_json_string(str)
+		}
+		'bytes' {
+			bytes := decode_bytes(mut reader)!
+			return format_json_bytes(bytes)
+		}
+		'int' {
+			val := decode_varint_zigzag(mut reader)!
+			return '${val}'
+		}
+		'long' {
+			val := decode_varint_zigzag(mut reader)!
+			return '${val}'
+		}
+		'float' {
+			val := decode_float(mut reader)!
+			return '${val}'
+		}
+		'double' {
+			val := decode_double(mut reader)!
+			return '${val}'
+		}
+		'boolean' {
+			val := decode_bool(mut reader)!
+			return if val { 'true' } else { 'false' }
+		}
+		'record' {
+			return e.decode_record(mut reader)
+		}
+		'array' {
+			return e.decode_array(mut reader)
+		}
+		'map' {
+			return e.decode_map(mut reader)
+		}
+		'null' {
+			return 'null'
+		}
+		else {
+			// Check if it's an enum
+			if field_type in e.schema.symbols {
+				return e.decode_enum(mut reader)
+			}
+			return error('unsupported field type: ${field_type}')
+		}
+	}
+}
+
+// Union encoding/decoding
+
+fn (mut e AvroEncoder) encode_union_value(value string, union_types []string) ![]u8 {
+	if value == '' || is_json_null(value) {
+		// Encode null
+		null_index := union_types.index('null') or { return error('null not in union') }
+		mut result := encode_varint_zigzag(i64(null_index))
+		return result
+	}
+
+	// Determine the type of the value and encode with type index
+	for i, union_type in union_types {
+		if union_type == 'null' {
+			continue
+		}
+
+		// Try to match the value to a union type
+		if e.matches_union_type(value, union_type) {
+			mut result := encode_varint_zigzag(i64(i))
+			encoded := e.encode_value_by_type(union_type, value) or { continue }
+			result << encoded
+			return result
+		}
+	}
+
+	return error('value does not match any union type')
+}
+
+fn (mut e AvroEncoder) matches_union_type(value string, union_type string) bool {
+	match union_type {
+		'string' {
+			return value.starts_with('"')
+		}
+		'bytes' {
+			return value.starts_with('[') || value.starts_with('"')
+		}
+		'int', 'long' {
+			// Check if value can be parsed as an integer
+			return value.trim_space().int() != 0
+				|| value.trim_space().parse_int(10, 64) or { 0 } != 0
+		}
+		'float', 'double' {
+			// Check if value can be parsed as a number
+			return value.f64() != 0
+		}
+		'boolean' {
+			return value == 'true' || value == 'false'
+		}
+		'record' {
+			return value.starts_with('{')
+		}
+		'array' {
+			return value.starts_with('[')
+		}
+		'map' {
+			return value.starts_with('{')
+		}
+		else {
+			// Check against enum symbols
+			return value.starts_with('"') && union_type in e.schema.symbols
+		}
+	}
+}
+
+fn (mut e AvroEncoder) decode_union_value(union_types []string, mut reader AvroReader) !string {
+	if reader.pos >= reader.data.len {
+		return 'null'
+	}
+
+	// Read type index
+	type_index := int(decode_varint_zigzag(mut reader)!)
+
+	if type_index < 0 || type_index >= union_types.len {
+		return error('invalid union type index: ${type_index}')
+	}
+
+	union_type := union_types[type_index]
+
+	if union_type == 'null' {
+		return 'null'
+	}
+
+	return e.decode_value_by_type(union_type, mut reader)
+}
+
+// Enum encoding/decoding
+
+fn (mut e AvroEncoder) encode_enum_value(value string) ![]u8 {
+	// Parse the symbol from JSON string
+	symbol := parse_json_string_value(value) or { return error('invalid enum value') }
+
+	// Find symbol index
+	symbol_index := e.schema.symbols.index(symbol) or {
+		return error('unknown enum symbol: ${symbol}')
+	}
+
+	return encode_varint_zigzag(i64(symbol_index))
+}
+
+fn (mut e AvroEncoder) decode_enum(mut reader AvroReader) !string {
+	symbol_index := int(decode_varint_zigzag(mut reader)!)
+
+	if symbol_index < 0 || symbol_index >= e.schema.symbols.len {
+		return error('invalid enum symbol index: ${symbol_index}')
+	}
+
+	symbol := e.schema.symbols[symbol_index]
+	return escape_json_string(symbol)
+}
+
+// Array encoding/decoding
+
+fn (mut e AvroEncoder) encode_array(json_str string) ![]u8 {
+	items := parse_json_array(json_str) or { return error('invalid JSON array') }
+
+	mut result := []u8{}
+
+	// Encode array length
+	result << encode_varint_zigzag(i64(items.len))
+
+	// Encode each item
+	for item in items {
+		encoded := e.encode_value_by_type(e.schema.items_type, item) or {
+			return error('failed to encode array item: ${err}')
+		}
+		result << encoded
+	}
+
+	return result
+}
+
+fn (mut e AvroEncoder) decode_array(mut reader AvroReader) !string {
+	// Read array length
+	length := int(decode_varint_zigzag(mut reader)!)
+
+	mut items := []string{}
+
+	for _ in 0 .. length {
+		item := e.decode_value_by_type(e.schema.items_type, mut reader) or {
+			return error('failed to decode array item: ${err}')
+		}
+		items << item
+	}
+
+	return '[${items.join(',')}]'
+}
+
+// Map encoding/decoding
+
+fn (mut e AvroEncoder) encode_map(json_str string) ![]u8 {
+	data := parse_json_map(json_str) or { return error('invalid JSON object') }
+
+	mut result := []u8{}
+
+	// Encode pair count
+	result << encode_varint_zigzag(i64(data.len))
+
+	// Encode each key-value pair
+	for key, value in data {
+		// Encode key as string
+		result << encode_string(key)
+
+		// Encode value
+		encoded := e.encode_value_by_type(e.schema.values_type, value) or {
+			return error('failed to encode map value: ${err}')
+		}
+		result << encoded
+	}
+
+	return result
+}
+
+fn (mut e AvroEncoder) decode_map(mut reader AvroReader) !string {
+	// Read pair count
+	pair_count := int(decode_varint_zigzag(mut reader)!)
+
+	mut pairs := []string{}
+
+	for _ in 0 .. pair_count {
+		// Read key
+		key := decode_string(mut reader)!
+
+		// Read value
+		value := e.decode_value_by_type(e.schema.values_type, mut reader) or {
+			return error('failed to decode map value: ${err}')
+		}
+
+		pairs << '"${key}":${value}'
+	}
+
+	return '{${pairs.join(',')}}'
+}
+
+// Fixed encoding/decoding
+
+fn (mut e AvroEncoder) encode_fixed(data []u8) ![]u8 {
+	if data.len != e.schema.fixed_size {
+		return error('fixed size mismatch: expected ${e.schema.fixed_size}, got ${data.len}')
+	}
+	return data
+}
+
+fn (mut e AvroEncoder) decode_fixed(mut reader AvroReader) ![]u8 {
+	if reader.pos + e.schema.fixed_size > reader.data.len {
+		return error('unexpected end of fixed data')
+	}
+
+	result := reader.data[reader.pos..reader.pos + e.schema.fixed_size]
+	reader.pos += e.schema.fixed_size
+	return result
+}
+
+// Low-level decoding functions using primitives
+
+fn decode_varint_zigzag(mut reader AvroReader) !i64 {
+	zigzag := decode_varint_u64(mut reader)!
+	// Reverse ZigZag: (n >> 1) ^ -(n & 1)
+	return i64(zigzag >> 1) ^ -i64(zigzag & 1)
+}
+
+fn decode_varint_u64(mut reader AvroReader) !u64 {
+	if reader.pos >= reader.data.len {
+		return error('unexpected end of varint')
+	}
+
+	mut result := u64(0)
+	mut shift := 0
+
+	for {
+		if reader.pos >= reader.data.len {
+			return error('unexpected end of varint')
+		}
+
+		b := reader.data[reader.pos]
+		reader.pos += 1
+
+		result |= u64(b & 0x7F) << shift
+
+		if (b & 0x80) == 0 {
+			break
+		}
+
+		shift += 7
+		if shift >= 64 {
+			return error('varint too long')
+		}
+	}
+
+	return result
+}
+
+fn decode_string(mut reader AvroReader) !string {
+	length := int(decode_varint_zigzag(mut reader)!)
+
+	if reader.pos + length > reader.data.len {
+		return error('unexpected end of string')
+	}
+
+	str := reader.data[reader.pos..reader.pos + length].bytestr()
+	reader.pos += length
+	return str
+}
+
+fn decode_bytes(mut reader AvroReader) ![]u8 {
+	length := int(decode_varint_zigzag(mut reader)!)
+
+	if reader.pos + length > reader.data.len {
+		return error('unexpected end of bytes')
+	}
+
+	result := reader.data[reader.pos..reader.pos + length]
+	reader.pos += length
+	return result
+}
+
+fn decode_float(mut reader AvroReader) !f32 {
+	if reader.pos + 4 > reader.data.len {
+		return error('unexpected end of float')
+	}
+
+	bits := u32(reader.data[reader.pos]) | (u32(reader.data[reader.pos + 1]) << 8) | (u32(reader.data[
+		reader.pos + 2]) << 16) | (u32(reader.data[reader.pos + 3]) << 24)
+	reader.pos += 4
+
+	return *unsafe { &f32(&bits) }
+}
+
+fn decode_double(mut reader AvroReader) !f64 {
+	if reader.pos + 8 > reader.data.len {
+		return error('unexpected end of double')
+	}
+
+	bits := u64(reader.data[reader.pos]) | (u64(reader.data[reader.pos + 1]) << 8) | (u64(reader.data[
+		reader.pos + 2]) << 16) | (u64(reader.data[reader.pos + 3]) << 24) | (u64(reader.data[
+		reader.pos + 4]) << 32) | (u64(reader.data[reader.pos + 5]) << 40) | (u64(reader.data[
+		reader.pos + 6]) << 48) | (u64(reader.data[reader.pos + 7]) << 56)
+	reader.pos += 8
+
+	return *unsafe { &f64(&bits) }
+}
+
+fn decode_bool(mut reader AvroReader) !bool {
+	if reader.pos >= reader.data.len {
+		return error('unexpected end of boolean')
+	}
+
+	val := reader.data[reader.pos]
+	reader.pos += 1
+	return val != 0
+}
+
+// AvroReader provides a reader interface for decoding Avro binary data
+struct AvroReader {
+mut:
+	data []u8
+	pos  int
+}
+
+// JSON parsing helpers
+
+fn parse_json_array(json_str string) ?[]string {
+	if !json_str.starts_with('[') || !json_str.ends_with(']') {
+		return none
+	}
+
+	if json_str == '[]' {
+		return []string{}
+	}
+
+	mut items := []string{}
+	mut in_string := false
+	mut escape := false
+	mut depth := 0
+	mut start := 1
+
+	for i := 1; i < json_str.len - 1; i++ {
+		c := json_str[i]
+
+		if escape {
+			escape = false
+			continue
+		}
+
+		if c == `\\` {
+			escape = true
+			continue
+		}
+
+		if c == `"` {
+			in_string = !in_string
+			continue
+		}
+
+		if in_string {
+			continue
+		}
+
+		if c == `{` || c == `[` {
+			depth += 1
+		} else if c == `}` || c == `]` {
+			depth -= 1
+		}
+
+		if c == `,` && depth == 0 {
+			items << json_str[start..i].trim_space()
+			start = i + 1
+		}
+	}
+
+	// Add last item
+	last_item := json_str[start..json_str.len - 1].trim_space()
+	if last_item.len > 0 {
+		items << last_item
+	}
+
+	return items
+}
+
+fn parse_json_bytes(json_str string) ?[]u8 {
+	// Handle ["byte1", "byte2", ...] format
+	if json_str.starts_with('[') {
+		items := parse_json_array(json_str) or { return none }
+		mut result := []u8{}
+		for item in items {
+			// Parse individual byte values
+			val := item.int()
+			if val >= 0 && val <= 255 {
+				result << u8(val)
+			} else {
+				return none
+			}
+		}
+		return result
+	}
+
+	// Handle base64 encoded string
+	if json_str.starts_with('"') {
+		str := parse_json_string_value(json_str) or { return none }
+		// Simple hex or base64 handling
+		if str.starts_with('0x') || str.starts_with('0X') {
+			hex_str := str[2..]
+			if hex_str.len % 2 != 0 {
+				return none
+			}
+			mut result := []u8{}
+			for i := 0; i < hex_str.len; i += 2 {
+				high := hex_str[i]
+				low := hex_str[i + 1]
+				byte_val := (hex_char_to_nibble(high) << 4) | hex_char_to_nibble(low)
+				result << byte_val
+			}
+			return result
+		}
+		return str.bytes()
+	}
+
+	return none
+}
+
+fn hex_char_to_nibble(c u8) u8 {
+	if c >= `0` && c <= `9` {
+		return c - `0`
+	}
+	if c >= `a` && c <= `f` {
+		return c - `a` + 10
+	}
+	if c >= `A` && c <= `F` {
+		return c - `A` + 10
+	}
+	return 0
+}
+
+fn format_json_bytes(bytes []u8) string {
+	mut parts := []string{}
+	for b in bytes {
+		parts << '${b}'
+	}
+	return '[${parts.join(',')}]'
+}
+
+fn parse_json_long(json_str string) ?i64 {
+	trimmed := json_str.trim_space()
+	if trimmed == 'null' {
+		return none
+	}
+	return trimmed.i64()
+}
+
+fn parse_json_float(json_str string) ?f64 {
+	trimmed := json_str.trim_space()
+	if trimmed == 'null' {
+		return none
+	}
+	return trimmed.f64()
+}
+
+fn parse_json_double(json_str string) ?f64 {
+	return parse_json_float(json_str)
+}
+
+fn parse_json_bool(json_str string) ?bool {
+	trimmed := json_str.trim_space()
+	if trimmed == 'true' {
+		return true
+	}
+	if trimmed == 'false' {
+		return false
+	}
+	return none
+}
+
+fn is_json_null(json_str string) bool {
+	return json_str.trim_space() == 'null'
+}

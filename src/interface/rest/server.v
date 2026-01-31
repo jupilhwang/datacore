@@ -21,6 +21,7 @@ import io
 import net
 import os
 import service.port
+import service.schema
 import time
 
 // REST API 서버
@@ -54,6 +55,7 @@ mut:
 	storage     port.StoragePort
 	sse_handler &proto_http.SSEHandler
 	ws_handler  &proto_http.WebSocketHandler
+	schema_api  &schema.SchemaAPI
 	metrics     observability.DataCoreMetrics
 	start_time  time.Time
 	running     bool
@@ -68,11 +70,17 @@ pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestS
 		storage:     storage
 		sse_handler: proto_http.new_sse_handler(storage, config.sse_config)
 		ws_handler:  proto_http.new_websocket_handler(storage, config.ws_config)
+		schema_api:  &schema.SchemaAPI(0)
 		metrics:     observability.new_datacore_metrics()
 		start_time:  time.now()
 		running:     false
 		ready:       false
 	}
+}
+
+/// set_schema_api - sets the Schema API handler
+pub fn (mut s RestServer) set_schema_api(api &schema.SchemaAPI) {
+	s.schema_api = api
 }
 
 /// start - starts the REST API server (blocking)
@@ -204,6 +212,13 @@ fn (mut s RestServer) route_request(method string, path string, query map[string
 	// Topics API
 	if path.starts_with('/v1/topics') {
 		s.handle_topics_api(method, path, query, mut conn)
+		return
+	}
+
+	// Schema Registry API
+	if path.starts_with('/subjects') || path.starts_with('/schemas') || path.starts_with('/config')
+		|| path.starts_with('/compatibility') {
+		s.handle_schema_api(method, path, headers, mut conn)
 		return
 	}
 
@@ -480,6 +495,41 @@ fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 	json := '{"name":"${topic.name}","partitions":${topic.partition_count}}'
 	s.send_json(mut conn, 200, json)
 	conn.close() or {}
+}
+
+// Schema Registry API 핸들러
+
+// handle_schema_api는 스키마 레지스트리 REST API 요청을 처리합니다.
+fn (mut s RestServer) handle_schema_api(method string, path string, headers map[string]string, mut conn net.TcpConn) {
+	if s.schema_api == 0 {
+		s.send_error(mut conn, 503, 'Schema Registry not available')
+		conn.close() or {}
+		return
+	}
+
+	mut body := ''
+	// Read request body for POST/PUT requests
+	if method == 'POST' || method == 'PUT' {
+		content_length := s.get_content_length(headers) or { 0 }
+		if content_length > 0 && content_length < 1024 * 1024 {
+			mut buf := []byte{len: content_length}
+			conn.read(mut buf) or {}
+			body = buf.bytestr()
+		}
+	}
+
+	status, resp_body := s.schema_api.handle_request(method, path, body)
+	s.send_json(mut conn, status, resp_body)
+	conn.close() or {}
+}
+
+// get_content_length는 Content-Length 헤더 값을 반환합니다.
+fn (s &RestServer) get_content_length(headers map[string]string) !int {
+	content_length := headers['Content-Length'] or { headers['content-length'] or { '' } }
+	if content_length == '' {
+		return error('Content-Length header not found')
+	}
+	return content_length.int()
 }
 
 // 응답 헬퍼

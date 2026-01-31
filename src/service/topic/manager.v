@@ -22,20 +22,20 @@ pub fn new_topic_manager(storage port.StoragePort) &TopicManager {
 /// CreateTopicRequest는 토픽 생성 요청을 나타냅니다.
 pub struct CreateTopicRequest {
 pub:
-	name               string            // 토픽 이름
-	num_partitions     int               // 파티션 수
-	replication_factor i16               // 복제 팩터
-	configs            map[string]string // 토픽 설정 (retention.ms, segment.bytes 등)
+	name               string
+	num_partitions     int
+	replication_factor i16
+	configs            map[string]string
 }
 
 /// CreateTopicResponse는 토픽 생성 응답을 나타냅니다.
 pub struct CreateTopicResponse {
 pub:
-	name               string // 토픽 이름
-	error_code         i16    // 오류 코드 (0이면 성공)
-	error_message      string // 오류 메시지
-	num_partitions     int    // 생성된 파티션 수
-	replication_factor i16    // 복제 팩터
+	name               string
+	error_code         i16
+	error_message      string
+	num_partitions     int
+	replication_factor i16
 }
 
 /// create_topic은 새로운 토픽을 생성합니다.
