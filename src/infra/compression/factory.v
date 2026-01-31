@@ -2,20 +2,6 @@
 /// CompressionType에 따라 적절한 Compressor 인스턴스를 생성하는 팩토리
 module compression
 
-import infra.observability
-
-/// 팩토리.
-pub struct CompressorFactory {
-	logger &observability.Logger
-}
-
-/// new_compressor_factory는 새 CompressorFactory를 생성합니다.
-pub fn new_compressor_factory() &CompressorFactory {
-	return &CompressorFactory{
-		logger: observability.get_named_logger('compressor_factory')
-	}
-}
-
 /// new_compressor는 지정된 CompressionType에 맞는 Compressor를 생성합니다.
 /// C 라이브러리를 사용한 고성능 구현을 반환합니다.
 pub fn new_compressor(compression_type CompressionType) !Compressor {
@@ -63,17 +49,6 @@ pub fn new_compressor_with_level(compression_type CompressionType, level int) !C
 		}
 	}
 	return error('unsupported compression type: ${compression_type}')
-}
-
-/// get_compressor_name은 CompressionType의 이름을 반환합니다.
-pub fn get_compressor_name(compression_type CompressionType) string {
-	return compression_type.str()
-}
-
-/// is_compressor_available은 지정된 CompressionType이 사용 가능한지 확인합니다.
-pub fn is_compressor_available(compression_type CompressionType) bool {
-	// 모든 구현이 pure V로 되어 있어 항상 사용 가능
-	return true
 }
 
 /// 사용 가능한 모든 압축 타입 반환.

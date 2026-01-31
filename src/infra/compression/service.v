@@ -3,7 +3,6 @@
 module compression
 
 import infra.observability
-import time
 
 /// 서비스.
 @[heap]
@@ -149,64 +148,4 @@ pub fn (mut s CompressionService) set_default_compression(ct CompressionType) {
 /// 현재 메트릭 반환.
 pub fn (s &CompressionService) get_metrics() CompressionMetrics {
 	return s.metrics
-}
-
-/// 특정 타입의 평균 압축률 반환.
-pub fn (s &CompressionService) get_compression_ratio(compression_type CompressionType) f64 {
-	// 메트릭에서 압축률 히스토그램의 평균을 계산
-	// 간단한 구현: 마지막 값 반환
-	return 1.0
-}
-
-/// auto_compress는 데이터 크기에 따라 자동으로 압축 여부를 결정합니다.
-/// 작은 데이터는 압축하지 않고, 큰 데이터만 압축합니다.
-pub fn (mut s CompressionService) auto_compress(data []u8, threshold int) ![]u8 {
-	if data.len < threshold {
-		// 작은 데이터는 압축하지 않음
-		return data.clone()
-	}
-	return s.compress_with_default(data)
-}
-
-/// BatchCompressionResult는 배치 압축 결과를 나타냅니다.
-pub struct BatchCompressionResult {
-pub:
-	data             []u8
-	original_size    i64
-	compressed_size  i64
-	compression_type CompressionType
-	duration         time.Duration
-}
-
-/// compress_batch는 여러 데이터를 배치로 압축합니다.
-pub fn (mut s CompressionService) compress_batch(datasets [][]u8, compression_type CompressionType) ![]BatchCompressionResult {
-	mut results := []BatchCompressionResult{cap: datasets.len}
-
-	for data in datasets {
-		start := time.now()
-		compressed := s.compress(data, compression_type)!
-		duration := time.since(start)
-
-		results << BatchCompressionResult{
-			data:             compressed
-			original_size:    data.len
-			compressed_size:  compressed.len
-			compression_type: compression_type
-			duration:         duration
-		}
-	}
-
-	return results
-}
-
-/// decompress_batch는 여러 데이터를 배치로 해제합니다.
-pub fn (mut s CompressionService) decompress_batch(datasets [][]u8, compression_type CompressionType) ![][]u8 {
-	mut results := [][]u8{cap: datasets.len}
-
-	for data in datasets {
-		decompressed := s.decompress(data, compression_type)!
-		results << decompressed
-	}
-
-	return results
 }

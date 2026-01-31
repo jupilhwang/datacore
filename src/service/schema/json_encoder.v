@@ -2,49 +2,12 @@
 // JSON Schema를 위한 검증 기반 인코딩/디코딩을 제공합니다
 module schema
 
-import domain
-
 // JSON 스키마 인코더
 // JSON Schema에 따라 JSON 데이터를 검증하고 인코딩합니다
 // https://json-schema.org/draft/2020-12/json-schema-validation.html
 
-pub struct JsonSchemaEncoder {}
-
-pub fn new_json_schema_encoder() &JsonSchemaEncoder {
-	return &JsonSchemaEncoder{}
-}
-
-// encode validates and returns JSON data (JSON Schema is a validation schema, not binary format)
-pub fn (e &JsonSchemaEncoder) encode(data []u8, schema domain.Schema) ![]u8 {
-	json_str := data.bytestr()
-
-	// Parse schema
-	parsed := parse_json_schema(schema.schema_str) or {
-		return error('failed to parse JSON Schema: ${err}')
-	}
-
-	// Validate data against schema
-	e.validate(json_str, parsed)!
-
-	// JSON Schema doesn't define binary encoding, return normalized JSON
-	return normalize_json(json_str).bytes()
-}
-
-// decode validates and returns JSON data
-pub fn (e &JsonSchemaEncoder) decode(data []u8, schema domain.Schema) ![]u8 {
-	json_str := data.bytestr()
-
-	parsed := parse_json_schema(schema.schema_str) or {
-		return error('failed to parse JSON Schema: ${err}')
-	}
-
-	e.validate(json_str, parsed)!
-
-	return data
-}
-
 // validate checks if JSON data conforms to schema
-fn (e &JsonSchemaEncoder) validate(json_str string, schema &JsonSchema) ! {
+fn validate(json_str string, schema &JsonSchema) ! {
 	trimmed := json_str.trim_space()
 
 	// Check type constraint
@@ -66,16 +29,16 @@ fn (e &JsonSchemaEncoder) validate(json_str string, schema &JsonSchema) ! {
 	// Validate based on type
 	match detect_json_type(trimmed) {
 		'object' {
-			e.validate_object(trimmed, schema)!
+			validate_object(trimmed, schema)!
 		}
 		'array' {
-			e.validate_array(trimmed, schema)!
+			validate_array(trimmed, schema)!
 		}
 		'string' {
-			e.validate_string(trimmed, schema)!
+			validate_string(trimmed, schema)!
 		}
 		'number', 'integer' {
-			e.validate_number(trimmed, schema)!
+			validate_number(trimmed, schema)!
 		}
 		else {
 			// null, boolean - no additional validation
@@ -84,7 +47,7 @@ fn (e &JsonSchemaEncoder) validate(json_str string, schema &JsonSchema) ! {
 }
 
 // validate_object validates JSON object against schema
-fn (e &JsonSchemaEncoder) validate_object(json_str string, schema &JsonSchema) ! {
+fn validate_object(json_str string, schema &JsonSchema) ! {
 	// Parse object properties
 	props := parse_json_map(json_str) or { return error('invalid JSON object') }
 
@@ -98,7 +61,7 @@ fn (e &JsonSchemaEncoder) validate_object(json_str string, schema &JsonSchema) !
 	// Validate each property
 	for name, value in props {
 		if prop_schema := schema.properties[name] {
-			e.validate(value, prop_schema)!
+			validate(value, prop_schema)!
 		} else if !schema.additional_properties {
 			// additionalProperties: false
 			return error('unexpected property: ${name}')
@@ -115,7 +78,7 @@ fn (e &JsonSchemaEncoder) validate_object(json_str string, schema &JsonSchema) !
 }
 
 // validate_array validates JSON array against schema
-fn (e &JsonSchemaEncoder) validate_array(json_str string, schema &JsonSchema) ! {
+fn validate_array(json_str string, schema &JsonSchema) ! {
 	items := parse_json_array(json_str) or { return error('invalid JSON array') }
 
 	// Check minItems/maxItems
@@ -129,7 +92,7 @@ fn (e &JsonSchemaEncoder) validate_array(json_str string, schema &JsonSchema) ! 
 	// Validate items against items schema
 	if schema.items_schema != unsafe { nil } && schema.items_schema.schema_type.len > 0 {
 		for i, item in items {
-			e.validate(item, schema.items_schema) or {
+			validate(item, schema.items_schema) or {
 				return error('invalid item at index ${i}: ${err}')
 			}
 		}
@@ -149,7 +112,7 @@ fn (e &JsonSchemaEncoder) validate_array(json_str string, schema &JsonSchema) ! 
 }
 
 // validate_string validates JSON string against schema
-fn (e &JsonSchemaEncoder) validate_string(json_str string, schema &JsonSchema) ! {
+fn validate_string(json_str string, schema &JsonSchema) ! {
 	str := parse_json_string_value(json_str) or { return error('invalid JSON string') }
 
 	// Check minLength/maxLength
@@ -219,7 +182,7 @@ fn (e &JsonSchemaEncoder) validate_string(json_str string, schema &JsonSchema) !
 }
 
 // validate_number validates JSON number against schema
-fn (e &JsonSchemaEncoder) validate_number(json_str string, schema &JsonSchema) ! {
+fn validate_number(json_str string, schema &JsonSchema) ! {
 	val := json_str.trim_space().f64()
 
 	// Check minimum/maximum

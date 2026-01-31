@@ -32,47 +32,6 @@ fn encode_varint(val u64) []u8 {
 	return result
 }
 
-// decode_varint_zigzag decodes a zigzag-encoded varint to i64
-fn decode_varint_zigzag(mut reader AvroReader) !i64 {
-	val := decode_varint(mut reader)!
-	// ZigZag decoding: (n >> 1) ^ -(n & 1)
-	return i64((val >> 1) ^ u64(-i64(val & 1)))
-}
-
-// decode_varint_zigzag_int decodes a zigzag-encoded varint to i32
-fn decode_varint_zigzag_int(mut reader AvroReader) !int {
-	val := decode_varint_zigzag(mut reader)!
-	return int(val)
-}
-
-// decode_varint decodes a variable-length u64
-fn decode_varint(mut reader AvroReader) !u64 {
-	mut result := u64(0)
-	mut shift := 0
-
-	for {
-		if reader.pos >= reader.data.len {
-			return error('unexpected end of varint')
-		}
-
-		b := reader.data[reader.pos]
-		reader.pos += 1
-
-		result |= u64(b & 0x7F) << shift
-
-		if (b & 0x80) == 0 {
-			break
-		}
-
-		shift += 7
-		if shift >= 64 {
-			return error('varint too long')
-		}
-	}
-
-	return result
-}
-
 // Float/Double Encoding/Decoding
 
 // encode_float encodes a f32 in little-endian IEEE 754 format
@@ -101,34 +60,6 @@ fn encode_double(val f64) []u8 {
 	]
 }
 
-// decode_float decodes a f32 from little-endian IEEE 754
-fn decode_float(mut reader AvroReader) !f32 {
-	if reader.pos + 4 > reader.data.len {
-		return error('unexpected end of float')
-	}
-
-	bits := u32(reader.data[reader.pos]) | (u32(reader.data[reader.pos + 1]) << 8) | (u32(reader.data[
-		reader.pos + 2]) << 16) | (u32(reader.data[reader.pos + 3]) << 24)
-	reader.pos += 4
-
-	return *unsafe { &f32(&bits) }
-}
-
-// decode_double decodes a f64 from little-endian IEEE 754
-fn decode_double(mut reader AvroReader) !f64 {
-	if reader.pos + 8 > reader.data.len {
-		return error('unexpected end of double')
-	}
-
-	bits := u64(reader.data[reader.pos]) | (u64(reader.data[reader.pos + 1]) << 8) | (u64(reader.data[
-		reader.pos + 2]) << 16) | (u64(reader.data[reader.pos + 3]) << 24) | (u64(reader.data[
-		reader.pos + 4]) << 32) | (u64(reader.data[reader.pos + 5]) << 40) | (u64(reader.data[
-		reader.pos + 6]) << 48) | (u64(reader.data[reader.pos + 7]) << 56)
-	reader.pos += 8
-
-	return *unsafe { &f64(&bits) }
-}
-
 // Bytes/String Encoding/Decoding
 
 // encode_bytes encodes bytes with length prefix
@@ -141,28 +72,4 @@ fn encode_bytes(data []u8) []u8 {
 // encode_string encodes a string as bytes
 fn encode_string(s string) []u8 {
 	return encode_bytes(s.bytes())
-}
-
-// decode_bytes decodes length-prefixed bytes
-fn decode_bytes(mut reader AvroReader) ![]u8 {
-	length := decode_varint_zigzag(mut reader)!
-	if length < 0 {
-		return error('negative bytes length')
-	}
-
-	len_int := int(length)
-	if reader.pos + len_int > reader.data.len {
-		return error('unexpected end of bytes')
-	}
-
-	result := reader.data[reader.pos..reader.pos + len_int].clone()
-	reader.pos += len_int
-
-	return result
-}
-
-// decode_string decodes a string from bytes
-fn decode_string(mut reader AvroReader) !string {
-	bytes := decode_bytes(mut reader)!
-	return bytes.bytestr()
 }

@@ -231,37 +231,3 @@ fn test_list_available_compressors() {
 	assert CompressionType.lz4 in compressors
 	assert CompressionType.zstd in compressors
 }
-
-/// test_is_compressor_available은 압축기 사용 가능 여부를 테스트합니다.
-fn test_is_compressor_available() {
-	// 모든 구현이 pure V로 되어 있어 항상 사용 가능
-	assert is_compressor_available(CompressionType.none) == true
-	assert is_compressor_available(CompressionType.gzip) == true
-	assert is_compressor_available(CompressionType.snappy) == true
-	assert is_compressor_available(CompressionType.lz4) == true
-	assert is_compressor_available(CompressionType.zstd) == true
-}
-
-/// test_get_compressor_name은 압축기 이름을 테스트합니다.
-fn test_get_compressor_name() {
-	assert get_compressor_name(CompressionType.none) == 'none'
-	assert get_compressor_name(CompressionType.gzip) == 'gzip'
-	assert get_compressor_name(CompressionType.snappy) == 'snappy'
-	assert get_compressor_name(CompressionType.lz4) == 'lz4'
-	assert get_compressor_name(CompressionType.zstd) == 'zstd'
-}
-
-/// test_compression_service_auto_compress는 자동 압축을 테스트합니다.
-fn test_compression_service_auto_compress() {
-	mut service := new_default_compression_service()!
-
-	// 작은 데이터는 압축하지 않음
-	small_data := 'small'.bytes()
-	result := service.auto_compress(small_data, 100)!
-	assert result == small_data
-
-	// 큰 데이터는 압축함
-	large_data := 'x'.repeat(200).bytes()
-	result2 := service.auto_compress(large_data, 100)!
-	// 결과는 원본과 다를 수 있음 (압축되거나 그대로)
-}

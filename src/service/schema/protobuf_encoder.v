@@ -3,16 +3,8 @@
 // https://protobuf.dev/programming-guides/encoding/
 module schema
 
-import domain
-
 // Protobuf Binary Encoder
 // Implements Protocol Buffers wire format encoding
-
-pub struct ProtobufEncoder {}
-
-pub fn new_protobuf_encoder() &ProtobufEncoder {
-	return &ProtobufEncoder{}
-}
 
 // Wire types
 const wire_varint = 0 // int32, int64, uint32, uint64, sint32, sint64, bool, enum
@@ -23,34 +15,8 @@ const wire_length_delimited = 2 // string, bytes, embedded messages, packed repe
 
 const wire_32bit = 5 // fixed32, sfixed32, float
 
-// encode serializes JSON data according to Protobuf schema
-pub fn (e &ProtobufEncoder) encode(data []u8, schema domain.Schema) ![]u8 {
-	parsed := parse_protobuf_schema(schema.schema_str) or {
-		return error('failed to parse Protobuf schema: ${err}')
-	}
-
-	json_str := data.bytestr()
-
-	return e.encode_message(json_str, parsed)
-}
-
-// decode deserializes Protobuf binary data to JSON
-pub fn (e &ProtobufEncoder) decode(data []u8, schema domain.Schema) ![]u8 {
-	parsed := parse_protobuf_schema(schema.schema_str) or {
-		return error('failed to parse Protobuf schema: ${err}')
-	}
-
-	mut reader := ProtoReader{
-		data: data
-		pos:  0
-	}
-	json_result := e.decode_message(mut reader, parsed)!
-
-	return json_result.bytes()
-}
-
 // encode_message encodes a JSON object as a Protobuf message
-fn (e &ProtobufEncoder) encode_message(json_str string, schema ProtoMessage) ![]u8 {
+fn encode_message(json_str string, schema ProtoMessage) ![]u8 {
 	mut result := []u8{}
 
 	props := parse_json_map(json_str) or { return error('invalid JSON object') }
@@ -71,7 +37,7 @@ fn (e &ProtobufEncoder) encode_message(json_str string, schema ProtoMessage) ![]
 		result << proto_encode_varint(u64(tag))
 
 		// Encode field value based on type
-		encoded := e.encode_field(value, field)!
+		encoded := encode_field(value, field)!
 		result << encoded
 	}
 
@@ -79,7 +45,7 @@ fn (e &ProtobufEncoder) encode_message(json_str string, schema ProtoMessage) ![]
 }
 
 // encode_field encodes a single field value
-fn (e &ProtobufEncoder) encode_field(value string, field ProtoField) ![]u8 {
+fn encode_field(value string, field ProtoField) ![]u8 {
 	match field.field_type {
 		'int32', 'int64', 'uint32', 'uint64' {
 			val := parse_json_long(value) or { return error('invalid integer') }
@@ -153,7 +119,7 @@ fn (e &ProtobufEncoder) encode_field(value string, field ProtoField) ![]u8 {
 }
 
 // decode_message decodes a Protobuf message to JSON
-fn (e &ProtobufEncoder) decode_message(mut reader ProtoReader, schema ProtoMessage) !string {
+fn decode_message(mut reader ProtoReader, schema ProtoMessage) !string {
 	mut fields := map[string]string{}
 
 	// Create field lookup by number
@@ -170,11 +136,11 @@ fn (e &ProtobufEncoder) decode_message(mut reader ProtoReader, schema ProtoMessa
 
 		field := field_by_number[field_number] or {
 			// Unknown field - skip based on wire type
-			e.skip_field(mut reader, wire_type)!
+			skip_field(mut reader, wire_type)!
 			continue
 		}
 
-		value := e.decode_field(mut reader, field, wire_type)!
+		value := decode_field(mut reader, field, wire_type)!
 
 		if field.is_repeated {
 			// Append to existing array
@@ -201,7 +167,7 @@ fn (e &ProtobufEncoder) decode_message(mut reader ProtoReader, schema ProtoMessa
 }
 
 // decode_field decodes a single field
-fn (e &ProtobufEncoder) decode_field(mut reader ProtoReader, field ProtoField, wire_type int) !string {
+fn decode_field(mut reader ProtoReader, field ProtoField, wire_type int) !string {
 	match field.field_type {
 		'int32', 'int64', 'uint32', 'uint64' {
 			val := proto_decode_varint(mut reader)!
@@ -272,14 +238,14 @@ fn (e &ProtobufEncoder) decode_field(mut reader ProtoReader, field ProtoField, w
 			}
 
 			// Unknown - skip based on wire type
-			e.skip_field(mut reader, wire_type)!
+			skip_field(mut reader, wire_type)!
 			return 'null'
 		}
 	}
 }
 
 // skip_field skips a field based on wire type
-fn (e &ProtobufEncoder) skip_field(mut reader ProtoReader, wire_type int) ! {
+fn skip_field(mut reader ProtoReader, wire_type int) ! {
 	match wire_type {
 		wire_varint {
 			proto_decode_varint(mut reader)!
