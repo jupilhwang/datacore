@@ -4,11 +4,12 @@
 
 ## Version
 
-**v0.41.0**
+**v0.43.0**
 
 ## 주요 특징
 
 - **Kafka API 완전 호환**: Kafka v1.1 ~ v4.1 프로토콜 지원
+- **Iceberg REST Catalog**: Apache Iceberg 호환 REST 카탈로그 (v3 지원)
 - **다중 스토리지 엔진**: Memory, S3, PostgreSQL 지원
 - **내장 스키마 레지스트리**: Avro, JSON Schema, Protobuf 지원
 - **고성능 네트워킹**: io_uring, WebSocket, SSE 지원

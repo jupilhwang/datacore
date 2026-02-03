@@ -402,7 +402,7 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 		acls := acl_mgr.describe_acls(filter) or {
 			// Failed to describe ACLs
 			resp := DescribeAclsResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				error_code:       i16(ErrorCode.unknown_server_error)
 				error_message:    err.msg()
 				resources:        []
@@ -440,7 +440,7 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 		}
 
 		resp := DescribeAclsResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       0
 			error_message:    none
 			resources:        resources
@@ -459,7 +459,7 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 		elapsed))
 
 	resp := DescribeAclsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       i16(ErrorCode.security_disabled)
 		error_message:    'ACLs are not enabled'
 		resources:        []
@@ -504,7 +504,7 @@ fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 				}
 			}
 			return CreateAclsResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				results:          results
 			}.encode(version)
 		}
@@ -518,7 +518,7 @@ fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 		}
 
 		return CreateAclsResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			results:          results
 		}.encode(version)
 	}
@@ -536,7 +536,7 @@ fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 		}
 	}
 	return CreateAclsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}.encode(version)
 }
@@ -579,7 +579,7 @@ fn (mut h Handler) handle_delete_acls(body []u8, version i16) ![]u8 {
 				}
 			}
 			return DeleteAclsResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				results:          results
 			}.encode(version)
 		}
@@ -609,7 +609,7 @@ fn (mut h Handler) handle_delete_acls(body []u8, version i16) ![]u8 {
 		}
 
 		return DeleteAclsResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			results:          results
 		}.encode(version)
 	}
@@ -628,7 +628,7 @@ fn (mut h Handler) handle_delete_acls(body []u8, version i16) ![]u8 {
 		}
 	}
 	return DeleteAclsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}.encode(version)
 }

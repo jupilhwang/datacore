@@ -786,6 +786,7 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	if offset < base_offset {
 		return domain.FetchResult{
 			records:            []
+			first_offset:       base_offset
 			high_watermark:     high_watermark
 			last_stable_offset: high_watermark
 			log_start_offset:   base_offset
@@ -816,8 +817,12 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	a.metrics.query_total_ms += elapsed_ms
 	a.metrics_lock.unlock()
 
+	// 실제 반환되는 첫 번째 레코드의 오프셋
+	actual_first_offset := if fetched_records.len > 0 { offset } else { high_watermark }
+
 	return domain.FetchResult{
 		records:            fetched_records
+		first_offset:       actual_first_offset
 		high_watermark:     high_watermark
 		last_stable_offset: high_watermark
 		log_start_offset:   base_offset

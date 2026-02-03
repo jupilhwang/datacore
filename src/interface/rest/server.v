@@ -21,7 +21,6 @@ import io
 import net
 import os
 import service.port
-import service.schema
 import time
 
 // REST API 서버
@@ -43,29 +42,31 @@ pub mut:
 pub struct RestServer {
 	config RestServerConfig
 mut:
-	storage     port.StoragePort
-	sse_handler &proto_http.SSEHandler
-	ws_handler  &proto_http.WebSocketHandler
-	schema_api  &SchemaAPI
-	metrics     observability.DataCoreMetrics
-	start_time  time.Time
-	running     bool
-	ready       bool // 트래픽 수신 준비 상태
+	storage              port.StoragePort
+	sse_handler          &proto_http.SSEHandler
+	ws_handler           &proto_http.WebSocketHandler
+	schema_api           &SchemaAPI
+	iceberg_catalog_api  &IcebergCatalogAPI
+	metrics              observability.DataCoreMetrics
+	start_time           time.Time
+	running              bool
+	ready                bool // 트래픽 수신 준비 상태
 }
 
 /// new_rest_server - creates a new REST API server
 /// new_rest_server - creates a new REST API server
 pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestServer {
 	return &RestServer{
-		config:      config
-		storage:     storage
-		sse_handler: proto_http.new_sse_handler(storage, config.sse_config)
-		ws_handler:  proto_http.new_websocket_handler(storage, config.ws_config)
-		schema_api:  &SchemaAPI(unsafe { nil })
-		metrics:     observability.new_datacore_metrics()
-		start_time:  time.now()
-		running:     false
-		ready:       false
+		config:              config
+		storage:             storage
+		sse_handler:         proto_http.new_sse_handler(storage, config.sse_config)
+		ws_handler:          proto_http.new_websocket_handler(storage, config.ws_config)
+		schema_api:          &SchemaAPI(unsafe { nil })
+		iceberg_catalog_api: &IcebergCatalogAPI(unsafe { nil })
+		metrics:             observability.new_datacore_metrics()
+		start_time:          time.now()
+		running:             false
+		ready:               false
 	}
 }
 
@@ -89,6 +90,13 @@ pub fn (mut s RestServer) set_schema_api(api &SchemaAPI) {
 	}
 }
 
+/// set_iceberg_catalog_api - sets the Iceberg Catalog API handler
+pub fn (mut s RestServer) set_iceberg_catalog_api(api &IcebergCatalogAPI) {
+	unsafe {
+		s.iceberg_catalog_api = api
+	}
+}
+
 /// start - starts the REST API server (blocking)
 /// start - starts the REST API server (blocking)
 pub fn (mut s RestServer) start() ! {
@@ -99,15 +107,16 @@ pub fn (mut s RestServer) start() ! {
 
 	println('╔═══════════════════════════════════════════════════════════╗')
 	println('║             DataCore REST API Server                      ║')
-	println('╠═══════════════════════════════════════════════════════════╣')
+	println('╠═════════════════════════════════════════════════════════════╣')
 	println('║  HTTP Listening: ${s.config.host}:${s.config.port}                          ║')
 	println('║  Test Client: http://localhost:${s.config.port}/                   ║')
 	println('║  Health: /health, /ready, /live                          ║')
 	println('║  Metrics: /metrics                                       ║')
 	println('║  SSE Endpoint: /v1/topics/{topic}/sse                     ║')
 	println('║  WebSocket Endpoint: /v1/ws                               ║')
+	println('║  Iceberg Catalog API: /v1/iceberg/*                       ║')
 	println('║  Max Connections: ${s.config.max_connections}                                  ║')
-	println('╚═══════════════════════════════════════════════════════════╝')
+	println('╚═════════════════════════════════════════════════════════════╝')
 
 	for s.running {
 		mut conn := listener.accept() or {
@@ -218,6 +227,12 @@ fn (mut s RestServer) route_request(method string, path string, query map[string
 	// Topics API
 	if path.starts_with('/v1/topics') {
 		s.handle_topics_api(method, path, query, mut conn)
+		return
+	}
+
+	// Iceberg Catalog API
+	if path.starts_with('/v1/iceberg') || path.starts_with('/v1/config') {
+		s.handle_iceberg_catalog_api(method, path, headers, mut conn)
 		return
 	}
 
@@ -500,6 +515,34 @@ fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 
 	json := '{"name":"${topic.name}","partitions":${topic.partition_count}}'
 	s.send_json(mut conn, 200, json)
+	conn.close() or {}
+}
+
+// Iceberg Catalog API 핸들러
+
+// handle_iceberg_catalog_api는 Iceberg REST Catalog API 요청을 처리합니다.
+fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, headers map[string]string, mut conn net.TcpConn) {
+	unsafe {
+		if s.iceberg_catalog_api == 0 {
+			s.send_error(mut conn, 503, 'Iceberg Catalog not available')
+			conn.close() or {}
+			return
+		}
+	}
+	mut body := ''
+	// POST/PUT 요청의 본문 읽기
+	if method == 'POST' || method == 'PUT' {
+		content_length := s.get_content_length(headers) or { 0 }
+		if content_length > 0 && content_length < 10 * 1024 * 1024 {
+			mut buf := []u8{len: content_length}
+			conn.read(mut buf) or {}
+			body = buf.bytestr()
+		}
+	}
+
+	// Iceberg Catalog API 요청 처리
+	status, resp_body := s.iceberg_catalog_api.handle_request(method, path, body)
+	s.send_json(mut conn, status, resp_body)
 	conn.close() or {}
 }
 

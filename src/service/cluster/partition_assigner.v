@@ -15,7 +15,8 @@ import rand
 /// 라운드로빈 및 스티키 할당 전략을 지원하며, 브로커 변화 시 재할당을 처리합니다.
 @[heap]
 pub struct PartitionAssigner {
-	broker_id i32
+	broker_id  i32
+	cluster_id string
 mut:
 	config        domain.PartitionAssignerConfig
 	metadata_port ?port.ClusterMetadataPort
@@ -36,6 +37,7 @@ pub:
 	rack_aware                bool
 	sticky_assign             bool = true
 	min_partitions_per_broker i32  = 1
+	cluster_id                string
 }
 
 /// new_partition_assigner는 새로운 파티션 할당 서비스를 생성합니다.
@@ -45,6 +47,7 @@ pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_po
 
 	return &PartitionAssigner{
 		broker_id:                config.broker_id
+		cluster_id:               config.cluster_id
 		config:                   domain.PartitionAssignerConfig{
 			strategy:      config.strategy
 			rack_aware:    config.rack_aware
@@ -469,7 +472,7 @@ pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChange
 
 	mut plan := domain.ReassignmentPlan{
 		plan_id:        plan_id
-		cluster_id:     '' // TODO: cluster_id from config
+		cluster_id:     a.cluster_id
 		trigger_reason: changes.reason
 		changes:        []domain.PartitionAssignmentChange{}
 		created_at:     now

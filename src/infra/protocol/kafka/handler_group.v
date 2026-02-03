@@ -204,7 +204,7 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	groups_info := h.storage.list_groups() or {
 		h.logger.error('List groups failed', observability.field_string('error', err.str()))
 		resp := ListGroupsResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.unknown_server_error)
 			groups:           []
 		}
@@ -225,7 +225,7 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 		observability.field_duration('latency', elapsed))
 
 	resp := ListGroupsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		groups:           groups
 	}
@@ -305,7 +305,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 		elapsed))
 
 	resp := DescribeGroupsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		groups:           groups
 	}
 
@@ -316,7 +316,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !ListGroupsResponse {
 	groups_info := h.storage.list_groups() or {
 		return ListGroupsResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.unknown_server_error)
 			groups:           []
 		}
@@ -332,7 +332,7 @@ fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !List
 	}
 
 	return ListGroupsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		groups:           groups
 	}
@@ -385,7 +385,7 @@ fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i1
 	}
 
 	return DescribeGroupsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		groups:           groups
 	}
 }
@@ -546,7 +546,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 		elapsed))
 
 	resp := DeleteGroupsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}
 
@@ -606,7 +606,7 @@ fn (mut h Handler) process_delete_groups(req DeleteGroupsRequest, version i16) !
 	}
 
 	return DeleteGroupsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}
 }

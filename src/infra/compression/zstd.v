@@ -1,4 +1,7 @@
 /// 인프라 레이어 - ZSTD 압축
+/// DEPRECATED: Pure V ZSTD 구현체는 더 이상 권장되지 않습니다.
+/// C 라이브러리 버전(zstd_c.v)이 완전한 기능과 성능을 제공합니다.
+/// 테스트 목적으로만 사용하세요.
 /// Pure V 구현의 ZSTD 프레임 형식 압축 알고리즘
 /// Kafka와 호환되는 ZSTD 프레임 형식 지원
 /// 참조: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md

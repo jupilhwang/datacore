@@ -1,0 +1,113 @@
+receivers:
+  # DataCore 애플리케이션에서 OTLP로 메트릭/로그 수신
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  
+  # Prometheus 형식 메트릭 수신 (DataCore /metrics 엔드포인트)
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'datacore'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ['datacore:9092']
+          metrics_path: /metrics
+          
+  # 파일 로그 수신 (DataCore 로그 파일)
+  filelog:
+    include: ["/var/log/datacore/*.log"]
+    exclude: ["/var/log/datacore/*.gz"]
+    start_at: beginning
+    operators:
+      - type: json_parser
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%d %H:%M:%S.%f'
+        severity:
+          parse_from: attributes.level
+
+processors:
+  # 배치 처리 - 성능 최적화
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+    
+  # 리소스 속성 추가
+  resource:
+    attributes:
+      - key: service.name
+        value: datacore
+        action: upsert
+      - key: service.version
+        value: 0.42.0
+        action: upsert
+      - key: environment
+        value: production
+        action: upsert
+        
+  # 메트릭 필터링 (불필요한 메트릭 제거)
+  filter:
+    metrics:
+      include:
+        match_type: regexp
+        metric_names:
+          - "datacore_.*"
+          - "kafka_.*"
+          - "storage_.*"
+          - "compression_.*"
+          - "broker_.*"
+          - "network_.*"
+          - "process_.*"
+          - "go_.*"
+
+exporters:
+  # Prometheus로 메트릭보내기
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    
+  # Loki로 로그보내기
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    labels:
+      attributes:
+        level: log.level
+        service: service.name
+        
+  # 콘솔 출력 (디버깅용)
+  debug:
+    verbosity: detailed
+    
+  # 파일로 백업 (옵션)
+  file:
+    path: /var/log/otel-collector/exports.log
+
+service:
+  pipelines:
+    # 메트릭 파이프라인
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [resource, batch]
+      exporters: [prometheusremotewrite, debug]
+      
+    # 로그 파이프라인
+    logs:
+      receivers: [otlp, filelog]
+      processors: [resource, batch]
+      exporters: [loki, debug]
+
+  extensions:
+    - health_check
+    - pprof
+    - zpages
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  pprof:
+    endpoint: 0.0.0.0:1777
+  zpages:
+    endpoint: 0.0.0.0:55679

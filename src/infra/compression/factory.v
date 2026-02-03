@@ -17,11 +17,11 @@ pub fn new_compressor(compression_type CompressionType) !Compressor {
 			return new_snappy_compressor_c()
 		}
 		.lz4 {
-			// C 라이브러리 사용
+			// C 라이브러리 사용 (Kafka Frame 호환)
 			return new_lz4_compressor_c()
 		}
 		.zstd {
-			// C 라이브러리 사용
+			// C 라이브러리 사용 (Kafka Frame 호환)
 			return new_zstd_compressor_c()
 		}
 	}
@@ -30,6 +30,7 @@ pub fn new_compressor(compression_type CompressionType) !Compressor {
 
 /// new_compressor_with_level은 지정된 CompressionType과 레벨로 Compressor를 생성합니다.
 /// Gzip과 ZSTD만 레벨을 지원합니다.
+/// 일관성을 위해 모든 압축 타입에서 C 라이브러리를 사용합니다.
 pub fn new_compressor_with_level(compression_type CompressionType, level int) !Compressor {
 	match compression_type {
 		.none {
@@ -39,13 +40,16 @@ pub fn new_compressor_with_level(compression_type CompressionType, level int) !C
 			return new_gzip_compressor_with_level(level)
 		}
 		.snappy {
-			return new_snappy_compressor()
+			// Snappy는 레벨을 지원하지 않으므로 기본 C 구현 반환
+			return new_snappy_compressor_c()
 		}
 		.lz4 {
-			return new_lz4_compressor()
+			// LZ4는 레벨을 지원하지 않으므로 기본 C 구현 반환
+			return new_lz4_compressor_c()
 		}
 		.zstd {
-			return new_zstd_compressor_with_level(level)
+			// ZSTD C 라이브러리를 레벨과 함께 사용
+			return new_zstd_compressor_c_with_level(level)
 		}
 	}
 	return error('unsupported compression type: ${compression_type}')

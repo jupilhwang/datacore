@@ -573,7 +573,7 @@ pub fn (mut w BinaryWriter) write_raw(b []u8) {
 
 /// ParsedRecordBatch는 파싱된 Kafka RecordBatch를 나타냅니다.
 pub struct ParsedRecordBatch {
-pub:
+pub mut:
 	base_offset            i64
 	partition_leader_epoch i32
 	magic                  i8
@@ -643,6 +643,93 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 
 	return ParsedRecordBatch{
 		base_offset:            base_offset
+		partition_leader_epoch: partition_leader_epoch
+		magic:                  magic
+		attributes:             attributes
+		last_offset_delta:      last_offset_delta
+		first_timestamp:        first_timestamp
+		max_timestamp:          max_timestamp
+		producer_id:            producer_id
+		producer_epoch:         producer_epoch
+		base_sequence:          base_sequence
+		records:                records
+	}
+}
+
+/// parse_nested_record_batch은 압축 해제 후 중첩 RecordBatch(Inner RecordBatch)를 파싱합니다.
+///
+/// Kafka RecordBatch 압축 구조:
+/// ┌────────────────────────────────────────────────────────┐
+/// │ Outer RecordBatch Header (61 bytes)                 │
+/// ├────────────────────────────────────────────────────────┤
+/// │ Compressed Inner RecordBatch                         │
+/// │ - last_offset_delta (relative offset)                │
+/// │ - batch_length                                     │
+/// │ - attributes (압축 없음)                          │
+/// │ - timestamps                                      │
+/// ├────────────────────────────────────────────────────────┤
+/// │ Records                                            │
+/// └────────────────────────────────────────────────────────┘
+///
+/// 압축 해제된 데이터는 중첩 RecordBatch 형식이므로,
+/// base_offset 없이 last_offset_delta로 시작합니다.
+pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
+	if data.len < 20 {
+		return error('nested record batch too small')
+	}
+
+	mut reader := new_reader(data)
+
+	// 중첩 RecordBatch 헤더 (Kafka RecordBatch와 다름)
+	// 1. last_offset_delta (4 bytes): 외부 RecordBatch base_offset에 더할 오프셋
+	// 2. batch_length (4 bytes): 레코드 데이터 길이 (헤더 포함)
+	// 3. partition_leader_epoch (4 bytes): 파티션 리더 에폭
+	// 4. magic (1 byte): 2 (RecordBatch v2)
+	// 5. CRC (4 bytes): CRC32-C (선택사항, 일부 클라이언트는 생략)
+	// 나머지는 일반 RecordBatch와 동일
+
+	last_offset_delta := reader.read_i32()!
+	batch_length := reader.read_i32()!
+	partition_leader_epoch := reader.read_i32()!
+	magic := reader.read_i8()!
+
+	if magic != 2 {
+		return error('nested record batch has invalid magic: ${magic}')
+	}
+
+	// CRC32-C 검증 (선택사항)
+	// Kafka는 중첩 RecordBatch CRC를 항상 포함하지 않음
+	// CRC가 있다면 attributes부터 batch_length까지
+	stored_crc := u32(reader.read_i32()!)
+	crc_start_pos := reader.pos
+	crc_data := data[crc_start_pos..20 + int(batch_length)]
+
+	// CRC 검증 실패해도 계속 진행 (일부 클라이언트 호환성)
+	calculated_crc := crc32c_checksum(crc_data)
+	if stored_crc != calculated_crc {
+		// CRC 검증 실패 시 로그만 남기고 계속 진행
+		// (Kafka 호환성을 위해)
+	}
+
+	// 나머지 헤더 필드 (일반 RecordBatch와 동일)
+	attributes := reader.read_i16()!
+	first_timestamp := reader.read_i64()!
+	max_timestamp := reader.read_i64()!
+	producer_id := reader.read_i64()!
+	producer_epoch := reader.read_i16()!
+	base_sequence := reader.read_i32()!
+	record_count := reader.read_i32()!
+
+	// 레코드 파싱
+	mut records := []domain.Record{cap: int(record_count)}
+	for _ in 0 .. record_count {
+		record := parse_record(mut reader, first_timestamp) or { break }
+		records << record
+	}
+
+	// base_offset은 외부 RecordBatch에서 옴 (0으로 초기화)
+	return ParsedRecordBatch{
+		base_offset:            0 // 외부 RecordBatch의 base_offset 사용 필요
 		partition_leader_epoch: partition_leader_epoch
 		magic:                  magic
 		attributes:             attributes

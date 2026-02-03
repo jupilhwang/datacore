@@ -290,6 +290,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 					strategy:      .round_robin
 					rack_aware:    false
 					sticky_assign: true
+					cluster_id:    conf.broker.cluster_id
 				}
 				mut partition_assigner := cluster.new_partition_assigner(assigner_config,
 					cluster_port)

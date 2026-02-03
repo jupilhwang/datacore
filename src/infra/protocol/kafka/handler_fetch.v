@@ -9,7 +9,6 @@ module kafka
 import infra.compression
 import infra.observability
 import time
-import json
 import domain
 
 // Fetch (API Key 1) - 메시지 조회 API
@@ -371,7 +370,8 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			}
 
 			// 조회된 레코드를 RecordBatch 형식으로 인코딩
-			records_data := encode_record_batch_zerocopy(result.records, p.fetch_offset)
+			// first_offset: 실제 반환되는 첫 번째 레코드의 오프셋 사용
+			records_data := encode_record_batch_zerocopy(result.records, result.first_offset)
 			total_records += result.records.len
 
 			// 스키마 디코딩이 필요한 경우 처리
@@ -398,7 +398,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 				}
 				// 디코딩된 레코드를 RecordBatch로 재인코딩
 				records_for_compression = encode_record_batch_zerocopy(decoded_records,
-					p.fetch_offset)
+					result.first_offset)
 			}
 
 			// 압축 처리
@@ -436,7 +436,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 		elapsed))
 
 	return FetchResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		session_id:       0
 		topics:           topics

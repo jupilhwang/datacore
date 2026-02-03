@@ -216,6 +216,12 @@ struct TopicInfo {
 	is_internal bool   // 내부 토픽 여부
 }
 
+// ParseResult holds the result of parsing a single topic
+type ParseResult = struct {
+	topic TopicInfo
+	pos   int
+}
+
 fn connect_broker(addr string) !&net.TcpConn {
 	parts := addr.split(':')
 	host := if parts.len > 0 { parts[0] } else { 'localhost' }
@@ -429,21 +435,51 @@ fn build_delete_topic_request(name string, timeout_ms int) []u8 {
 	return body
 }
 
+// read_i16_be reads a big-endian i16 from response at position
+fn read_i16_be(response []u8, pos int) i16 {
+	return i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
+}
+
+// read_i32_be reads a big-endian i32 from response at position
+fn read_i32_be(response []u8, pos int) i32 {
+	return i32(u32(response[pos]) << 24 | u32(response[pos + 1]) << 16 | u32(response[pos + 2]) << 8 | u32(response[
+		pos + 3]))
+}
+
+// read_string extracts a string from response at position, returns string and new position
+fn read_string_at(response []u8, pos int) !(string, int) {
+	if pos + 2 > response.len {
+		return error('Invalid response: cannot read string length')
+	}
+	name_len := read_i16_be(response, pos)
+	new_pos := pos + 2
+
+	if new_pos + int(name_len) > response.len {
+		return error('Invalid response: cannot read string')
+	}
+	topic_name := response[new_pos..new_pos + int(name_len)].bytestr()
+	return topic_name, new_pos + int(name_len)
+}
+
+// read_error_message extracts error message from response at position
+fn read_error_message_at(response []u8, pos int) (string, int) {
+	mut error_message := 'Unknown error'
+	mut new_pos := pos
+	if pos + 2 <= response.len {
+		msg_len := read_i16_be(response, pos)
+		new_pos = pos + 2
+		if msg_len > 0 && new_pos + int(msg_len) <= response.len {
+			error_message = response[new_pos..new_pos + int(msg_len)].bytestr()
+			new_pos += int(msg_len)
+		}
+	}
+	return error_message, new_pos
+}
+
 fn check_create_topic_response(response []u8, expected_topic string) ! {
 	if response.len < 4 {
 		return error('Invalid response: too short')
 	}
-
-	// CreateTopics 응답 파싱 (version 3, 비유연)
-	// 구조:
-	// throttle_time_ms (4바이트)
-	// topics (배열)
-	//   - name (string)
-	//   - error_code (2바이트)
-	//   - error_message (nullable string)
-	//   - topic_id (16바이트, v3+)
-	//   - num_partitions (4바이트)
-	//   - replication_factor (2바이트)
 
 	mut pos := 4 // throttle_time_ms 건너뛰기
 
@@ -451,50 +487,28 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 	if pos + 4 > response.len {
 		return error('Invalid response: cannot read topics array length')
 	}
-	topics_len := i32(u32(response[pos]) << 24 | u32(response[pos + 1]) << 16 | u32(response[pos + 2]) << 8 | u32(response[
-		pos + 3]))
+	topics_len := read_i32_be(response, pos)
 	pos += 4
 
 	if topics_len != 1 {
 		return error('Expected 1 topic in response, got ${topics_len}')
 	}
 
-	// 토픽 이름 읽기 (string: i16 길이 + 데이터)
-	if pos + 2 > response.len {
-		return error('Invalid response: cannot read topic name length')
-	}
-	name_len := i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
-	pos += 2
-
-	if pos + int(name_len) > response.len {
-		return error('Invalid response: cannot read topic name')
-	}
-	topic_name := response[pos..pos + int(name_len)].bytestr()
-	pos += int(name_len)
+	// 토픽 이름 읽기
+	topic_name, new_pos := read_string_at(response, pos)!
+	pos = new_pos
 
 	// error_code 읽기 (2바이트)
 	if pos + 2 > response.len {
 		return error('Invalid response: cannot read error code')
 	}
-	error_code := i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
+	error_code := read_i16_be(response, pos)
 	pos += 2
 
 	if error_code != 0 {
-		// 에러 발생
-		mut error_message := 'Unknown error'
-		// error_message 읽기 시도 (nullable string)
-		if pos + 2 <= response.len {
-			msg_len := i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
-			pos += 2
-			if msg_len > 0 && pos + int(msg_len) <= response.len {
-				error_message = response[pos..pos + int(msg_len)].bytestr()
-			}
-		}
+		error_message, _ := read_error_message_at(response, pos)
 		return error('Failed to create topic: ${error_message} (error code: ${error_code})')
 	}
-
-	// error_message, topic_id, num_partitions, replication_factor 건너뛰기
-	// 성공 응답 확인만 수행
 
 	if topic_name != expected_topic {
 		return error('Topic name mismatch: expected "${expected_topic}", got "${topic_name}"')
@@ -510,6 +524,75 @@ fn check_delete_topic_response(response []u8, expected_topic string) ! {
 	return
 }
 
+// skip_brokers_array skips the brokers array in metadata response and returns new position
+fn skip_brokers_array(response []u8, pos int) int {
+	if pos >= response.len {
+		return pos
+	}
+	mut new_pos := pos
+	broker_count := int(response[new_pos]) - 1
+	new_pos += 1
+	for _ in 0 .. broker_count {
+		new_pos += 50
+		if new_pos >= response.len {
+			break
+		}
+	}
+	return new_pos
+}
+
+// parse_single_topic parses a single topic from metadata response at given position
+fn parse_single_topic(response []u8, pos int) ?ParseResult {
+	if pos >= response.len {
+		return none
+	}
+	mut new_pos := pos
+
+	// error_code 건너뛰기 (2바이트)
+	new_pos += 2
+	if new_pos >= response.len {
+		return none
+	}
+
+	// 토픽 이름 읽기 (compact string)
+	name_len := int(response[new_pos]) - 1
+	new_pos += 1
+	if new_pos + name_len > response.len {
+		return none
+	}
+	topic_name := response[new_pos..new_pos + name_len].bytestr()
+	new_pos += name_len
+
+	// topic_id 건너뛰기 (16바이트)
+	new_pos += 16
+	if new_pos >= response.len {
+		return none
+	}
+
+	// is_internal 읽기 (1바이트)
+	is_internal := response[new_pos] != 0
+	new_pos += 1
+	if new_pos >= response.len {
+		return none
+	}
+
+	// partitions 배열 길이 읽기
+	partition_count := int(response[new_pos]) - 1
+	new_pos += 1
+
+	// 파티션 상세 + tagged fields 건너뛰기
+	new_pos += partition_count * 30 + 10
+
+	return ParseResult{
+		topic: TopicInfo{
+			name:        topic_name
+			partitions:  partition_count
+			is_internal: is_internal
+		}
+		pos:   new_pos
+	}
+}
+
 // parse_metadata_response_topics는 Metadata 응답에서 토픽 정보를 파싱합니다.
 fn parse_metadata_response_topics(response []u8) []TopicInfo {
 	mut topics := []TopicInfo{}
@@ -518,98 +601,37 @@ fn parse_metadata_response_topics(response []u8) []TopicInfo {
 		return topics
 	}
 
-	// 헤더 건너뛰기: correlation_id(4) + tagged_fields(varint) + throttle_time(4)
-	// + brokers 배열 + cluster_id + controller_id + topics 배열
-	// 이것은 간소화된 파서 - 프로덕션 코드는 전체 프로토콜 파싱 필요
-
 	mut pos := 4 // correlation_id 건너뛰기
 	if pos >= response.len {
 		return topics
 	}
 
-	// tagged fields 건너뛰기 (varint)
-	pos += 1
+	pos += 1 // tagged fields
 	if pos >= response.len {
 		return topics
 	}
 
-	// throttle_time 건너뛰기 (4바이트)
-	pos += 4
+	pos += 4 // throttle_time
 	if pos >= response.len {
 		return topics
 	}
 
-	// brokers 배열 건너뛰기 (varint 길이 + 데이터)
-	if pos < response.len {
-		broker_count := int(response[pos]) - 1
-		pos += 1
-
-		// 브로커 데이터 건너뛰기 (간소화 - 대략적인 양 건너뛰기)
-		for _ in 0 .. broker_count {
-			pos += 50 // 브로커 항목 크기 대략 추정
-			if pos >= response.len {
-				break
-			}
-		}
-	}
-
-	// cluster_id, controller_id 건너뛰기
-	pos += 40 // 대략 추정
+	pos = skip_brokers_array(response, pos)
+	pos += 40 // cluster_id, controller_id
 
 	if pos >= response.len {
 		return topics
 	}
 
-	// topics 배열 파싱
 	topic_count := int(response[pos]) - 1
 	pos += 1
 
 	for _ in 0 .. topic_count {
-		if pos >= response.len {
-			break
+		result := parse_single_topic(response, pos)
+		if result != none {
+			topics << result.topic
+			pos = result.pos
 		}
-
-		// error_code 건너뛰기 (2바이트)
-		pos += 2
-		if pos >= response.len {
-			break
-		}
-
-		// 토픽 이름 읽기 (compact string)
-		name_len := int(response[pos]) - 1
-		pos += 1
-		if pos + name_len > response.len {
-			break
-		}
-
-		topic_name := response[pos..pos + name_len].bytestr()
-		pos += name_len
-
-		// topic_id 건너뛰기 (16바이트)
-		pos += 16
-		if pos >= response.len {
-			break
-		}
-
-		// is_internal 읽기 (1바이트)
-		is_internal := response[pos] != 0
-		pos += 1
-		if pos >= response.len {
-			break
-		}
-
-		// partitions 배열 길이 읽기
-		partition_count := int(response[pos]) - 1
-		pos += 1
-
-		topics << TopicInfo{
-			name:        topic_name
-			partitions:  partition_count
-			is_internal: is_internal
-		}
-
-		// 파티션 상세 + tagged fields 건너뛰기 (대략 추정)
-		pos += partition_count * 30 + 10
 	}
 
 	return topics

@@ -10,7 +10,6 @@ import domain
 import infra.compression
 import infra.observability
 import time
-import json
 
 // Produce (API Key 0) - 메시지 전송 API
 
@@ -329,52 +328,131 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 			records_to_parse := p.records.clone()
 			mut decompressed_data := []u8{}
 			mut was_compressed := false
+			mut outer_base_offset := i64(0)
 
 			// Kafka RecordBatch v2 헤더 파싱 (61바이트)
 			if records_to_parse.len >= 61 {
 				mut header_reader := new_reader(records_to_parse)
-				_ := header_reader.read_i64() or { 0 } // base_offset
-				_ := header_reader.read_i32() or { 0 } // batch_length
-				_ := header_reader.read_i32() or { 0 } // partition_leader_epoch
-				magic := header_reader.read_i8() or { 0 } // magic
+				outer_base_offset = header_reader.read_i64() or { 0 }
+				batch_length := header_reader.read_i32() or { 0 }
+				partition_leader_epoch := header_reader.read_i32() or { 0 }
+				magic := header_reader.read_i8() or { 0 }
 
-				h.logger.debug('Processing RecordBatch', observability.field_string('topic',
+				// RecordBatch 헤더 파싱 상세 로깅
+				h.logger.debug('RecordBatch header parsing', observability.field_string('topic',
 					topic_name), observability.field_int('partition', int(p.index)), observability.field_int('buffer_size',
-					records_to_parse.len), observability.field_int('magic', int(magic)))
+					records_to_parse.len), observability.field_int('base_offset', int(outer_base_offset)),
+					observability.field_int('batch_length', int(batch_length)), observability.field_int('leader_epoch',
+					int(partition_leader_epoch)), observability.field_int('magic', int(magic)))
+
+				// 원시 바이트 검사 - 헤더의 처음 32바이트를 hex로 출력
+				header_preview_len := if records_to_parse.len > 32 {
+					32
+				} else {
+					records_to_parse.len
+				}
+				header_hex := records_to_parse[..header_preview_len].hex()
+				h.logger.debug('RecordBatch header raw bytes (hex)', observability.field_string('topic',
+					topic_name), observability.field_int('partition', int(p.index)), observability.field_string('header_hex',
+					header_hex), observability.field_int('header_preview_bytes', header_preview_len))
 
 				if magic == 2 && records_to_parse.len >= 61 { // RecordBatch v2
-					_ := header_reader.read_i32() or { 0 } // crc
+					crc := header_reader.read_i32() or { 0 }
 					attributes := header_reader.read_i16() or { 0 }
-					_ := header_reader.read_i32() or { 0 } // last_offset_delta
-					_ := header_reader.read_i64() or { 0 } // base_timestamp
-					_ := header_reader.read_i64() or { 0 } // max_timestamp
-					_ := header_reader.read_i64() or { 0 } // producer_id
-					_ := header_reader.read_i16() or { 0 } // producer_epoch
-					_ := header_reader.read_i32() or { 0 } // base_sequence
+					last_offset_delta := header_reader.read_i32() or { 0 }
+					base_timestamp := header_reader.read_i64() or { 0 }
+					max_timestamp := header_reader.read_i64() or { 0 }
+					producer_id := header_reader.read_i64() or { 0 }
+					producer_epoch := header_reader.read_i16() or { 0 }
+					base_sequence := header_reader.read_i32() or { 0 }
 
-					// 압축 타입은 attributes의 하위 3비트에 저장됨
+					// 압축 타입은 attributes의 하위 3비트에 저장됨 (0: none, 1: gzip, 2: snappy, 3: lz4, 4: zstd)
 					compression_type_val := attributes & 0x07
+					timestamp_type := (attributes >> 3) & 0x01
+					is_transactional := (attributes >> 4) & 0x01
+					is_control := (attributes >> 5) & 0x01
 
-					h.logger.debug('Compression check', observability.field_int('attributes',
-						int(attributes)), observability.field_int('compression_type',
-						compression_type_val))
+					h.logger.debug('RecordBatch attributes detailed', observability.field_string('topic',
+						topic_name), observability.field_int('partition', int(p.index)),
+						observability.field_string('attributes_raw', u8(attributes).hex()),
+						observability.field_int('attributes_int', int(attributes)), observability.field_int('compression_type_val',
+						compression_type_val), observability.field_int('timestamp_type',
+						int(timestamp_type)), observability.field_bool('is_transactional',
+						is_transactional == 1), observability.field_bool('is_control',
+						is_control == 1), observability.field_int('base_timestamp', int(base_timestamp)),
+						observability.field_int('max_timestamp', int(max_timestamp)),
+						observability.field_int('last_offset_delta', int(last_offset_delta)),
+						observability.field_int('producer_id', int(producer_id)), observability.field_int('producer_epoch',
+						int(producer_epoch)), observability.field_int('base_sequence',
+						int(base_sequence)), observability.field_string('crc', int(crc).hex()))
 
-					if compression_type_val != 0 {
+					// 압축 타입 검증 및 변환
+					if compression_type_val > 4 {
+						h.logger.error('Invalid compression type detected', observability.field_string('topic',
+							topic_name), observability.field_int('partition', int(p.index)),
+							observability.field_int('compression_type_val', compression_type_val),
+							observability.field_string('error', 'compression type must be 0-4'))
+					} else if compression_type_val != 0 {
 						// 압축된 데이터 - 압축 해제 필요
-						// Kafka 압축 RecordBatch: header(61 bytes) + compressed_records (nested RecordBatch)
 						compression_type := unsafe { compression.CompressionType(compression_type_val) }
 
-						// 헤더(61바이트) 제외하고 데이터 부분만 압축 해제
-						header_size := 61
+						h.logger.debug('Compression type detection', observability.field_string('topic',
+							topic_name), observability.field_int('partition', int(p.index)),
+							observability.field_int('compression_type_val', compression_type_val),
+							observability.field_string('compression_name', compression_type.str()))
+
+						// Kafka 압축 RecordBatch: header(61 bytes) + CRC(4 bytes) + compressed_records (nested RecordBatch)
+						header_size := 65 // 61 bytes header + 4 bytes CRC
 						compressed_data := records_to_parse[header_size..]
+
+						// 압축된 데이터 상세 정보 로깅
+						compressed_preview_len := if compressed_data.len > 64 {
+							64
+						} else {
+							compressed_data.len
+						}
+						compressed_hex := compressed_data[..compressed_preview_len].hex()
+						h.logger.debug('Compressed data details', observability.field_string('topic',
+							topic_name), observability.field_int('partition', int(p.index)),
+							observability.field_string('compression_type', compression_type.str()),
+							observability.field_int('total_record_size', records_to_parse.len),
+							observability.field_int('header_size', header_size), observability.field_int('compressed_data_len',
+							compressed_data.len), observability.field_string('compressed_data_start',
+							compressed_hex))
+
+						// 압축 해제 시도 전 로깅
+						h.logger.debug('Starting decompression attempt', observability.field_string('topic',
+							topic_name), observability.field_int('partition', int(p.index)),
+							observability.field_string('compression_type', compression_type.str()),
+							observability.field_int('compressed_bytes', compressed_data.len))
 
 						decompress_start := time.now()
 						decompressed_data = h.compression_service.decompress(compressed_data,
 							compression_type) or {
-							h.logger.error('Failed to decompress records', observability.field_string('topic',
+							decompress_elapsed := time.since(decompress_start)
+							// 압축 해제 실패 시 상세 오류 로깅
+							h.logger.error('Decompression failed with error', observability.field_string('topic',
 								topic_name), observability.field_int('partition', int(p.index)),
 								observability.field_string('compression_type', compression_type.str()),
+								observability.field_int('compressed_bytes', compressed_data.len),
+								observability.field_duration('decompress_time', decompress_elapsed),
 								observability.field_err_str(err.str()))
+							// 압축 해제 실패 원인 분석을 위한 추가 로깅
+							first_bytes := if compressed_data.len >= 8 {
+								compressed_data[..8].hex()
+							} else {
+								compressed_data.hex()
+							}
+							last_bytes := if compressed_data.len >= 8 {
+								compressed_data[compressed_data.len - 8..].hex()
+							} else {
+								''
+							}
+							h.logger.error('Compressed data diagnostics', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_string('first_8_bytes', first_bytes),
+								observability.field_string('last_8_bytes', last_bytes),
+								observability.field_int('data_length', compressed_data.len))
 							partitions << ProduceResponsePartition{
 								index:            p.index
 								error_code:       i16(ErrorCode.corrupt_message)
@@ -387,32 +465,90 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						decompress_time := time.since(decompress_start)
 						was_compressed = true
 
+						// 압축 해제 성공 상세 로깅
+						decompressed_preview_len := if decompressed_data.len > 32 {
+							32
+						} else {
+							decompressed_data.len
+						}
+						decompressed_hex := decompressed_data[..decompressed_preview_len].hex()
+						h.logger.debug('Decompression successful', observability.field_string('topic',
+							topic_name), observability.field_int('partition', int(p.index)),
+							observability.field_string('compression_type', compression_type.str()),
+							observability.field_int('compressed_size', compressed_data.len),
+							observability.field_int('decompressed_size', decompressed_data.len),
+							observability.field_string('decompressed_start', decompressed_hex),
+							observability.field_duration('decompress_time', decompress_time))
+
 						// 압축률 메트릭 계산 및 로깅
 						if compressed_data.len > 0 {
 							ratio := f64(decompressed_data.len) / f64(compressed_data.len)
-							h.logger.debug('Records decompressed', observability.field_string('topic',
+							savings_pct := (1.0 - (f64(compressed_data.len) / f64(decompressed_data.len))) * 100.0
+							h.logger.debug('Compression ratio metrics', observability.field_string('topic',
 								topic_name), observability.field_int('partition', int(p.index)),
 								observability.field_string('compression_type', compression_type.str()),
 								observability.field_int('compressed_size', compressed_data.len),
 								observability.field_int('decompressed_size', decompressed_data.len),
-								observability.field_float('ratio', ratio), observability.field_duration('decompress_time',
+								observability.field_float('ratio', ratio), observability.field_float('savings_percent',
+								savings_pct), observability.field_duration('decompress_time',
 								decompress_time))
 						}
+					} else {
+						h.logger.debug('No compression detected (uncompressed records)',
+							observability.field_string('topic', topic_name), observability.field_int('partition',
+							int(p.index)), observability.field_int('record_size', records_to_parse.len))
 					}
+				} else {
+					// magic != 2 인 경우 (legacy MessageSet v0/v1)
+					h.logger.debug('Legacy message format detected (magic != 2)', observability.field_string('topic',
+						topic_name), observability.field_int('partition', int(p.index)),
+						observability.field_int('magic', int(magic)), observability.field_int('buffer_size',
+						records_to_parse.len))
 				}
+			} else {
+				// 61바이트 미만의 데이터 (RecordBatch 헤더보다 작음)
+				h.logger.warn('RecordBatch too small for header parsing', observability.field_string('topic',
+					topic_name), observability.field_int('partition', int(p.index)), observability.field_int('buffer_size',
+					records_to_parse.len), observability.field_int('required_min_size',
+					61))
 			}
 
 			// 압축 해제된 데이터 또는 원본 데이터로 RecordBatch 파싱
-			data_to_parse := if was_compressed { decompressed_data } else { records_to_parse }
-			parsed := parse_record_batch(data_to_parse) or {
-				partitions << ProduceResponsePartition{
-					index:            p.index
-					error_code:       i16(ErrorCode.corrupt_message)
-					base_offset:      -1
-					log_append_time:  -1
-					log_start_offset: -1
+			mut parsed := ParsedRecordBatch{}
+			if was_compressed {
+				// 압축 해제된 데이터: 중첩 RecordBatch (Inner RecordBatch)
+				// last_offset_delta로 시작하므로 별도 파싱 필요
+				mut nested_parsed := parse_nested_record_batch(decompressed_data) or {
+					h.logger.error('Failed to parse nested record batch', observability.field_string('topic',
+						topic_name), observability.field_int('partition', int(p.index)),
+						observability.field_err_str(err.str()))
+					partitions << ProduceResponsePartition{
+						index:            p.index
+						error_code:       i16(ErrorCode.corrupt_message)
+						base_offset:      -1
+						log_append_time:  -1
+						log_start_offset: -1
+					}
+					continue
 				}
-				continue
+				// 외부 RecordBatch의 base_offset 사용
+				nested_parsed.base_offset = outer_base_offset
+				parsed = nested_parsed
+			} else {
+				// 일반 RecordBatch 파싱
+				parsed = parse_record_batch(records_to_parse) or {
+					h.logger.error('Failed to parse record batch', observability.field_string('topic',
+						topic_name), observability.field_int('partition', int(p.index)),
+						observability.field_err_str(err.str()))
+					partitions << ProduceResponsePartition{
+						index:            p.index
+						error_code:       i16(ErrorCode.corrupt_message)
+						base_offset:      -1
+						log_append_time:  -1
+						log_start_offset: -1
+					}
+					continue
+				}
 			}
 
 			total_records += parsed.records.len
@@ -527,7 +663,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 
 	return ProduceResponse{
 		topics:           topics
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 	}
 }
 
@@ -561,7 +697,7 @@ fn (h Handler) build_produce_error_response_typed(req ProduceRequest, error_code
 	}
 	return ProduceResponse{
 		topics:           topics
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 	}
 }
 
@@ -587,7 +723,7 @@ fn build_produce_error_response(req ProduceRequest, error_code i16, version i16)
 	}
 	return ProduceResponse{
 		topics:           topics
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 	}.encode(version)
 }
 

@@ -455,7 +455,7 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 	}
 
 	resp := AlterConfigsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}
 
@@ -527,7 +527,7 @@ pub fn (mut h Handler) handle_create_partitions(body []u8, version i16) ![]u8 {
 	}
 
 	resp := CreatePartitionsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}
 
@@ -596,7 +596,7 @@ pub fn (mut h Handler) handle_delete_records(body []u8, version i16) ![]u8 {
 	}
 
 	resp := DeleteRecordsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           resp_topics
 	}
 

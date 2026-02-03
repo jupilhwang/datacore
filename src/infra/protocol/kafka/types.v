@@ -1,6 +1,10 @@
 // 어댑터 레이어 - Kafka 프로토콜 타입
 module kafka
 
+// Common constants for Kafka protocol responses
+pub const default_throttle_time_ms = 0
+pub const no_throttle = 0
+
 /// API Keys - Kafka 프로토콜
 pub enum ApiKey {
 	produce                         = 0

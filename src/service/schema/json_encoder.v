@@ -2,6 +2,8 @@
 // JSON Schema를 위한 검증 기반 인코딩/디코딩을 제공합니다
 module schema
 
+import regex
+
 // JsonEncoder provides JSON schema validation and encoding
 pub struct JsonEncoder {}
 
@@ -157,9 +159,11 @@ fn validate_string(json_str string, schema &JsonSchema) ! {
 	}
 
 	// Check pattern (simplified - just check contains for now)
-	if schema.pattern.len > 0 {
-		// TODO: Full regex support
-		// For now, just basic substring match
+	mut re := regex.regex_opt(schema.pattern) or {
+		return error('invalid regex pattern: ${schema.pattern}')
+	}
+	if !re.matches_string(str) {
+		return error('string does not match pattern: ${schema.pattern}')
 	}
 
 	// Check enum values

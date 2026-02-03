@@ -1,0 +1,41 @@
+apiVersion: 1
+
+datasources:
+  # Prometheus 데이터 소스 (메트릭)
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: "10s"
+      queryTimeout: "60s"
+      
+  # Loki 데이터 소스 (로그)
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: "traceID"
+          matcherRegex: "trace_id=(\\w+)"
+          url: "http://localhost:16686/trace/$${__value.raw}"
+          
+  # Tempo 데이터 소스 (트레이스 - 옵션)
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    
+  # AlertManager 데이터 소스
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false

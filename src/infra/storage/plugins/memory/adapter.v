@@ -559,6 +559,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 	if offset < part.base_offset {
 		return domain.FetchResult{
 			records:            []
+			first_offset:       part.base_offset
 			high_watermark:     part.high_watermark
 			last_stable_offset: part.high_watermark
 			log_start_offset:   part.base_offset
@@ -569,6 +570,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 	if start_idx >= part.records.len {
 		return domain.FetchResult{
 			records:            []
+			first_offset:       part.high_watermark
 			high_watermark:     part.high_watermark
 			last_stable_offset: part.high_watermark
 			log_start_offset:   part.base_offset
@@ -600,8 +602,12 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 	a.metrics.fetch_record_count += i64(fetched_records.len)
 	a.metrics_lock.unlock()
 
+	// 실제 반환되는 첫 번째 레코드의 오프셋 계산
+	actual_first_offset := part.base_offset + i64(start_idx)
+
 	return domain.FetchResult{
 		records:            fetched_records
+		first_offset:       actual_first_offset
 		high_watermark:     part.high_watermark
 		last_stable_offset: part.high_watermark
 		log_start_offset:   part.base_offset
@@ -622,6 +628,7 @@ fn (mut a MemoryStorageAdapter) fetch_mmap(topic &TopicStore, partition int, off
 	if offset < base_offset || offset >= high_watermark {
 		return domain.FetchResult{
 			records:            []
+			first_offset:       if offset < base_offset { base_offset } else { high_watermark }
 			high_watermark:     high_watermark
 			last_stable_offset: high_watermark
 			log_start_offset:   base_offset
@@ -665,6 +672,7 @@ fn (mut a MemoryStorageAdapter) fetch_mmap(topic &TopicStore, partition int, off
 
 	return domain.FetchResult{
 		records:            records
+		first_offset:       offset // 요청된 오프셋이 실제 반환되는 첫 번째 레코드의 오프셋
 		high_watermark:     high_watermark
 		last_stable_offset: high_watermark
 		log_start_offset:   base_offset

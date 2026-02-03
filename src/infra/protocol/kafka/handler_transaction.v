@@ -27,7 +27,7 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 			req.producer_id, req.producer_epoch) or {
 			// Handle error
 			resp := InitProducerIdResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				error_code:       i16(ErrorCode.unknown_server_error)
 				producer_id:      -1
 				producer_epoch:   -1
@@ -36,7 +36,7 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 		}
 
 		resp := InitProducerIdResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       0
 			producer_id:      result.producer_id
 			producer_epoch:   result.producer_epoch
@@ -74,7 +74,7 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	}
 
 	resp := InitProducerIdResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       error_code
 		producer_id:      producer_id
 		producer_epoch:   producer_epoch
@@ -130,7 +130,7 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 				}
 			}
 			return AddPartitionsToTxnResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				results:          results
 			}.encode(version)
 		}
@@ -151,7 +151,7 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 			}
 		}
 		return AddPartitionsToTxnResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			results:          results
 		}.encode(version)
 	}
@@ -176,7 +176,7 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 		}
 	}
 	return AddPartitionsToTxnResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}.encode(version)
 }
@@ -201,13 +201,13 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 
 		txn_coord.end_txn(req.transactional_id, req.producer_id, req.producer_epoch, result) or {
 			return EndTxnResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				error_code:       i16(ErrorCode.invalid_txn_state) // Simplified error mapping
 			}.encode(version)
 		}
 
 		return EndTxnResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       0
 		}.encode(version)
 	}
@@ -217,7 +217,7 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 		req.transactional_id), observability.field_duration('latency', elapsed))
 
 	return EndTxnResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       i16(ErrorCode.coordinator_not_available)
 	}.encode(version)
 }
@@ -237,13 +237,13 @@ fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 		txn_coord.add_offsets_to_txn(req.transactional_id, req.producer_id, req.producer_epoch,
 			req.group_id) or {
 			return AddOffsetsToTxnResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				error_code:       i16(ErrorCode.invalid_txn_state) // Simplified error mapping
 			}.encode(version)
 		}
 
 		return AddOffsetsToTxnResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       0
 		}.encode(version)
 	}
@@ -253,7 +253,7 @@ fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 		req.transactional_id), observability.field_duration('latency', elapsed))
 
 	return AddOffsetsToTxnResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       i16(ErrorCode.coordinator_not_available)
 	}.encode(version)
 }
@@ -447,7 +447,7 @@ fn build_txn_offset_commit_error_response(req TxnOffsetCommitRequest, error_code
 		}
 	}
 	return TxnOffsetCommitResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}.encode(version)
 }
@@ -469,7 +469,7 @@ fn build_txn_offset_commit_success_response(req TxnOffsetCommitRequest, version 
 		}
 	}
 	return TxnOffsetCommitResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}.encode(version)
 }
@@ -481,7 +481,7 @@ fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i
 		result := txn_coord.init_producer_id(req.transactional_id, req.transaction_timeout_ms,
 			req.producer_id, req.producer_epoch) or {
 			return InitProducerIdResponse{
-				throttle_time_ms: 0
+				throttle_time_ms: default_throttle_time_ms
 				error_code:       i16(ErrorCode.unknown_server_error)
 				producer_id:      -1
 				producer_epoch:   -1
@@ -489,7 +489,7 @@ fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i
 		}
 
 		return InitProducerIdResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       0
 			producer_id:      result.producer_id
 			producer_epoch:   result.producer_epoch
@@ -518,7 +518,7 @@ fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i
 	}
 
 	return InitProducerIdResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       error_code
 		producer_id:      producer_id
 		producer_epoch:   producer_epoch

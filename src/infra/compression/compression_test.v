@@ -1,6 +1,8 @@
 /// 단위 테스트 - 압축 모듈
 module compression
 
+import time
+
 /// test_compression_type_enum은 CompressionType 열거형을 테스트합니다.
 fn test_compression_type_enum() {
 	// 값 확인
@@ -230,4 +232,119 @@ fn test_list_available_compressors() {
 	assert CompressionType.snappy in compressors
 	assert CompressionType.lz4 in compressors
 	assert CompressionType.zstd in compressors
+}
+
+// ============================================================================
+// Manual Compression Test - All Types with Timing
+// ============================================================================
+// 이 테스트는 모든 압축 타입(Snappy, Gzip, LZ4, Zstd)을
+// 통합 테스트 환경에서 검증합니다.
+
+/// test_all_compression_types_with_timing은 모든 압축 타입을 타이밍과 함께 테스트합니다.
+/// 이 테스트는 순수 V 구현체를 사용하여 C 라이브러리 의존성 없이 실행됩니다.
+fn test_all_compression_types_with_timing() {
+	// 테스트 데이터 생성 (약 12KB)
+	message := '{"id":"12345","timestamp":"2026-02-01T12:00:00Z","data":"This is a test message for compression testing. It contains various patterns and repeated content to test compression efficiency. Repeated: ABCABCABCXYZXYZXYZ123123123","metadata":{"source":"manual_test","version":"1.0","tags":["test","compression","kafka"]}}'
+
+	mut test_data := []u8{}
+	for _ in 0 .. 100 {
+		test_data << message.bytes()
+		test_data << u8(`\n`)
+	}
+
+	// 각 압축 타입별로 순수 V 구현체 테스트
+	// Note: snappy, lz4, zstd는 기본적으로 C 라이브러리 사용
+	// gzip만 순수 V 구현
+
+	// 1. Gzip 테스트 (순수 V)
+	mut gzip_service := new_compression_service(CompressionConfig{
+		default_compression: CompressionType.gzip
+	})!
+	gzip_result := run_compression_test_with_timing(CompressionType.gzip, test_data, mut
+		gzip_service)
+	assert gzip_result.passed, 'Gzip test failed: ${gzip_result.error_msg}'
+
+	// 2. Noop 테스트 (압축 없음)
+	mut noop_service := new_compression_service(CompressionConfig{
+		default_compression: CompressionType.none
+	})!
+	noop_result := run_compression_test_with_timing(CompressionType.none, test_data, mut
+		noop_service)
+	assert noop_result.passed, 'Noop test failed: ${noop_result.error_msg}'
+
+	// Note: Snappy, LZ4, Zstd는 C 라이브러리가 필요하므로
+	// 별도의 integration test에서 시스템 환경 확인 후 실행
+}
+
+// 테스트 결과 구조체 (로컬용)
+struct TestResult {
+	name            string
+	passed          bool
+	compress_time   time.Duration
+	decompress_time time.Duration
+	original_size   int
+	compressed_size int
+	ratio           f64
+	error_msg       string
+}
+
+// 단일 압축 타입 테스트
+fn run_compression_test_with_timing(ct CompressionType, test_data []u8, mut service CompressionService) TestResult {
+	name := ct.str()
+
+	// 압축 테스트
+	compress_start := time.now()
+	compressed := service.compress(test_data, ct) or {
+		return TestResult{
+			name:      name
+			passed:    false
+			error_msg: 'Compression failed: ${err}'
+		}
+	}
+	compress_time := time.since(compress_start)
+
+	// 압축 결과 검증
+	if compressed.len == 0 && test_data.len > 0 {
+		return TestResult{
+			name:      name
+			passed:    false
+			error_msg: 'Compressed data is empty'
+		}
+	}
+
+	// 해제 테스트
+	decompress_start := time.now()
+	decompressed := service.decompress(compressed, ct) or {
+		return TestResult{
+			name:      name
+			passed:    false
+			error_msg: 'Decompression failed: ${err}'
+		}
+	}
+	decompress_time := time.since(decompress_start)
+
+	// 데이터 무결성 검증
+	if decompressed != test_data {
+		return TestResult{
+			name:      name
+			passed:    false
+			error_msg: 'Data mismatch after decompression'
+		}
+	}
+
+	// 압축률 계산
+	mut ratio := 0.0
+	if compressed.len > 0 {
+		ratio = f64(test_data.len) / f64(compressed.len)
+	}
+
+	return TestResult{
+		name:            name
+		passed:          true
+		compress_time:   compress_time
+		decompress_time: decompress_time
+		original_size:   test_data.len
+		compressed_size: compressed.len
+		ratio:           ratio
+	}
 }

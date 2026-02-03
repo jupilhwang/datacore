@@ -81,6 +81,9 @@ pub mut:
 	// 메트릭
 	metrics      S3Metrics
 	metrics_lock sync.Mutex
+	// Iceberg 테이블 작성기 (Iceberg가 활성화된 경우)
+	iceberg_writers map[string]&IcebergWriter // 키: "topic:partition"
+	iceberg_lock    sync.RwMutex
 }
 
 /// CachedTopic은 캐시된 토픽 정보를 담습니다.
@@ -234,6 +237,7 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 		offset_cache:            map[string]map[string]i64{}
 		topic_index_cache:       map[string]CachedPartitionIndex{}
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
+		iceberg_writers:         map[string]&IcebergWriter{}
 	}
 }
 
@@ -547,7 +551,21 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	// }
 	_ = should_flush // 미사용 변수 경고 억제
 
-	// 5. 응답을 위해 인메모리 high_watermark 즉시 업데이트
+	// 5. Iceberg 테이블에 레코드 추가 (Iceberg가 활성화된 경우)
+	// 참고: 현재 S3Config에 직접적인 Iceberg 설정이 없으므로
+	// 별도 설정 파일이나 환경변수로부터 Iceberg 활성화 여부 확인
+	if a.is_iceberg_enabled() {
+		a.append_to_iceberg(topic, partition, records, base_offset) or {
+			// Iceberg 쓰기 실패는 기본 S3 스토리지에 영향을 주지 않음
+			log_message(.warn, 'IcebergAppend', 'Failed to append to Iceberg', {
+				'topic':     topic
+				'partition': partition.str()
+				'error':     err.str()
+			})
+		}
+	}
+
+	// 6. 응답을 위해 인메모리 high_watermark 즉시 업데이트
 	// 다음 append가 올바른 오프셋을 받도록 캐시도 업데이트
 	// index_update_lock을 사용하여 flush와의 경쟁 조건 방지
 	new_high_watermark := base_offset + i64(records.len)
@@ -660,8 +678,12 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		a.buffer_lock.unlock()
 	}
 
+	// 실제 반환되는 첫 번째 레코드의 오프셋
+	actual_first_offset := if all_records.len > 0 { offset } else { index.high_watermark }
+
 	return domain.FetchResult{
 		records:            all_records
+		first_offset:       actual_first_offset
 		high_watermark:     index.high_watermark
 		last_stable_offset: index.high_watermark
 		log_start_offset:   index.earliest_offset

@@ -187,7 +187,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		h.logger.info('Member ID required, generated new ID', observability.field_string('group_id',
 			req.group_id), observability.field_string('new_member_id', new_member_id))
 		return JoinGroupResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.member_id_required)
 			generation_id:    -1
 			protocol_type:    req.protocol_type
@@ -293,7 +293,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 	}
 
 	return JoinGroupResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		generation_id:    new_gen
 		protocol_type:    req.protocol_type
@@ -319,7 +319,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 		h.logger.warn('Sync group failed: group not found', observability.field_string('group_id',
 			req.group_id))
 		return SyncGroupResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.group_id_not_found)
 			protocol_type:    ''
 			protocol_name:    ''
@@ -333,7 +333,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 			req.group_id), observability.field_int('expected', group.generation_id), observability.field_int('received',
 			req.generation_id))
 		return SyncGroupResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.illegal_generation)
 			protocol_type:    group.protocol_type
 			protocol_name:    group.protocol
@@ -397,7 +397,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 		assignment.len), observability.field_duration('latency', elapsed))
 
 	return SyncGroupResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		protocol_type:    group.protocol_type
 		protocol_name:    group.protocol
@@ -417,7 +417,7 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 		h.logger.debug('Heartbeat failed: group not found', observability.field_string('group_id',
 			req.group_id))
 		return HeartbeatResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.group_id_not_found)
 		}
 	}
@@ -428,7 +428,7 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 			req.group_id), observability.field_int('expected', group.generation_id), observability.field_int('received',
 			req.generation_id))
 		return HeartbeatResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.illegal_generation)
 		}
 	}
@@ -446,13 +446,13 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 		h.logger.debug('Heartbeat failed: unknown member', observability.field_string('group_id',
 			req.group_id), observability.field_string('member_id', req.member_id))
 		return HeartbeatResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.unknown_member_id)
 		}
 	}
 
 	return HeartbeatResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 	}
 }
@@ -471,7 +471,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		h.logger.warn('Leave group failed: group not found', observability.field_string('group_id',
 			req.group_id))
 		return LeaveGroupResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.group_id_not_found)
 			members:          []LeaveGroupResponseMember{}
 		}
@@ -521,7 +521,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		h.logger.warn('Leave group failed: no members removed', observability.field_string('group_id',
 			req.group_id))
 		return LeaveGroupResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.unknown_member_id)
 			members:          []LeaveGroupResponseMember{}
 		}
@@ -564,7 +564,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		remaining_members.len), observability.field_duration('latency', elapsed))
 
 	return LeaveGroupResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		members:          removed_members
 	}
@@ -649,7 +649,7 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 		groups.len), observability.field_duration('latency', elapsed))
 
 	return ConsumerGroupDescribeResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		groups:           groups
 	}
 }

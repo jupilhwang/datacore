@@ -325,7 +325,7 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 	}
 
 	return DescribeConfigsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}
 }

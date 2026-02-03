@@ -240,7 +240,7 @@ fn (mut h Handler) handle_share_acknowledge(body []u8, version i16) ![]u8 {
 	// Get share group coordinator
 	mut coordinator := h.get_share_group_coordinator() or {
 		resp := ShareAcknowledgeResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.coordinator_not_available)
 			error_message:    'share group coordinator not available'
 			responses:        []
@@ -322,7 +322,7 @@ fn (mut h Handler) handle_share_acknowledge(body []u8, version i16) ![]u8 {
 	}
 
 	resp := ShareAcknowledgeResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		error_message:    ''
 		responses:        responses

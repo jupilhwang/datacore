@@ -57,6 +57,10 @@ pub:
 	// NUMA 설정 (v0.33.0)
 	numa_enabled      bool // NUMA 인식 모드 활성화 (Linux 전용, 기본 false)
 	numa_bind_workers bool = true // 워커를 NUMA 노드에 바인딩
+	// TCP 최적화 설정 (v0.42.0)
+	tcp_nodelay       bool = true   // TCP_NODELAY 활성화 (Nagle 알고리즘 비활성화)
+	tcp_send_buf_size int  = 262144 // TCP 송신 버퍼 크기 (256KB)
+	tcp_recv_buf_size int  = 262144 // TCP 수신 버퍼 크기 (256KB)
 }
 
 /// RequestHandler는 프로토콜 요청을 처리하는 인터페이스입니다.
@@ -251,12 +255,50 @@ pub fn (mut s Server) get_worker_pool_metrics() WorkerPoolMetrics {
 	return s.worker_pool.get_metrics()
 }
 
+// TCP 최적화 헬퍼 함수 (TCP_NODELAY 설정)
+fn set_tcp_nodelay(sock int) {
+	$if linux {
+		// Linux: TCP_NODELAY 설정으로 Nagle 알고리즘 비활성화
+		// 소켓 지연(latency) 감소를 위해 즉시 전송
+		flag := 1
+		unsafe {
+			C.setsockopt(sock, C.IPPROTO_TCP, C.TCP_NODELAY, &flag, sizeof(int))
+		}
+	}
+}
+
+// TCP 버퍼 크기 최적화
+fn set_tcp_buffers(sock int, send_buf int, recv_buf int) {
+	$if linux {
+		unsafe {
+			if send_buf > 0 {
+				C.setsockopt(sock, C.SOL_SOCKET, C.SO_SNDBUF, &send_buf, sizeof(int))
+			}
+			if recv_buf > 0 {
+				C.setsockopt(sock, C.SOL_SOCKET, C.SO_RCVBUF, &recv_buf, sizeof(int))
+			}
+		}
+	}
+}
+
 /// handle_connection_with_pool은 연결을 처리하고 완료 시 워커 슬롯을 해제합니다.
 /// defer를 사용하여 함수 종료 시 반드시 워커 슬롯이 반환되도록 보장합니다.
 fn (mut s Server) handle_connection_with_pool(mut conn net.TcpConn) {
 	// 함수 종료 시 워커 슬롯 해제 보장 (RAII 패턴)
 	defer {
 		s.worker_pool.release()
+	}
+
+	// TCP 최적화: Nagle 알고리즘 비활성화 (지연 감소)
+	// 소켓 핸들 얻기 (V의 net 모듈 내부 구조 활용)
+	$if linux {
+		unsafe {
+			// net.TcpConn의 sock 필드는 TcpSocket을 포함하고 handle은 파일 디스크립터
+			sock_ptr := &int(voidptr(&conn.sock) + sizeof(voidptr))
+			set_tcp_nodelay(*sock_ptr)
+			// TCP 버퍼 크기 최적화 (256KB 송신, 256KB 수신)
+			set_tcp_buffers(*sock_ptr, 262144, 262144)
+		}
 	}
 
 	// NUMA 노드에 워커 바인딩 (v0.33.0)

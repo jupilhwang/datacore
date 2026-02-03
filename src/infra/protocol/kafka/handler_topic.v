@@ -319,7 +319,7 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 		elapsed))
 
 	resp := CreateTopicsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}
 
@@ -403,7 +403,7 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 		elapsed))
 
 	resp := DeleteTopicsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}
 
@@ -484,7 +484,7 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 	}
 
 	return CreateTopicsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}
 }
@@ -536,7 +536,7 @@ fn (mut h Handler) process_delete_topics(req DeleteTopicsRequest, version i16) !
 	}
 
 	return DeleteTopicsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}
 }

@@ -71,12 +71,14 @@ pub:
 
 /// FetchResult는 레코드 조회 결과를 나타냅니다.
 /// records: 조회된 레코드 목록
+/// first_offset: 반환된 첫 번째 레코드의 실제 오프셋 (v0.41.1)
 /// high_watermark: 하이 워터마크 오프셋
 /// last_stable_offset: 마지막 안정 오프셋 (트랜잭션용)
 /// log_start_offset: 로그 시작 오프셋
 pub struct FetchResult {
 pub:
 	records            []Record
+	first_offset       i64 // 반환된 첫 번째 레코드의 실제 오프셋
 	high_watermark     i64
 	last_stable_offset i64
 	log_start_offset   i64

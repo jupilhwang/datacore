@@ -152,6 +152,76 @@ target_segment_bytes = 104857600
 index_cache_ttl_ms = 3600000
 
 # -----------------------------------------------------------------------------
+# [storage.s3.iceberg] - S3 Iceberg 테이블 형식 설정
+# -----------------------------------------------------------------------------
+# DataCore는 Iceberg 테이블 형식으로 Parquet 파일 저장을 지원합니다.
+# 이 설정은 S3 스토리지 엔진이 Iceberg 형식을 사용할 때 적용됩니다.
+# -----------------------------------------------------------------------------
+
+[storage.s3.iceberg]
+
+# Iceberg 형식 사용 여부
+# true: Iceberg 형식으로 Parquet 파일 저장
+# false: 기존 바이너리 형식으로 저장 (기본값)
+enabled = false
+
+# 파일 형식
+# 지원값: "parquet", "orc", "avro"
+format = "parquet"
+
+# 압축 방식
+# 지원값: "none", "snappy", "gzip", "zstd"
+# 권장: zstd (최상의 압축률과 속도)
+compression = "zstd"
+
+# 쓰기 모드
+# 지원값: "append", "overwrite"
+# append: 새 데이터 추가 (기본값)
+# overwrite: 기존 데이터 덮어쓰기
+write_mode = "append"
+
+# 파티셔닝 컬럼
+# Iceberg 테이블의 파티셔닝 기준 컬럼
+# 지원값: "timestamp", "topic", "partition"
+# timestamp는 자동으로 day 단위로 파티셔닝됨
+partition_by = ["timestamp", "topic"]
+
+# 파일당 최대 행 수
+# 이 수를 초과하면 새로운 파일 생성
+max_rows_per_file = 1000000
+
+# 파일당 최대 크기 (MB)
+# 이 크기를 초과하면 새로운 파일 생성
+max_file_size_mb = 128
+
+# 스키마 진화 지원
+# true: 스키마 변경 자동 감지 및 적용
+# false: 스키마 변경 불가
+schema_evolution = true
+
+# -----------------------------------------------------------------------------
+# [storage.s3.iceberg.catalog] - Iceberg REST Catalog 설정
+# -----------------------------------------------------------------------------
+[storage.s3.iceberg.catalog]
+
+# 카탈로그 타입
+# 지원값: "hadoop" (파일 기반), "rest" (REST API 기반)
+type = "hadoop"
+
+# REST Catalog 엔드포인트 (외부 서비스 사용 시)
+# 비어있으면 내장 REST Catalog 서버 사용
+rest_endpoint = ""
+
+# Warehouse 위치 (S3 경로)
+warehouse = "s3://jhwang-s3/datacore/iceberg/warehouse"
+
+# 테이블 포맷 버전 (1, 2, 3)
+# v3: Binary Deletion Vectors, Row Lineage, 신규 데이터 타입 지원
+# v2: Row-Level Deletes 지원
+# v1: 기본 Iceberg 포맷
+format_version = 3
+
+# -----------------------------------------------------------------------------
 # [storage.postgres] - PostgreSQL 스토리지 설정 (P2 - 미구현)
 # -----------------------------------------------------------------------------
 [storage.postgres]

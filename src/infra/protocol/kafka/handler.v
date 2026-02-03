@@ -16,7 +16,6 @@ import service.port
 import service.schema
 import service.transaction
 import time
-import json
 import domain
 
 // PartitionAssigner는 파티션 할당 서비스를 위한 포인터 타입입니다.

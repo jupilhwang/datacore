@@ -1,4 +1,7 @@
 /// 인프라 레이어 - LZ4 압축
+/// DEPRECATED: Pure V LZ4 구현체는 더 이상 권장되지 않습니다.
+/// C 라이브러리 버전(lz4_c.v)이 Kafka 프레임 호환성을 제공합니다.
+/// 테스트 목적으로만 사용하세요.
 /// Pure V 구현의 LZ4 프레임 형식 압축 알고리즘
 /// Kafka와 호환되는 LZ4 프레임 형식 지원
 /// 참조: https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md

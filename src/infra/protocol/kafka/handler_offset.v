@@ -446,7 +446,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 			}
 		}
 		return OffsetCommitResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			topics:           topics
 		}.encode(version)
 	}
@@ -455,7 +455,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	topics := build_commit_response_from_results(service_resp.results)
 
 	resp := OffsetCommitResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}
 
@@ -543,7 +543,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}
 
 		resp := OffsetFetchResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			topics:           []
 			error_code:       0
 			groups:           groups
@@ -569,7 +569,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		require_stable: req.require_stable
 	}) or {
 		return OffsetFetchResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			topics:           []
 			error_code:       i16(ErrorCode.unknown_server_error)
 			groups:           []
@@ -588,7 +588,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 	}
 
 	resp := OffsetFetchResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 		error_code:       service_resp.error_code
 		groups:           []
@@ -633,7 +633,7 @@ fn (mut h Handler) process_offset_commit(req OffsetCommitRequest, version i16) !
 			}
 		}
 		return OffsetCommitResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			topics:           topics
 		}
 	}
@@ -654,7 +654,7 @@ fn (mut h Handler) process_offset_commit(req OffsetCommitRequest, version i16) !
 	}
 
 	return OffsetCommitResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}
 }
@@ -672,7 +672,7 @@ fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !Of
 
 	fetched_offsets := h.storage.fetch_offsets(req.group_id, partitions_to_fetch) or {
 		return OffsetFetchResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			topics:           []
 			error_code:       i16(ErrorCode.unknown_server_error)
 			groups:           []
@@ -706,7 +706,7 @@ fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !Of
 	}
 
 	return OffsetFetchResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 		error_code:       0
 		groups:           []

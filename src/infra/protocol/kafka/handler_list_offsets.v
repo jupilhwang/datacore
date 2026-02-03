@@ -217,7 +217,7 @@ fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !Li
 		observability.field_duration('latency', elapsed))
 
 	return ListOffsetsResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		topics:           topics
 	}
 }

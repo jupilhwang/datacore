@@ -2,6 +2,7 @@
 // Message production using Kafka protocol
 module cli
 
+import net
 import os
 import time
 
@@ -19,6 +20,102 @@ pub:
 	acks             int = 1 // 0, 1, or -1 (all)
 }
 
+// set_produce_bootstrap_server updates opts with bootstrap server
+fn set_produce_bootstrap_server(opts ProduceOptions, args []string, i int) ProduceOptions {
+	if i + 1 < args.len {
+		return ProduceOptions{
+			...opts
+			bootstrap_server: args[i + 1]
+		}
+	}
+	return opts
+}
+
+// set_produce_topic updates opts with topic
+fn set_produce_topic(opts ProduceOptions, args []string, i int) ProduceOptions {
+	if i + 1 < args.len {
+		return ProduceOptions{
+			...opts
+			topic: args[i + 1]
+		}
+	}
+	return opts
+}
+
+// set_produce_partition updates opts with partition
+fn set_produce_partition(opts ProduceOptions, args []string, i int) ProduceOptions {
+	if i + 1 < args.len {
+		return ProduceOptions{
+			...opts
+			partition: args[i + 1].int()
+		}
+	}
+	return opts
+}
+
+// set_produce_key updates opts with key
+fn set_produce_key(opts ProduceOptions, args []string, i int) ProduceOptions {
+	if i + 1 < args.len {
+		return ProduceOptions{
+			...opts
+			key: args[i + 1]
+		}
+	}
+	return opts
+}
+
+// set_produce_value updates opts with value
+fn set_produce_value(opts ProduceOptions, args []string, i int) ProduceOptions {
+	if i + 1 < args.len {
+		return ProduceOptions{
+			...opts
+			value: args[i + 1]
+		}
+	}
+	return opts
+}
+
+// set_produce_file updates opts with file
+fn set_produce_file(opts ProduceOptions, args []string, i int) ProduceOptions {
+	if i + 1 < args.len {
+		return ProduceOptions{
+			...opts
+			file: args[i + 1]
+		}
+	}
+	return opts
+}
+
+// set_produce_stdin updates opts with stdin flag
+fn set_produce_stdin(opts ProduceOptions) ProduceOptions {
+	return ProduceOptions{
+		...opts
+		stdin: true
+	}
+}
+
+// set_produce_acks updates opts with acks
+fn set_produce_acks(opts ProduceOptions, args []string, i int) ProduceOptions {
+	if i + 1 < args.len {
+		return ProduceOptions{
+			...opts
+			acks: args[i + 1].int()
+		}
+	}
+	return opts
+}
+
+// set_produce_positional_topic updates opts with topic from positional arg
+fn set_produce_positional_topic(opts ProduceOptions, arg string) ProduceOptions {
+	if !arg.starts_with('-') && opts.topic == '' {
+		return ProduceOptions{
+			...opts
+			topic: arg
+		}
+	}
+	return opts
+}
+
 // parse_produce_options parses produce command options
 pub fn parse_produce_options(args []string) ProduceOptions {
 	mut opts := ProduceOptions{}
@@ -27,82 +124,38 @@ pub fn parse_produce_options(args []string) ProduceOptions {
 	for i < args.len {
 		match args[i] {
 			'--bootstrap-server', '-b' {
-				if i + 1 < args.len {
-					opts = ProduceOptions{
-						...opts
-						bootstrap_server: args[i + 1]
-					}
-					i += 1
-				}
+				opts = set_produce_bootstrap_server(opts, args, i)
+				i += 1
 			}
 			'--topic', '-t' {
-				if i + 1 < args.len {
-					opts = ProduceOptions{
-						...opts
-						topic: args[i + 1]
-					}
-					i += 1
-				}
+				opts = set_produce_topic(opts, args, i)
+				i += 1
 			}
 			'--partition', '-p' {
-				if i + 1 < args.len {
-					opts = ProduceOptions{
-						...opts
-						partition: args[i + 1].int()
-					}
-					i += 1
-				}
+				opts = set_produce_partition(opts, args, i)
+				i += 1
 			}
 			'--key', '-k' {
-				if i + 1 < args.len {
-					opts = ProduceOptions{
-						...opts
-						key: args[i + 1]
-					}
-					i += 1
-				}
+				opts = set_produce_key(opts, args, i)
+				i += 1
 			}
 			'--message', '-m', '--value' {
-				if i + 1 < args.len {
-					opts = ProduceOptions{
-						...opts
-						value: args[i + 1]
-					}
-					i += 1
-				}
+				opts = set_produce_value(opts, args, i)
+				i += 1
 			}
 			'--file', '-f' {
-				if i + 1 < args.len {
-					opts = ProduceOptions{
-						...opts
-						file: args[i + 1]
-					}
-					i += 1
-				}
+				opts = set_produce_file(opts, args, i)
+				i += 1
 			}
 			'--stdin' {
-				opts = ProduceOptions{
-					...opts
-					stdin: true
-				}
+				opts = set_produce_stdin(opts)
 			}
 			'--acks', '-a' {
-				if i + 1 < args.len {
-					opts = ProduceOptions{
-						...opts
-						acks: args[i + 1].int()
-					}
-					i += 1
-				}
+				opts = set_produce_acks(opts, args, i)
+				i += 1
 			}
 			else {
-				// First positional arg might be topic
-				if !args[i].starts_with('-') && opts.topic == '' {
-					opts = ProduceOptions{
-						...opts
-						topic: args[i]
-					}
-				}
+				opts = set_produce_positional_topic(opts, args[i])
 			}
 		}
 		i += 1
@@ -111,47 +164,47 @@ pub fn parse_produce_options(args []string) ProduceOptions {
 	return opts
 }
 
-// run_produce produces messages to a topic
-pub fn run_produce(opts ProduceOptions) ! {
-	if opts.topic == '' {
-		return error('Topic name is required. Use --topic <name>')
+// collect_messages_from_file reads messages from a file
+fn collect_messages_from_file(mut messages []ProduceMessage, file string, key string) ! {
+	content := os.read_file(file) or { return error('Failed to read file ${file}: ${err}') }
+	for line in content.split_into_lines() {
+		if line.len > 0 {
+			messages << ProduceMessage{
+				key:   key.bytes()
+				value: line.bytes()
+			}
+		}
 	}
+}
 
-	// Collect messages to produce
+// collect_messages_from_stdin reads messages from stdin
+fn collect_messages_from_stdin(mut messages []ProduceMessage, key string) {
+	println('\x1b[90mEnter messages (Ctrl+D to finish):\x1b[0m')
+	for {
+		line := os.get_line()
+		if line.len == 0 {
+			break
+		}
+		messages << ProduceMessage{
+			key:   key.bytes()
+			value: line.bytes()
+		}
+	}
+}
+
+// collect_messages gathers messages based on options
+fn collect_messages(opts ProduceOptions) ![]ProduceMessage {
 	mut messages := []ProduceMessage{}
 
 	if opts.value != '' {
-		// Single message from command line
 		messages << ProduceMessage{
 			key:   opts.key.bytes()
 			value: opts.value.bytes()
 		}
 	} else if opts.file != '' {
-		// Read messages from file (one per line)
-		content := os.read_file(opts.file) or {
-			return error('Failed to read file ${opts.file}: ${err}')
-		}
-		for line in content.split_into_lines() {
-			if line.len > 0 {
-				messages << ProduceMessage{
-					key:   opts.key.bytes()
-					value: line.bytes()
-				}
-			}
-		}
+		collect_messages_from_file(mut messages, opts.file, opts.key)!
 	} else if opts.stdin {
-		// Read from stdin interactively
-		println('\x1b[90mEnter messages (Ctrl+D to finish):\x1b[0m')
-		for {
-			line := os.get_line()
-			if line.len == 0 {
-				break
-			}
-			messages << ProduceMessage{
-				key:   opts.key.bytes()
-				value: line.bytes()
-			}
-		}
+		collect_messages_from_stdin(mut messages, opts.key)
 	} else {
 		return error('No message provided. Use --message, --file, or --stdin')
 	}
@@ -159,23 +212,31 @@ pub fn run_produce(opts ProduceOptions) ! {
 	if messages.len == 0 {
 		return error('No messages to produce')
 	}
+	return messages
+}
 
-	// Connect to broker
+// send_produce_request sends the produce request and returns the result
+fn send_produce_request(mut conn net.TcpConn, topic string, partition int, messages []ProduceMessage, acks int, timeout_ms int) !ProduceResult {
+	request := build_produce_request(topic, partition, messages, acks, timeout_ms)
+	send_kafka_request(mut conn, 0, 9, request)!
+	response := read_kafka_response(mut conn)!
+	return parse_produce_response(response)!
+}
+
+// run_produce produces messages to a topic
+pub fn run_produce(opts ProduceOptions) ! {
+	if opts.topic == '' {
+		return error('Topic name is required. Use --topic <name>')
+	}
+
+	messages := collect_messages(opts)!
+
 	mut conn := connect_broker(opts.bootstrap_server)!
 	defer { conn.close() or {} }
 
-	// Build and send Produce request
 	partition := if opts.partition < 0 { 0 } else { opts.partition }
-	request := build_produce_request(opts.topic, partition, messages, opts.acks, opts.timeout_ms)
-
-	// Send request
-	send_kafka_request(mut conn, 0, 9, request)! // API Key 0 = Produce, version 9
-
-	// Read response
-	response := read_kafka_response(mut conn)!
-
-	// Check response
-	result := parse_produce_response(response)!
+	result := send_produce_request(mut conn, opts.topic, partition, messages, opts.acks,
+		opts.timeout_ms)!
 
 	println('\x1b[32m✓\x1b[0m Produced ${messages.len} message(s) to "${opts.topic}"')
 	println('  Partition: ${partition}')

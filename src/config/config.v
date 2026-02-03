@@ -90,6 +90,27 @@ pub:
 	segment_size_bytes int = 1073741824
 }
 
+/// IcebergConfig는 S3 Iceberg 테이블 형식 설정을 나타냅니다.
+/// enabled: Iceberg 형식 사용 여부
+/// format: 파일 형식 (parquet, orc, avro)
+/// compression: 압축 방식 (none, snappy, gzip, zstd)
+/// write_mode: 쓰기 모드 (append, overwrite)
+/// partition_by: 파티셔닝 컬럼 목록
+/// max_rows_per_file: 파일당 최대 행 수
+/// max_file_size_mb: 파일당 최대 크기 (MB)
+/// schema_evolution: 스키마 진화 지원 여부
+pub struct IcebergConfig {
+pub:
+	enabled           bool     = false
+	format            string   = 'parquet'
+	compression       string   = 'zstd'
+	write_mode        string   = 'append'
+	partition_by      []string = ['timestamp', 'topic']
+	max_rows_per_file int      = 1000000
+	max_file_size_mb  int      = 128
+	schema_evolution  bool     = true
+}
+
 /// S3StorageConfig는 S3 스토리지 설정을 나타냅니다.
 /// endpoint: S3 엔드포인트 URL
 /// bucket: S3 버킷 이름
@@ -102,6 +123,7 @@ pub:
 /// compaction_interval_ms: 컴팩션 간격 (밀리초)
 /// target_segment_bytes: 목표 세그먼트 크기 (바이트)
 /// index_cache_ttl_ms: 파티션 인덱스 캐시 TTL (밀리초)
+/// iceberg: Iceberg 테이블 형식 설정
 pub struct S3StorageConfig {
 pub mut:
 	endpoint   string
@@ -118,6 +140,8 @@ pub mut:
 	compaction_interval_ms int = 60000
 	target_segment_bytes   i64 = 104857600
 	index_cache_ttl_ms     int = 30000 // 파티션 인덱스 캐시 TTL (기본 30초)
+	// Iceberg 설정
+	iceberg IcebergConfig
 }
 
 /// SqliteStorageConfig는 SQLite 스토리지 설정을 나타냅니다.
@@ -376,6 +400,31 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	}
 	if s3.secret_key == '' {
 		s3.secret_key = get_string(doc, 'storage.s3.secret_key', '')
+	}
+
+	// Iceberg 설정 파싱
+	iceberg_enabled := get_bool(doc, 'storage.s3.iceberg.enabled', false)
+	if iceberg_enabled {
+		mut partition_by := []string{}
+		if partition_by_val := doc.value_opt('storage.s3.iceberg.partition_by') {
+			partition_by_array := partition_by_val.array()
+			for item in partition_by_array {
+				partition_by << item.string()
+			}
+		} else {
+			partition_by = ['timestamp', 'topic']
+		}
+
+		s3.iceberg = IcebergConfig{
+			enabled:           iceberg_enabled
+			format:            get_string(doc, 'storage.s3.iceberg.format', 'parquet')
+			compression:       get_string(doc, 'storage.s3.iceberg.compression', 'zstd')
+			write_mode:        get_string(doc, 'storage.s3.iceberg.write_mode', 'append')
+			partition_by:      partition_by
+			max_rows_per_file: get_int(doc, 'storage.s3.iceberg.max_rows_per_file', 1000000)
+			max_file_size_mb:  get_int(doc, 'storage.s3.iceberg.max_file_size_mb', 128)
+			schema_evolution:  get_bool(doc, 'storage.s3.iceberg.schema_evolution', true)
+		}
 	}
 
 	// SQLite 설정 파싱
@@ -858,6 +907,18 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		}
 	}
 
+	// Iceberg 설정 (기본값 - 비활성화)
+	s3.iceberg = IcebergConfig{
+		enabled:           false
+		format:            'parquet'
+		compression:       'zstd'
+		write_mode:        'append'
+		partition_by:      ['timestamp', 'topic']
+		max_rows_per_file: 1000000
+		max_file_size_mb:  128
+		schema_evolution:  true
+	}
+
 	sqlite := SqliteStorageConfig{
 		path:         'datacore.db'
 		journal_mode: 'WAL'
@@ -954,4 +1015,105 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		schema_registry: schema_registry
 		observability:   observability
 	}
+}
+
+/// === 환경 변수 유틸리티 함수들 (대문자/소문자 모두 지원) ===
+
+/// toml_key_to_env_key_upper는 TOML 키를 대문자 환경 변수 이름으로 변환합니다.
+/// 예: broker.host -> BROKER_HOST
+fn toml_key_to_env_key_upper(toml_key string) string {
+	mut env_key := toml_key.replace('.', '_')
+	env_key = env_key.to_upper()
+	return env_key
+}
+
+/// toml_key_to_env_key_lower는 TOML 키를 소문자 환경 변수 이름으로 변환합니다.
+/// 예: broker.host -> broker_host
+fn toml_key_to_env_key_lower(toml_key string) string {
+	mut env_key := toml_key.replace('.', '_')
+	env_key = env_key.to_lower()
+	return env_key
+}
+
+/// get_env_value는 TOML 키로 환경 변수 값을 검색합니다.
+/// 검색 순서: 1) 대문자 버전, 2) 소문자 버전, 3) DATACORE_접두사+대문자
+/// 반환: (값, 발견 여부)
+fn get_env_value(toml_key string) (string, bool) {
+	// 1. 대문자 버전 검색 (예: BROKER_HOST)
+	env_key_upper := toml_key_to_env_key_upper(toml_key)
+	if env_val := os.getenv_opt(env_key_upper) {
+		return env_val, true
+	}
+
+	// 2. 소문자 버전 검색 (예: broker_host)
+	env_key_lower := toml_key_to_env_key_lower(toml_key)
+	if env_val := os.getenv_opt(env_key_lower) {
+		return env_val, true
+	}
+
+	// 3. DATACORE_ 접두사 + 대문자 검색 (예: DATACORE_BROKER_HOST)
+	env_key_prefixed := 'DATACORE_' + env_key_upper
+	if env_val := os.getenv_opt(env_key_prefixed) {
+		return env_val, true
+	}
+
+	return '', false
+}
+
+/// print_env_mapping은 TOML 키와 환경 변수 이름의 매핑을 출력합니다.
+pub fn print_env_mapping() {
+	println('=== TOML Key to Environment Variable Mapping ===')
+	println('')
+	println('검색 순서:')
+	println('  1. 대문자 (예: BROKER_HOST)')
+	println('  2. 소문자 (예: broker_host)')
+	println('  3. DATACORE_접두사+대문자 (예: DATACORE_BROKER_HOST)')
+	println('')
+
+	// Broker
+	println('[broker]')
+	println('  broker.host        → ' + toml_key_to_env_key_upper('broker.host') + ', ' +
+		toml_key_to_env_key_lower('broker.host') + ', DATACORE_' +
+		toml_key_to_env_key_upper('broker.host'))
+	println('  broker.port        → ' + toml_key_to_env_key_upper('broker.port') + ', ' +
+		toml_key_to_env_key_lower('broker.port') + ', DATACORE_' +
+		toml_key_to_env_key_upper('broker.port'))
+	println('  broker.cluster_id  → ' + toml_key_to_env_key_upper('broker.cluster_id') + ', ' +
+		toml_key_to_env_key_lower('broker.cluster_id') + ', DATACORE_' +
+		toml_key_to_env_key_upper('broker.cluster_id'))
+	println('')
+
+	// Storage
+	println('[storage]')
+	println('  storage.engine     → ' + toml_key_to_env_key_upper('storage.engine') + ', ' +
+		toml_key_to_env_key_lower('storage.engine') + ', DATACORE_' +
+		toml_key_to_env_key_upper('storage.engine'))
+	println('')
+
+	// S3
+	println('[s3]')
+	println('  s3.endpoint   → ' + toml_key_to_env_key_upper('s3.endpoint') + ', ' +
+		toml_key_to_env_key_lower('s3.endpoint') + ', DATACORE_' +
+		toml_key_to_env_key_upper('s3.endpoint'))
+	println('  s3.bucket     → ' + toml_key_to_env_key_upper('s3.bucket') + ', ' +
+		toml_key_to_env_key_lower('s3.bucket') + ', DATACORE_' +
+		toml_key_to_env_key_upper('s3.bucket'))
+	println('')
+
+	// PostgreSQL
+	println('[postgres]')
+	println('  postgres.host     → ' + toml_key_to_env_key_upper('postgres.host') + ', ' +
+		toml_key_to_env_key_lower('postgres.host') + ', DATACORE_' +
+		toml_key_to_env_key_upper('postgres.host'))
+	println('  postgres.password → ' + toml_key_to_env_key_upper('postgres.password') + ', ' +
+		toml_key_to_env_key_lower('postgres.password') + ', DATACORE_' +
+		toml_key_to_env_key_upper('postgres.password'))
+	println('')
+
+	// Logging
+	println('[logging]')
+	println('  logging.level     → ' + toml_key_to_env_key_upper('logging.level') + ', ' +
+		toml_key_to_env_key_lower('logging.level') + ', DATACORE_' +
+		toml_key_to_env_key_upper('logging.level'))
+	println('')
 }

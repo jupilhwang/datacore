@@ -270,7 +270,7 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 		}
 
 		return FindCoordinatorResponse{
-			throttle_time_ms: 0
+			throttle_time_ms: default_throttle_time_ms
 			coordinators:     coordinators
 		}
 	}
@@ -280,7 +280,7 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 	node_id, host, port := h.compute_coordinator_broker(req.key, req.key_type)
 
 	return FindCoordinatorResponse{
-		throttle_time_ms: 0
+		throttle_time_ms: default_throttle_time_ms
 		error_code:       0
 		error_message:    none
 		node_id:          node_id
