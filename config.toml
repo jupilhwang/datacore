@@ -278,7 +278,7 @@ enabled = true
 service_name = "datacore"
 
 # 서비스 버전
-service_version = "0.2.0"
+service_version = "0.43.0"
 
 # 서비스 인스턴스 ID (자동 생성 또는 지정)
 # instance_id = ""

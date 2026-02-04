@@ -22,15 +22,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-22.04
+          - os: ubuntu-latest
             target: linux-amd64
             artifact_name: datacore
             asset_name: datacore-linux-amd64
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04-arm
             target: linux-arm64
             artifact_name: datacore
             asset_name: datacore-linux-arm64
-            cross_compile: true
+            cross_compile: false
           - os: macos-latest
             target: darwin-amd64
             artifact_name: datacore
@@ -49,7 +49,7 @@ jobs:
           version: ${{ env.V_VERSION }}
       
       - name: Install dependencies (Linux)
-        if: ${{ runner.os == 'Linux' && !matrix.cross_compile }}
+        if: ${{ runner.os == 'Linux' && !matrix.cross_compile && matrix.target != 'linux-arm64' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
@@ -60,23 +60,19 @@ jobs:
           brew install openssl snappy lz4 zstd postgresql
 
       - name: Build (native)
-        if: ${{ !matrix.cross_compile }}
+        if: ${{ !matrix.cross_compile && matrix.target != 'linux-arm64' }}
         run: |
           cd src
           v -prod -enable-globals -d use_openssl -o ../bin/${{ matrix.artifact_name }} .
       
-      - name: Build (cross-compile linux-arm64)
-        if: ${{ matrix.cross_compile && matrix.target == 'linux-arm64' }}
+      - name: Build (Native linux-arm64)
+        if: ${{ !matrix.cross_compile && matrix.target == 'linux-arm64' }}
         run: |
-          sudo dpkg --add-architecture arm64
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu \
-            libssl-dev:arm64 libsnappy-dev:arm64 liblz4-dev:arm64 \
-            libzstd-dev:arm64 libpq-dev:arm64 libnuma-dev:arm64 \
-            liburing-dev:arm64 zlib1g-dev:arm64
-          export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+          sudo apt-get install -y gcc libssl-dev libsnappy-dev liblz4-dev \
+            libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
           cd src
-          v -prod -enable-globals -d use_openssl -cc aarch64-linux-gnu-gcc -cflags "-I/usr/include -I/usr/include/aarch64-linux-gnu -L/usr/lib/aarch64-linux-gnu" -o ../bin/${{ matrix.artifact_name }} .
+          v -prod -enable-globals -d use_openssl -cc gcc -cflags "-I/usr/include" -o ../bin/${{ matrix.artifact_name }} .
       
       - name: Prepare release archive
         run: |
