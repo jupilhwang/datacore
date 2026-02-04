@@ -53,7 +53,7 @@ jobs:
         if: ${{ matrix.static_build }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
+          sudo apt-get install -y gcc g++ libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
 
       - name: Install dependencies (macOS)
         if: ${{ runner.os == 'macOS' }}
@@ -65,7 +65,9 @@ jobs:
         run: |
           cd src
           v -prod -enable-globals -d use_openssl \
-            -cflags -static \
+            -cc gcc \
+            -cflags "-static" \
+            -ldflags "-static -lssl -lcrypto -lsnappy -lstdc++ -llz4 -lzstd -lpq -lnuma -luring -lz -lpthread -lm -ldl -lgcc -lgcc_eh" \
             -o ../bin/${{ matrix.artifact_name }} .
       
       - name: Build (macOS)

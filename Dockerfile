@@ -33,8 +33,9 @@ COPY . .
 # We also include use_openssl for secure connections.
 # Static linking ensures no runtime dependencies are needed.
 RUN mkdir -p /app/bin && cd src && v -prod -enable-globals -d use_openssl \
+    -cc gcc \
     -cflags "-static" \
-    -ldflags "-static -lssl -lcrypto -lsnappy -llz4 -lzstd -lpq -lnuma -luring -lz -lpthread -lm -ldl" \
+    -ldflags "-static -lssl -lcrypto -lsnappy -lstdc++ -llz4 -lzstd -lpq -lnuma -luring -lz -lpthread -lm -ldl -lgcc -lgcc_eh" \
     -o /app/bin/datacore .
 
 # --- Run Stage ---
