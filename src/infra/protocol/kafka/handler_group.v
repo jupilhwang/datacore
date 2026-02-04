@@ -314,6 +314,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 
 // ListGroups 요청 처리 (Frame 기반)
 fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !ListGroupsResponse {
+	_ = version
 	groups_info := h.storage.list_groups() or {
 		return ListGroupsResponse{
 			throttle_time_ms: default_throttle_time_ms
@@ -340,6 +341,7 @@ fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !List
 
 // DescribeGroups 요청 처리 (Frame 기반)
 fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i16) !DescribeGroupsResponse {
+	_ = version
 	mut groups := []DescribeGroupsResponseGroup{}
 
 	for group_id in req.groups {
@@ -555,6 +557,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 
 /// DeleteGroups 요청 처리 (Frame 기반)
 fn (mut h Handler) process_delete_groups(req DeleteGroupsRequest, version i16) !DeleteGroupsResponse {
+	_ = version
 	mut results := []DeletableGroupResult{}
 
 	for group_id in req.groups_names {

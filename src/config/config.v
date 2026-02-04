@@ -101,7 +101,7 @@ pub:
 /// schema_evolution: 스키마 진화 지원 여부
 pub struct IcebergConfig {
 pub:
-	enabled           bool     = false
+	enabled           bool
 	format            string   = 'parquet'
 	compression       string   = 'zstd'
 	write_mode        string   = 'append'

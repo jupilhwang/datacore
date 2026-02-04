@@ -604,6 +604,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 
 // 처리 함수 (Frame 기반)
 fn (mut h Handler) process_offset_commit(req OffsetCommitRequest, version i16) !OffsetCommitResponse {
+	_ = version
 	mut all_offsets := []domain.PartitionOffset{}
 	for t in req.topics {
 		for p in t.partitions {
@@ -660,6 +661,7 @@ fn (mut h Handler) process_offset_commit(req OffsetCommitRequest, version i16) !
 }
 
 fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !OffsetFetchResponse {
+	_ = version
 	mut partitions_to_fetch := []domain.TopicPartition{}
 	for t in req.topics {
 		for p in t.partitions {

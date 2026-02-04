@@ -35,7 +35,7 @@ pub:
 	test_buffer_pools bool = true // 버퍼 풀 테스트
 
 	// 출력
-	verbose       bool         = false // 상세 출력
+	verbose       bool // 상세 출력
 	output_format OutputFormat = .text // 출력 형식
 }
 

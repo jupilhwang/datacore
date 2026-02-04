@@ -11,6 +11,7 @@
 module engines
 
 import os
+import net
 
 // ============================================================================
 // io_uring 상수 및 플래그
@@ -44,18 +45,18 @@ $if linux {
 	const ioring_op_write = u8(23)
 
 	// 소켓 관련 C 함수
-	fn C.socket(domain int, typ int, protocol int) int
+	fn C.socket(domain net.AddrFamily, typ net.SocketType, protocol int) int
 	fn C.bind(sockfd int, addr voidptr, addrlen u32) int
 	fn C.listen(sockfd int, backlog int) int
 	fn C.setsockopt(sockfd int, level int, optname int, optval voidptr, optlen u32) int
 	fn C.close(fd int) int
 	fn C.htonl(hostlong u32) u32
 	fn C.htons(hostshort u16) u16
-	fn C.inet_pton(af int, src &char, dst voidptr) int
+	fn C.inet_pton(af net.AddrFamily, src &char, dst voidptr) int
 
 	// 소켓 상수
-	const af_inet = 2
-	const sock_stream = 1
+	const socket_af_inet = 2
+	const socket_sock_stream = 1
 	const sol_socket = 1
 	const so_reuseaddr = 2
 	const so_reuseport = 15
@@ -461,7 +462,7 @@ pub fn (r &IoUring) get_stats() IoUringStats {
 /// prep_read는 읽기 연산을 준비합니다.
 pub fn (mut r IoUring) prep_read(fd int, buf []u8, offset i64, user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_read
 		sqe.fd = i32(fd)
@@ -480,7 +481,7 @@ pub fn (mut r IoUring) prep_read(fd int, buf []u8, offset i64, user_data u64) bo
 /// prep_write는 쓰기 연산을 준비합니다.
 pub fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_write
 		sqe.fd = i32(fd)
@@ -499,7 +500,7 @@ pub fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) b
 /// prep_fsync는 fsync 연산을 준비합니다.
 pub fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_fsync
 		sqe.fd = i32(fd)
@@ -515,7 +516,7 @@ pub fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
 /// prep_nop은 no-op을 준비합니다 (테스트에 유용).
 pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_nop
 		sqe.user_data = user_data
@@ -536,7 +537,7 @@ pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 /// user_data: 완료 시 반환될 사용자 데이터
 pub fn (mut r IoUring) prep_accept(listen_fd int, user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_accept
 		sqe.fd = i32(listen_fd)
@@ -559,7 +560,7 @@ pub fn (mut r IoUring) prep_accept(listen_fd int, user_data u64) bool {
 /// user_data: 완료 시 반환될 사용자 데이터
 pub fn (mut r IoUring) prep_accept_with_addr(listen_fd int, addr &SockaddrIn, addrlen &u32, user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_accept
 		sqe.fd = i32(listen_fd)
@@ -582,7 +583,7 @@ pub fn (mut r IoUring) prep_accept_with_addr(listen_fd int, addr &SockaddrIn, ad
 /// user_data: 완료 시 반환될 사용자 데이터
 pub fn (mut r IoUring) prep_recv(fd int, buf []u8, flags u32, user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_recv
 		sqe.fd = i32(fd)
@@ -605,7 +606,7 @@ pub fn (mut r IoUring) prep_recv(fd int, buf []u8, flags u32, user_data u64) boo
 /// user_data: 완료 시 반환될 사용자 데이터
 pub fn (mut r IoUring) prep_send(fd int, buf []u8, flags u32, user_data u64) bool {
 	$if linux {
-		sqe := r.get_sqe() or { return false }
+		mut sqe := r.get_sqe() or { return false }
 
 		sqe.opcode = ioring_op_send
 		sqe.fd = i32(fd)
@@ -628,27 +629,27 @@ pub fn (mut r IoUring) prep_send(fd int, buf []u8, flags u32, user_data u64) boo
 pub fn create_listen_socket(host string, port int, backlog int) !int {
 	$if linux {
 		// 소켓 생성
-		fd := C.socket(af_inet, sock_stream, 0)
+		fd := C.socket(net.AddrFamily.ip, net.SocketType.tcp, 0)
 		if fd < 0 {
 			return error('socket() failed')
 		}
 
 		// SO_REUSEADDR 설정
 		opt := int(1)
-		if C.setsockopt(fd, sol_socket, so_reuseaddr, &opt, sizeof(int)) < 0 {
+		if C.setsockopt(fd, sol_socket, so_reuseaddr, voidptr(&opt), sizeof(int)) < 0 {
 			C.close(fd)
 			return error('setsockopt(SO_REUSEADDR) failed')
 		}
 
 		// SO_REUSEPORT 설정
-		if C.setsockopt(fd, sol_socket, so_reuseport, &opt, sizeof(int)) < 0 {
+		if C.setsockopt(fd, sol_socket, so_reuseport, voidptr(&opt), sizeof(int)) < 0 {
 			C.close(fd)
 			return error('setsockopt(SO_REUSEPORT) failed')
 		}
 
 		// 주소 설정
 		mut addr := SockaddrIn{
-			sin_family: u16(af_inet)
+			sin_family: u16(net.AddrFamily.ip)
 			sin_port:   C.htons(u16(port))
 			sin_addr:   0
 		}
@@ -657,14 +658,14 @@ pub fn create_listen_socket(host string, port int, backlog int) !int {
 		if host == '0.0.0.0' || host == '' {
 			addr.sin_addr = C.htonl(0) // INADDR_ANY
 		} else {
-			if C.inet_pton(af_inet, host.str, &addr.sin_addr) != 1 {
+			if C.inet_pton(net.AddrFamily.ip, host.str, voidptr(&addr.sin_addr)) != 1 {
 				C.close(fd)
 				return error('inet_pton() failed for host: ${host}')
 			}
 		}
 
 		// 바인드
-		if C.bind(fd, &addr, sizeof(SockaddrIn)) < 0 {
+		if C.bind(fd, voidptr(&addr), sizeof(SockaddrIn)) < 0 {
 			C.close(fd)
 			return error('bind() failed')
 		}
@@ -718,7 +719,7 @@ pub fn (mut r IoUring) submit_batch(ops []BatchOp) !int {
 		for op in ops {
 			success := match op.op_type {
 				.read { r.prep_read(op.fd, op.buf, op.offset, op.user_data) }
-				.write { r.prep_write(op.buf, op.buf, op.offset, op.user_data) }
+				.write { r.prep_write(op.fd, op.buf, op.offset, op.user_data) }
 				.fsync { r.prep_fsync(op.fd, op.user_data) }
 				.nop { r.prep_nop(op.user_data) }
 			}
@@ -803,28 +804,20 @@ pub fn get_async_io_capabilities() AsyncIoCapabilities {
 		return AsyncIoCapabilities{
 			has_io_uring:  true
 			has_aio:       true
-			has_iocp:      false
 			platform_name: 'Linux'
 		}
 	} $else $if macos {
 		return AsyncIoCapabilities{
-			has_io_uring:  false
 			has_aio:       true
-			has_iocp:      false
 			platform_name: 'macOS'
 		}
 	} $else $if windows {
 		return AsyncIoCapabilities{
-			has_io_uring:  false
-			has_aio:       false
 			has_iocp:      true
 			platform_name: 'Windows'
 		}
 	} $else {
 		return AsyncIoCapabilities{
-			has_io_uring:  false
-			has_aio:       false
-			has_iocp:      false
 			platform_name: 'Unknown'
 		}
 	}

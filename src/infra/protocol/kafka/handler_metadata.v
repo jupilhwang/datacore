@@ -304,6 +304,7 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 // Metadata 요청을 처리합니다.
 // 클러스터의 브로커 정보와 요청된 토픽들의 메타데이터를 조회하여 응답을 생성합니다.
 fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
+	_ = version
 	start_time := time.now()
 
 	h.logger.debug('Processing metadata request', observability.field_int('topics', req.topics.len),

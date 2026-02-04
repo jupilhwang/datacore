@@ -399,6 +399,7 @@ fn (mut api SchemaAPI) set_subject_config(subject string, body string) (int, str
 
 // check_compatibility는 스키마 호환성을 검사합니다.
 fn (mut api SchemaAPI) check_compatibility(subject string, version int, body string) (int, string) {
+	_ = version
 	req := json.decode(RegisterSchemaRequest, body) or {
 		return api.error_response(400, 40001, 'Invalid request')
 	}

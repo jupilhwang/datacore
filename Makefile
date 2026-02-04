@@ -35,7 +35,7 @@ build-dev:
 ## Run unit tests
 test:
 	@echo "Running tests..."
-	cd $(SRC_DIR) && v $(V_FLAGS_DEV) test service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/ infra/storage/
+	cd $(SRC_DIR) && v $(V_FLAGS_DEV) test domain/ config/ service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/ infra/storage/
 
 ## Run performance module tests (requires -enable-globals)
 ## Note: benchmarks/ is excluded as it contains performance benchmark tools, not unit tests
@@ -130,8 +130,6 @@ release: build
 ## Build Docker image locally
 docker:
 	@echo "Building Docker image..."
-	@mkdir -p docker-context/linux-amd64
-	cd $(SRC_DIR) && v $(V_FLAGS) -o ../docker-context/linux-amd64/$(BINARY_NAME) .
 	docker build -t $(BINARY_NAME):$(VERSION) -t $(BINARY_NAME):latest .
 	@echo "Built: $(BINARY_NAME):$(VERSION)"
 

@@ -1,8 +1,6 @@
 // Interface Layer - Worker Pool Tests
 module server
 
-import time
-
 fn test_worker_pool_basic_acquire_release() {
 	config := WorkerPoolConfig{
 		max_workers:     10

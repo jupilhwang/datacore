@@ -166,6 +166,7 @@ pub fn (r ListOffsetsResponse) encode(version i16) []u8 {
 // ListOffsets 요청을 처리합니다 (Frame 기반).
 // 요청된 토픽/파티션의 오프셋 정보를 조회하여 응답을 생성합니다.
 fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !ListOffsetsResponse {
+	_ = version
 	start_time := time.now()
 
 	h.logger.debug('Processing list offsets', observability.field_int('topics', req.topics.len),

@@ -109,8 +109,8 @@ pub mut:
 	upper_bounds       map[string]string
 	partition          map[string]string
 	// v3 Row Lineage 지원
-	row_lineage_first  i64 // v3: 행 리니지 시작 ID
-	row_lineage_last   i64 // v3: 행 리니지 종료 ID
+	row_lineage_first i64 // v3: 행 리니지 시작 ID
+	row_lineage_last  i64 // v3: 행 리니지 종료 ID
 }
 
 /// IcebergMetadata는 테이블 메타데이터를 나타냅니다.
@@ -161,7 +161,7 @@ pub:
 	warehouse      string
 	region         string = 'us-east-1'
 	endpoint       string
-	format_version int    = 3 // v3 기본값
+	format_version int = 3 // v3 기본값
 }
 
 /// generate_table_uuid는 새로운 테이블 UUID를 생성합니다.

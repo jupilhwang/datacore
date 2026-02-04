@@ -215,6 +215,7 @@ fn (mut h Handler) handle_describe_configs(body []u8, version i16) ![]u8 {
 }
 
 fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version i16) !DescribeConfigsResponse {
+	_ = version
 	mut results := []DescribeConfigsResult{}
 
 	for res in req.resources {

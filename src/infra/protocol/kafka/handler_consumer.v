@@ -77,6 +77,7 @@ fn (mut h Handler) handle_consumer_group_describe(body []u8, version i16) ![]u8 
 /// ConsumerGroupHeartbeat 요청을 처리합니다 (KIP-848).
 /// 새로운 멤버 등록, 기존 멤버 하트비트, 멤버 탈퇴를 모두 처리합니다.
 fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRequest, version i16) !ConsumerGroupHeartbeatResponse {
+	_ = version
 	start_time := time.now()
 
 	h.logger.debug('Processing consumer group heartbeat', observability.field_string('group_id',
@@ -175,6 +176,7 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 /// 컨슈머가 그룹에 조인하고 리밸런스에 참여합니다.
 /// 첫 번째 조인 시 member_id가 생성되어 반환됩니다.
 fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGroupResponse {
+	_ = version
 	start_time := time.now()
 
 	h.logger.debug('Processing join group request', observability.field_string('group_id',
@@ -308,6 +310,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 /// SyncGroup 요청을 처리합니다.
 /// 리더가 파티션 할당을 제출하고, 모든 멤버가 자신의 할당을 받습니다.
 fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGroupResponse {
+	_ = version
 	start_time := time.now()
 
 	h.logger.debug('Processing sync group request', observability.field_string('group_id',
@@ -408,6 +411,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 /// Heartbeat 요청을 처리합니다.
 /// 멤버가 그룹에 활성 상태임을 알리고 리밸런스 상태를 확인합니다.
 fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !HeartbeatResponse {
+	_ = version
 	h.logger.trace('Processing heartbeat', observability.field_string('group_id', req.group_id),
 		observability.field_string('member_id', req.member_id), observability.field_int('generation',
 		req.generation_id))
@@ -460,6 +464,7 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 /// LeaveGroup 요청을 처리합니다.
 /// 멤버가 그룹을 떠나면 리밸런스가 트리거됩니다.
 fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !LeaveGroupResponse {
+	_ = version
 	start_time := time.now()
 
 	h.logger.debug('Processing leave group request', observability.field_string('group_id',
@@ -573,6 +578,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 /// ConsumerGroupDescribe 요청을 처리합니다 (KIP-848).
 /// 컨슈머 그룹의 상세 정보를 조회합니다.
 fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequest, version i16) !ConsumerGroupDescribeResponse {
+	_ = version
 	start_time := time.now()
 
 	h.logger.debug('Processing consumer group describe', observability.field_int('group_ids',

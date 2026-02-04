@@ -412,6 +412,7 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 
 // CreateTopics 요청 처리 (Frame 기반)
 fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !CreateTopicsResponse {
+	_ = version
 	mut topics := []CreateTopicsResponseTopic{}
 
 	for t in req.topics {

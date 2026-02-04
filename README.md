@@ -109,7 +109,58 @@ DataCore는 플러그인 기반 스토리지 아키텍처를 지원합니다:
 - Kubernetes 호환 `/health`, `/ready`, `/live` 엔드포인트
 - Prometheus 형식 `/metrics` 엔드포인트
 
-## 빠른 시작
+## 설치 가이드 (Installation Guide)
+
+### 1. 바이너리 다운로드 (Download Binary)
+
+가장 빠른 방법은 [GitHub Releases](https://github.com/jupilhwang/datacore/releases) 페이지에서 자신의 OS에 맞는 바이너리를 직접 다운로드하는 것입니다.
+
+1.  최신 버전의 릴리스 페이지로 이동합니다.
+2.  사용 중인 운영체제(macOS-arm64, Linux-amd64 등)용 바이너리를 다운로드합니다.
+3.  실행 권한을 부여한 후 실행합니다.
+    ```bash
+    chmod +x datacore
+    ./datacore broker start
+    ```
+
+### 2. 소스 코드에서 빌드 (Build from Source)
+
+직접 빌드하고 싶거나 개발에 참여하시려면 다음 단계를 따르세요.
+
+#### 2.1 사전 요구 사항 (Prerequisites)
+
+- **V 언어**: [V 공식 홈페이지](https://vlang.io/)의 안내에 따라 V를 설치해야 합니다.
+- **C 컴파일러**: GCC, Clang 또는 MSVC가 필요합니다.
+
+#### 2.2 OS별 의존성 라이브러리 설치
+
+DataCore는 압축(Snappy, LZ4, Zstd), 보안(OpenSSL), 데이터베이스(PostgreSQL) 연동을 위해 외부 라이브러리를 사용합니다.
+
+**macOS (Homebrew 사용)**
+```bash
+brew install openssl snappy lz4 zstd postgresql
+```
+
+**Linux (Ubuntu/Debian)**
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
+```
+
+#### 2.3 빌드 과정
+
+```bash
+# 저장소 클론
+git clone https://github.com/jupilhwang/datacore.git
+cd datacore
+
+# 바이너리 빌드
+make build
+```
+
+빌드가 성공하면 `bin/datacore` 파일이 생성됩니다.
+
+## 빠른 시작 (Quick Start)
 
 ### 빌드
 
@@ -125,6 +176,17 @@ make build
 
 # CLI 인자로 설정 오버라이드
 ./bin/datacore broker start --broker-port=9092 --storage-engine=memory
+```
+
+### Docker 실행
+
+```bash
+# Docker Compose로 실행
+docker-compose up -d
+
+# Docker 이미지 직접 빌드
+docker build -t datacore:latest .
+docker run -p 9092:9092 -p 8080:8080 datacore:latest
 ```
 
 ### 설정 파일 예시 (`config.toml`)
@@ -154,19 +216,31 @@ output = "stdout"
 
 ### 단위 테스트
 
+권장하는 방식은 `Makefile`을 이용하는 것입니다:
+
+```bash
+# 주요 모듈 단위 테스트 실행
+make test
+
+# 모든 테스트 실행 (통합, 스토리지, 보안 포함)
+make test-all
+```
+
+수동으로 `v test`를 실행할 경우, 성능 모듈 등 글로벌 변수가 필요한 테스트를 위해 `-enable-globals` 플래그가 필요합니다:
+
 ```bash
 # 모든 단위 테스트 실행
-v test tests/unit/
+v -enable-globals test src/
 
 # 특정 테스트 파일 실행
-v test tests/unit/config_test.v
+v -enable-globals test src/config/config_test.v
 ```
 
 ### 통합 테스트
 
 ```bash
 # 모든 통합 테스트 실행
-v test tests/integration/
+v -enable-globals test tests/
 
 # 스토리지별 테스트
 ./scripts/test_storage.sh all

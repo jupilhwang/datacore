@@ -91,6 +91,7 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 		return error('Table not found: ${identifier.name}')
 	}
 	version := version_data.bytestr().int()
+	_ = version
 
 	// 최신 메타데이터 파일 조회
 	// 메타데이터 파일 패턴: {version:05d}-{uuid}.metadata.json

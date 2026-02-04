@@ -42,15 +42,14 @@ jobs:
         with:
           version: ${{ env.V_VERSION }}
       
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
+
       - name: Run unit tests
         run: |
-          cd src
-          v test service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/
-      
-      - name: Run domain tests
-        run: |
-          cd tests/unit
-          v test domain/ || echo "No domain tests yet"
+          v -enable-globals test src/
 
   build:
     name: Build (${{ matrix.os }})
@@ -64,11 +63,11 @@ jobs:
             target: linux-amd64
             artifact_name: datacore
             asset_name: datacore-linux-amd64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm   # ubuntu-latest 대신 이것을 사용 (ARM 전용)
             target: linux-arm64
             artifact_name: datacore
             asset_name: datacore-linux-arm64
-            cross_compile: true
+            cross_compile: false   # 중요: 이제 크로스 컴파일이 아님! (Native 빌드)
           - os: macos-latest
             target: macos-amd64
             artifact_name: datacore
@@ -86,20 +85,36 @@ jobs:
         with:
           version: ${{ env.V_VERSION }}
       
+      - name: Install dependencies (Linux)
+        if: ${{ runner.os == 'Linux' && !matrix.cross_compile }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
+
+      - name: Install dependencies (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        run: |
+          brew install openssl snappy lz4 zstd postgresql
+
       - name: Build (native)
         if: ${{ !matrix.cross_compile }}
         run: |
           cd src
-          v -prod -o ../bin/${{ matrix.artifact_name }} .
+          v -prod -enable-globals -d use_openssl -o ../bin/${{ matrix.artifact_name }} .
       
-      - name: Build (cross-compile linux-arm64)
-        if: ${{ matrix.cross_compile && matrix.target == 'linux-arm64' }}
+      - name: Build (Native linux-arm64)
+        if: ${{ !matrix.cross_compile && matrix.target == 'linux-arm64' }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
+          # 크로스 컴파일러(gcc-aarch64...) 대신 그냥 gcc를 설치
+          # 라이브러리 뒤에 :arm64를 붙일 필요도 없음
+          sudo apt-get install -y gcc libssl-dev libsnappy-dev liblz4-dev \
+            libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
+          
           cd src
-          v -prod -cc aarch64-linux-gnu-gcc -o ../bin/${{ matrix.artifact_name }} .
-      
+          # 컴파일러도 기본 cc 사용
+          v -prod -enable-globals -d use_openssl -cc gcc -cflags "-I/usr/include" -o ../bin/${{ matrix.artifact_name }} .
+
       - name: Create archive
         run: |
           cd bin

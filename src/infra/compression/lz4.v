@@ -207,7 +207,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 				return error('incomplete match')
 			}
 
-			offset := int(compressed_data[ip]) | ((int(b) & 0xe0) << 3)
+			offset := int(compressed_data[ip]) | (int(u32(b) & 0xe0) << 3)
 			ip++
 
 			mut match_len := int(compressed_data[ip])

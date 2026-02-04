@@ -52,9 +52,9 @@ pub mut:
 /// CatalogConfig는 /v1/config 엔드포인트 응답입니다.
 pub struct CatalogConfig {
 pub mut:
-	defaults   map[string]string @[json: 'defaults']
-	overrides  map[string]string @[json: 'overrides']
-	endpoints  []string          @[json: 'endpoints']
+	defaults  map[string]string @[json: 'defaults']
+	overrides map[string]string @[json: 'overrides']
+	endpoints []string          @[json: 'endpoints']
 }
 
 /// NamespaceIdentifier는 네임스페이스 식별자입니다.
@@ -121,32 +121,32 @@ pub mut:
 /// CreateTableRequest는 테이블 생성 요청입니다.
 pub struct CreateTableRequest {
 pub mut:
-	name             string            @[json: 'name']
-	location         string            @[json: 'location']
-	schema           SchemaRest        @[json: 'schema']
-	partition_spec   PartitionSpecRest @[json: 'partition-spec']
-	write_order      SortOrderRest     @[json: 'write-order']
-	stage_create     bool              @[json: 'stage-create']
-	properties       map[string]string @[json: 'properties']
+	name           string            @[json: 'name']
+	location       string            @[json: 'location']
+	schema         SchemaRest        @[json: 'schema']
+	partition_spec PartitionSpecRest @[json: 'partition-spec']
+	write_order    SortOrderRest     @[json: 'write-order']
+	stage_create   bool              @[json: 'stage-create']
+	properties     map[string]string @[json: 'properties']
 }
 
 /// SchemaRest는 REST API용 스키마입니다.
 pub struct SchemaRest {
 pub mut:
-	typ                   string      @[json: 'type']
-	schema_id             int         @[json: 'schema-id']
-	identifier_field_ids  []int       @[json: 'identifier-field-ids']
-	fields                []FieldRest @[json: 'fields']
+	typ                  string      @[json: 'type']
+	schema_id            int         @[json: 'schema-id']
+	identifier_field_ids []int       @[json: 'identifier-field-ids']
+	fields               []FieldRest @[json: 'fields']
 }
 
 /// FieldRest는 REST API용 필드입니다.
 pub struct FieldRest {
 pub mut:
-	id            int    @[json: 'id']
-	name          string @[json: 'name']
-	required      bool   @[json: 'required']
-	typ           string @[json: 'type']
-	doc           string @[json: 'doc']
+	id              int    @[json: 'id']
+	name            string @[json: 'name']
+	required        bool   @[json: 'required']
+	typ             string @[json: 'type']
+	doc             string @[json: 'doc']
 	initial_default string @[json: 'initial-default'] // v3: 기본값
 	write_default   string @[json: 'write-default']   // v3: 쓰기 기본값
 }
@@ -178,10 +178,10 @@ pub mut:
 /// SortFieldRest는 REST API용 정렬 필드입니다.
 pub struct SortFieldRest {
 pub mut:
-	transform      string   @[json: 'transform']
-	source_id      int      @[json: 'source-id']
-	direction      string   @[json: 'direction']
-	null_order     string   @[json: 'null-order']
+	transform  string @[json: 'transform']
+	source_id  int    @[json: 'source-id']
+	direction  string @[json: 'direction']
+	null_order string @[json: 'null-order']
 }
 
 /// LoadTableResponse는 테이블 로드 응답입니다.
@@ -195,34 +195,34 @@ pub mut:
 /// TableMetadataRest는 REST API용 테이블 메타데이터입니다.
 pub struct TableMetadataRest {
 pub mut:
-	format_version       int                  @[json: 'format-version']
-	table_uuid           string               @[json: 'table-uuid']
-	location             string               @[json: 'location']
-	last_sequence_number i64                  @[json: 'last-sequence-number']
-	last_updated_ms      i64                  @[json: 'last-updated-ms']
-	last_column_id       int                  @[json: 'last-column-id']
-	current_schema_id    int                  @[json: 'current-schema-id']
-	schemas              []SchemaRest         @[json: 'schemas']
-	default_spec_id      int                  @[json: 'default-spec-id']
-	partition_specs      []PartitionSpecRest  @[json: 'partition-specs']
+	format_version        int                 @[json: 'format-version']
+	table_uuid            string              @[json: 'table-uuid']
+	location              string              @[json: 'location']
+	last_sequence_number  i64                 @[json: 'last-sequence-number']
+	last_updated_ms       i64                 @[json: 'last-updated-ms']
+	last_column_id        int                 @[json: 'last-column-id']
+	current_schema_id     int                 @[json: 'current-schema-id']
+	schemas               []SchemaRest        @[json: 'schemas']
+	default_spec_id       int                 @[json: 'default-spec-id']
+	partition_specs       []PartitionSpecRest @[json: 'partition-specs']
 	default_sort_order_id int                 @[json: 'default-sort-order-id']
-	sort_orders          []SortOrderRest      @[json: 'sort-orders']
-	current_snapshot_id  i64                  @[json: 'current-snapshot-id']
-	snapshots            []SnapshotRest       @[json: 'snapshots']
-	snapshot_log         []SnapshotLogEntry   @[json: 'snapshot-log']
-	properties           map[string]string    @[json: 'properties']
+	sort_orders           []SortOrderRest     @[json: 'sort-orders']
+	current_snapshot_id   i64                 @[json: 'current-snapshot-id']
+	snapshots             []SnapshotRest      @[json: 'snapshots']
+	snapshot_log          []SnapshotLogEntry  @[json: 'snapshot-log']
+	properties            map[string]string   @[json: 'properties']
 }
 
 /// SnapshotRest는 REST API용 스냅샷입니다.
 pub struct SnapshotRest {
 pub mut:
-	snapshot_id      i64               @[json: 'snapshot-id']
-	parent_id        i64               @[json: 'parent-snapshot-id']
-	sequence_number  i64               @[json: 'sequence-number']
-	timestamp_ms     i64               @[json: 'timestamp-ms']
-	manifest_list    string            @[json: 'manifest-list']
-	summary          map[string]string @[json: 'summary']
-	schema_id        int               @[json: 'schema-id']
+	snapshot_id     i64               @[json: 'snapshot-id']
+	parent_id       i64               @[json: 'parent-snapshot-id']
+	sequence_number i64               @[json: 'sequence-number']
+	timestamp_ms    i64               @[json: 'timestamp-ms']
+	manifest_list   string            @[json: 'manifest-list']
+	summary         map[string]string @[json: 'summary']
+	schema_id       int               @[json: 'schema-id']
 }
 
 /// SnapshotLogEntry는 스냅샷 로그 항목입니다.
@@ -235,9 +235,9 @@ pub mut:
 /// CommitTableRequest는 테이블 커밋 요청입니다.
 pub struct CommitTableRequest {
 pub mut:
-	identifier  TableIdentifierRest   @[json: 'identifier']
-	requirements []TableRequirement   @[json: 'requirements']
-	updates      []TableUpdate        @[json: 'updates']
+	identifier   TableIdentifierRest @[json: 'identifier']
+	requirements []TableRequirement  @[json: 'requirements']
+	updates      []TableUpdate       @[json: 'updates']
 }
 
 /// TableRequirement는 테이블 커밋 요구사항입니다.
@@ -253,14 +253,14 @@ pub mut:
 /// TableUpdate는 테이블 업데이트 작업입니다.
 pub struct TableUpdate {
 pub mut:
-	action      string              @[json: 'action']
-	schema      SchemaRest          @[json: 'schema']
-	spec        PartitionSpecRest   @[json: 'spec']
-	sort_order  SortOrderRest       @[json: 'sort-order']
-	snapshot    SnapshotRest        @[json: 'snapshot']
-	location    string              @[json: 'location']
-	properties  map[string]string   @[json: 'properties']
-	removals    []string            @[json: 'removals']
+	action     string            @[json: 'action']
+	schema     SchemaRest        @[json: 'schema']
+	spec       PartitionSpecRest @[json: 'spec']
+	sort_order SortOrderRest     @[json: 'sort-order']
+	snapshot   SnapshotRest      @[json: 'snapshot']
+	location   string            @[json: 'location']
+	properties map[string]string @[json: 'properties']
+	removals   []string          @[json: 'removals']
 }
 
 /// CommitTableResponse는 테이블 커밋 응답입니다.
@@ -287,22 +287,22 @@ pub mut:
 /// ReportMetricsRequest는 메트릭 보고 요청입니다.
 pub struct ReportMetricsRequest {
 pub mut:
-	report_type   string            @[json: 'report-type']
-	table_name    string            @[json: 'table-name']
-	snapshot_id   i64               @[json: 'snapshot-id']
-	filter        string            @[json: 'filter']
-	schema_id     int               @[json: 'schema-id']
-	projected_field_ids   []int     @[json: 'projected-field-ids']
-	projected_field_names []string  @[json: 'projected-field-names']
-	metrics       map[string]string @[json: 'metrics']
+	report_type           string            @[json: 'report-type']
+	table_name            string            @[json: 'table-name']
+	snapshot_id           i64               @[json: 'snapshot-id']
+	filter                string            @[json: 'filter']
+	schema_id             int               @[json: 'schema-id']
+	projected_field_ids   []int             @[json: 'projected-field-ids']
+	projected_field_names []string          @[json: 'projected-field-names']
+	metrics               map[string]string @[json: 'metrics']
 }
 
 /// IcebergErrorResponse는 오류 응답입니다.
 pub struct IcebergErrorResponse {
 pub mut:
-	error_type string @[json: 'type']
-	code       int    @[json: 'code']
-	message    string @[json: 'message']
+	error_type string   @[json: 'type']
+	code       int      @[json: 'code']
+	message    string   @[json: 'message']
 	stack      []string @[json: 'stack']
 }
 
@@ -313,7 +313,7 @@ pub mut:
 /// new_catalog_config는 기본 카탈로그 설정을 생성합니다.
 pub fn new_catalog_config(warehouse string, format_version int) CatalogConfig {
 	return CatalogConfig{
-		defaults: {
+		defaults:  {
 			'warehouse':      warehouse
 			'format-version': format_version.str()
 		}
@@ -437,11 +437,11 @@ pub fn partition_spec_to_rest(spec IcebergPartitionSpec) PartitionSpecRest {
 /// snapshot_to_rest는 IcebergSnapshot을 REST API 형식으로 변환합니다.
 pub fn snapshot_to_rest(snapshot IcebergSnapshot) SnapshotRest {
 	return SnapshotRest{
-		snapshot_id:     snapshot.snapshot_id
-		timestamp_ms:    snapshot.timestamp_ms
-		manifest_list:   snapshot.manifest_list
-		summary:         snapshot.summary
-		schema_id:       snapshot.schema_id
+		snapshot_id:   snapshot.snapshot_id
+		timestamp_ms:  snapshot.timestamp_ms
+		manifest_list: snapshot.manifest_list
+		summary:       snapshot.summary
+		schema_id:     snapshot.schema_id
 	}
 }
 
@@ -451,17 +451,17 @@ pub fn metadata_to_rest(metadata IcebergMetadata, location string) TableMetadata
 	for schema in metadata.schemas {
 		schemas << schema_to_rest(schema)
 	}
-	
+
 	mut specs := []PartitionSpecRest{}
 	for spec in metadata.partition_specs {
 		specs << partition_spec_to_rest(spec)
 	}
-	
+
 	mut snapshots := []SnapshotRest{}
 	for snapshot in metadata.snapshots {
 		snapshots << snapshot_to_rest(snapshot)
 	}
-	
+
 	mut snapshot_log := []SnapshotLogEntry{}
 	for snapshot in metadata.snapshots {
 		snapshot_log << SnapshotLogEntry{
@@ -469,19 +469,19 @@ pub fn metadata_to_rest(metadata IcebergMetadata, location string) TableMetadata
 			snapshot_id:  snapshot.snapshot_id
 		}
 	}
-	
+
 	return TableMetadataRest{
-		format_version:        metadata.format_version
-		table_uuid:            metadata.table_uuid
-		location:              location
-		last_updated_ms:       metadata.last_updated_ms
-		current_schema_id:     metadata.current_schema_id
-		schemas:               schemas
-		default_spec_id:       metadata.default_spec_id
-		partition_specs:       specs
-		current_snapshot_id:   metadata.current_snapshot_id
-		snapshots:             snapshots
-		snapshot_log:          snapshot_log
-		properties:            metadata.properties
+		format_version:      metadata.format_version
+		table_uuid:          metadata.table_uuid
+		location:            location
+		last_updated_ms:     metadata.last_updated_ms
+		current_schema_id:   metadata.current_schema_id
+		schemas:             schemas
+		default_spec_id:     metadata.default_spec_id
+		partition_specs:     specs
+		current_snapshot_id: metadata.current_snapshot_id
+		snapshots:           snapshots
+		snapshot_log:        snapshot_log
+		properties:          metadata.properties
 	}
 }

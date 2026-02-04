@@ -229,16 +229,18 @@ fn test_cqe_structure() {
 	assert cqe.res == 1024
 }
 
-$if linux {
-	fn test_io_uring_availability_check() {
+fn test_io_uring_availability_check() {
+	$if linux {
 		// Check runtime availability
 		available := is_io_uring_available()
 		// On modern Linux systems, should be available
 		// But don't assert - may run in container without io_uring
 		_ = available
 	}
+}
 
-	fn test_io_uring_basic_creation() {
+fn test_io_uring_basic_creation() {
+	$if linux {
 		ring := new_io_uring(IoUringConfig{ queue_depth: 8 }) or {
 			// May fail if kernel doesn't support io_uring
 			return

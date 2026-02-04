@@ -64,11 +64,6 @@ pub fn (mut s CompressionService) compress(data []u8, compression_type Compressi
 		return []u8{}
 	}
 
-	// 임계값 확인: 작은 데이터는 압축하지 않음 (오버헤드 방지)
-	if data.len < s.config.compression_threshold_bytes {
-		return data.clone()
-	}
-
 	// 타이머 시작
 	mut timer := s.metrics.start_compress_timer(data.len)
 

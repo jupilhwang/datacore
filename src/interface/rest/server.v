@@ -42,15 +42,15 @@ pub mut:
 pub struct RestServer {
 	config RestServerConfig
 mut:
-	storage              port.StoragePort
-	sse_handler          &proto_http.SSEHandler
-	ws_handler           &proto_http.WebSocketHandler
-	schema_api           &SchemaAPI
-	iceberg_catalog_api  &IcebergCatalogAPI
-	metrics              observability.DataCoreMetrics
-	start_time           time.Time
-	running              bool
-	ready                bool // 트래픽 수신 준비 상태
+	storage             port.StoragePort
+	sse_handler         &proto_http.SSEHandler
+	ws_handler          &proto_http.WebSocketHandler
+	schema_api          &SchemaAPI
+	iceberg_catalog_api &IcebergCatalogAPI
+	metrics             observability.DataCoreMetrics
+	start_time          time.Time
+	running             bool
+	ready               bool // 트래픽 수신 준비 상태
 }
 
 /// new_rest_server - creates a new REST API server

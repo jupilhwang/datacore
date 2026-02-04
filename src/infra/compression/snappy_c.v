@@ -35,8 +35,9 @@ pub fn (c &SnappyCompressorC) compress(data []u8) ![]u8 {
 		return error('snappy compression failed with status: ${snappy_status}')
 	}
 
-	result = result[..int(out_len)]
-
+	unsafe {
+		result = result[..int(out_len)]
+	}
 	mut logger := observability.get_named_logger('snappy_compressor')
 	logger.debug('snappy compressed', observability.field_int('original_size', data.len),
 		observability.field_int('compressed_size', result.len))
@@ -52,7 +53,10 @@ pub fn (c &SnappyCompressorC) decompress(data []u8) ![]u8 {
 
 	// 출력 버퍼 크기 계산
 	mut uncompressed_len := usize(0)
-	C.snappy_uncompressed_length(data.data, usize(data.len), &uncompressed_len)
+	snappy_len_status := C.snappy_uncompressed_length(data.data, usize(data.len), &uncompressed_len)
+	if snappy_len_status != 0 {
+		return error('failed to get snappy uncompressed length: ${snappy_len_status}')
+	}
 
 	if uncompressed_len == 0 {
 		return []u8{}
@@ -67,8 +71,9 @@ pub fn (c &SnappyCompressorC) decompress(data []u8) ![]u8 {
 		return error('snappy decompression failed with status: ${snappy_status}')
 	}
 
-	result = result[..int(out_len)]
-
+	unsafe {
+		result = result[..int(out_len)]
+	}
 	mut logger := observability.get_named_logger('snappy_compressor')
 	logger.debug('snappy decompressed', observability.field_int('compressed_size', data.len),
 		observability.field_int('decompressed_size', result.len))
@@ -89,5 +94,5 @@ fn snappy_max_compressed_length(input_len int) int {
 // C 함수 선언 (snappy-c.h에서 제공)
 fn C.snappy_compress(src &u8, src_len usize, dst &u8, dst_len &usize) int
 fn C.snappy_uncompress(src &u8, src_len usize, dst &u8, dst_len &usize) int
-fn C.snappy_uncompressed_length(compressed &u8, compressed_len usize, result &usize)
+fn C.snappy_uncompressed_length(compressed &u8, compressed_len usize, result &usize) int
 fn C.snappy_max_compressed_length(source_len usize) usize

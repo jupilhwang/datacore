@@ -28,10 +28,19 @@ pub fn (c &SnappyCompressor) compress(data []u8) ![]u8 {
 	// varint으로 크기 인코딩
 	write_varint(mut result, data.len)
 
-	// 간단한 압축: 원본 데이터를 복사 (실제로는 LZ77 압축이 필요하지만,
-	// Kafka의 snappy-java는 전체 데이터를 압축하지 않고 청크 단위로 처리)
-	// 여기서는 간단한 구현으로 대체
-	result << data.clone()
+	// 간단한 압축: 데이터를 리터럴 블록으로 저장하여 복사
+	// snappy.v의 decompressor (b < 0x80)은 b+1 바이트의 리터럴을 예상함
+	mut offset := 0
+	for offset < data.len {
+		remaining := data.len - offset
+		lit_len := if remaining > 128 { 128 } else { remaining }
+
+		// 리터럴 태그: b = lit_len - 1
+		result << u8(lit_len - 1)
+		result << data[offset..offset + lit_len]
+
+		offset += lit_len
+	}
 
 	mut logger := observability.get_named_logger('snappy_compressor')
 	logger.debug('snappy compressed', observability.field_int('original_size', data.len),
@@ -75,8 +84,10 @@ pub fn (c &SnappyCompressor) decompress(data []u8) ![]u8 {
 		return error('snappy decompression size mismatch: expected ${uncompressed_len}, got ${decompressed_size}')
 	}
 
-	result = result[..decompressed_size]
-
+	// Use unsafe to prevent copying when shrinking slice
+	unsafe {
+		result = result[..decompressed_size]
+	}
 	mut logger := observability.get_named_logger('snappy_compressor')
 	logger.debug('snappy decompressed', observability.field_int('compressed_size', data.len),
 		observability.field_int('decompressed_size', result.len))
@@ -121,7 +132,7 @@ fn snappy_decompress_raw(compressed_data []u8, mut result []u8) !int {
 				if ip >= compressed_data.len {
 					return error('incomplete copy command')
 				}
-				offset = int(compressed_data[ip]) | ((copy_len & 0x70) << 4)
+				offset = int(compressed_data[ip]) | (int(u32(copy_len & 0x70)) << 4)
 				ip++
 				copy_len += 2
 			} else {

@@ -9,9 +9,9 @@ import infra.storage.plugins.s3
 /// IcebergCatalogAPI는 Iceberg REST Catalog API 핸들러입니다.
 pub struct IcebergCatalogAPI {
 mut:
-	catalog   s3.IcebergCatalog
-	warehouse string
-	prefix    string
+	catalog        s3.IcebergCatalog
+	warehouse      string
+	prefix         string
 	format_version int
 }
 
@@ -30,24 +30,24 @@ pub fn new_iceberg_catalog_api(catalog s3.IcebergCatalog, warehouse string, form
 pub fn (mut api IcebergCatalogAPI) handle_request(method string, path string, body string) (int, string) {
 	// 경로 파싱: /v1/iceberg/... 또는 /v1/...
 	parts := path.trim_left('/').split('/')
-	
+
 	if parts.len < 2 {
 		return api.error_response(400, 'Invalid path')
 	}
-	
+
 	// /v1/config 처리
 	if parts.len == 2 && parts[1] == 'config' {
 		return api.handle_config(method)
 	}
-	
+
 	// /v1/{prefix}/... 경로 처리
 	if parts.len < 3 {
 		return api.error_response(404, 'Not found')
 	}
-	
+
 	// prefix 다음 경로 파싱
 	sub_parts := parts[2..]
-	
+
 	match sub_parts[0] {
 		'namespaces' { return api.handle_namespaces(method, sub_parts[1..], body) }
 		'tables' { return api.handle_tables_root(method, sub_parts[1..], body) }
@@ -61,7 +61,7 @@ fn (mut api IcebergCatalogAPI) handle_config(method string) (int, string) {
 	if method != 'GET' {
 		return api.error_response(405, 'Method not allowed')
 	}
-	
+
 	config := s3.new_catalog_config(api.warehouse, api.format_version)
 	return 200, config.to_json()
 }
@@ -76,9 +76,9 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	namespace := parts[0]
-	
+
 	// /namespaces/{namespace}
 	if parts.len == 1 {
 		return match method {
@@ -87,7 +87,7 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	// /namespaces/{namespace}/properties
 	if parts.len == 2 && parts[1] == 'properties' {
 		return match method {
@@ -95,7 +95,7 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	// /namespaces/{namespace}/tables
 	if parts.len == 2 && parts[1] == 'tables' {
 		return match method {
@@ -104,7 +104,7 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	// /namespaces/{namespace}/tables/{table}
 	if parts.len == 3 && parts[1] == 'tables' {
 		table := parts[2]
@@ -115,7 +115,7 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	// /namespaces/{namespace}/tables/{table}/metrics
 	if parts.len == 4 && parts[1] == 'tables' && parts[3] == 'metrics' {
 		return match method {
@@ -123,7 +123,7 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	// /namespaces/{namespace}/register
 	if parts.len == 2 && parts[1] == 'register' {
 		return match method {
@@ -131,7 +131,7 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	return api.error_response(404, 'Not found')
 }
 
@@ -144,7 +144,7 @@ fn (mut api IcebergCatalogAPI) handle_tables_root(method string, parts []string,
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	return api.error_response(404, 'Not found')
 }
 
@@ -157,7 +157,7 @@ fn (mut api IcebergCatalogAPI) handle_transactions(method string, parts []string
 			else { api.error_response(405, 'Method not allowed') }
 		}
 	}
-	
+
 	return api.error_response(404, 'Not found')
 }
 
@@ -177,16 +177,16 @@ fn (mut api IcebergCatalogAPI) create_namespace(body string) (int, string) {
 	req := json.decode(s3.CreateNamespaceRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
-	
+
 	if req.namespace.len == 0 {
 		return api.error_response(400, 'Namespace is required')
 	}
-	
+
 	// 카탈로그에 네임스페이스 생성
 	api.catalog.create_namespace(req.namespace) or {
 		return api.error_response(500, 'Failed to create namespace: ${err}')
 	}
-	
+
 	resp := s3.CreateNamespaceResponse{
 		namespace:  req.namespace
 		properties: req.properties
@@ -196,11 +196,11 @@ fn (mut api IcebergCatalogAPI) create_namespace(body string) (int, string) {
 
 fn (mut api IcebergCatalogAPI) get_namespace(namespace string) (int, string) {
 	ns := [namespace]
-	
+
 	if !api.catalog.namespace_exists(ns) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
-	
+
 	resp := s3.GetNamespaceResponse{
 		namespace:  ns
 		properties: {}
@@ -211,20 +211,20 @@ fn (mut api IcebergCatalogAPI) get_namespace(namespace string) (int, string) {
 fn (mut api IcebergCatalogAPI) delete_namespace(namespace string) (int, string) {
 	// 네임스페이스 삭제는 비어있을 때만 가능
 	ns := [namespace]
-	
+
 	if !api.catalog.namespace_exists(ns) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
-	
+
 	// 테이블이 있으면 삭제 불가
 	tables := api.catalog.list_tables(ns) or {
 		return api.error_response(500, 'Failed to list tables: ${err}')
 	}
-	
+
 	if tables.len > 0 {
 		return api.error_response(409, 'Namespace not empty')
 	}
-	
+
 	return 204, ''
 }
 
@@ -232,12 +232,12 @@ fn (mut api IcebergCatalogAPI) update_namespace_properties(namespace string, bod
 	req := json.decode(s3.UpdateNamespacePropertiesRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
-	
+
 	ns := [namespace]
 	if !api.catalog.namespace_exists(ns) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
-	
+
 	resp := s3.UpdateNamespacePropertiesResponse{
 		updated: req.updates.keys()
 		removed: req.removals
@@ -252,15 +252,15 @@ fn (mut api IcebergCatalogAPI) update_namespace_properties(namespace string, bod
 
 fn (mut api IcebergCatalogAPI) list_tables(namespace string) (int, string) {
 	ns := [namespace]
-	
+
 	if !api.catalog.namespace_exists(ns) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
-	
+
 	tables := api.catalog.list_tables(ns) or {
 		return api.error_response(500, 'Failed to list tables: ${err}')
 	}
-	
+
 	mut identifiers := []s3.TableIdentifierRest{}
 	for table in tables {
 		identifiers << s3.TableIdentifierRest{
@@ -268,7 +268,7 @@ fn (mut api IcebergCatalogAPI) list_tables(namespace string) (int, string) {
 			name:      table.name
 		}
 	}
-	
+
 	resp := s3.ListTablesResponse{
 		identifiers: identifiers
 	}
@@ -279,35 +279,35 @@ fn (mut api IcebergCatalogAPI) create_table(namespace string, body string) (int,
 	req := json.decode(s3.CreateTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
-	
+
 	if req.name.len == 0 {
 		return api.error_response(400, 'Table name is required')
 	}
-	
+
 	ns := [namespace]
 	if !api.catalog.namespace_exists(ns) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
-	
+
 	identifier := s3.IcebergTableIdentifier{
 		namespace: ns
 		name:      req.name
 	}
-	
+
 	// REST 스키마를 내부 형식으로 변환
 	schema := api.rest_schema_to_internal(req.schema)
 	spec := api.rest_partition_spec_to_internal(req.partition_spec)
-	
+
 	location := if req.location.len > 0 {
 		req.location
 	} else {
 		'${api.warehouse}/${namespace}/${req.name}'
 	}
-	
+
 	metadata := api.catalog.create_table(identifier, schema, spec, location) or {
 		return api.error_response(500, 'Failed to create table: ${err}')
 	}
-	
+
 	resp := s3.LoadTableResponse{
 		metadata_location: '${location}/metadata/v1.metadata.json'
 		metadata:          s3.metadata_to_rest(metadata, location)
@@ -321,13 +321,13 @@ fn (mut api IcebergCatalogAPI) load_table(namespace string, table string) (int, 
 		namespace: [namespace]
 		name:      table
 	}
-	
+
 	metadata := api.catalog.load_table(identifier) or {
 		return api.error_response(404, 'Table not found: ${namespace}.${table}')
 	}
-	
+
 	location := metadata.location
-	
+
 	resp := s3.LoadTableResponse{
 		metadata_location: '${location}/metadata/v${metadata.format_version}.metadata.json'
 		metadata:          s3.metadata_to_rest(metadata, location)
@@ -340,17 +340,17 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 	req := json.decode(s3.CommitTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
-	
+
 	identifier := s3.IcebergTableIdentifier{
 		namespace: [namespace]
 		name:      table
 	}
-	
+
 	// 현재 메타데이터 로드
 	mut metadata := api.catalog.load_table(identifier) or {
 		return api.error_response(404, 'Table not found: ${namespace}.${table}')
 	}
-	
+
 	// 요구사항 검증
 	for requirement in req.requirements {
 		match requirement.typ {
@@ -367,7 +367,7 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 			else {}
 		}
 	}
-	
+
 	// 업데이트 적용
 	for update in req.updates {
 		match update.action {
@@ -411,12 +411,12 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 			else {}
 		}
 	}
-	
+
 	// 메타데이터 저장
 	api.catalog.update_table(identifier, metadata) or {
 		return api.error_response(500, 'Failed to update table: ${err}')
 	}
-	
+
 	resp := s3.CommitTableResponse{
 		metadata_location: '${metadata.location}/metadata/v${metadata.format_version}.metadata.json'
 		metadata:          s3.metadata_to_rest(metadata, metadata.location)
@@ -429,11 +429,11 @@ fn (mut api IcebergCatalogAPI) drop_table(namespace string, table string) (int, 
 		namespace: [namespace]
 		name:      table
 	}
-	
+
 	api.catalog.drop_table(identifier) or {
 		return api.error_response(404, 'Table not found: ${namespace}.${table}')
 	}
-	
+
 	return 204, ''
 }
 
@@ -441,7 +441,7 @@ fn (mut api IcebergCatalogAPI) register_table(namespace string, body string) (in
 	_ := json.decode(s3.RegisterTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
-	
+
 	// 등록은 현재 지원하지 않음 - 메타데이터 파일에서 직접 로드 필요
 	return api.error_response(501, 'Register table not implemented')
 }
@@ -450,7 +450,7 @@ fn (mut api IcebergCatalogAPI) rename_table(body string) (int, string) {
 	_ := json.decode(s3.RenameTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
-	
+
 	// 이름 변경은 현재 지원하지 않음
 	return api.error_response(501, 'Rename table not implemented')
 }

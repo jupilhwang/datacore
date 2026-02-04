@@ -98,21 +98,11 @@ pub fn get_numa_capabilities() NumaCapabilities {
 		}
 	} $else $if macos {
 		return NumaCapabilities{
-			has_numa:         false
-			has_node_binding: false
-			has_cpu_binding:  false
-			has_interleave:   false
-			has_local_alloc:  false
-			platform_name:    'macOS'
+			platform_name: 'macOS'
 		}
 	} $else $if windows {
 		return NumaCapabilities{
-			has_numa:         false // Windows는 NUMA 지원이 있지만 다른 API
-			has_node_binding: false
-			has_cpu_binding:  false
-			has_interleave:   false
-			has_local_alloc:  false
-			platform_name:    'Windows'
+			platform_name: 'Windows'
 		}
 	} $else {
 		return NumaCapabilities{

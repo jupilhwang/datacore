@@ -294,7 +294,7 @@ fn (mut s Server) handle_connection_with_pool(mut conn net.TcpConn) {
 	$if linux {
 		unsafe {
 			// net.TcpConn의 sock 필드는 TcpSocket을 포함하고 handle은 파일 디스크립터
-			sock_ptr := &int(voidptr(&conn.sock) + sizeof(voidptr))
+			sock_ptr := &int(voidptr(usize(&conn.sock) + sizeof(voidptr)))
 			set_tcp_nodelay(*sock_ptr)
 			// TCP 버퍼 크기 최적화 (256KB 송신, 256KB 수신)
 			set_tcp_buffers(*sock_ptr, 262144, 262144)

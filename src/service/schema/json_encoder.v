@@ -158,12 +158,14 @@ fn validate_string(json_str string, schema &JsonSchema) ! {
 		return error('string too long: maximum ${schema.max_length}, got ${str.len}')
 	}
 
-	// Check pattern (simplified - just check contains for now)
-	mut re := regex.regex_opt(schema.pattern) or {
-		return error('invalid regex pattern: ${schema.pattern}')
-	}
-	if !re.matches_string(str) {
-		return error('string does not match pattern: ${schema.pattern}')
+	// Check pattern
+	if schema.pattern.len > 0 {
+		mut re := regex.regex_opt(schema.pattern) or {
+			return error('invalid regex pattern: ${schema.pattern}')
+		}
+		if !re.matches_string(str) {
+			return error('string does not match pattern: ${schema.pattern}')
+		}
 	}
 
 	// Check enum values

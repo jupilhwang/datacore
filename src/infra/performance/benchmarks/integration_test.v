@@ -255,9 +255,8 @@ fn test_performance_under_load() {
 	}
 
 	// 모두 반환
-	for buf in buffers {
-		mut b := buf
-		b.release()
+	for mut buf in buffers {
+		buf.release()
 	}
 
 	// 통계 확인
