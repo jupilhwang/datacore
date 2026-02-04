@@ -64,7 +64,10 @@ jobs:
         if: ${{ matrix.static_build }}
         run: |
           cd src
-          v -prod -enable-globals -d use_openssl -static -o ../bin/${{ matrix.artifact_name }} .
+          v -prod -enable-globals -d use_openssl \
+            -cflags "-static" \
+            -ldflags "-static -lssl -lcrypto -lsnappy -llz4 -lzstd -lpq -lnuma -luring -lz -lpthread -lm -ldl" \
+            -o ../bin/${{ matrix.artifact_name }} .
       
       - name: Build (macOS)
         if: ${{ runner.os == 'macOS' }}

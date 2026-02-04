@@ -32,7 +32,10 @@ COPY . .
 # Note: We use -enable-globals as required by the performance modules.
 # We also include use_openssl for secure connections.
 # Static linking ensures no runtime dependencies are needed.
-RUN mkdir -p /app/bin && cd src && v -prod -enable-globals -d use_openssl -static -o /app/bin/datacore .
+RUN mkdir -p /app/bin && cd src && v -prod -enable-globals -d use_openssl \
+    -cflags "-static" \
+    -ldflags "-static -lssl -lcrypto -lsnappy -llz4 -lzstd -lpq -lnuma -luring -lz -lpthread -lm -ldl" \
+    -o /app/bin/datacore .
 
 # --- Run Stage ---
 # Using alpine for minimal size with static binary
