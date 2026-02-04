@@ -59,21 +59,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            target: linux-amd64
-            artifact_name: datacore
-            asset_name: datacore-linux-amd64
-          - os: ubuntu-24.04-arm   # ubuntu-latest 대신 이것을 사용 (ARM 전용)
-            target: linux-arm64
-            artifact_name: datacore
-            asset_name: datacore-linux-arm64
-            cross_compile: false   # 중요: 이제 크로스 컴파일이 아님! (Native 빌드)
           - os: macos-latest
-            target: macos-amd64
+            target: darwin-amd64
             artifact_name: datacore
             asset_name: datacore-darwin-amd64
           - os: macos-14
-            target: macos-arm64
+            target: darwin-arm64
             artifact_name: datacore
             asset_name: datacore-darwin-arm64
     
@@ -85,35 +76,14 @@ jobs:
         with:
           version: ${{ env.V_VERSION }}
       
-      - name: Install dependencies (Linux)
-        if: ${{ runner.os == 'Linux' && !matrix.cross_compile }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
-
       - name: Install dependencies (macOS)
-        if: ${{ runner.os == 'macOS' }}
         run: |
           brew install openssl snappy lz4 zstd postgresql
 
-      - name: Build (native)
-        if: ${{ !matrix.cross_compile }}
+      - name: Build
         run: |
           cd src
           v -prod -enable-globals -d use_openssl -o ../bin/${{ matrix.artifact_name }} .
-      
-      - name: Build (Native linux-arm64)
-        if: ${{ !matrix.cross_compile && matrix.target == 'linux-arm64' }}
-        run: |
-          sudo apt-get update
-          # 크로스 컴파일러(gcc-aarch64...) 대신 그냥 gcc를 설치
-          # 라이브러리 뒤에 :arm64를 붙일 필요도 없음
-          sudo apt-get install -y gcc libssl-dev libsnappy-dev liblz4-dev \
-            libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
-          
-          cd src
-          # 컴파일러도 기본 cc 사용
-          v -prod -enable-globals -d use_openssl -cc gcc -cflags "-I/usr/include" -o ../bin/${{ matrix.artifact_name }} .
 
       - name: Create archive
         run: |

@@ -116,9 +116,20 @@ DataCore는 플러그인 기반 스토리지 아키텍처를 지원합니다:
 가장 빠른 방법은 [GitHub Releases](https://github.com/jupilhwang/datacore/releases) 페이지에서 자신의 OS에 맞는 바이너리를 직접 다운로드하는 것입니다.
 
 1.  최신 버전의 릴리스 페이지로 이동합니다.
-2.  사용 중인 운영체제(macOS-arm64, Linux-amd64 등)용 바이너리를 다운로드합니다.
-3.  실행 권한을 부여한 후 실행합니다.
+2.  사용 중인 운영체제에 맞는 바이너리를 다운로드합니다:
+    - **Linux**: `datacore-linux-amd64-static.tar.gz` (정적 빌드, 의존성 없음)
+    - **Linux ARM64**: `datacore-linux-arm64-static.tar.gz` (정적 빌드)
+    - **macOS Intel**: `datacore-darwin-amd64.tar.gz` (동적 빌드)
+    - **macOS Apple Silicon**: `datacore-darwin-arm64.tar.gz` (동적 빌드)
+3.  압축을 풀고 실행 권한을 부여한 후 실행합니다.
     ```bash
+    # Linux (정적 빌드 - 의존성 필요 없음)
+    tar -xzf datacore-linux-amd64-static.tar.gz
+    chmod +x datacore
+    ./datacore broker start
+    
+    # macOS (동적 빌드 - Homebrew 라이브러리 필요)
+    tar -xzf datacore-darwin-arm64.tar.gz
     chmod +x datacore
     ./datacore broker start
     ```

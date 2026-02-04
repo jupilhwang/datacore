@@ -23,14 +23,15 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: linux-amd64
+            target: linux-amd64-static
             artifact_name: datacore
-            asset_name: datacore-linux-amd64
+            asset_name: datacore-linux-amd64-static
+            static_build: true
           - os: ubuntu-24.04-arm
-            target: linux-arm64
+            target: linux-arm64-static
             artifact_name: datacore
-            asset_name: datacore-linux-arm64
-            cross_compile: false
+            asset_name: datacore-linux-arm64-static
+            static_build: true
           - os: macos-latest
             target: darwin-amd64
             artifact_name: datacore
@@ -48,31 +49,28 @@ jobs:
         with:
           version: ${{ env.V_VERSION }}
       
-      - name: Install dependencies (Linux)
-        if: ${{ runner.os == 'Linux' && !matrix.cross_compile && matrix.target != 'linux-arm64' }}
+      - name: Install dependencies (Linux - Static)
+        if: ${{ matrix.static_build }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
+          sudo apt-get install -y gcc libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
 
       - name: Install dependencies (macOS)
         if: ${{ runner.os == 'macOS' }}
         run: |
           brew install openssl snappy lz4 zstd postgresql
 
-      - name: Build (native)
-        if: ${{ !matrix.cross_compile && matrix.target != 'linux-arm64' }}
+      - name: Build (Static Linux)
+        if: ${{ matrix.static_build }}
+        run: |
+          cd src
+          v -prod -enable-globals -d use_openssl -static -o ../bin/${{ matrix.artifact_name }} .
+      
+      - name: Build (macOS)
+        if: ${{ runner.os == 'macOS' }}
         run: |
           cd src
           v -prod -enable-globals -d use_openssl -o ../bin/${{ matrix.artifact_name }} .
-      
-      - name: Build (Native linux-arm64)
-        if: ${{ !matrix.cross_compile && matrix.target == 'linux-arm64' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc libssl-dev libsnappy-dev liblz4-dev \
-            libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
-          cd src
-          v -prod -enable-globals -d use_openssl -cc gcc -cflags "-I/usr/include" -o ../bin/${{ matrix.artifact_name }} .
       
       - name: Prepare release archive
         run: |
@@ -133,12 +131,15 @@ jobs:
           
           ### Downloads
           
-          | Platform | Architecture | Download |
-          |----------|--------------|----------|
-          | Linux | x86_64 | `datacore-linux-amd64.tar.gz` |
-          | Linux | ARM64 | `datacore-linux-arm64.tar.gz` |
-          | macOS | x86_64 | `datacore-darwin-amd64.tar.gz` |
-          | macOS | ARM64 (Apple Silicon) | `datacore-darwin-arm64.tar.gz` |
+          | Platform | Architecture | Download | Type |
+          |----------|--------------|----------|------|
+          | Linux | x86_64 | `datacore-linux-amd64-static.tar.gz` | Static |
+          | Linux | ARM64 | `datacore-linux-arm64-static.tar.gz` | Static |
+          | macOS | x86_64 | `datacore-darwin-amd64.tar.gz` | Dynamic |
+          | macOS | ARM64 (Apple Silicon) | `datacore-darwin-arm64.tar.gz` | Dynamic |
+          
+          **Note:** Linux builds are statically linked (no external dependencies required).
+          macOS builds are dynamically linked (requires system libraries).
           
           ### Installation
           
