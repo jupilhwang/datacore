@@ -422,10 +422,8 @@ pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 
 /// on_broker_change는 브로커 목록 변경 시 호출됩니다.
 /// 파티션 리밸런싱을 트리거하고 콜백을 호출합니다.
+/// 주의: 호출자가 이미 r.lock을 획득한 상태여야 합니다 (내부 전용).
 pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
-	r.lock.@lock()
-	defer { r.lock.unlock() }
-
 	r.logger.info('Broker change detected', observability.field_string('reason', changes.reason),
 		observability.field_int('added', i64(changes.added.len)), observability.field_int('removed',
 		i64(changes.removed.len)))

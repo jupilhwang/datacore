@@ -67,7 +67,8 @@ fn (mut s MockStorage) add_partitions(name string, new_count int) ! {
 	return error('not implemented')
 }
 
-fn (mut s MockStorage) append(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
+fn (mut s MockStorage) append(topic_name string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	key := '${topic_name}:${partition}'
 	if key !in s.partitions {
 		return error('partition not found')
@@ -344,7 +345,7 @@ fn test_grpc_service_fetch_messages() {
 			key:   'k2'.bytes()
 			value: 'v2'.bytes()
 		},
-	]) or {
+	], i16(0)) or {
 		assert false, 'Failed to append records'
 		return
 	}

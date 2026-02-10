@@ -132,7 +132,7 @@ fn snappy_decompress_raw(compressed_data []u8, mut result []u8) !int {
 				if ip >= compressed_data.len {
 					return error('incomplete copy command')
 				}
-				offset = int(compressed_data[ip]) | (int(u32(copy_len & 0x70)) << 4)
+				offset = int(u32(compressed_data[ip]) | ((u32(copy_len & 0x70)) << 4))
 				ip++
 				copy_len += 2
 			} else {
@@ -140,7 +140,7 @@ fn snappy_decompress_raw(compressed_data []u8, mut result []u8) !int {
 				if ip + 1 >= compressed_data.len {
 					return error('incomplete copy command')
 				}
-				offset = int(compressed_data[ip]) | (int(compressed_data[ip + 1]) << 8)
+				offset = int(u32(compressed_data[ip]) | (u32(compressed_data[ip + 1]) << 8))
 				ip += 2
 				copy_len = int(b & 0x7f) + 1
 			}

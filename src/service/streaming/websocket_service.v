@@ -273,7 +273,7 @@ fn (mut s WebSocketService) handle_produce(conn_id string, msg domain.WebSocketM
 	}
 
 	// Append to storage
-	result := s.storage.append(msg.topic, partition, [record]) or {
+	result := s.storage.append(msg.topic, partition, [record], i16(1)) or {
 		return domain.new_ws_error_response('PRODUCE_FAILED', 'Failed to produce: ${err}')
 	}
 

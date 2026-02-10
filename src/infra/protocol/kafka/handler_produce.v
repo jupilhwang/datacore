@@ -329,6 +329,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 			mut decompressed_data := []u8{}
 			mut was_compressed := false
 			mut outer_base_offset := i64(0)
+			mut original_compression_type := u8(0)
 
 			// Kafka RecordBatch v2 헤더 파싱 (61바이트)
 			if records_to_parse.len >= 61 {
@@ -464,6 +465,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						}
 						decompress_time := time.since(decompress_start)
 						was_compressed = true
+						original_compression_type = u8(compression_type_val)
 
 						// 압축 해제 성공 상세 로깅
 						decompressed_preview_len := if decompressed_data.len > 32 {
@@ -574,13 +576,24 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						continue
 					}
 					encoded_records << domain.Record{
-						key:       record.key
-						value:     encoded_value
-						timestamp: record.timestamp
-						headers:   record.headers
+						key:              record.key
+						value:            encoded_value
+						timestamp:        record.timestamp
+						headers:          record.headers
+						compression_type: record.compression_type
 					}
 				}
 				records_to_store = encoded_records.clone()
+			}
+
+			// 원본 압축 타입을 각 레코드에 보존 (크로스 브로커 fetch 지원)
+			if original_compression_type > 0 {
+				for idx in 0 .. records_to_store.len {
+					records_to_store[idx] = domain.Record{
+						...records_to_store[idx]
+						compression_type: original_compression_type
+					}
+				}
 			}
 
 			// 빈 레코드 배치 처리
@@ -596,7 +609,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 			}
 
 			// 스토리지에 레코드 저장
-			result := h.storage.append(topic_name, int(p.index), records_to_store) or {
+			result := h.storage.append(topic_name, int(p.index), records_to_store, req.acks) or {
 				// 토픽이 존재하지 않으면 자동 생성 시도
 				if err.str().contains('not found') {
 					num_partitions := if int(p.index) >= 1 { int(p.index) + 1 } else { 1 }
@@ -611,7 +624,8 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						continue
 					}
 					// 토픽 생성 후 재시도
-					retry_result := h.storage.append(topic_name, int(p.index), records_to_store) or {
+					retry_result := h.storage.append(topic_name, int(p.index), records_to_store,
+						req.acks) or {
 						partitions << ProduceResponsePartition{
 							index:            p.index
 							error_code:       i16(ErrorCode.unknown_server_error)

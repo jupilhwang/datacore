@@ -188,7 +188,7 @@ pub fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest
 	}
 
 	// Append to storage
-	result := s.storage.append(req.topic, partition, domain_records) or {
+	result := s.storage.append(req.topic, partition, domain_records, i16(1)) or {
 		s.mutex.@lock()
 		s.stats.errors += 1
 		s.mutex.unlock()

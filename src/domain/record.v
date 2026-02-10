@@ -15,6 +15,9 @@ pub:
 	value     []u8
 	headers   map[string][]u8
 	timestamp time.Time
+	// 원본 압축 타입 (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
+	// 크로스 브로커 fetch 시 원본 압축 정보를 보존하기 위해 사용
+	compression_type u8
 	// 트랜잭션 제어 레코드 메타데이터
 	// is_control_record가 true이면 이 레코드는 트랜잭션 마커(commit/abort)입니다.
 	is_control_record bool

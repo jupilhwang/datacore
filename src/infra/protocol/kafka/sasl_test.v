@@ -280,7 +280,8 @@ fn (m MockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 
 fn (m MockStorage) add_partitions(name string, new_count int) ! {}
 
-fn (m MockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+fn (m MockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	return domain.AppendResult{
 		base_offset:      0
 		log_append_time:  0

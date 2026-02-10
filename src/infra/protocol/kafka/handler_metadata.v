@@ -332,6 +332,14 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 
 	// 브로커가 없거나 싱글 브로커 모드인 경우 자신을 브로커로 추가
 	if brokers.len == 0 {
+		if h.broker_registry == none {
+			h.logger.debug('Metadata response: broker_registry not available, returning local broker only',
+				observability.field_int('broker_id', h.broker_id), observability.field_string('host',
+				h.host), observability.field_int('port', h.broker_port))
+		} else {
+			h.logger.debug('Metadata response: broker_registry returned empty active brokers, returning local broker only',
+				observability.field_int('broker_id', h.broker_id))
+		}
 		brokers << MetadataResponseBroker{
 			node_id: h.broker_id
 			host:    h.host

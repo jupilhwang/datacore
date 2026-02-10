@@ -251,11 +251,11 @@ cluster_id = "benchmark-cluster"
 engine = "s3"
 
 [s3]
-endpoint = "http://localhost:9000"
-bucket = "datacore-benchmark"
-region = "us-east-1"
-access_key = "minioadmin"
-secret_key = "minioadmin"
+# endpoint = "http://localhost:9000"
+bucket = "jhwang-s3-uswe2"
+region = "us-west-2"
+# access_key = "minioadmin"
+# secret_key = "minioadmin"
 
 [logging]
 level = "warn"

@@ -134,12 +134,16 @@ pub mut:
 	prefix     string = 'datacore/'
 	timezone   string = 'UTC'
 	// 배치 설정
-	batch_timeout_ms int = 1000
-	batch_max_bytes  i64 = 10485760
+	batch_timeout_ms int = 25
+	batch_max_bytes  i64 = 485760
 	// 컴팩션 설정
 	compaction_interval_ms int = 60000
 	target_segment_bytes   i64 = 104857600
 	index_cache_ttl_ms     int = 30000 // 파티션 인덱스 캐시 TTL (기본 30초)
+	// 오프셋 배치 설정
+	offset_batch_enabled         bool = true
+	offset_flush_interval_ms     int  = 25
+	offset_flush_threshold_count int  = 50
 	// Iceberg 설정
 	iceberg IcebergConfig
 }
@@ -347,23 +351,31 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 
 	// S3 설정 파싱 (우선순위 cascade 적용)
 	mut s3 := S3StorageConfig{
-		endpoint:               get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
+		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
 			doc, 'storage.s3.endpoint', '')
-		bucket:                 get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
+		bucket:                       get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
 			doc, 'storage.s3.bucket', '')
-		region:                 get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
+		region:                       get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
 			doc, 'storage.s3.region', 'us-east-1')
-		prefix:                 get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
+		prefix:                       get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
 			doc, 'storage.s3.prefix', 'datacore/')
-		timezone:               get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
+		timezone:                     get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
 			doc, 'storage.s3.timezone', 'UTC')
-		batch_timeout_ms:       get_int(doc, 'storage.s3.batch_timeout_ms', 1000)
-		batch_max_bytes:        get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
-		compaction_interval_ms: get_int(doc, 'storage.s3.compaction_interval_ms', 60000)
-		target_segment_bytes:   get_i64(doc, 'storage.s3.target_segment_bytes', 104857600)
-		index_cache_ttl_ms:     get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000)
-		access_key:             ''
-		secret_key:             ''
+		batch_timeout_ms:             get_int(doc, 'storage.s3.batch_timeout_ms', 1000)
+		batch_max_bytes:              get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
+		compaction_interval_ms:       get_int(doc, 'storage.s3.compaction_interval_ms',
+			60000)
+		target_segment_bytes:         get_i64(doc, 'storage.s3.target_segment_bytes',
+			104857600)
+		index_cache_ttl_ms:           get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000)
+		offset_batch_enabled:         get_bool(doc, 'storage.s3.offset_batch_enabled',
+			true)
+		offset_flush_interval_ms:     get_int(doc, 'storage.s3.offset_flush_interval_ms',
+			100)
+		offset_flush_threshold_count: get_int(doc, 'storage.s3.offset_flush_threshold_count',
+			50)
+		access_key:                   ''
+		secret_key:                   ''
 	}
 
 	// S3 자격 증명 우선순위: CLI args > 환경변수 > ~/.aws/credentials > config.toml
@@ -601,9 +613,11 @@ fn get_config_string(cli_args map[string]string, cli_key string, env_key string,
 		return env_val
 	}
 
-	// 3순위: TOML 파일
-	if toml_val := doc.value_opt(toml_key) {
-		return toml_val.string()
+	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	if toml_key.len > 0 {
+		if toml_val := doc.value_opt(toml_key) {
+			return toml_val.string()
+		}
 	}
 
 	// 4순위: 기본값
@@ -622,9 +636,11 @@ fn get_config_int(cli_args map[string]string, cli_key string, env_key string, do
 		return env_val.int()
 	}
 
-	// 3순위: TOML 파일
-	if toml_val := doc.value_opt(toml_key) {
-		return toml_val.int()
+	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	if toml_key.len > 0 {
+		if toml_val := doc.value_opt(toml_key) {
+			return toml_val.int()
+		}
 	}
 
 	// 4순위: 기본값
@@ -643,9 +659,11 @@ fn get_config_i64(cli_args map[string]string, cli_key string, env_key string, do
 		return env_val.i64()
 	}
 
-	// 3순위: TOML 파일
-	if toml_val := doc.value_opt(toml_key) {
-		return toml_val.i64()
+	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	if toml_key.len > 0 {
+		if toml_val := doc.value_opt(toml_key) {
+			return toml_val.i64()
+		}
 	}
 
 	// 4순위: 기본값
@@ -664,9 +682,11 @@ fn get_config_bool(cli_args map[string]string, cli_key string, env_key string, d
 		return env_val == 'true' || env_val == '1' || env_val == 'yes'
 	}
 
-	// 3순위: TOML 파일
-	if toml_val := doc.value_opt(toml_key) {
-		return toml_val.bool()
+	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	if toml_key.len > 0 {
+		if toml_val := doc.value_opt(toml_key) {
+			return toml_val.bool()
+		}
 	}
 
 	// 4순위: 기본값
@@ -863,23 +883,26 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 
 	// S3 설정 (우선순위 cascade 적용)
 	mut s3 := S3StorageConfig{
-		endpoint:               get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
+		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
 			empty_doc, '', '')
-		bucket:                 get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
+		bucket:                       get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
 			empty_doc, '', '')
-		region:                 get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
+		region:                       get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
 			empty_doc, '', 'us-east-1')
-		prefix:                 get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
+		prefix:                       get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
 			empty_doc, '', 'datacore/')
-		timezone:               get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
+		timezone:                     get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
 			empty_doc, '', 'UTC')
-		batch_timeout_ms:       1000
-		batch_max_bytes:        10485760
-		compaction_interval_ms: 60000
-		target_segment_bytes:   104857600
-		index_cache_ttl_ms:     30000
-		access_key:             ''
-		secret_key:             ''
+		batch_timeout_ms:             1000
+		batch_max_bytes:              10485760
+		compaction_interval_ms:       60000
+		target_segment_bytes:         104857600
+		index_cache_ttl_ms:           30000
+		offset_batch_enabled:         true
+		offset_flush_interval_ms:     100
+		offset_flush_threshold_count: 50
+		access_key:                   ''
+		secret_key:                   ''
 	}
 
 	// S3 자격 증명 우선순위: CLI args > 환경변수 > ~/.aws/credentials

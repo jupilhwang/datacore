@@ -94,7 +94,7 @@ fn test_append_records() {
 		},
 	]
 
-	result := adapter.append('test-topic', 0, records)!
+	result := adapter.append('test-topic', 0, records, i16(0))!
 
 	assert result.base_offset == 0
 	assert result.record_count == 2
@@ -112,7 +112,7 @@ fn test_fetch_records() {
 				value:     'value${i}'.bytes()
 				timestamp: time.now()
 			},
-		])!
+		], i16(0))!
 	}
 
 	// 오프셋 5부터 조회
@@ -139,7 +139,7 @@ fn test_fetch_out_of_range() {
 
 	adapter.append('test-topic', 0, [
 		domain.Record{ key: 'key'.bytes(), value: 'value'.bytes(), timestamp: time.now() },
-	])!
+	], i16(0))!
 
 	// high watermark를 넘어서는 오프셋에서 조회
 	result := adapter.fetch('test-topic', 0, 100, 1048576)!
@@ -154,7 +154,7 @@ fn test_delete_records() {
 	for i in 0 .. 10 {
 		adapter.append('test-topic', 0, [
 			domain.Record{ key: 'key${i}'.bytes(), value: 'value${i}'.bytes(), timestamp: time.now() },
-		])!
+		], i16(0))!
 	}
 
 	// 처음 5개 레코드 삭제
@@ -177,7 +177,7 @@ fn test_get_partition_info() {
 	for i in 0 .. 5 {
 		adapter.append('test-topic', 1, [
 			domain.Record{ key: 'key${i}'.bytes(), value: 'value${i}'.bytes(), timestamp: time.now() },
-		])!
+		], i16(0))!
 	}
 
 	info := adapter.get_partition_info('test-topic', 1)!
@@ -320,7 +320,7 @@ fn test_max_messages_retention() {
 	for i in 0 .. 10 {
 		adapter.append('test-topic', 0, [
 			domain.Record{ key: 'key${i}'.bytes(), value: 'value${i}'.bytes(), timestamp: time.now() },
-		])!
+		], i16(0))!
 	}
 
 	// 마지막 5개 레코드만 남아야 함
@@ -349,7 +349,7 @@ fn test_get_stats() {
 	for i in 0 .. 5 {
 		adapter.append('topic-1', 0, [
 			domain.Record{ key: 'key'.bytes(), value: 'value'.bytes(), timestamp: time.now() },
-		])!
+		], i16(0))!
 	}
 
 	adapter.save_group(domain.ConsumerGroup{ group_id: 'group-1' })!
@@ -429,7 +429,7 @@ fn test_concurrent_append() {
 						value:     'thread ${t_id} message ${j}'.bytes()
 						timestamp: time.now()
 					},
-				]) or {}
+				], i16(0)) or {}
 			}
 		}()
 	}
@@ -473,7 +473,7 @@ fn test_concurrent_multi_partition_writes() {
 						value:     'partition ${p} message ${j}'.bytes()
 						timestamp: time.now()
 					},
-				]) or {}
+				], i16(0)) or {}
 			}
 		}()
 	}
@@ -520,7 +520,7 @@ fn test_concurrent_read_write() {
 						value:     'writer ${w} message ${j}'.bytes()
 						timestamp: time.now()
 					},
-				]) or {}
+				], i16(0)) or {}
 			}
 		}()
 	}
@@ -614,7 +614,7 @@ fn test_sequential_multi_partition_writes() {
 					value:     'p${p}-value${i}'.bytes()
 					timestamp: time.now()
 				},
-			])!
+			], i16(0))!
 		}
 	}
 
@@ -635,7 +635,7 @@ fn test_interleaved_read_write() {
 				value:     'value${i}'.bytes()
 				timestamp: time.now()
 			},
-		])!
+		], i16(0))!
 
 		if i % 10 == 9 {
 			result := adapter.fetch('rw-topic-seq', 0, 0, 1048576)!
@@ -679,7 +679,7 @@ fn test_append_to_nonexistent_topic() {
 
 	if _ := adapter.append('nonexistent', 0, [
 		domain.Record{ key: 'k'.bytes(), value: 'v'.bytes(), timestamp: time.now() },
-	])
+	], i16(0))
 	{
 		assert false, 'Expected error for nonexistent topic'
 	}
@@ -692,7 +692,7 @@ fn test_append_to_invalid_partition() {
 	// 파티션 10은 존재하지 않음
 	if _ := adapter.append('test', 10, [
 		domain.Record{ key: 'k'.bytes(), value: 'v'.bytes(), timestamp: time.now() },
-	])
+	], i16(0))
 	{
 		assert false, 'Expected error for invalid partition'
 	}
@@ -704,7 +704,7 @@ fn test_fetch_negative_offset() {
 
 	adapter.append('test', 0, [
 		domain.Record{ key: 'k'.bytes(), value: 'v'.bytes(), timestamp: time.now() },
-	])!
+	], i16(0))!
 
 	result := adapter.fetch('test', 0, -1, 1048576)!
 	assert result.records.len == 0
@@ -754,7 +754,7 @@ fn test_large_record_batch() {
 		}
 	}
 
-	result := adapter.append('large-batch', 0, records)!
+	result := adapter.append('large-batch', 0, records, i16(0))!
 	assert result.record_count == 1000
 	assert result.base_offset == 0
 
@@ -773,7 +773,7 @@ fn test_empty_key_and_value() {
 			value:     []u8{}
 			timestamp: time.now()
 		},
-	])!
+	], i16(0))!
 
 	assert result.record_count == 1
 
@@ -798,7 +798,7 @@ fn test_headers_in_record() {
 			headers:   headers
 			timestamp: time.now()
 		},
-	])!
+	], i16(0))!
 
 	fetch := adapter.fetch('test', 0, 0, 1048576)!
 	assert fetch.records.len == 1

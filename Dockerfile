@@ -28,23 +28,23 @@ WORKDIR /app
 # Copy the entire project
 COPY . .
 
-# Build DataCore (Static Build)
+# Build DataCore (Dynamic Build, no -prod for stability)
 # Note: We use -enable-globals as required by the performance modules.
 # We also include use_openssl for secure connections.
-# Static linking ensures no runtime dependencies are needed.
-RUN mkdir -p /app/bin && cd src && v -prod -enable-globals -d use_openssl \
+RUN mkdir -p /app/bin && cd src && v -enable-globals -d use_openssl \
     -cc gcc \
-    -cflags "-static" \
-    -ldflags "-static -lssl -lcrypto -lsnappy -lstdc++ -llz4 -lzstd -lpq -lnuma -luring -lz -lpthread -lm -ldl -lgcc -lgcc_eh" \
+    -ldflags "-lssl -lcrypto -lsnappy -lstdc++ -llz4 -lzstd -lpq -lnuma -luring -lz -lpthread -lm -ldl" \
     -o /app/bin/datacore .
 
 # --- Run Stage ---
-# Using alpine for minimal size with static binary
-FROM alpine:latest
+# Using debian-slim for glibc compatibility with dynamic binary
+FROM debian:bookworm-slim
 
-# Install only essential runtime dependencies
-# Note: Static build reduces dependencies significantly
-RUN apk add --no-cache ca-certificates tzdata
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates tzdata wget \
+    libssl3 libsnappy1v5 liblz4-1 libzstd1 libpq5 libnuma1 liburing2 zlib1g \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app

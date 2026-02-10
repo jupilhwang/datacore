@@ -11,9 +11,24 @@ import time
 // S3 HTTP 요청 재시도 설정 상수
 const max_retries = 3 // 최대 재시도 횟수
 const initial_backoff_ms = 100 // 초기 백오프 시간 (밀리초)
+const dns_backoff_ms = 1000 // DNS/네트워크 오류 시 초기 백오프 (밀리초)
 const max_backoff_jitter_ms = 50 // 최대 백오프 지터 (밀리초)
 const max_delete_concurrent = 20 // 삭제 최대 동시 실행 수
 const hmac_block_size = 64 // HMAC SHA256 블록 크기
+const s3_read_timeout_ms = 15000 // S3 HTTP 읽기 타임아웃 (15초)
+const s3_write_timeout_ms = 15000 // S3 HTTP 쓰기 타임아웃 (15초)
+
+/// is_network_error는 DNS 해석 실패, 연결 거부, 타임아웃 등 네트워크 오류를 감지합니다.
+/// Docker 컨테이너 환경에서 S3 엔드포인트 연결 시 발생할 수 있는 일시적 오류를 식별합니다.
+fn is_network_error(err_str string) bool {
+	return err_str.contains('socket error') || err_str.contains('resolve')
+		|| err_str.contains('connection refused') || err_str.contains('timed out')
+		|| err_str.contains('Connection refused') || err_str.contains('ECONNREFUSED')
+		|| err_str.contains('ETIMEDOUT') || err_str.contains('ECONNRESET')
+		|| err_str.contains('network is unreachable') || err_str.contains('deadline exceeded')
+		|| err_str.contains('read timeout') || err_str.contains('write timeout')
+		|| err_str.contains('net.tcp: timed out')
+}
 
 /// S3Object는 S3 목록 조회 결과의 객체를 나타냅니다.
 /// ListObjectsV2 API 응답에서 파싱된 개별 객체 정보를 담습니다.
@@ -29,6 +44,7 @@ pub:
 /// start와 end 파라미터로 Range 요청을 지원합니다.
 /// 반환값: (객체 데이터, ETag)
 /// start가 음수이면 전체 객체를 조회합니다.
+/// DNS/네트워크 오류 시 지수 백오프로 재시도합니다.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
 	// 메트릭: S3 GET 요청
 	a.metrics_lock.@lock()
@@ -42,45 +58,81 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 		'${endpoint}/${key}'
 	}
 
-	// 헤더 준비
-	mut headers := a.sign_request('GET', key, '', []u8{})
+	mut last_err := ''
+	for attempt in 0 .. max_retries {
+		// 헤더 준비
+		mut headers := a.sign_request('GET', key, '', []u8{})
 
-	// start가 음수가 아니면 Range 헤더 추가
-	if start >= 0 {
-		range_val := if end > start { 'bytes=${start}-${end}' } else { 'bytes=${start}-' }
-		headers.add_custom('Range', range_val) or {}
+		// start가 음수가 아니면 Range 헤더 추가
+		if start >= 0 {
+			range_val := if end > start { 'bytes=${start}-${end}' } else { 'bytes=${start}-' }
+			headers.add_custom('Range', range_val) or {}
+		}
+
+		mut req := http.prepare(http.FetchConfig{
+			url:    url
+			method: .get
+			header: headers
+		}) or {
+			last_err = 'S3 GET prepare failed: ${err}'
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
+			return error(last_err)
+		}
+		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+
+		resp := req.do() or {
+			last_err = 'S3 GET failed: ${err}'
+			err_str := err.msg()
+
+			// DNS/네트워크 오류는 재시도
+			if is_network_error(err_str) && attempt < max_retries - 1 {
+				backoff_ms := dns_backoff_ms * (1 << attempt)
+				log_message(.warn, 'S3Client', 'GET retry (network error)', {
+					'attempt':    '${attempt + 1}/${max_retries}'
+					'key':        key
+					'error':      err_str
+					'backoff_ms': backoff_ms.str()
+				})
+				time.sleep(time.Duration(backoff_ms) * time.millisecond)
+				continue
+			}
+
+			// 비-네트워크 오류 또는 마지막 재시도: 즉시 실패
+			// 메트릭: S3 에러
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
+			return error(last_err)
+		}
+
+		if resp.status_code == 404 {
+			// 메트릭: S3 에러
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
+			return error('Object not found: ${key}')
+		}
+		// Range 요청의 경우 206 Partial Content도 성공
+		if resp.status_code != 200 && resp.status_code != 206 {
+			// 메트릭: S3 에러
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
+			return error('S3 GET failed with status ${resp.status_code}')
+		}
+
+		etag := resp.header.get(.etag) or { '' }
+		return resp.body.bytes(), etag
 	}
 
-	resp := http.fetch(http.FetchConfig{
-		url:    url
-		method: .get
-		header: headers
-	}) or {
-		// 메트릭: S3 에러
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
-		return error('S3 GET failed: ${err}')
-	}
-
-	if resp.status_code == 404 {
-		// 메트릭: S3 에러
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
-		return error('Object not found: ${key}')
-	}
-	// Range 요청의 경우 206 Partial Content도 성공
-	if resp.status_code != 200 && resp.status_code != 206 {
-		// 메트릭: S3 에러
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
-		return error('S3 GET failed with status ${resp.status_code}')
-	}
-
-	etag := resp.header.get(.etag) or { '' }
-	return resp.body.bytes(), etag
+	// 메트릭: S3 에러
+	a.metrics_lock.@lock()
+	a.metrics.s3_error_count++
+	a.metrics_lock.unlock()
+	return error(last_err)
 }
 
 /// put_object는 S3에 객체를 씁니다.
@@ -91,8 +143,9 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 
 /// put_object_with_retry는 지수 백오프 재시도로 객체 쓰기를 시도합니다.
 /// 500, 503 에러 발생 시 지수 백오프(100ms, 200ms, 400ms...)로 재시도합니다.
+/// DNS/네트워크 오류 시 더 긴 백오프(1s, 2s, 4s)로 재시도합니다.
 /// 지터(jitter)를 추가하여 동시 재시도로 인한 충돌을 방지합니다.
-fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries int) ! {
+fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries_ int) ! {
 	// 메트릭: S3 PUT 요청 (재시도 포함하여 한 번만 카운트)
 	a.metrics_lock.@lock()
 	a.metrics.s3_put_count++
@@ -106,22 +159,56 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 	}
 
 	mut last_err := ''
-	for attempt in 0 .. max_retries {
+	for attempt in 0 .. max_retries_ {
 		headers := a.sign_request('PUT', key, '', data)
 
-		resp := http.fetch(http.FetchConfig{
+		mut req := http.prepare(http.FetchConfig{
 			url:    url
 			method: .put
 			header: headers
 			data:   data.bytestr()
 		}) or {
+			last_err = 'S3 PUT prepare failed: ${err}'
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
+			return error(last_err)
+		}
+		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+
+		resp := req.do() or {
 			last_err = 'S3 PUT failed: ${err}'
-			if attempt < max_retries - 1 {
-				// 지수 백오프: 100ms, 200ms, 400ms...
-				backoff_ms := initial_backoff_ms * (1 << attempt)
+			err_str := err.msg()
+
+			if attempt < max_retries_ - 1 {
+				// DNS/네트워크 오류는 더 긴 백오프 적용 (1s, 2s, 4s)
+				backoff_ms := if is_network_error(err_str) {
+					dns_backoff_ms * (1 << attempt)
+				} else {
+					initial_backoff_ms * (1 << attempt)
+				}
+
+				log_message(.warn, 'S3Client', 'PUT retry', {
+					'attempt':    '${attempt + 1}/${max_retries_}'
+					'key':        key
+					'error':      err_str
+					'backoff_ms': backoff_ms.str()
+					'endpoint':   endpoint
+					'bucket':     a.config.bucket_name
+				})
+
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)
 				continue
 			}
+			// 최종 실패: 상세 오류 로깅
+			log_message(.error, 'S3Client', 'PUT failed after all retries', {
+				'key':      key
+				'error':    err_str
+				'endpoint': endpoint
+				'bucket':   a.config.bucket_name
+				'retries':  max_retries_.str()
+			})
 			// 메트릭: S3 에러
 			a.metrics_lock.@lock()
 			a.metrics.s3_error_count++
@@ -134,11 +221,19 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 		}
 
 		// 503 (Service Unavailable / 스로틀링) 및 500 (Server Error)에서 재시도
-		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
+		if resp.status_code in [500, 503] && attempt < max_retries_ - 1 {
 			last_err = 'S3 PUT failed with status ${resp.status_code}'
 			// 지터가 있는 지수 백오프
 			backoff_ms := initial_backoff_ms * (1 << attempt) +
 				int(time.now().unix_milli() % max_backoff_jitter_ms)
+
+			log_message(.warn, 'S3Client', 'PUT status error, retrying', {
+				'attempt':     '${attempt + 1}/${max_retries_}'
+				'key':         key
+				'status_code': resp.status_code.str()
+				'backoff_ms':  backoff_ms.str()
+			})
+
 			time.sleep(time.Duration(backoff_ms) * time.millisecond)
 			continue
 		}
@@ -170,15 +265,52 @@ fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 	mut headers := a.sign_request('PUT', key, '', data)
 	headers.add_custom('If-None-Match', '*') or {}
 
-	resp := http.fetch(http.FetchConfig{
+	mut req := http.prepare(http.FetchConfig{
 		url:    url
 		method: .put
 		header: headers
 		data:   data.bytestr()
-	}) or { return error('S3 PUT failed: ${err}') }
+	}) or { return error('S3 PUT prepare failed: ${err}') }
+	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+
+	resp := req.do() or { return error('S3 PUT failed: ${err}') }
 
 	if resp.status_code == 412 {
 		return error('Object already exists (precondition failed)')
+	}
+	if resp.status_code !in [200, 201, 204] {
+		return error('S3 PUT failed with status ${resp.status_code}')
+	}
+}
+
+/// put_object_if_match는 ETag가 일치할 때만 객체를 덮어씁니다 (조건부 PUT).
+/// If-Match 헤더를 사용하여 낙관적 잠금을 구현합니다.
+/// ETag 불일치 시 412 Precondition Failed로 'etag_mismatch' 에러를 반환합니다.
+fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag string) ! {
+	endpoint := a.get_endpoint()
+	url := if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
+	} else {
+		'${endpoint}/${key}'
+	}
+
+	mut headers := a.sign_request('PUT', key, '', data)
+	headers.add_custom('If-Match', etag) or {}
+
+	mut req := http.prepare(http.FetchConfig{
+		url:    url
+		method: .put
+		header: headers
+		data:   data.bytestr()
+	}) or { return error('S3 PUT prepare failed: ${err}') }
+	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+
+	resp := req.do() or { return error('S3 PUT failed: ${err}') }
+
+	if resp.status_code == 412 {
+		return error('etag_mismatch')
 	}
 	if resp.status_code !in [200, 201, 204] {
 		return error('S3 PUT failed with status ${resp.status_code}')
@@ -202,11 +334,20 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 
 	headers := a.sign_request('DELETE', key, '', []u8{})
 
-	resp := http.fetch(http.FetchConfig{
+	mut req := http.prepare(http.FetchConfig{
 		url:    url
 		method: .delete
 		header: headers
 	}) or {
+		a.metrics_lock.@lock()
+		a.metrics.s3_error_count++
+		a.metrics_lock.unlock()
+		return error('S3 DELETE prepare failed: ${err}')
+	}
+	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+
+	resp := req.do() or {
 		// 메트릭: S3 에러
 		a.metrics_lock.@lock()
 		a.metrics.s3_error_count++
@@ -289,21 +430,40 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 
 		headers := a.sign_request('GET', '', query, []u8{})
 
-		resp := http.fetch(http.FetchConfig{
+		mut req := http.prepare(http.FetchConfig{
 			url:    url
 			method: .get
 			header: headers
 		}) or {
+			last_err = 'S3 LIST prepare failed: ${err}'
+			a.metrics_lock.@lock()
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
+			return error(last_err)
+		}
+		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+
+		resp := req.do() or {
 			last_err = 'S3 LIST failed: ${err}'
+			err_str := err.msg()
 			log_message(.error, 'S3Client', 'LIST error', {
-				'attempt': (attempt + 1).str()
-				'error':   err.msg()
+				'attempt':  (attempt + 1).str()
+				'error':    err_str
+				'prefix':   prefix
+				'endpoint': endpoint
+				'bucket':   a.config.bucket_name
 			})
 
 			if attempt < max_retries - 1 {
-				// 지수 백오프: 100ms, 200ms, 400ms
-				backoff_ms := initial_backoff_ms * (1 << attempt)
-				log_message(.debug, 'S3Client', 'Waiting before retry', {
+				// DNS/네트워크 오류는 더 긴 백오프 적용 (1s, 2s, 4s)
+				backoff_ms := if is_network_error(err_str) {
+					dns_backoff_ms * (1 << attempt)
+				} else {
+					initial_backoff_ms * (1 << attempt)
+				}
+				log_message(.warn, 'S3Client', 'LIST retry', {
+					'attempt':    '${attempt + 1}/${max_retries}'
 					'backoff_ms': backoff_ms.str()
 				})
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)

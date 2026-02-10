@@ -162,7 +162,7 @@ fn test_record_operations() {
 		},
 	]
 
-	result := adapter.append(topic_name, 0, records) or {
+	result := adapter.append(topic_name, 0, records, i16(0)) or {
 		assert false, 'Failed to append records: ${err}'
 		return
 	}

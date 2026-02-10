@@ -32,7 +32,7 @@ mut:
 	add_partitions(name string, new_count int) !
 	/// 레코드를 토픽의 특정 파티션에 추가합니다.
 	/// 반환값: 기본 오프셋과 로그 추가 시간을 포함한 결과
-	append(topic string, partition int, records []domain.Record) !domain.AppendResult
+	append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult
 
 	/// 토픽의 특정 파티션에서 레코드를 가져옵니다.
 	/// offset: 시작 오프셋

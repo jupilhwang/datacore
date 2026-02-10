@@ -68,7 +68,7 @@ pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 	}
 
 	// 스토리지에 레코드 저장
-	result := u.storage.append(req.topic, req.partition, req.records) or {
+	result := u.storage.append(req.topic, req.partition, req.records, req.acks) or {
 		return ProduceResponse{
 			topic:      req.topic
 			partition:  req.partition

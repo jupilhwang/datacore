@@ -7,13 +7,13 @@ BUILD_DIR = bin
 SRC_DIR = src
 
 # Build flags
-V_FLAGS = -prod -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib -lsnappy -llz4 -lzstd"
-V_FLAGS_DEV = -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib -lsnappy -llz4 -lzstd"
+V_FLAGS = -prod -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib" -ldflags "-lsnappy" -ldflags "-llz4" -ldflags "-lzstd"
+V_FLAGS_DEV = -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib" -ldflags "-lsnappy" -ldflags "-llz4" -ldflags "-lzstd"
 
 # Platforms
 PLATFORMS = linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
 
-.PHONY: all build build-dev clean test fmt lint release docker help
+.PHONY: all build build-dev clean test fmt lint release docker help test-multibroker test-multibroker-compat test-multibroker-perf
 
 ## Default target
 all: build
@@ -76,6 +76,21 @@ test-longrunning:
 ## Run all tests (unit + compat + storage + security)
 test-all: test test-compat test-storage test-security
 
+## Run multi-broker S3 integration tests (all)
+test-multibroker:
+	@echo "Running multi-broker S3 integration tests..."
+	@./tests/multibroker/run_multibroker_test.sh
+
+## Run multi-broker Kafka CLI compatibility tests only
+test-multibroker-compat:
+	@echo "Running multi-broker compatibility tests..."
+	@./tests/multibroker/run_multibroker_test.sh --test=compat
+
+## Run multi-broker performance benchmarks only
+test-multibroker-perf:
+	@echo "Running multi-broker performance benchmarks..."
+	@./tests/multibroker/run_multibroker_test.sh --test=perf
+
 ## Format code
 fmt:
 	@echo "Formatting code..."
@@ -130,7 +145,7 @@ release: build
 ## Build Docker image locally
 docker:
 	@echo "Building Docker image..."
-	docker build -t $(BINARY_NAME):$(VERSION) -t $(BINARY_NAME):latest .
+	docker build -t $(BINARY_NAME):$(VERSION) -t $(BINARY_NAME):latest -t $(BINARY_NAME):local .
 	@echo "Built: $(BINARY_NAME):$(VERSION)"
 
 ## Run the broker
@@ -174,6 +189,9 @@ help:
 	@echo "  test-security   Run security tests (SSL, SASL)"
 	@echo "  test-longrunning Run long-running tests (24+ hours)"
 	@echo "  test-all        Run all tests"
+	@echo "  test-multibroker       Run multi-broker S3 integration tests"
+	@echo "  test-multibroker-compat Run multi-broker compatibility tests"
+	@echo "  test-multibroker-perf  Run multi-broker performance benchmarks"
 	@echo ""
 	@echo "Code Quality Targets:"
 	@echo "  fmt         Format code"

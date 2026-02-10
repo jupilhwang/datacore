@@ -1,0 +1,41 @@
+[broker]
+broker_id = 2
+cluster_id = "multibroker-s3-test"
+host = "0.0.0.0"
+advertised_host = "127.0.0.1"
+port = 9093
+max_request_size = 104857600
+
+[rest]
+enabled = true
+port = 8082
+
+[storage]
+engine = "s3"
+
+[storage.s3]
+endpoint = "https://s3.ap-northeast-2.amazonaws.com"
+bucket = "jhwang-s3"
+region = "ap-northeast-2"
+prefix = "datacore-multibroker-test/"
+access_key = ""
+secret_key = ""
+batch_timeout_ms = 50
+batch_max_bytes = 2097152
+compaction_interval_ms = 60000
+target_segment_bytes = 104857600
+index_cache_ttl_ms = 1000
+offset_batch_enabled = true
+offset_flush_interval_ms = 100
+offset_flush_threshold_count = 50
+
+[logging]
+level = "info"
+format = "json"
+output = "stdout"
+
+[schema_registry]
+enabled = false
+
+[otel]
+enabled = false

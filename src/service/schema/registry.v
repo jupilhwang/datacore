@@ -528,7 +528,7 @@ fn (mut r SchemaRegistry) persist_schema(subject string, schema domain.Schema, v
 	}
 
 	// __schemas 토픽에 추가
-	r.storage.append(schemas_topic, 0, [record]) or {
+	r.storage.append(schemas_topic, 0, [record], i16(1)) or {
 		return error('failed to persist schema: ${err}')
 	}
 }

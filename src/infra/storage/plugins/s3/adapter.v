@@ -54,6 +54,12 @@ pub mut:
 	compaction_interval_ms int // 컴팩션 간격 (밀리초)
 	target_segment_bytes   i64 // 목표 세그먼트 크기
 	index_cache_ttl_ms     int // 인덱스 캐시 TTL (밀리초)
+	// 브로커 설정
+	broker_id i32 // 브로커 ID (오프셋 스냅샷에 사용)
+	// 오프셋 배치 설정
+	offset_batch_enabled         bool = true // 오프셋 배치 버퍼 사용 여부
+	offset_flush_interval_ms     int  = 100  // 오프셋 플러시 간격 (밀리초)
+	offset_flush_threshold_count int  = 50   // 즉시 플러시를 트리거하는 변경 건수
 }
 
 /// S3StorageAdapter는 S3 스토리지용 StoragePort를 구현합니다.
@@ -81,6 +87,9 @@ pub mut:
 	// 메트릭
 	metrics      S3Metrics
 	metrics_lock sync.Mutex
+	// 오프셋 배치 버퍼
+	offset_buffers     map[string]OffsetGroupBuffer // group_id -> 버퍼
+	offset_buffer_lock sync.Mutex
 	// Iceberg 테이블 작성기 (Iceberg가 활성화된 경우)
 	iceberg_writers map[string]&IcebergWriter // 키: "topic:partition"
 	iceberg_lock    sync.RwMutex
@@ -163,6 +172,15 @@ mut:
 	offset_commit_count         i64 // 총 오프셋 커밋 수
 	offset_commit_success_count i64 // 성공한 오프셋 커밋 수
 	offset_commit_error_count   i64 // 실패한 오프셋 커밋 수
+	// 오프셋 플러시 메트릭
+	offset_flush_count         i64 // 총 오프셋 플러시 수
+	offset_flush_success_count i64 // 성공한 오프셋 플러시 수
+	offset_flush_error_count   i64 // 실패한 오프셋 플러시 수
+	// Sync append metrics (acks != 0)
+	sync_append_count         i64 // total sync append operations
+	sync_append_success_count i64 // successful sync append operations
+	sync_append_error_count   i64 // failed sync append operations
+	sync_append_total_ms      i64 // total sync append latency (ms)
 }
 
 /// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
@@ -186,6 +204,10 @@ fn (mut m S3Metrics) reset() {
 	m.offset_commit_count = 0
 	m.offset_commit_success_count = 0
 	m.offset_commit_error_count = 0
+	m.sync_append_count = 0
+	m.sync_append_success_count = 0
+	m.sync_append_error_count = 0
+	m.sync_append_total_ms = 0
 }
 
 /// get_summary는 메트릭 요약을 문자열로 반환합니다.
@@ -210,13 +232,19 @@ fn (m &S3Metrics) get_summary() string {
 	} else {
 		0.0
 	}
+	sync_append_success_rate := if m.sync_append_count > 0 {
+		f64(m.sync_append_success_count) / f64(m.sync_append_count) * 100.0
+	} else {
+		0.0
+	}
 
 	return '[S3 Metrics]
   Flush: ${m.flush_count} total, ${m.flush_success_count} success (${flush_success_rate:.1f}%), ${m.flush_total_ms}ms
   Compaction: ${m.compaction_count} total, ${m.compaction_success_count} success (${compaction_success_rate:.1f}%), ${m.compaction_bytes_merged} bytes merged, ${m.compaction_total_ms}ms
   S3 API: GET=${m.s3_get_count}, PUT=${m.s3_put_count}, DELETE=${m.s3_delete_count}, LIST=${m.s3_list_count}, errors=${m.s3_error_count}
   Cache: ${m.cache_hit_count} hits, ${m.cache_miss_count} misses (${cache_hit_rate:.1f}% hit rate)
-  Offset Commit: ${m.offset_commit_count} total, ${m.offset_commit_success_count} success (${offset_commit_success_rate:.1f}%)'
+  Offset Commit: ${m.offset_commit_count} total, ${m.offset_commit_success_count} success (${offset_commit_success_rate:.1f}%)
+  Sync Append: ${m.sync_append_count} total, ${m.sync_append_success_count} success (${sync_append_success_rate:.1f}%), ${m.sync_append_total_ms}ms'
 }
 
 // 참고: CachedPartitionIndex는 partition_index.v에 정의되어 있습니다.
@@ -237,6 +265,7 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 		offset_cache:            map[string]map[string]i64{}
 		topic_index_cache:       map[string]CachedPartitionIndex{}
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
+		offset_buffers:          map[string]OffsetGroupBuffer{}
 		iceberg_writers:         map[string]&IcebergWriter{}
 	}
 }
@@ -493,7 +522,10 @@ pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
 }
 
 /// append는 파티션에 레코드를 추가합니다.
-pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+/// required_acks에 따라 동기/비동기 경로를 선택합니다:
+///   acks=0: 메모리 버퍼에 추가 후 즉시 반환 (best-effort)
+///   acks=1/-1: S3 PUT + 인덱스 업데이트 완료 후 반환 (내구성 확보)
+pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
 	if records.len == 0 {
 		return domain.AppendResult{
 			base_offset:      0
@@ -507,7 +539,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	base_offset := index.high_watermark
 	partition_key := '${topic}:${partition}'
 
-	// 2. 파티션 버퍼에 레코드 추가
+	// 2. StoredRecord 생성
 	mut bytes_to_add := i64(0)
 	mut stored_records := []StoredRecord{}
 
@@ -520,43 +552,71 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 			headers:   rec.headers
 		}
 		stored_records << srec
-		// 간단한 크기 추정 (실제 크기는 메타데이터 인코딩으로 인해 더 큼)
 		bytes_to_add += i64(srec.value.len + srec.key.len + record_overhead_bytes)
 	}
 
-	// 3. 인메모리 버퍼 업데이트 및 플러시 확인
-	mut should_flush := false // 빠른 경로 플러시용
-	a.buffer_lock.lock()
-	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
-		TopicPartitionBuffer{
-			records:            []
-			current_size_bytes: 0
+	if required_acks == 0 {
+		// === acks=0: async path (existing behavior) ===
+		// Append to in-memory buffer and return immediately.
+		// flush_worker drains the buffer every batch_timeout_ms automatically.
+		a.buffer_lock.lock()
+		mut tp_buffer := a.topic_partition_buffers[partition_key] or {
+			TopicPartitionBuffer{
+				records:            []
+				current_size_bytes: 0
+			}
 		}
+
+		tp_buffer.records << stored_records
+		tp_buffer.current_size_bytes += bytes_to_add
+
+		a.topic_partition_buffers[partition_key] = tp_buffer
+		a.buffer_lock.unlock()
+	} else {
+		// === acks=1/-1: sync path (durability guarantee) ===
+		// Skip in-memory buffer and write directly to S3
+		start_time := time.now()
+		base_offset_val := stored_records[0].offset
+		end_offset := stored_records[stored_records.len - 1].offset
+		segment_data := encode_stored_records(stored_records)
+		segment_key := a.log_segment_key(topic, partition, base_offset_val, end_offset)
+
+		// S3 PUT (synchronous wait)
+		a.put_object(segment_key, segment_data) or {
+			a.metrics_lock.@lock()
+			a.metrics.sync_append_error_count++
+			a.metrics.s3_error_count++
+			a.metrics_lock.unlock()
+			return error('durable append failed (acks=${required_acks}): S3 PUT error: ${err}')
+		}
+
+		a.metrics_lock.@lock()
+		a.metrics.s3_put_count++
+		a.metrics.sync_append_count++
+		a.metrics_lock.unlock()
+
+		// Index update (synchronous wait)
+		a.index_update_lock.lock()
+		a.update_partition_index_with_segment(topic, partition, segment_key, base_offset_val,
+			end_offset, segment_data.len) or {
+			a.index_update_lock.unlock()
+			a.metrics_lock.@lock()
+			a.metrics.sync_append_error_count++
+			a.metrics_lock.unlock()
+			return error('durable append failed (acks=${required_acks}): index update error: ${err}')
+		}
+		a.index_update_lock.unlock()
+
+		elapsed_ms := time.since(start_time).milliseconds()
+		a.metrics_lock.@lock()
+		a.metrics.sync_append_success_count++
+		a.metrics.sync_append_total_ms += elapsed_ms
+		a.metrics_lock.unlock()
 	}
 
-	tp_buffer.records << stored_records
-	tp_buffer.current_size_bytes += bytes_to_add
-
-	if tp_buffer.current_size_bytes >= a.config.batch_max_bytes {
-		should_flush = true
-	}
-
-	a.topic_partition_buffers[partition_key] = tp_buffer
-	a.buffer_lock.unlock()
-
-	// 4. flush_worker와의 경쟁 조건을 피하기 위해 빠른 경로 플러시는 비활성화됨
-	// 모든 플러시는 이제 주기적인 flush_worker에서 처리됨
-	// if should_flush {
-	// 	go a.async_flush_partition(partition_key)
-	// }
-	_ = should_flush // 미사용 변수 경고 억제
-
-	// 5. Iceberg 테이블에 레코드 추가 (Iceberg가 활성화된 경우)
-	// 참고: 현재 S3Config에 직접적인 Iceberg 설정이 없으므로
-	// 별도 설정 파일이나 환경변수로부터 Iceberg 활성화 여부 확인
+	// Iceberg 테이블에 레코드 추가 (Iceberg가 활성화된 경우)
 	if a.is_iceberg_enabled() {
 		a.append_to_iceberg(topic, partition, records, base_offset) or {
-			// Iceberg 쓰기 실패는 기본 S3 스토리지에 영향을 주지 않음
 			log_message(.warn, 'IcebergAppend', 'Failed to append to Iceberg', {
 				'topic':     topic
 				'partition': partition.str()
@@ -565,9 +625,9 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 		}
 	}
 
-	// 6. 응답을 위해 인메모리 high_watermark 즉시 업데이트
-	// 다음 append가 올바른 오프셋을 받도록 캐시도 업데이트
-	// index_update_lock을 사용하여 flush와의 경쟁 조건 방지
+	// Update in-memory high_watermark so the next append gets a correct offset.
+	// Lock Order: index_update_lock -> topic_lock
+	// All code paths MUST acquire locks in this order to prevent deadlocks.
 	new_high_watermark := base_offset + i64(records.len)
 	a.index_update_lock.@lock()
 	a.topic_lock.@lock()
@@ -1128,8 +1188,7 @@ pub fn (a &S3StorageAdapter) get_storage_capability() domain.StorageCapability {
 /// get_cluster_metadata_port는 클러스터 메타데이터 인터페이스를 반환합니다.
 /// S3는 멀티 브로커 모드를 지원합니다.
 pub fn (mut a S3StorageAdapter) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
-	// S3 기반 클러스터 메타데이터 구현 반환
-	// Note: &a를 전달하여 원본 adapter의 포인터를 사용
+	// 원본 adapter를 직접 전달하여 config 복사 + 원본 포인터 사용
 	return new_s3_cluster_metadata_adapter(&a)
 }
 

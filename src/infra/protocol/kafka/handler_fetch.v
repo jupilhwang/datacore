@@ -338,7 +338,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 		}
 
 		// 토픽 설정에서 압축 타입 조회
-		preferred_compression := h.get_topic_compression_type(topic_name)
+		mut preferred_compression := h.get_topic_compression_type(topic_name)
 
 		// 각 파티션에서 데이터 조회
 		mut partitions := []FetchResponsePartition{}
@@ -373,6 +373,11 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			// first_offset: 실제 반환되는 첫 번째 레코드의 오프셋 사용
 			records_data := encode_record_batch_zerocopy(result.records, result.first_offset)
 			total_records += result.records.len
+
+			// Record에 보존된 원본 압축 타입이 있으면 토픽 설정보다 우선 사용
+			if result.records.len > 0 && result.records[0].compression_type > 0 {
+				preferred_compression = unsafe { compression.CompressionType(result.records[0].compression_type) }
+			}
 
 			// 스키마 디코딩이 필요한 경우 처리
 			mut records_for_compression := records_data.clone()

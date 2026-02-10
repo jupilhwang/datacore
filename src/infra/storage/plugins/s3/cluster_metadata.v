@@ -6,16 +6,46 @@ import domain
 import time
 import json
 
+// V 인터페이스 값 복사 버그 우회: 모듈 레벨에 config 백업 보관
+// 구조체에 config 필드를 추가하면 인터페이스 할당 시 segfault가 발생하므로
+// 전역 변수를 사용하여 config를 보존합니다.
+__global cluster_metadata_config_backup = S3Config{}
+
 /// S3ClusterMetadataAdapter는 S3를 백엔드로 사용하여 ClusterMetadataPort를 구현합니다.
+/// V 인터페이스를 통한 호출 시 adapter 포인터의 config 유실 문제를 해결하기 위해
+/// 자체 S3StorageAdapter 인스턴스를 보유합니다.
 pub struct S3ClusterMetadataAdapter {
 pub mut:
 	adapter &S3StorageAdapter
 }
 
 /// new_s3_cluster_metadata_adapter는 새로운 S3 클러스터 메타데이터 어댑터를 생성합니다.
+/// adapter의 config를 전역 백업에 저장하고, 원본 adapter를 직접 사용합니다.
 pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMetadataAdapter {
+	// V 인터페이스 값 복사 버그 우회: config를 전역 변수에 백업
+	cluster_metadata_config_backup = adapter.config
+	log_message(.info, 'ClusterMetadata', 'Creating cluster metadata adapter', {
+		'endpoint':    adapter.config.endpoint
+		'region':      adapter.config.region
+		'bucket_name': adapter.config.bucket_name
+		'prefix':      adapter.config.prefix
+	})
 	return &S3ClusterMetadataAdapter{
 		adapter: adapter
+	}
+}
+
+/// new_s3_cluster_metadata_with_config는 명시적 config로 어댑터를 생성합니다.
+/// V 인터페이스 값 복사 시 config 유실을 방지하기 위해
+/// config를 자체 보유하고 adapter에도 강제 설정합니다.
+pub fn new_s3_cluster_metadata_with_config(config S3Config) !&S3ClusterMetadataAdapter {
+	// V 인터페이스 값 복사 버그 우회: config를 전역 변수에 백업
+	cluster_metadata_config_backup = config
+	mut own_adapter := new_s3_adapter(config)!
+	// adapter config를 원본으로 강제 덮어쓰기
+	own_adapter.config = config
+	return &S3ClusterMetadataAdapter{
+		adapter: own_adapter
 	}
 }
 
@@ -31,6 +61,7 @@ pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMeta
 
 /// register_broker는 브로커를 클러스터에 등록합니다.
 pub fn (mut a S3ClusterMetadataAdapter) register_broker(info domain.BrokerInfo) !domain.BrokerInfo {
+	a.ensure_adapter_config()
 	key := a.broker_key(info.broker_id)
 
 	// 브로커가 이미 존재하는지 확인
@@ -62,6 +93,7 @@ pub fn (mut a S3ClusterMetadataAdapter) register_broker(info domain.BrokerInfo) 
 
 /// deregister_broker는 브로커를 클러스터에서 등록 해제합니다.
 pub fn (mut a S3ClusterMetadataAdapter) deregister_broker(broker_id i32) ! {
+	a.ensure_adapter_config()
 	key := a.broker_key(broker_id)
 
 	// 기존 브로커 조회
@@ -79,6 +111,7 @@ pub fn (mut a S3ClusterMetadataAdapter) deregister_broker(broker_id i32) ! {
 
 /// update_broker_heartbeat는 브로커의 하트비트를 업데이트합니다.
 pub fn (mut a S3ClusterMetadataAdapter) update_broker_heartbeat(heartbeat domain.BrokerHeartbeat) ! {
+	a.ensure_adapter_config()
 	key := a.broker_key(heartbeat.broker_id)
 
 	existing, _ := a.adapter.get_object(key, 0, -1) or {
@@ -100,6 +133,7 @@ pub fn (mut a S3ClusterMetadataAdapter) update_broker_heartbeat(heartbeat domain
 
 /// get_broker는 특정 브로커의 정보를 조회합니다.
 pub fn (mut a S3ClusterMetadataAdapter) get_broker(broker_id i32) !domain.BrokerInfo {
+	a.ensure_adapter_config()
 	key := a.broker_key(broker_id)
 
 	data, _ := a.adapter.get_object(key, 0, -1) or {
@@ -113,6 +147,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_broker(broker_id i32) !domain.Broker
 
 /// list_brokers는 등록된 모든 브로커 목록을 조회합니다.
 pub fn (mut a S3ClusterMetadataAdapter) list_brokers() ![]domain.BrokerInfo {
+	a.ensure_adapter_config()
 	prefix := a.brokers_prefix()
 	objects := a.adapter.list_objects(prefix)!
 
@@ -131,6 +166,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_brokers() ![]domain.BrokerInfo {
 
 /// list_active_brokers는 활성 상태인 브로커 목록만 조회합니다.
 pub fn (mut a S3ClusterMetadataAdapter) list_active_brokers() ![]domain.BrokerInfo {
+	a.ensure_adapter_config()
 	all_brokers := a.list_brokers()!
 
 	mut active := []domain.BrokerInfo{}
@@ -149,6 +185,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_active_brokers() ![]domain.BrokerIn
 
 /// get_cluster_metadata는 현재 클러스터 메타데이터를 조회합니다.
 pub fn (mut a S3ClusterMetadataAdapter) get_cluster_metadata() !domain.ClusterMetadata {
+	a.ensure_adapter_config()
 	key := a.cluster_metadata_key()
 
 	data, _ := a.adapter.get_object(key, 0, -1) or {
@@ -170,6 +207,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_cluster_metadata() !domain.ClusterMe
 /// update_cluster_metadata는 클러스터 메타데이터를 업데이트합니다.
 /// Optimistic locking을 위해 버전을 확인합니다.
 pub fn (mut a S3ClusterMetadataAdapter) update_cluster_metadata(metadata domain.ClusterMetadata) ! {
+	a.ensure_adapter_config()
 	key := a.cluster_metadata_key()
 
 	// optimistic locking을 위한 버전 확인
@@ -197,6 +235,7 @@ pub fn (mut a S3ClusterMetadataAdapter) update_cluster_metadata(metadata domain.
 /// get_partition_assignment는 특정 토픽-파티션의 할당 정보를 조회합니다.
 /// S3 키: {prefix}/__cluster/assignments/{topic}/{partition}.json
 pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment {
+	a.ensure_adapter_config()
 	key := a.partition_assignment_key(topic_name, partition)
 
 	log_message(.debug, 'PartitionAssignment', 'Reading partition assignment from S3',
@@ -248,6 +287,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 /// list_partition_assignments는 특정 토픽의 모든 파티션 할당을 조회합니다.
 /// S3 접두사: {prefix}/__cluster/assignments/{topic}/
 pub fn (mut a S3ClusterMetadataAdapter) list_partition_assignments(topic_name string) ![]domain.PartitionAssignment {
+	a.ensure_adapter_config()
 	prefix := a.partition_assignments_prefix(topic_name)
 
 	log_message(.debug, 'PartitionAssignment', 'Listing partition assignments for topic',
@@ -308,6 +348,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_partition_assignments(topic_name st
 /// list_all_partition_assignments는 모든 토픽의 모든 파티션 할당을 조회합니다.
 /// S3 접두사: {prefix}/__cluster/assignments/
 pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]domain.PartitionAssignment {
+	a.ensure_adapter_config()
 	prefix := a.all_assignments_prefix()
 
 	log_message(.debug, 'PartitionAssignment', 'Listing all partition assignments', {
@@ -365,6 +406,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 /// S3 키: {prefix}/__cluster/assignments/{topic}/{partition}.json
 /// 재시도 로직을 포함하여 안정적으로 저장합니다.
 pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment domain.PartitionAssignment) ! {
+	a.ensure_adapter_config()
 	key := a.partition_assignment_key(assignment.topic_name, assignment.partition)
 
 	log_message(.debug, 'PartitionAssignment', 'Updating partition assignment', {
@@ -440,6 +482,7 @@ struct LockInfo {
 /// try_acquire_lock은 분산 락 획득을 시도합니다.
 /// TTL이 만료되면 락은 자동으로 해제됩니다.
 pub fn (mut a S3ClusterMetadataAdapter) try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
+	a.ensure_adapter_config()
 	key := a.lock_key(lock_name)
 	now := time.now().unix_milli()
 
@@ -468,6 +511,7 @@ pub fn (mut a S3ClusterMetadataAdapter) try_acquire_lock(lock_name string, holde
 
 /// create_lock은 새로운 락을 생성합니다.
 fn (mut a S3ClusterMetadataAdapter) create_lock(key string, lock_name string, holder_id string, ttl_ms i64) !bool {
+	a.ensure_adapter_config()
 	now := time.now().unix_milli()
 	lock_info := LockInfo{
 		lock_name:   lock_name
@@ -483,6 +527,7 @@ fn (mut a S3ClusterMetadataAdapter) create_lock(key string, lock_name string, ho
 
 /// release_lock은 분산 락을 해제합니다.
 pub fn (mut a S3ClusterMetadataAdapter) release_lock(lock_name string, holder_id string) ! {
+	a.ensure_adapter_config()
 	key := a.lock_key(lock_name)
 
 	// 락을 보유하고 있는지 확인
@@ -501,6 +546,7 @@ pub fn (mut a S3ClusterMetadataAdapter) release_lock(lock_name string, holder_id
 
 /// refresh_lock은 분산 락의 TTL을 갱신합니다.
 pub fn (mut a S3ClusterMetadataAdapter) refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
+	a.ensure_adapter_config()
 	key := a.lock_key(lock_name)
 	now := time.now().unix_milli()
 
@@ -532,6 +578,7 @@ pub fn (mut a S3ClusterMetadataAdapter) refresh_lock(lock_name string, holder_id
 
 /// mark_broker_dead는 브로커를 dead 상태로 표시합니다.
 pub fn (mut a S3ClusterMetadataAdapter) mark_broker_dead(broker_id i32) ! {
+	a.ensure_adapter_config()
 	key := a.broker_key(broker_id)
 
 	existing, _ := a.adapter.get_object(key, 0, -1) or {
@@ -555,6 +602,17 @@ pub fn (mut a S3ClusterMetadataAdapter) mark_broker_dead(broker_id i32) ! {
 /// get_capability는 S3 스토리지 기능 정보를 반환합니다.
 pub fn (a &S3ClusterMetadataAdapter) get_capability() domain.StorageCapability {
 	return s3_capability
+}
+
+// ============================================================
+// V 인터페이스 값 복사 버그 대응 (Config Recovery)
+// ============================================================
+
+// V 인터페이스 값 복사 버그 대응: adapter의 config가 유실된 경우 전역 백업에서 복구
+fn (mut a S3ClusterMetadataAdapter) ensure_adapter_config() {
+	if a.adapter.config.endpoint.len == 0 && cluster_metadata_config_backup.endpoint.len > 0 {
+		a.adapter.config = cluster_metadata_config_backup
+	}
 }
 
 // ============================================================

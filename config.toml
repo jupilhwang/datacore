@@ -134,14 +134,14 @@ timezone = "UTC"
 # S3 Performance and Compaction Settings
 # -----------------------------------------------------------------------------
 
-# 레코드 버퍼링 최대 시간 (밀리초). 이 시간 안에 플러시 워커가 실행됨.
-batch_timeout_ms = 1000
+# 레코드 버퍼링 최대 시간 (밀리초). 이 시간 안에 플러시 워커가 실행됨.(25ms)
+batch_timeout_ms = 25
 
-# 레코드 버퍼링 최대 크기 (바이트). 이 크기 초과 시 즉시 플러시 트리거됨. (10MB)
-batch_max_bytes = 10485760
+# 레코드 버퍼링 최대 크기 (바이트). 이 크기 초과 시 즉시 플러시 트리거됨. (4MB)
+batch_max_bytes = 4096000
 
 # 컴팩션 워커 주기 (밀리초). 작은 세그먼트를 병합하는 주기.
-compaction_interval_ms = 60000
+compaction_interval_ms = 30000
 
 # 컴팩션 후 목표 세그먼트 크기 (바이트). (100MB)
 target_segment_bytes = 104857600
@@ -150,6 +150,12 @@ target_segment_bytes = 104857600
 # 프로덕션 환경: 1시간 (3600000ms) - 최신 상태 유지와 성능의 균형
 # 개발/테스트: 24시간 (86400000ms) - S3 GET 요청 최소화
 index_cache_ttl_ms = 3600000
+
+# 오프셋 배치 플러시 설정
+# commit_offsets를 메모리에 버퍼링하고 주기적으로 S3에 바이너리 스냅샷으로 플러시
+offset_batch_enabled = true
+offset_flush_interval_ms = 100
+offset_flush_threshold_count = 50
 
 # -----------------------------------------------------------------------------
 # [storage.s3.iceberg] - S3 Iceberg 테이블 형식 설정
@@ -206,7 +212,7 @@ schema_evolution = true
 
 # 카탈로그 타입
 # 지원값: "hadoop" (파일 기반), "rest" (REST API 기반)
-type = "hadoop"
+type = "rest"
 
 # REST Catalog 엔드포인트 (외부 서비스 사용 시)
 # 비어있으면 내장 REST Catalog 서버 사용

@@ -41,7 +41,8 @@ fn (m AclMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 
 fn (m AclMockStorage) add_partitions(name string, new_count int) ! {}
 
-fn (m AclMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+fn (m AclMockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	return domain.AppendResult{}
 }
 

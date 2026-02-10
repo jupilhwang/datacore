@@ -170,6 +170,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	engine := conf.storage.engine.to_lower()
 	mut storage_opt := ?port.StoragePort(none)
+	mut s3_adapter_ref := ?&s3.S3StorageAdapter(none)
 
 	if engine == 'memory' {
 		logger.info('Initializing Memory storage', observability.field_int('max_memory_mb',
@@ -190,6 +191,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 			prefix:                 conf.storage.s3.prefix
 			use_path_style:         true // AWS S3 path-style URLs
 			timezone:               conf.storage.s3.timezone
+			broker_id:              i32(conf.broker.broker_id)
 			batch_timeout_ms:       conf.storage.s3.batch_timeout_ms
 			batch_max_bytes:        conf.storage.s3.batch_max_bytes
 			compaction_interval_ms: conf.storage.s3.compaction_interval_ms
@@ -208,6 +210,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 		if mut s3_adapter := s3.new_s3_adapter(s_config) {
 			storage_opt = port.StoragePort(s3_adapter)
+			s3_adapter_ref = s3_adapter
 			s3_adapter.start_workers() // S3 Compaction Worker 시작
 		} else {
 			cli.print_failed('Failed to init S3 storage: ${err}')
@@ -249,8 +252,18 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	if capability.supports_multi_broker {
 		cli.print_progress('Initializing multi-broker cluster registry')
 
-		// Get cluster metadata port from storage
-		if mut cluster_port := storage.get_cluster_metadata_port() {
+		// S3 스토리지의 경우 V 인터페이스를 통한 호출 시 config 유실 문제를 방지하기 위해
+		// 기존 adapter 참조를 사용하여 cluster metadata adapter를 생성 (config 자체 보유)
+		mut cluster_port_opt := ?&port.ClusterMetadataPort(none)
+		if engine == 's3' {
+			if mut s3_ref := s3_adapter_ref {
+				// 기존 adapter 참조를 사용 (mutex 등 이미 초기화됨)
+				cluster_port_opt = s3.new_s3_cluster_metadata_adapter(s3_ref)
+			}
+		} else {
+			cluster_port_opt = storage.get_cluster_metadata_port()
+		}
+		if mut cluster_port := cluster_port_opt {
 			registry_config := cluster.BrokerRegistryConfig{
 				broker_id:             conf.broker.broker_id
 				host:                  conf.broker.advertised_host
@@ -265,19 +278,38 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 			mut broker_registry := cluster.new_broker_registry(registry_config, capability,
 				cluster_port)
 
-			// Register this broker with the cluster
-			broker_info := broker_registry.register() or {
-				cli.print_failed('Failed to register broker: ${err}')
-				domain.BrokerInfo{}
+			// Register this broker with the cluster (with retry for DNS/network issues)
+			mut broker_info := domain.BrokerInfo{}
+			mut register_success := false
+			for reg_attempt in 0 .. 3 {
+				broker_info = broker_registry.register() or {
+					logger.warn('Broker registration attempt ${reg_attempt + 1}/3 failed',
+						observability.field_int('broker_id', conf.broker.broker_id), observability.field_string('cluster_id',
+						conf.broker.cluster_id), observability.field_string('error', err.msg()))
+					if reg_attempt < 2 {
+						// 지수 백오프: 2s, 4s
+						wait_secs := 2 * (1 << reg_attempt)
+						logger.info('Waiting ${wait_secs}s before next registration attempt')
+						time.sleep(wait_secs * time.second)
+					}
+					domain.BrokerInfo{}
+				}
+				if broker_info.broker_id > 0 {
+					register_success = true
+					break
+				}
+			}
+			if !register_success {
+				cli.print_failed('Failed to register broker after 3 attempts - continuing without cluster registration')
+				logger.error('Failed to register broker with cluster after 3 attempts - server will start without cluster features',
+					observability.field_int('broker_id', conf.broker.broker_id), observability.field_string('cluster_id',
+					conf.broker.cluster_id))
 			}
 
-			if broker_info.broker_id > 0 {
+			if register_success {
 				logger.info('Broker registered with cluster', observability.field_int('broker_id',
 					broker_info.broker_id), observability.field_string('host', broker_info.host),
 					observability.field_int('port', broker_info.port))
-
-				// Start heartbeat worker
-				broker_registry.start_heartbeat_worker()
 
 				// Set broker registry on handler for multi-broker metadata responses
 				protocol_handler.set_broker_registry(broker_registry)
@@ -303,7 +335,8 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 				cli.print_done()
 			} else {
-				cli.print_failed('Broker registration returned invalid info')
+				logger.warn('Broker will start without cluster registration - single-broker mode active')
+				cli.print_done()
 			}
 		} else {
 			cli.print_failed('Storage does not provide cluster metadata port')
@@ -376,7 +409,14 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 			observability.field_int('port', conf.rest.port))
 	}
 
-	// 6. Create and start TCP Server
+	// 6. Start heartbeat worker after all initialization is complete
+	// heartbeat_loop uses r.lock which can contend with set_partition_assigner on main thread
+	if mut registry := broker_registry_opt {
+		registry.start_heartbeat_worker()
+		logger.info('Heartbeat worker started')
+	}
+
+	// 7. Create and start TCP Server
 	server_config := server.ServerConfig{
 		host:       conf.broker.host
 		port:       conf.broker.port

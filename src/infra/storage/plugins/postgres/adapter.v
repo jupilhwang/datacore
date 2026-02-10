@@ -641,7 +641,8 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 
 /// append는 파티션에 레코드를 추가합니다.
 /// 행 락(FOR UPDATE)을 사용하여 동시성을 제어합니다.
-pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
+pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks // DB 트랜잭션으로 이미 동기 저장이므로 무시
 	start_time := time.now()
 
 	// 메트릭: append 시작

@@ -45,7 +45,8 @@ fn (m TransactionMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetada
 
 fn (m TransactionMockStorage) add_partitions(name string, new_count int) ! {}
 
-fn (m TransactionMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+fn (m TransactionMockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	return domain.AppendResult{}
 }
 
@@ -471,7 +472,8 @@ fn (m WriteTxnMarkersMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMe
 
 fn (m WriteTxnMarkersMockStorage) add_partitions(name string, new_count int) ! {}
 
-fn (m WriteTxnMarkersMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+fn (m WriteTxnMarkersMockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	return domain.AppendResult{
 		base_offset:      0
 		log_append_time:  0

@@ -127,7 +127,8 @@ fn (mut s MockStorage) add_partitions(name string, new_count int) ! {
 	}
 }
 
-fn (mut s MockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+fn (mut s MockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	return domain.AppendResult{}
 }
 

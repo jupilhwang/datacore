@@ -45,7 +45,7 @@ fn benchmark_memory_storage() {
 			},
 		]
 
-		adapter.append(topic, 0, records) or {
+		adapter.append(topic, 0, records, i16(0)) or {
 			println('메시지 전송 실패: ${err}')
 			return
 		}

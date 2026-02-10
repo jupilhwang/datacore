@@ -6,11 +6,12 @@ import time
 
 /// StoredRecord는 오프셋을 포함한 스토리지용 내부 표현입니다.
 struct StoredRecord {
-	offset    i64             // 레코드 오프셋
-	timestamp time.Time       // 레코드 타임스탬프
-	key       []u8            // 레코드 키
-	value     []u8            // 레코드 값
-	headers   map[string][]u8 // 레코드 헤더
+	offset           i64             // 레코드 오프셋
+	timestamp        time.Time       // 레코드 타임스탬프
+	key              []u8            // 레코드 키
+	value            []u8            // 레코드 값
+	headers          map[string][]u8 // 레코드 헤더
+	compression_type u8              // 원본 압축 타입 (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
 }
 
 /// encode_stored_records는 StoredRecord 목록을 바이너리 형식으로 인코딩합니다.
@@ -19,8 +20,8 @@ fn encode_stored_records(records []StoredRecord) []u8 {
 	// 버퍼 크기 추정: 4 (개수) + 레코드 * (8 오프셋 + 8 타임스탬프 + 4 키길이 + 4 값길이 + 4 헤더개수 + 평균 데이터)
 	mut estimated_size := 4
 	for rec in records {
-		// 고정 오버헤드: 8 (오프셋) + 8 (타임스탬프) + 4 (키길이) + 4 (값길이) + 4 (헤더개수) = 28
-		estimated_size += 28 + rec.key.len + rec.value.len
+		// 고정 오버헤드: 8 (오프셋) + 8 (타임스탬프) + 4 (키길이) + 4 (값길이) + 4 (헤더개수) + 1 (압축타입) = 29
+		estimated_size += 29 + rec.key.len + rec.value.len
 		// 헤더: 헤더당 2 (키길이) + 키 + 2 (값길이) + 값
 		for h_key, h_val in rec.headers {
 			estimated_size += 4 + h_key.len + h_val.len
@@ -80,6 +81,9 @@ fn encode_stored_records(records []StoredRecord) []u8 {
 			buf << u8(h_val.len)
 			buf << h_val
 		}
+
+		// 압축 타입 (1 바이트)
+		buf << rec.compression_type
 	}
 
 	return buf
@@ -151,12 +155,20 @@ fn decode_stored_records(data []u8) []StoredRecord {
 			headers[h_key] = h_val
 		}
 
+		// 압축 타입 (1 바이트, 하위 호환: 데이터가 없으면 0으로 기본값)
+		mut compression_type := u8(0)
+		if pos < data.len {
+			compression_type = data[pos]
+			pos += 1
+		}
+
 		records << StoredRecord{
-			offset:    offset
-			timestamp: time.unix_milli(ts)
-			key:       key
-			value:     value
-			headers:   headers
+			offset:           offset
+			timestamp:        time.unix_milli(ts)
+			key:              key
+			value:            value
+			headers:          headers
+			compression_type: compression_type
 		}
 	}
 

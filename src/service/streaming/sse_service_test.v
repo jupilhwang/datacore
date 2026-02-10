@@ -66,7 +66,8 @@ fn (mut s MockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 fn (mut s MockStorage) add_partitions(name string, new_count int) ! {
 }
 
-fn (mut s MockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+fn (mut s MockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	key := '${topic}:${partition}'
 	if key !in s.records {
 		s.records[key] = []domain.Record{}

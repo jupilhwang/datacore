@@ -392,7 +392,8 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 
 /// append는 파티션에 레코드를 추가합니다.
 /// 파티션 수준 락킹으로 동시성을 제어합니다.
-pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, records []domain.Record) !domain.AppendResult {
+pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks // 메모리는 이미 즉시 저장이므로 무시
 	// 메트릭: append 시작
 	a.metrics_lock.@lock()
 	a.metrics.append_count++

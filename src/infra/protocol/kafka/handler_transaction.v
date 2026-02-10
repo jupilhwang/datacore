@@ -318,7 +318,7 @@ fn (mut h Handler) write_txn_marker_to_partition(topic string, partition_index i
 	control_records := build_txn_control_records(producer_id, producer_epoch, committed)
 
 	// Append the control record to storage
-	h.storage.append(topic, int(partition_index), control_records) or {
+	h.storage.append(topic, int(partition_index), control_records, i16(1)) or {
 		return i16(ErrorCode.unknown_server_error)
 	}
 

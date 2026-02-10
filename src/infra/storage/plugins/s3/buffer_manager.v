@@ -14,6 +14,13 @@ mut:
 	current_size_bytes i64            // 버퍼 내 모든 레코드의 현재 총 크기 (바이트)
 }
 
+/// FlushBatch는 S3 플러시 대상인 단일 파티션의 레코드 배치를 나타냅니다.
+/// map lookup 오버헤드를 제거하기 위해 구조체 배열로 사용됩니다.
+struct FlushBatch {
+	key     string
+	records []StoredRecord
+}
+
 /// async_flush_partition은 단일 파티션 배치에 대해 S3 put과 인덱스 업데이트를 수행합니다.
 /// 이 함수는 비동기로 호출되며, 버퍼의 레코드를 S3 세그먼트로 저장합니다.
 /// 주의: 현재는 flush_worker에서만 호출되며, 직접 호출은 비활성화되어 있습니다.
@@ -78,87 +85,88 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	}
 }
 
-/// flush_worker는 주기적으로 데이터가 축적된 모든 버퍼를 플러시합니다.
-/// 인덱스 충돌을 피하기 위해 파티션별 순차 처리를 사용합니다.
+/// flush_worker는 주기적으로 메시지 버퍼와 오프셋 버퍼를 병렬 플러시합니다.
 /// batch_timeout_ms 간격으로 실행되며, compactor_running이 false가 되면 종료됩니다.
 fn (mut a S3StorageAdapter) flush_worker() {
-	for a.compactor_running { // compactor_running 플래그를 사용하여 두 워커 모두 중지
+	for a.compactor_running {
 		time.sleep(a.config.batch_timeout_ms * time.millisecond)
 
-		// 락을 유지한 채 각 파티션의 버퍼 처리
-		// 키 수집과 플러시 사이에 append가 버퍼를 수정하는 경쟁 조건 방지
-		a.buffer_lock.lock()
+		// 메시지와 오프셋을 병렬 디스패치
+		go a.flush_pending_messages()
+		go a.flush_pending_offsets()
+	}
+}
 
-		// 데이터가 있는 모든 파티션 키 수집
-		mut keys_to_flush := []string{}
-		for key, tp_buffer in a.topic_partition_buffers {
+/// flush_pending_messages는 메시지 버퍼를 S3에 플러시합니다.
+/// 기존 flush_worker의 메시지 플러시 로직을 그대로 추출한 것입니다.
+fn (mut a S3StorageAdapter) flush_pending_messages() {
+	// 락을 유지한 채 각 파티션의 버퍼 처리
+	// 키 수집과 플러시 사이에 append가 버퍼를 수정하는 경쟁 조건 방지
+	a.buffer_lock.lock()
+
+	// 데이터가 있는 모든 파티션의 버퍼 데이터를 추출
+	mut flush_batches := []FlushBatch{}
+	for key, _ in a.topic_partition_buffers {
+		if mut tp_buffer := a.topic_partition_buffers[key] {
 			if tp_buffer.records.len > 0 {
-				keys_to_flush << key
+				flush_batches << FlushBatch{
+					key:     key
+					records: tp_buffer.records.clone()
+				}
+				tp_buffer.records.clear()
+				tp_buffer.current_size_bytes = 0
+				a.topic_partition_buffers[key] = tp_buffer
 			}
 		}
+	}
 
-		// 각 키에 대해 락을 유지한 채 버퍼 데이터 추출
-		mut flush_batches := map[string][]StoredRecord{}
-		for key in keys_to_flush {
-			if mut tp_buffer := a.topic_partition_buffers[key] {
-				if tp_buffer.records.len > 0 {
-					// 버퍼를 원자적으로 복제하고 초기화
-					flush_batches[key] = tp_buffer.records.clone()
-					tp_buffer.records.clear()
-					tp_buffer.current_size_bytes = 0
-					a.topic_partition_buffers[key] = tp_buffer
-				}
-			}
+	a.buffer_lock.unlock()
+
+	// 각 배치를 S3에 플러시 (락 없이)
+	for batch in flush_batches {
+		if batch.records.len == 0 {
+			continue
 		}
+		a.flush_buffer_to_s3(batch.key, batch.records) or {
+			log_message(.error, 'FlushWorker', 'Flush failed', {
+				'partition_key': batch.key
+				'record_count':  batch.records.len.str()
+				'error':         err.msg()
+			})
+			a.restore_failed_message_buffer(batch.key, batch.records)
+			log_message(.warn, 'FlushWorker', 'Buffer restored after flush failure', {
+				'partition_key': batch.key
+				'record_count':  batch.records.len.str()
+			})
+		}
+	}
+}
 
-		a.buffer_lock.unlock()
+/// restore_failed_message_buffer는 플러시 실패 시 메시지 버퍼를 복원합니다.
+/// 실패한 레코드를 기존 버퍼 앞에 추가하여 순서를 보존합니다.
+fn (mut a S3StorageAdapter) restore_failed_message_buffer(key string, buffer_data []StoredRecord) {
+	a.buffer_lock.lock()
+	defer { a.buffer_lock.unlock() }
 
-		// 이제 각 배치를 S3에 플러시 (락 없이)
-		for key, buffer_data in flush_batches {
-			if buffer_data.len == 0 {
-				continue
-			}
-			a.flush_buffer_to_s3(key, buffer_data) or {
-				log_message(.error, 'FlushWorker', 'Flush failed', {
-					'partition_key': key
-					'record_count':  buffer_data.len.str()
-					'error':         err.msg()
-				})
-				// 실패 시 데이터 손실 방지를 위해 버퍼 데이터 복원
-				// 메모리 효율을 위해 in-place 병합 사용
-				a.buffer_lock.lock()
-				if mut tp_buffer := a.topic_partition_buffers[key] {
-					// 실패한 데이터를 기존 버퍼 앞에 추가 (in-place)
-					// 새 배열 할당 대신 기존 버퍼를 재사용
-					old_records := tp_buffer.records
-					tp_buffer.records = []StoredRecord{cap: buffer_data.len + old_records.len}
-					tp_buffer.records << buffer_data
-					tp_buffer.records << old_records
-					// 크기 재계산
-					mut size := i64(0)
-					for rec in tp_buffer.records {
-						size += i64(rec.value.len + rec.key.len + record_overhead_bytes)
-					}
-					tp_buffer.current_size_bytes = size
-					a.topic_partition_buffers[key] = tp_buffer
-				} else {
-					// 버퍼가 삭제됨, 재생성
-					mut size := i64(0)
-					for rec in buffer_data {
-						size += i64(rec.value.len + rec.key.len + record_overhead_bytes)
-					}
-					a.topic_partition_buffers[key] = TopicPartitionBuffer{
-						records:            buffer_data
-						current_size_bytes: size
-					}
-				}
-				a.buffer_lock.unlock()
-				log_message(.warn, 'FlushWorker', 'Buffer restored after flush failure',
-					{
-					'partition_key': key
-					'record_count':  buffer_data.len.str()
-				})
-			}
+	if mut tp_buffer := a.topic_partition_buffers[key] {
+		old_records := tp_buffer.records
+		tp_buffer.records = []StoredRecord{cap: buffer_data.len + old_records.len}
+		tp_buffer.records << buffer_data
+		tp_buffer.records << old_records
+		mut size := i64(0)
+		for rec in tp_buffer.records {
+			size += i64(rec.value.len + rec.key.len + record_overhead_bytes)
+		}
+		tp_buffer.current_size_bytes = size
+		a.topic_partition_buffers[key] = tp_buffer
+	} else {
+		mut size := i64(0)
+		for rec in buffer_data {
+			size += i64(rec.value.len + rec.key.len + record_overhead_bytes)
+		}
+		a.topic_partition_buffers[key] = TopicPartitionBuffer{
+			records:            buffer_data
+			current_size_bytes: size
 		}
 	}
 }

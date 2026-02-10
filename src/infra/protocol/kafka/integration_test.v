@@ -85,7 +85,8 @@ fn (m IntegrationMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetada
 
 fn (m IntegrationMockStorage) add_partitions(name string, new_count int) ! {}
 
-fn (m IntegrationMockStorage) append(topic string, partition int, records []domain.Record) !domain.AppendResult {
+fn (m IntegrationMockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	_ = required_acks
 	return domain.AppendResult{
 		base_offset:      0
 		log_append_time:  1000
