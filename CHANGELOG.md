@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.44.0] - 2026-02-10
+
+### Added
+
+- **S3 Hybrid ACK Policy** - Kafka `acks` 파라미터를 통한 설정 가능한 내구성 보장
+  - `acks=0`: async buffer flush (기존 동작, best-effort)
+  - `acks=1/-1`: synchronous S3 PUT + index update before ACK (durable)
+- `required_acks` 파라미터를 `StoragePort.append()` 인터페이스에 추가
+- 전용 동기 append 메트릭 추가 (`sync_append_count`, `sync_append_success_count`, `sync_append_error_count`, `sync_append_total_ms`)
+- Lock ordering 문서화 (데드락 방지)
+
+### Changed
+
+- 성능 벤치마크 스크립트: MinIO Docker를 AWS S3 직접 접근으로 교체
+- S3 벤치마크에서 환경 변수 사용 (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `S3_BUCKET_NAME`)
+- acks 값 컨텍스트를 포함한 에러 메시지 개선 (예: `durable append failed (acks=1)`)
+
+### Fixed
+
+- S3 스토리지 엔진: `acks` 파라미터가 파싱만 되고 무시되어 모든 produce가 `acks=0`으로 처리되던 문제 수정
+- S3 스토리지에서 non-zero acks 설정 시 브로커 크래시로 인한 잠재적 데이터 손실 문제 수정
+
 ## [0.43.0] - 2026-02-03
 
 ### Added
