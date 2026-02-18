@@ -6,7 +6,7 @@ import sync
 import time
 import log
 
-/// Server handles incoming replication connections
+// Server handles incoming replication connections
 pub struct Server {
 mut:
 	port     int
@@ -18,9 +18,10 @@ mut:
 	logger   log.Logger
 }
 
-/// MessageHandler is a callback interface for handling messages
+// MessageHandler is a callback interface for handling messages
 pub type MessageHandler = fn (domain.ReplicationMessage) !domain.ReplicationMessage
 
+// Server.new creates a new replication Server on the given port with the specified message handler.
 pub fn Server.new(port int, handler MessageHandler) Server {
 	return Server{
 		port:     port
@@ -31,7 +32,7 @@ pub fn Server.new(port int, handler MessageHandler) Server {
 	}
 }
 
-/// start begins listening on the configured port
+// start begins listening on the configured port
 pub fn (mut s Server) start() ! {
 	s.mtx.@lock()
 	if s.running {
@@ -49,7 +50,7 @@ pub fn (mut s Server) start() ! {
 	spawn s.accept_loop()
 }
 
-/// stop shuts down the server
+// stop shuts down the server
 pub fn (mut s Server) stop() ! {
 	s.mtx.@lock()
 	if !s.running {
@@ -63,7 +64,7 @@ pub fn (mut s Server) stop() ! {
 	s.logger.info('Replication server stopped')
 }
 
-/// accept_loop accepts incoming connections
+// accept_loop accepts incoming connections
 fn (mut s Server) accept_loop() {
 	for {
 		s.mtx.@lock()
@@ -86,7 +87,7 @@ fn (mut s Server) accept_loop() {
 	}
 }
 
-/// handle_connection processes a single client connection
+// handle_connection processes a single client connection
 fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 	defer {
 		conn.close() or { s.logger.error('Failed to close connection: ${err}') }
@@ -125,23 +126,21 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				error_msg:      err.msg()
 			}
 
-			mut error_response_mut := error_response
-			s.protocol.write_message(mut conn, mut error_response_mut) or {
+			s.protocol.write_message(mut conn, error_response) or {
 				s.logger.error('Failed to send error response: ${err}')
 			}
 			continue
 		}
 
 		// Send response
-		mut response_mut := response
-		s.protocol.write_message(mut conn, mut response_mut) or {
+		s.protocol.write_message(mut conn, response) or {
 			s.logger.error('Failed to send response: ${err}')
 			break
 		}
 	}
 }
 
-/// is_running checks if server is running
+// is_running checks if server is running
 pub fn (s Server) is_running() bool {
 	return s.running
 }

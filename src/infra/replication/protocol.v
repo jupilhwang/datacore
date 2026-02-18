@@ -5,16 +5,17 @@ import json
 import encoding.binary
 import net
 
-/// Protocol implements length-prefixed binary protocol
-/// Format: [4 bytes length][JSON payload]
+// Protocol implements length-prefixed binary protocol
+// Format: [4 bytes length][JSON payload]
 pub struct Protocol {}
 
+// Protocol.new creates a new Protocol instance for encoding/decoding replication messages.
 pub fn Protocol.new() Protocol {
 	return Protocol{}
 }
 
-/// encode converts ReplicationMessage to wire format
-pub fn (p Protocol) encode(mut msg domain.ReplicationMessage) ![]u8 {
+// encode converts ReplicationMessage to wire format
+pub fn (p Protocol) encode(msg domain.ReplicationMessage) ![]u8 {
 	// Convert message to JSON
 	json_str := msg.to_json()
 	json_bytes := json_str.bytes()
@@ -31,7 +32,7 @@ pub fn (p Protocol) encode(mut msg domain.ReplicationMessage) ![]u8 {
 	return buf
 }
 
-/// decode parses wire format to ReplicationMessage
+// decode parses wire format to ReplicationMessage
 pub fn (p Protocol) decode(data []u8) !domain.ReplicationMessage {
 	if data.len < 4 {
 		return error('invalid data: too short (${data.len} bytes)')
@@ -54,7 +55,7 @@ pub fn (p Protocol) decode(data []u8) !domain.ReplicationMessage {
 	return msg
 }
 
-/// WireMessage is a JSON-decodable representation of ReplicationMessage
+// WireMessage is a JSON-decodable representation of ReplicationMessage
 struct WireMessage {
 pub:
 	msg_type       string
@@ -68,7 +69,7 @@ pub:
 	error_msg      string
 }
 
-/// parse_message parses JSON string to ReplicationMessage
+// parse_message parses JSON string to ReplicationMessage
 fn parse_message(json_str string) !domain.ReplicationMessage {
 	wire := json.decode(WireMessage, json_str)!
 
@@ -94,7 +95,7 @@ fn parse_message(json_str string) !domain.ReplicationMessage {
 	}
 }
 
-/// read_message reads a complete message from TCP connection
+// read_message reads a complete message from TCP connection
 pub fn (p Protocol) read_message(mut conn net.TcpConn) !domain.ReplicationMessage {
 	// Read 4-byte length header
 	mut len_buf := []u8{len: 4}
@@ -127,15 +128,15 @@ pub fn (p Protocol) read_message(mut conn net.TcpConn) !domain.ReplicationMessag
 	return msg
 }
 
-/// decode_payload decodes just the payload (without length prefix)
+// decode_payload decodes just the payload (without length prefix)
 fn (p Protocol) decode_payload(data []u8) !domain.ReplicationMessage {
 	json_str := data.bytestr()
 	msg := parse_message(json_str)!
 	return msg
 }
 
-/// write_message writes a complete message to TCP connection
-pub fn (p Protocol) write_message(mut conn net.TcpConn, mut msg domain.ReplicationMessage) ! {
-	wire_data := p.encode(mut msg)!
+// write_message writes a complete message to TCP connection
+pub fn (p Protocol) write_message(mut conn net.TcpConn, msg domain.ReplicationMessage) ! {
+	wire_data := p.encode(msg)!
 	conn.write(wire_data)!
 }

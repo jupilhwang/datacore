@@ -5,7 +5,7 @@ import domain
 import time
 import log
 
-/// Client sends replication messages to remote brokers
+// Client sends replication messages to remote brokers
 pub struct Client {
 mut:
 	protocol   Protocol
@@ -13,6 +13,7 @@ mut:
 	logger     log.Logger
 }
 
+// Client.new creates a new replication Client with the given timeout in milliseconds.
 pub fn Client.new(timeout_ms int) Client {
 	return Client{
 		protocol:   Protocol.new()
@@ -21,7 +22,19 @@ pub fn Client.new(timeout_ms int) Client {
 	}
 }
 
-/// send sends a message to a remote broker and waits for response
+// send sends a replication message to a remote broker and waits for response.
+// Establishes a new TCP connection for each call (no connection pooling).
+//
+// Parameters:
+// - broker_address: target broker address in "host:port" format (e.g., "localhost:9093")
+// - msg: ReplicationMessage to send
+//
+// Returns: response ReplicationMessage from the remote broker
+//
+// Errors:
+// - Connection failure if the broker is unreachable
+// - Timeout if no response within Client.timeout_ms
+// - Protocol error if message serialization/deserialization fails
 pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage) !domain.ReplicationMessage {
 	// Connect to broker
 	mut conn := net.dial_tcp(broker_address) or {
@@ -37,10 +50,7 @@ pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage)
 	conn.set_write_timeout(time.Duration(c.timeout_ms * time.millisecond))
 
 	// Send message
-	mut msg_mut := msg
-	c.protocol.write_message(mut conn, mut msg_mut) or {
-		return error('failed to write message: ${err}')
-	}
+	c.protocol.write_message(mut conn, msg) or { return error('failed to write message: ${err}') }
 
 	c.logger.debug('Sent ${msg.msg_type} to ${broker_address}')
 
@@ -54,12 +64,23 @@ pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage)
 	return response
 }
 
-/// send_async sends a message without waiting for response (fire-and-forget)
-pub fn (mut c Client) send_async(broker_address string, msg domain.ReplicationMessage) ! {
+// send_async sends a replication message without waiting for response (fire-and-forget).
+// Spawns a background coroutine via send_fire_forget.
+// Errors from the underlying send are logged but not propagated.
+//
+// Parameters:
+// - broker_address: target broker address in "host:port" format
+// - msg: ReplicationMessage to send
+pub fn (mut c Client) send_async(broker_address string, msg domain.ReplicationMessage) {
 	spawn c.send_fire_forget(broker_address, msg)
 }
 
-/// send_fire_forget is the internal implementation for async send
+// send_fire_forget is the internal implementation for async send.
+// Calls send() and logs errors without propagating them.
+//
+// Parameters:
+// - broker_address: target broker address in "host:port" format
+// - msg: ReplicationMessage to send
 fn (mut c Client) send_fire_forget(broker_address string, msg domain.ReplicationMessage) {
 	_ := c.send(broker_address, msg) or {
 		c.logger.error('Async send to ${broker_address} failed: ${err}')
@@ -67,7 +88,18 @@ fn (mut c Client) send_fire_forget(broker_address string, msg domain.Replication
 	}
 }
 
-/// send_with_retry sends a message with retry logic
+// send_with_retry sends a replication message with exponential backoff retry logic.
+// Retries on any send failure with delays of 100ms, 200ms, 400ms, etc.
+//
+// Parameters:
+// - broker_address: target broker address in "host:port" format
+// - msg: ReplicationMessage to send
+// - max_retries: maximum number of send attempts (e.g., 3)
+//
+// Returns: response ReplicationMessage from the remote broker
+//
+// Errors:
+// - All retry attempts exhausted (includes last error message)
 pub fn (mut c Client) send_with_retry(broker_address string, msg domain.ReplicationMessage, max_retries int) !domain.ReplicationMessage {
 	mut last_error := ''
 
@@ -91,7 +123,9 @@ pub fn (mut c Client) send_with_retry(broker_address string, msg domain.Replicat
 	return error('all ${max_retries} attempts failed. last error: ${last_error}')
 }
 
-/// close releases resources (no-op for now, but kept for interface compatibility)
-pub fn (mut c Client) close() ! {
+// close releases any resources held by the Client.
+// Currently a no-op since each send() creates its own connection,
+// but kept for interface compatibility and future connection pooling.
+pub fn (mut c Client) close() {
 	// No persistent connections to close
 }
