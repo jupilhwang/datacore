@@ -18,6 +18,7 @@ import domain
 import infra.observability
 import infra.protocol.http as proto_http
 import io
+import json
 import net
 import os
 import service.port
@@ -53,7 +54,72 @@ mut:
 	ready               bool // 트래픽 수신 준비 상태
 }
 
-/// new_rest_server - creates a new REST API server
+// 응답 구조체
+
+// TopicResponse는 단일 토픽 정보를 나타내는 응답 구조체입니다.
+struct TopicResponse {
+	name       string @[json: 'name']
+	partitions int    @[json: 'partitions']
+}
+
+// TopicsListResponse는 토픽 목록 응답 구조체입니다.
+struct TopicsListResponse {
+	topics []TopicResponse @[json: 'topics']
+}
+
+// CreateTopicRequest는 POST /v1/topics 요청 구조체입니다.
+struct CreateTopicRequest {
+	name       string @[json: 'name']
+	partitions int    @[json: 'partitions']
+}
+
+// RestErrorResponse는 REST API 에러 응답 구조체입니다.
+struct RestErrorResponse {
+	error_code int    @[json: 'error_code']
+	message    string @[json: 'message']
+}
+
+// SSEStatsResponse는 SSE 통계 응답 구조체입니다.
+struct SSEStatsResponse {
+	active_connections  int @[json: 'active_connections']
+	total_subscriptions int @[json: 'total_subscriptions']
+	messages_sent       i64 @[json: 'messages_sent']
+	bytes_sent          i64 @[json: 'bytes_sent']
+	connections_created i64 @[json: 'connections_created']
+	connections_closed  i64 @[json: 'connections_closed']
+}
+
+// WSStatsResponse는 WebSocket 통계 응답 구조체입니다.
+struct WSStatsResponse {
+	active_connections  int @[json: 'active_connections']
+	total_subscriptions int @[json: 'total_subscriptions']
+	messages_sent       i64 @[json: 'messages_sent']
+	messages_received   i64 @[json: 'messages_received']
+	bytes_sent          i64 @[json: 'bytes_sent']
+	bytes_received      i64 @[json: 'bytes_received']
+	connections_created i64 @[json: 'connections_created']
+	connections_closed  i64 @[json: 'connections_closed']
+}
+
+// HealthResponse는 헬스체크 응답 구조체입니다.
+struct HealthResponse {
+	status         string @[json: 'status']
+	storage        string @[json: 'storage']
+	uptime_seconds i64    @[json: 'uptime_seconds']
+	version        string @[json: 'version']
+}
+
+// ReadyResponse는 /ready 엔드포인트 응답 구조체입니다.
+struct ReadyResponse {
+	ready  bool   @[json: 'ready']
+	reason string @[json: 'reason'; omitempty]
+}
+
+// LiveResponse는 /live 엔드포인트 응답 구조체입니다.
+struct LiveResponse {
+	alive bool @[json: 'alive']
+}
+
 /// new_rest_server - creates a new REST API server
 pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestServer {
 	return &RestServer{
@@ -70,7 +136,6 @@ pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestS
 	}
 }
 
-/// default_rest_config - returns default REST server configuration
 /// default_rest_config - returns default REST server configuration
 pub fn default_rest_config() RestServerConfig {
 	return RestServerConfig{
@@ -97,7 +162,6 @@ pub fn (mut s RestServer) set_iceberg_catalog_api(api &IcebergCatalogAPI) {
 	}
 }
 
-/// start - starts the REST API server (blocking)
 /// start - starts the REST API server (blocking)
 pub fn (mut s RestServer) start() ! {
 	mut listener := net.listen_tcp(.ip, '${s.config.host}:${s.config.port}')!
@@ -133,14 +197,12 @@ pub fn (mut s RestServer) start() ! {
 }
 
 /// start_background - starts the REST API server in background
-/// start_background - starts the REST API server in background
 pub fn (mut s RestServer) start_background() {
 	spawn fn [mut s] () {
 		s.start() or { eprintln('[REST] Failed to start server: ${err}') }
 	}()
 }
 
-/// stop - stops the REST API server
 /// stop - stops the REST API server
 pub fn (mut s RestServer) stop() {
 	s.running = false
@@ -159,7 +221,7 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 	}
 	parts := request_line.trim_right('\r\n').split(' ')
 	if parts.len < 2 {
-		s.send_error(mut conn, 400, 'Bad Request')
+		s.send_error(mut conn, 400, 40001, 'Bad Request')
 		conn.close() or {}
 		return
 	}
@@ -226,7 +288,7 @@ fn (mut s RestServer) route_request(method string, path string, query map[string
 
 	// Topics API
 	if path.starts_with('/v1/topics') {
-		s.handle_topics_api(method, path, query, mut conn)
+		s.handle_topics_api(method, path, query, headers, mut conn)
 		return
 	}
 
@@ -272,7 +334,7 @@ fn (mut s RestServer) route_request(method string, path string, query map[string
 	}
 
 	// 찾을 수 없음
-	s.send_error(mut conn, 404, 'Not Found')
+	s.send_error(mut conn, 404, 40401, 'Not Found')
 	conn.close() or {}
 }
 
@@ -282,7 +344,7 @@ fn (mut s RestServer) route_request(method string, path string, query map[string
 fn (mut s RestServer) handle_websocket(headers map[string]string, client_ip string, mut conn net.TcpConn) {
 	// 업그레이드 처리
 	conn_id := s.ws_handler.handle_upgrade(mut conn, headers, client_ip) or {
-		s.send_error(mut conn, 400, 'WebSocket upgrade failed: ${err}')
+		s.send_error(mut conn, 400, 40001, 'WebSocket upgrade failed: ${err}')
 		conn.close() or {}
 		return
 	}
@@ -294,14 +356,17 @@ fn (mut s RestServer) handle_websocket(headers map[string]string, client_ip stri
 // handle_ws_stats는 WebSocket 통계 요청을 처리합니다.
 fn (mut s RestServer) handle_ws_stats(mut conn net.TcpConn) {
 	stats := s.ws_handler.get_stats()
-	json := '{' + '"active_connections":${stats.active_connections}' +
-		',"total_subscriptions":${stats.total_subscriptions}' +
-		',"messages_sent":${stats.messages_sent}' +
-		',"messages_received":${stats.messages_received}' + ',"bytes_sent":${stats.bytes_sent}' +
-		',"bytes_received":${stats.bytes_received}' +
-		',"connections_created":${stats.connections_created}' +
-		',"connections_closed":${stats.connections_closed}' + '}'
-	s.send_json(mut conn, 200, json)
+	resp := WSStatsResponse{
+		active_connections:  stats.active_connections
+		total_subscriptions: stats.total_subscriptions
+		messages_sent:       stats.messages_sent
+		messages_received:   stats.messages_received
+		bytes_sent:          stats.bytes_sent
+		bytes_received:      stats.bytes_received
+		connections_created: stats.connections_created
+		connections_closed:  stats.connections_closed
+	}
+	s.send_json(mut conn, 200, json.encode(resp))
 	conn.close() or {}
 }
 
@@ -311,20 +376,20 @@ fn (mut s RestServer) handle_ws_stats(mut conn net.TcpConn) {
 fn (mut s RestServer) handle_sse(path string, query map[string]string, headers map[string]string, client_ip string, mut conn net.TcpConn) {
 	// SSE 요청 파싱
 	request := proto_http.parse_sse_request(path, query, headers, client_ip) or {
-		s.send_error(mut conn, 400, 'Invalid SSE request: ${err}')
+		s.send_error(mut conn, 400, 40001, 'Invalid SSE request: ${err}')
 		conn.close() or {}
 		return
 	}
 
 	// SSE 요청 처리
 	status, resp_headers, should_stream := s.sse_handler.handle_sse_request(request) or {
-		s.send_error(mut conn, 500, 'Internal server error')
+		s.send_error(mut conn, 500, 50001, 'Internal server error')
 		conn.close() or {}
 		return
 	}
 
 	if !should_stream {
-		s.send_error(mut conn, status, 'SSE request failed')
+		s.send_error(mut conn, status, 50001, 'SSE request failed')
 		conn.close() or {}
 		return
 	}
@@ -332,7 +397,7 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 	// 헤더에서 연결 ID 가져오기
 	conn_id := resp_headers['X-SSE-Connection-Id'] or { '' }
 	if conn_id == '' {
-		s.send_error(mut conn, 500, 'Failed to create SSE connection')
+		s.send_error(mut conn, 500, 50001, 'Failed to create SSE connection')
 		conn.close() or {}
 		return
 	}
@@ -370,12 +435,15 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 // handle_sse_stats는 SSE 통계 요청을 처리합니다.
 fn (mut s RestServer) handle_sse_stats(mut conn net.TcpConn) {
 	stats := s.sse_handler.get_stats()
-	json := '{' + '"active_connections":${stats.active_connections}' +
-		',"total_subscriptions":${stats.total_subscriptions}' +
-		',"messages_sent":${stats.messages_sent}' + ',"bytes_sent":${stats.bytes_sent}' +
-		',"connections_created":${stats.connections_created}' +
-		',"connections_closed":${stats.connections_closed}' + '}'
-	s.send_json(mut conn, 200, json)
+	resp := SSEStatsResponse{
+		active_connections:  stats.active_connections
+		total_subscriptions: stats.total_subscriptions
+		messages_sent:       stats.messages_sent
+		bytes_sent:          stats.bytes_sent
+		connections_created: stats.connections_created
+		connections_closed:  stats.connections_closed
+	}
+	s.send_json(mut conn, 200, json.encode(resp))
 	conn.close() or {}
 }
 
@@ -386,7 +454,11 @@ fn (mut s RestServer) handle_sse_stats(mut conn net.TcpConn) {
 fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
 	// 스토리지 헬스 확인
 	storage_status := s.storage.health_check() or {
-		s.send_json(mut conn, 503, '{"status":"unhealthy","storage":"error","error":"${err}"}')
+		resp := HealthResponse{
+			status:  'unhealthy'
+			storage: 'error'
+		}
+		s.send_json(mut conn, 503, json.encode(resp))
 		conn.close() or {}
 		return
 	}
@@ -405,10 +477,13 @@ fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
 
 	uptime_seconds := time.since(s.start_time) / time.second
 
-	json := '{' + '"status":"${status}"' + ',"storage":"${status}"' +
-		',"uptime_seconds":${uptime_seconds}' + ',"version":"0.26.0"' + '}'
-
-	s.send_json(mut conn, http_status, json)
+	resp := HealthResponse{
+		status:         status
+		storage:        status
+		uptime_seconds: uptime_seconds
+		version:        '0.26.0'
+	}
+	s.send_json(mut conn, http_status, json.encode(resp))
 	conn.close() or {}
 }
 
@@ -418,20 +493,35 @@ fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
 	if s.ready {
 		// 추가 준비 상태 확인 가능
 		storage_status := s.storage.health_check() or {
-			s.send_json(mut conn, 503, '{"ready":false,"reason":"storage_unavailable"}')
+			resp := ReadyResponse{
+				ready:  false
+				reason: 'storage_unavailable'
+			}
+			s.send_json(mut conn, 503, json.encode(resp))
 			conn.close() or {}
 			return
 		}
 
 		if storage_status == .unhealthy {
-			s.send_json(mut conn, 503, '{"ready":false,"reason":"storage_unhealthy"}')
+			resp := ReadyResponse{
+				ready:  false
+				reason: 'storage_unhealthy'
+			}
+			s.send_json(mut conn, 503, json.encode(resp))
 			conn.close() or {}
 			return
 		}
 
-		s.send_json(mut conn, 200, '{"ready":true}')
+		resp := ReadyResponse{
+			ready: true
+		}
+		s.send_json(mut conn, 200, json.encode(resp))
 	} else {
-		s.send_json(mut conn, 503, '{"ready":false,"reason":"server_not_ready"}')
+		resp := ReadyResponse{
+			ready:  false
+			reason: 'server_not_ready'
+		}
+		s.send_json(mut conn, 503, json.encode(resp))
 	}
 	conn.close() or {}
 }
@@ -441,9 +531,9 @@ fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
 fn (mut s RestServer) handle_live(mut conn net.TcpConn) {
 	// 라이브니스 확인 - 서버가 실행 중인지만 확인
 	if s.running {
-		s.send_json(mut conn, 200, '{"alive":true}')
+		s.send_json(mut conn, 200, json.encode(LiveResponse{ alive: true }))
 	} else {
-		s.send_json(mut conn, 503, '{"alive":false}')
+		s.send_json(mut conn, 503, json.encode(LiveResponse{ alive: false }))
 	}
 	conn.close() or {}
 }
@@ -465,56 +555,159 @@ fn (s &RestServer) handle_metrics(mut conn net.TcpConn) {
 // Topics API 핸들러
 
 // handle_topics_api는 토픽 REST API 요청을 처리합니다.
-fn (mut s RestServer) handle_topics_api(method string, path string, query map[string]string, mut conn net.TcpConn) {
+fn (mut s RestServer) handle_topics_api(method string, path string, query map[string]string, headers map[string]string, mut conn net.TcpConn) {
 	parts := path.trim_left('/').split('/')
 
 	// GET /v1/topics - 토픽 목록
-	if parts.len == 2 && parts[1] == 'topics' && method == 'GET' {
-		s.list_topics(mut conn)
+	// POST /v1/topics - 토픽 생성
+	if parts.len == 2 && parts[1] == 'topics' {
+		match method {
+			'GET' {
+				s.list_topics(mut conn)
+			}
+			'POST' {
+				s.create_topic(headers, mut conn)
+			}
+			else {
+				s.send_error(mut conn, 405, 40501, 'Method Not Allowed')
+				conn.close() or {}
+			}
+		}
 		return
 	}
 
 	// GET /v1/topics/{topic} - 토픽 정보
-	if parts.len == 3 && parts[1] == 'topics' && method == 'GET' {
-		s.get_topic(parts[2], mut conn)
+	// DELETE /v1/topics/{topic} - 토픽 삭제
+	if parts.len == 3 && parts[1] == 'topics' {
+		match method {
+			'GET' {
+				s.get_topic(parts[2], mut conn)
+			}
+			'DELETE' {
+				s.delete_topic(parts[2], mut conn)
+			}
+			else {
+				s.send_error(mut conn, 405, 40501, 'Method Not Allowed')
+				conn.close() or {}
+			}
+		}
 		return
 	}
 
-	s.send_error(mut conn, 404, 'Not Found')
+	s.send_error(mut conn, 404, 40401, 'Not Found')
 	conn.close() or {}
 }
 
 // list_topics는 모든 토픽 목록을 반환합니다.
 fn (mut s RestServer) list_topics(mut conn net.TcpConn) {
 	topics := s.storage.list_topics() or {
-		s.send_error(mut conn, 500, 'Failed to list topics')
+		s.send_error(mut conn, 500, 50001, 'Failed to list topics')
 		conn.close() or {}
 		return
 	}
 
-	mut json := '{"topics":['
-	for i, topic in topics {
-		if i > 0 {
-			json += ','
+	mut topic_list := []TopicResponse{}
+	for topic in topics {
+		topic_list << TopicResponse{
+			name:       topic.name
+			partitions: topic.partition_count
 		}
-		json += '{"name":"${topic.name}","partitions":${topic.partition_count}}'
 	}
-	json += ']}'
 
-	s.send_json(mut conn, 200, json)
+	resp := TopicsListResponse{
+		topics: topic_list
+	}
+	s.send_json(mut conn, 200, json.encode(resp))
 	conn.close() or {}
 }
 
 // get_topic은 토픽 정보를 반환합니다.
 fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 	topic := s.storage.get_topic(name) or {
-		s.send_error(mut conn, 404, 'Topic not found')
+		s.send_error(mut conn, 404, 40401, 'Topic not found')
 		conn.close() or {}
 		return
 	}
 
-	json := '{"name":"${topic.name}","partitions":${topic.partition_count}}'
-	s.send_json(mut conn, 200, json)
+	resp := TopicResponse{
+		name:       topic.name
+		partitions: topic.partition_count
+	}
+	s.send_json(mut conn, 200, json.encode(resp))
+	conn.close() or {}
+}
+
+// create_topic은 새 토픽을 생성합니다.
+fn (mut s RestServer) create_topic(headers map[string]string, mut conn net.TcpConn) {
+	content_length := s.get_content_length(headers) or {
+		s.send_error(mut conn, 400, 40001, 'Content-Length header required')
+		conn.close() or {}
+		return
+	}
+
+	if content_length <= 0 || content_length > 1024 * 1024 {
+		s.send_error(mut conn, 400, 40001, 'Invalid Content-Length')
+		conn.close() or {}
+		return
+	}
+
+	// 요청 본문 읽기는 handle_connection에서 헤더만 읽으므로,
+	// conn에서 직접 body를 읽어야 합니다.
+	mut buf := []u8{len: content_length}
+	conn.read(mut buf) or {
+		s.send_error(mut conn, 400, 40001, 'Failed to read request body')
+		conn.close() or {}
+		return
+	}
+	body := buf.bytestr()
+
+	req := json.decode(CreateTopicRequest, body) or {
+		s.send_error(mut conn, 400, 40001, 'Invalid request body: ${err}')
+		conn.close() or {}
+		return
+	}
+
+	if req.name == '' {
+		s.send_error(mut conn, 400, 40001, 'Topic name is required')
+		conn.close() or {}
+		return
+	}
+
+	partitions := if req.partitions > 0 { req.partitions } else { 1 }
+
+	topic_meta := s.storage.create_topic(req.name, partitions, domain.TopicConfig{}) or {
+		// 이미 존재하는 토픽인 경우 409 Conflict
+		if err.msg().contains('already exists') || err.msg().contains('exists') {
+			s.send_error(mut conn, 409, 40901, 'Topic already exists: ${req.name}')
+		} else {
+			s.send_error(mut conn, 500, 50001, 'Failed to create topic: ${err}')
+		}
+		conn.close() or {}
+		return
+	}
+
+	resp := TopicResponse{
+		name:       topic_meta.name
+		partitions: topic_meta.partition_count
+	}
+	s.send_json(mut conn, 201, json.encode(resp))
+	conn.close() or {}
+}
+
+// delete_topic은 토픽을 삭제합니다.
+fn (mut s RestServer) delete_topic(name string, mut conn net.TcpConn) {
+	s.storage.delete_topic(name) or {
+		if err.msg().contains('not found') || err.msg().contains('does not exist') {
+			s.send_error(mut conn, 404, 40401, 'Topic not found: ${name}')
+		} else {
+			s.send_error(mut conn, 500, 50001, 'Failed to delete topic: ${err}')
+		}
+		conn.close() or {}
+		return
+	}
+
+	// 204 No Content - 성공적으로 삭제됨
+	s.send_json(mut conn, 204, '')
 	conn.close() or {}
 }
 
@@ -524,7 +717,7 @@ fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, headers map[string]string, mut conn net.TcpConn) {
 	unsafe {
 		if s.iceberg_catalog_api == 0 {
-			s.send_error(mut conn, 503, 'Iceberg Catalog not available')
+			s.send_error(mut conn, 503, 50301, 'Iceberg Catalog not available')
 			conn.close() or {}
 			return
 		}
@@ -552,7 +745,7 @@ fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, hea
 fn (mut s RestServer) handle_schema_api(method string, path string, headers map[string]string, mut conn net.TcpConn) {
 	unsafe {
 		if s.schema_api == 0 {
-			s.send_error(mut conn, 503, 'Schema Registry not available')
+			s.send_error(mut conn, 503, 50301, 'Schema Registry not available')
 			conn.close() or {}
 			return
 		}
@@ -585,13 +778,24 @@ fn (s &RestServer) get_content_length(headers map[string]string) !int {
 // 응답 헬퍼
 
 // send_json은 JSON 응답을 전송합니다.
+// 204 No Content인 경우 본문 없이 헤더만 전송합니다.
 fn (s &RestServer) send_json(mut conn net.TcpConn, status int, body string) {
+	// 204 No Content는 본문 없이 헤더만 전송
+	if status == 204 {
+		conn.write_string('HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n') or {}
+		return
+	}
+
 	status_text := match status {
 		200 { 'OK' }
 		201 { 'Created' }
 		400 { 'Bad Request' }
 		404 { 'Not Found' }
+		405 { 'Method Not Allowed' }
+		409 { 'Conflict' }
+		412 { 'Precondition Failed' }
 		500 { 'Internal Server Error' }
+		501 { 'Not Implemented' }
 		503 { 'Service Unavailable' }
 		else { 'Unknown' }
 	}
@@ -603,9 +807,12 @@ fn (s &RestServer) send_json(mut conn net.TcpConn, status int, body string) {
 }
 
 // send_error는 에러 응답을 전송합니다.
-fn (s &RestServer) send_error(mut conn net.TcpConn, status int, message string) {
-	body := '{"error":"${message}"}'
-	s.send_json(mut conn, status, body)
+fn (s &RestServer) send_error(mut conn net.TcpConn, status int, error_code int, message string) {
+	resp := RestErrorResponse{
+		error_code: error_code
+		message:    message
+	}
+	s.send_json(mut conn, status, json.encode(resp))
 }
 
 // 헬퍼 함수
@@ -625,14 +832,14 @@ fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
 	abs_static_dir := os.real_path(s.config.static_dir)
 	abs_file_path := os.real_path(file_path)
 	if !abs_file_path.starts_with(abs_static_dir) {
-		s.send_error(mut conn, 403, 'Forbidden')
+		s.send_error(mut conn, 403, 40301, 'Forbidden')
 		conn.close() or {}
 		return
 	}
 
 	// 파일 읽기
 	content := os.read_file(file_path) or {
-		s.send_error(mut conn, 404, 'File not found')
+		s.send_error(mut conn, 404, 40401, 'File not found')
 		conn.close() or {}
 		return
 	}
