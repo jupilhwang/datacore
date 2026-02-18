@@ -1,6 +1,7 @@
 module replication
 
 import domain
+import sync
 import time
 import log
 import rand
@@ -12,11 +13,15 @@ pub mut:
 	config    domain.ReplicationConfig
 	server    &Server = unsafe { nil }
 	client    &Client = unsafe { nil }
-	// In-memory storage
-	replica_buffers map[string][]domain.ReplicaBuffer   // Key: "topic:partition"
-	assignments     map[string]domain.ReplicaAssignment // Key: "topic:partition"
-	broker_health   map[string]domain.ReplicationHealth // Key: broker_id
-	stats           domain.ReplicationStats
+	// In-memory storage (protected by individual locks for concurrent access)
+	replica_buffers      map[string][]domain.ReplicaBuffer // Key: "topic:partition"
+	replica_buffers_lock sync.RwMutex
+	assignments          map[string]domain.ReplicaAssignment // Key: "topic:partition"
+	assignments_lock     sync.RwMutex
+	broker_health        map[string]domain.ReplicationHealth // Key: broker_id
+	broker_health_lock   sync.RwMutex
+	stats                domain.ReplicationStats
+	stats_lock           sync.Mutex
 	// Cluster info (injected from outside)
 	cluster_brokers []string // List of all broker addresses (e.g., "localhost:9093")
 	// State
@@ -86,14 +91,28 @@ pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, r
 		return
 	}
 
-	// Get replica assignments
 	key := '${topic}:${partition}'
-	assignment := m.assignments[key] or {
-		// No assignment yet, create one
+
+	// Read assignment under rlock; if missing, unlock, create, then re-read
+	m.assignments_lock.@rlock()
+	mut replica_brokers := []string{}
+	if key in m.assignments {
+		replica_brokers = m.assignments[key] or {
+			m.assignments_lock.runlock()
+			return error('failed to read assignment for ${key}')
+		}.replica_brokers.clone()
+		m.assignments_lock.runlock()
+	} else {
+		m.assignments_lock.runlock()
+		// No assignment yet, create one (acquires write lock internally)
 		m.assign_replicas(topic, partition)!
-		m.assignments[key] or { return error('failed to create assignment for ${key}') }
+		m.assignments_lock.@rlock()
+		replica_brokers = m.assignments[key] or {
+			m.assignments_lock.runlock()
+			return error('failed to create assignment for ${key}')
+		}.replica_brokers.clone()
+		m.assignments_lock.runlock()
 	}
-	replica_brokers := assignment.replica_brokers.clone()
 
 	// Create REPLICATE message
 	msg := domain.ReplicationMessage{
@@ -113,7 +132,9 @@ pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, r
 		spawn m.send_replicate_async(broker_addr, msg)
 	}
 
+	m.stats_lock.@lock()
 	m.stats.record_replicate()
+	m.stats_lock.unlock()
 }
 
 /// send_replicate_async sends REPLICATE message asynchronously
@@ -128,7 +149,9 @@ fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.Replicati
 		return
 	}
 
+	m.stats_lock.@lock()
 	m.stats.record_ack()
+	m.stats_lock.unlock()
 	m.logger.debug('Replicated offset ${msg.offset} to ${broker_addr}')
 }
 
@@ -139,8 +162,13 @@ pub fn (mut m Manager) send_flush_ack(topic string, partition i32, offset i64) !
 	}
 
 	key := '${topic}:${partition}'
-	assignment := m.assignments[key] or { return error('no assignment for ${key}') }
+	m.assignments_lock.@rlock()
+	assignment := m.assignments[key] or {
+		m.assignments_lock.runlock()
+		return error('no assignment for ${key}')
+	}
 	replica_brokers := assignment.replica_brokers.clone()
+	m.assignments_lock.runlock()
 
 	// Create FLUSH_ACK message
 	msg := domain.ReplicationMessage{
@@ -159,7 +187,9 @@ pub fn (mut m Manager) send_flush_ack(topic string, partition i32, offset i64) !
 		m.client.send_async(broker_addr, msg)!
 	}
 
+	m.stats_lock.@lock()
 	m.stats.record_flush_ack()
+	m.stats_lock.unlock()
 }
 
 /// assign_replicas creates replica assignments for a partition
@@ -211,7 +241,9 @@ fn (mut m Manager) assign_replicas(topic string, partition i32) ! {
 		assigned_time:   time.now().unix_milli()
 	}
 
+	m.assignments_lock.@lock()
 	m.assignments[key] = assignment
+	m.assignments_lock.unlock()
 	m.logger.info('Assigned replicas for ${key}: ${selected}')
 }
 
@@ -219,10 +251,12 @@ fn (mut m Manager) assign_replicas(topic string, partition i32) ! {
 pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 	key := '${buffer.topic}:${buffer.partition}'
 
+	m.replica_buffers_lock.@lock()
 	if key !in m.replica_buffers {
 		m.replica_buffers[key] = []domain.ReplicaBuffer{}
 	}
 	m.replica_buffers[key] << buffer
+	m.replica_buffers_lock.unlock()
 
 	m.logger.debug('Stored replica buffer for ${key}, offset ${buffer.offset}')
 }
@@ -231,6 +265,7 @@ pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 pub fn (mut m Manager) delete_replica_buffer(topic string, partition i32, offset i64) ! {
 	key := '${topic}:${partition}'
 
+	m.replica_buffers_lock.@lock()
 	if key in m.replica_buffers {
 		// Filter out buffers with offset <= flush offset
 		mut remaining := []domain.ReplicaBuffer{}
@@ -241,24 +276,37 @@ pub fn (mut m Manager) delete_replica_buffer(topic string, partition i32, offset
 		}
 		m.replica_buffers[key] = remaining
 	}
+	m.replica_buffers_lock.unlock()
 
 	m.logger.debug('Deleted replica buffers for ${key} up to offset ${offset}')
 }
 
 /// get_all_replica_buffers returns all replica buffers (for crash recovery)
-pub fn (m Manager) get_all_replica_buffers() ![]domain.ReplicaBuffer {
+pub fn (mut m Manager) get_all_replica_buffers() ![]domain.ReplicaBuffer {
 	mut all_buffers := []domain.ReplicaBuffer{}
 
+	m.replica_buffers_lock.@rlock()
 	for _, buffers in m.replica_buffers {
 		all_buffers << buffers
 	}
+	m.replica_buffers_lock.runlock()
 
 	return all_buffers
 }
 
 /// get_stats returns replication statistics
-pub fn (m Manager) get_stats() domain.ReplicationStats {
-	return m.stats
+pub fn (mut m Manager) get_stats() domain.ReplicationStats {
+	m.stats_lock.@lock()
+	stats := m.stats
+	m.stats_lock.unlock()
+	return stats
+}
+
+/// update_broker_health updates the health status for a broker (thread-safe)
+fn (mut m Manager) update_broker_health(broker_id string, health domain.ReplicationHealth) {
+	m.broker_health_lock.@lock()
+	m.broker_health[broker_id] = health
+	m.broker_health_lock.unlock()
 }
 
 /// start_workers starts periodic background workers
@@ -302,36 +350,38 @@ fn (mut m Manager) heartbeat_worker() {
 			}
 
 			response := m.client.send(broker_addr, msg) or {
-				m.broker_health[broker_addr] = domain.ReplicationHealth{
+				m.update_broker_health(broker_addr, domain.ReplicationHealth{
 					broker_id:      broker_addr
 					is_alive:       false
 					last_heartbeat: time.now().unix_milli()
 					lag_ms:         0
 					pending_count:  0
-				}
+				})
 				m.logger.error('Heartbeat failed for ${broker_addr}: ${err}')
 				continue
 			}
 
 			if response.success {
-				m.broker_health[broker_addr] = domain.ReplicationHealth{
+				m.update_broker_health(broker_addr, domain.ReplicationHealth{
 					broker_id:      broker_addr
 					is_alive:       true
 					last_heartbeat: time.now().unix_milli()
 					lag_ms:         0
 					pending_count:  0
-				}
+				})
 			} else {
-				m.broker_health[broker_addr] = domain.ReplicationHealth{
+				m.update_broker_health(broker_addr, domain.ReplicationHealth{
 					broker_id:      broker_addr
 					is_alive:       false
 					last_heartbeat: time.now().unix_milli()
 					lag_ms:         0
 					pending_count:  0
-				}
+				})
 			}
 		}
+		m.stats_lock.@lock()
 		m.stats.update_heartbeat()
+		m.stats_lock.unlock()
 	}
 
 	m.logger.info('Heartbeat worker stopped')
@@ -351,7 +401,9 @@ fn (mut m Manager) orphan_cleanup_worker() {
 
 		now := time.now().unix_milli()
 		cutoff := now - orphan_max_age_ms
+		mut total_cleaned := 0
 
+		m.replica_buffers_lock.@lock()
 		keys := m.replica_buffers.keys()
 		for key in keys {
 			buffers := m.replica_buffers[key] or { continue }
@@ -368,11 +420,19 @@ fn (mut m Manager) orphan_cleanup_worker() {
 
 			if cleaned_count > 0 {
 				m.replica_buffers[key] = remaining
-				for _ in 0 .. cleaned_count {
-					m.stats.record_orphan_cleanup()
-				}
+				total_cleaned += cleaned_count
 				m.logger.info('Orphan cleanup: removed ${cleaned_count} stale buffers from ${key}')
 			}
+		}
+		m.replica_buffers_lock.unlock()
+
+		// Update stats outside buffer lock to avoid holding two locks
+		if total_cleaned > 0 {
+			m.stats_lock.@lock()
+			for _ in 0 .. total_cleaned {
+				m.stats.record_orphan_cleanup()
+			}
+			m.stats_lock.unlock()
 		}
 	}
 
@@ -389,7 +449,8 @@ fn (mut m Manager) reassignment_worker() {
 			break
 		}
 
-		// Collect dead brokers
+		// Collect dead and alive brokers under rlock
+		m.broker_health_lock.@rlock()
 		mut dead_brokers := []string{}
 		for broker_id, health in m.broker_health {
 			if !health.is_alive {
@@ -397,13 +458,6 @@ fn (mut m Manager) reassignment_worker() {
 			}
 		}
 
-		if dead_brokers.len == 0 {
-			continue
-		}
-
-		m.logger.info('Reassignment: detected ${dead_brokers.len} dead broker(s): ${dead_brokers}')
-
-		// Collect alive brokers
 		mut alive_brokers := []string{}
 		for broker_addr in m.cluster_brokers {
 			health := m.broker_health[broker_addr] or { continue }
@@ -411,8 +465,16 @@ fn (mut m Manager) reassignment_worker() {
 				alive_brokers << broker_addr
 			}
 		}
+		m.broker_health_lock.runlock()
 
-		// Reassign partitions
+		if dead_brokers.len == 0 {
+			continue
+		}
+
+		m.logger.info('Reassignment: detected ${dead_brokers.len} dead broker(s): ${dead_brokers}')
+
+		// Reassign partitions under write lock
+		m.assignments_lock.@lock()
 		assignment_keys := m.assignments.keys()
 		for key in assignment_keys {
 			assignment := m.assignments[key] or { continue }
@@ -447,6 +509,7 @@ fn (mut m Manager) reassignment_worker() {
 				m.logger.info('Reassignment: updated replicas for ${key}: ${new_replicas}')
 			}
 		}
+		m.assignments_lock.unlock()
 	}
 
 	m.logger.info('Reassignment worker stopped')
@@ -457,7 +520,7 @@ fn (mut m Manager) create_handler() MessageHandler {
 	return fn [mut m] (msg domain.ReplicationMessage) !domain.ReplicationMessage {
 		match msg.msg_type {
 			.replicate {
-				// Store replicated data
+				// Store replicated data (store_replica_buffer acquires its own lock)
 				buffer := domain.ReplicaBuffer{
 					topic:        msg.topic
 					partition:    msg.partition
@@ -480,7 +543,7 @@ fn (mut m Manager) create_handler() MessageHandler {
 				}
 			}
 			.flush_ack {
-				// Delete replica buffer
+				// Delete replica buffer (delete_replica_buffer acquires its own lock)
 				m.delete_replica_buffer(msg.topic, msg.partition, msg.offset)!
 
 				// No response needed for FLUSH_ACK
@@ -493,14 +556,14 @@ fn (mut m Manager) create_handler() MessageHandler {
 				}
 			}
 			.heartbeat {
-				// Update health status from heartbeat sender
-				m.broker_health[msg.sender_id] = domain.ReplicationHealth{
+				// Update health status from heartbeat sender (thread-safe)
+				m.update_broker_health(msg.sender_id, domain.ReplicationHealth{
 					broker_id:      msg.sender_id
 					is_alive:       true
 					last_heartbeat: time.now().unix_milli()
 					lag_ms:         0
 					pending_count:  0
-				}
+				})
 				return domain.ReplicationMessage{
 					msg_type:       domain.ReplicationType.heartbeat
 					correlation_id: msg.correlation_id
