@@ -21,6 +21,7 @@ import io
 import json
 import net
 import os
+import regex
 import service.port
 import time
 
@@ -52,6 +53,15 @@ mut:
 	start_time          time.Time
 	running             bool
 	ready               bool // 트래픽 수신 준비 상태
+}
+
+// ParsedRequest는 handle_connection에서 파싱된 HTTP 요청을 담는 구조체입니다.
+struct ParsedRequest {
+	method  string
+	path    string
+	query   map[string]string
+	headers map[string]string
+	body    string
 }
 
 // 응답 구조체
@@ -211,7 +221,7 @@ pub fn (mut s RestServer) stop() {
 
 // handle_connection은 단일 HTTP 연결을 처리합니다.
 fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
-	// HTTP 요청 읽기
+	// HTTP 요청 읽기 - buffered reader로 헤더와 body를 모두 읽어 데이터 유실 방지
 	mut reader := io.new_buffered_reader(reader: conn)
 
 	// 요청 라인 읽기
@@ -253,83 +263,104 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 		}
 	}
 
+	// body 읽기: buffered reader로 헤더를 읽었으므로 body도 동일한 reader에서 읽어야 함
+	mut body := ''
+	content_length_str := headers['Content-Length'] or { headers['content-length'] or { '0' } }
+	content_length := content_length_str.int()
+	if content_length > 0 && content_length <= 1024 * 1024 {
+		mut body_buf := []u8{len: content_length}
+		reader.read(mut body_buf) or {}
+		body = body_buf.bytestr()
+	}
+
 	// 클라이언트 IP 가져오기
 	client_ip := conn.peer_ip() or { '0.0.0.0' }
 
+	parsed := ParsedRequest{
+		method:  method
+		path:    path
+		query:   query
+		headers: headers
+		body:    body
+	}
+
 	// 요청 라우팅
-	s.route_request(method, path, query, headers, client_ip, mut conn)
+	s.route_request(parsed, client_ip, mut conn)
 }
 
 // route_request는 HTTP 요청을 적절한 핸들러로 라우팅합니다.
-fn (mut s RestServer) route_request(method string, path string, query map[string]string, headers map[string]string, client_ip string, mut conn net.TcpConn) {
+fn (mut s RestServer) route_request(parsed ParsedRequest, client_ip string, mut conn net.TcpConn) {
 	// WebSocket 업그레이드
-	upgrade := headers['Upgrade'] or { headers['upgrade'] or { '' } }
-	if upgrade.to_lower() == 'websocket' && (path == '/v1/ws' || path == '/ws') {
-		s.handle_websocket(headers, client_ip, mut conn)
+	upgrade := parsed.headers['Upgrade'] or { parsed.headers['upgrade'] or { '' } }
+	if upgrade.to_lower() == 'websocket' && (parsed.path == '/v1/ws' || parsed.path == '/ws') {
+		s.handle_websocket(parsed.headers, client_ip, mut conn)
 		return
 	}
 
 	// Stats API (경로 충돌 방지를 위해 SSE보다 먼저 확인)
-	if path == '/v1/sse/stats' && method == 'GET' {
+	if parsed.path == '/v1/sse/stats' && parsed.method == 'GET' {
 		s.handle_sse_stats(mut conn)
 		return
 	}
 
-	if path == '/v1/ws/stats' && method == 'GET' {
+	if parsed.path == '/v1/ws/stats' && parsed.method == 'GET' {
 		s.handle_ws_stats(mut conn)
 		return
 	}
 
 	// SSE 엔드포인트
-	if path.contains('/sse') && method == 'GET' {
-		s.handle_sse(path, query, headers, client_ip, mut conn)
+	if parsed.path.contains('/sse') && parsed.method == 'GET' {
+		s.handle_sse(parsed.path, parsed.query, parsed.headers, client_ip, mut conn)
 		return
 	}
 
 	// Topics API
-	if path.starts_with('/v1/topics') {
-		s.handle_topics_api(method, path, query, headers, mut conn)
+	if parsed.path.starts_with('/v1/topics') {
+		s.handle_topics_api(parsed.method, parsed.path, parsed.query, parsed.headers,
+			parsed.body, mut conn)
 		return
 	}
 
 	// Iceberg Catalog API
-	if path.starts_with('/v1/iceberg') || path.starts_with('/v1/config') {
-		s.handle_iceberg_catalog_api(method, path, headers, mut conn)
+	if parsed.path.starts_with('/v1/iceberg') || parsed.path.starts_with('/v1/config') {
+		s.handle_iceberg_catalog_api(parsed.method, parsed.path, parsed.headers, parsed.body, mut
+			conn)
 		return
 	}
 
 	// Schema Registry API
-	if path.starts_with('/subjects') || path.starts_with('/schemas') || path.starts_with('/config')
-		|| path.starts_with('/compatibility') {
-		s.handle_schema_api(method, path, headers, mut conn)
+	if parsed.path.starts_with('/subjects') || parsed.path.starts_with('/schemas')
+		|| parsed.path.starts_with('/config') || parsed.path.starts_with('/compatibility') {
+		s.handle_schema_api(parsed.method, parsed.path, parsed.headers, parsed.body, mut
+			conn)
 		return
 	}
 
 	// 헬스 엔드포인트 (Kubernetes 호환)
-	if path == '/health' || path == '/healthz' {
+	if parsed.path == '/health' || parsed.path == '/healthz' {
 		s.handle_health(mut conn)
 		return
 	}
 
-	if path == '/ready' || path == '/readyz' {
+	if parsed.path == '/ready' || parsed.path == '/readyz' {
 		s.handle_ready(mut conn)
 		return
 	}
 
-	if path == '/live' || path == '/livez' {
+	if parsed.path == '/live' || parsed.path == '/livez' {
 		s.handle_live(mut conn)
 		return
 	}
 
 	// 메트릭 엔드포인트 (Prometheus 형식)
-	if path == '/metrics' {
+	if parsed.path == '/metrics' {
 		s.handle_metrics(mut conn)
 		return
 	}
 
 	// 정적 파일 (테스트 클라이언트)
-	if path == '/' || path == '/index.html' || path.starts_with('/static/') {
-		s.serve_static_file(path, mut conn)
+	if parsed.path == '/' || parsed.path == '/index.html' || parsed.path.starts_with('/static/') {
+		s.serve_static_file(parsed.path, mut conn)
 		return
 	}
 
@@ -481,7 +512,7 @@ fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
 		status:         status
 		storage:        status
 		uptime_seconds: uptime_seconds
-		version:        '0.26.0'
+		version:        '0.44.1'
 	}
 	s.send_json(mut conn, http_status, json.encode(resp))
 	conn.close() or {}
@@ -555,7 +586,7 @@ fn (s &RestServer) handle_metrics(mut conn net.TcpConn) {
 // Topics API 핸들러
 
 // handle_topics_api는 토픽 REST API 요청을 처리합니다.
-fn (mut s RestServer) handle_topics_api(method string, path string, query map[string]string, headers map[string]string, mut conn net.TcpConn) {
+fn (mut s RestServer) handle_topics_api(method string, path string, query map[string]string, headers map[string]string, body string, mut conn net.TcpConn) {
 	parts := path.trim_left('/').split('/')
 
 	// GET /v1/topics - 토픽 목록
@@ -566,7 +597,7 @@ fn (mut s RestServer) handle_topics_api(method string, path string, query map[st
 				s.list_topics(mut conn)
 			}
 			'POST' {
-				s.create_topic(headers, mut conn)
+				s.create_topic(body, mut conn)
 			}
 			else {
 				s.send_error(mut conn, 405, 40501, 'Method Not Allowed')
@@ -638,28 +669,13 @@ fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 }
 
 // create_topic은 새 토픽을 생성합니다.
-fn (mut s RestServer) create_topic(headers map[string]string, mut conn net.TcpConn) {
-	content_length := s.get_content_length(headers) or {
-		s.send_error(mut conn, 400, 40001, 'Content-Length header required')
+// body는 handle_connection에서 buffered reader로 미리 읽어 전달됩니다.
+fn (mut s RestServer) create_topic(body string, mut conn net.TcpConn) {
+	if body == '' {
+		s.send_error(mut conn, 400, 40001, 'Request body is required')
 		conn.close() or {}
 		return
 	}
-
-	if content_length <= 0 || content_length > 1024 * 1024 {
-		s.send_error(mut conn, 400, 40001, 'Invalid Content-Length')
-		conn.close() or {}
-		return
-	}
-
-	// 요청 본문 읽기는 handle_connection에서 헤더만 읽으므로,
-	// conn에서 직접 body를 읽어야 합니다.
-	mut buf := []u8{len: content_length}
-	conn.read(mut buf) or {
-		s.send_error(mut conn, 400, 40001, 'Failed to read request body')
-		conn.close() or {}
-		return
-	}
-	body := buf.bytestr()
 
 	req := json.decode(CreateTopicRequest, body) or {
 		s.send_error(mut conn, 400, 40001, 'Invalid request body: ${err}')
@@ -673,11 +689,18 @@ fn (mut s RestServer) create_topic(headers map[string]string, mut conn net.TcpCo
 		return
 	}
 
+	// 토픽 이름 검증: ^[a-zA-Z0-9._-]{1,249}$
+	if req.name.len > 249 || !is_valid_topic_name(req.name) {
+		s.send_error(mut conn, 400, 40002, 'Invalid topic name. Use alphanumeric, dots, underscores, hyphens (max 249 chars)')
+		conn.close() or {}
+		return
+	}
+
 	partitions := if req.partitions > 0 { req.partitions } else { 1 }
 
 	topic_meta := s.storage.create_topic(req.name, partitions, domain.TopicConfig{}) or {
 		// 이미 존재하는 토픽인 경우 409 Conflict
-		if err.msg().contains('already exists') || err.msg().contains('exists') {
+		if err.msg().contains('already exists') {
 			s.send_error(mut conn, 409, 40901, 'Topic already exists: ${req.name}')
 		} else {
 			s.send_error(mut conn, 500, 50001, 'Failed to create topic: ${err}')
@@ -714,7 +737,8 @@ fn (mut s RestServer) delete_topic(name string, mut conn net.TcpConn) {
 // Iceberg Catalog API 핸들러
 
 // handle_iceberg_catalog_api는 Iceberg REST Catalog API 요청을 처리합니다.
-fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, headers map[string]string, mut conn net.TcpConn) {
+// body는 handle_connection에서 buffered reader로 미리 읽어 전달됩니다.
+fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, headers map[string]string, body string, mut conn net.TcpConn) {
 	unsafe {
 		if s.iceberg_catalog_api == 0 {
 			s.send_error(mut conn, 503, 50301, 'Iceberg Catalog not available')
@@ -722,17 +746,6 @@ fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, hea
 			return
 		}
 	}
-	mut body := ''
-	// POST/PUT 요청의 본문 읽기
-	if method == 'POST' || method == 'PUT' {
-		content_length := s.get_content_length(headers) or { 0 }
-		if content_length > 0 && content_length < 10 * 1024 * 1024 {
-			mut buf := []u8{len: content_length}
-			conn.read(mut buf) or {}
-			body = buf.bytestr()
-		}
-	}
-
 	// Iceberg Catalog API 요청 처리
 	status, resp_body := s.iceberg_catalog_api.handle_request(method, path, body)
 	s.send_json(mut conn, status, resp_body)
@@ -742,7 +755,8 @@ fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, hea
 // Schema Registry API 핸들러
 
 // handle_schema_api는 스키마 레지스트리 REST API 요청을 처리합니다.
-fn (mut s RestServer) handle_schema_api(method string, path string, headers map[string]string, mut conn net.TcpConn) {
+// body는 handle_connection에서 buffered reader로 미리 읽어 전달됩니다.
+fn (mut s RestServer) handle_schema_api(method string, path string, headers map[string]string, body string, mut conn net.TcpConn) {
 	unsafe {
 		if s.schema_api == 0 {
 			s.send_error(mut conn, 503, 50301, 'Schema Registry not available')
@@ -750,17 +764,6 @@ fn (mut s RestServer) handle_schema_api(method string, path string, headers map[
 			return
 		}
 	}
-	mut body := ''
-	// Read request body for POST/PUT requests
-	if method == 'POST' || method == 'PUT' {
-		content_length := s.get_content_length(headers) or { 0 }
-		if content_length > 0 && content_length < 1024 * 1024 {
-			mut buf := []u8{len: content_length}
-			conn.read(mut buf) or {}
-			body = buf.bytestr()
-		}
-	}
-
 	status, resp_body := s.schema_api.handle_request(method, path, body)
 	s.send_json(mut conn, status, resp_body)
 	conn.close() or {}
@@ -790,6 +793,7 @@ fn (s &RestServer) send_json(mut conn net.TcpConn, status int, body string) {
 		200 { 'OK' }
 		201 { 'Created' }
 		400 { 'Bad Request' }
+		403 { 'Forbidden' }
 		404 { 'Not Found' }
 		405 { 'Method Not Allowed' }
 		409 { 'Conflict' }
@@ -876,6 +880,15 @@ fn get_content_type(path string) string {
 		return 'image/x-icon'
 	}
 	return 'application/octet-stream'
+}
+
+// is_valid_topic_name은 토픽 이름이 ^[a-zA-Z0-9._-]{1,249}$ 패턴에 맞는지 검증합니다.
+fn is_valid_topic_name(name string) bool {
+	if name == '' || name.len > 249 {
+		return false
+	}
+	mut re := regex.regex_opt(r'^[a-zA-Z0-9._\-]+$') or { return false }
+	return re.matches_string(name)
 }
 
 // parse_query_string은 URL 쿼리 문자열을 맵으로 파싱합니다.
