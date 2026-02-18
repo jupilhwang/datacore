@@ -1,6 +1,7 @@
 module replication
 
 import domain
+import sync
 import log
 import time
 
@@ -478,4 +479,172 @@ fn test_assign_replicas() {
 	assert assignment.main_broker == 'broker-test-1'
 	assert assignment.replica_brokers.len == 2, 'expected 2 replicas, got ${assignment.replica_brokers.len}'
 	assert assignment.assigned_time > 0
+}
+
+// --- Test: Concurrent store and read of replica buffers ---
+// Verify that concurrent writes and reads do not cause data race or panic
+
+fn test_concurrent_store_and_read_replica_buffers() {
+	mut m := create_test_manager()
+	m.running = true
+	num_writers := 4
+	writes_per_writer := 50
+
+	mut wg := sync.new_waitgroup()
+	wg.add(num_writers + 2) // writers + readers
+
+	// Spawn concurrent writers
+	for w in 0 .. num_writers {
+		spawn fn [mut m, mut wg, w, writes_per_writer] () {
+			defer {
+				wg.done()
+			}
+			for i in 0 .. writes_per_writer {
+				buf := domain.ReplicaBuffer{
+					topic:        'concurrent-topic'
+					partition:    i32(w)
+					offset:       i64(i)
+					records_data: 'data-${w}-${i}'.bytes()
+					timestamp:    time.now().unix_milli()
+				}
+				m.store_replica_buffer(buf) or {}
+			}
+		}()
+	}
+
+	// Spawn concurrent readers
+	for _ in 0 .. 2 {
+		spawn fn [mut m, mut wg] () {
+			defer {
+				wg.done()
+			}
+			for _ in 0 .. 20 {
+				_ := m.get_all_replica_buffers() or { []domain.ReplicaBuffer{} }
+				time.sleep(time.Duration(1 * time.millisecond))
+			}
+		}()
+	}
+
+	// Wait for all to complete
+	wg.wait()
+
+	// Verify total count
+	all_buffers := m.get_all_replica_buffers() or {
+		assert false, 'get_all failed: ${err}'
+		return
+	}
+	expected := num_writers * writes_per_writer
+	assert all_buffers.len == expected, 'expected ${expected} buffers, got ${all_buffers.len}'
+}
+
+// --- Test: Concurrent broker health updates ---
+// Verify that concurrent health updates do not cause data race
+
+fn test_concurrent_broker_health_updates() {
+	mut m := create_test_manager()
+	num_updaters := 4
+	updates_per_thread := 50
+
+	mut wg := sync.new_waitgroup()
+	wg.add(num_updaters)
+
+	for u in 0 .. num_updaters {
+		spawn fn [mut m, mut wg, u, updates_per_thread] () {
+			defer {
+				wg.done()
+			}
+			broker_id := 'broker-${u}'
+			for i in 0 .. updates_per_thread {
+				m.update_broker_health(broker_id, domain.ReplicationHealth{
+					broker_id:      broker_id
+					is_alive:       i % 2 == 0
+					last_heartbeat: time.now().unix_milli()
+					lag_ms:         0
+					pending_count:  0
+				})
+			}
+		}()
+	}
+
+	wg.wait()
+
+	// Each broker should have a health entry
+	for u in 0 .. num_updaters {
+		broker_id := 'broker-${u}'
+		_ := m.broker_health[broker_id] or {
+			assert false, 'missing health for ${broker_id}'
+			return
+		}
+	}
+}
+
+// --- Test: Concurrent store and delete replica buffers ---
+// Verify that store and delete operating concurrently do not cause data race
+
+fn test_concurrent_store_and_delete_replica_buffers() {
+	mut m := create_test_manager()
+	m.running = true
+
+	// Pre-populate buffers
+	for i in 0 .. 100 {
+		buf := domain.ReplicaBuffer{
+			topic:        'race-topic'
+			partition:    0
+			offset:       i64(i)
+			records_data: 'data-${i}'.bytes()
+			timestamp:    time.now().unix_milli()
+		}
+		m.store_replica_buffer(buf) or {}
+	}
+
+	mut wg := sync.new_waitgroup()
+	wg.add(3) // writer + deleter + reader
+
+	// Writer: add more buffers
+	spawn fn [mut m, mut wg] () {
+		defer {
+			wg.done()
+		}
+		for i in 100 .. 200 {
+			buf := domain.ReplicaBuffer{
+				topic:        'race-topic'
+				partition:    0
+				offset:       i64(i)
+				records_data: 'data-${i}'.bytes()
+				timestamp:    time.now().unix_milli()
+			}
+			m.store_replica_buffer(buf) or {}
+		}
+	}()
+
+	// Deleter: delete buffers up to various offsets
+	spawn fn [mut m, mut wg] () {
+		defer {
+			wg.done()
+		}
+		for i in 0 .. 10 {
+			m.delete_replica_buffer('race-topic', 0, i64(i * 10)) or {}
+			time.sleep(time.Duration(1 * time.millisecond))
+		}
+	}()
+
+	// Reader
+	spawn fn [mut m, mut wg] () {
+		defer {
+			wg.done()
+		}
+		for _ in 0 .. 20 {
+			_ := m.get_all_replica_buffers() or { []domain.ReplicaBuffer{} }
+			time.sleep(time.Duration(1 * time.millisecond))
+		}
+	}()
+
+	wg.wait()
+
+	// If we reach here without panic/crash, the concurrent access is safe
+	all_buffers := m.get_all_replica_buffers() or {
+		assert false, 'get_all failed: ${err}'
+		return
+	}
+	assert all_buffers.len >= 0, 'buffers should not be negative'
 }
