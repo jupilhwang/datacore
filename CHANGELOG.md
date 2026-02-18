@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.44.1] - 2026-02-18
+
+### Fixed
+
+- **Replication Race Condition** - 레이스 컨디션 수정
+  - `Manager` 구조체에 4개 뮤텍스 필드 추가 (`replica_buffers_lock`, `assignments_lock`, `broker_health_lock`, `stats_lock`)
+  - `update_broker_health()` 메서드 구현
+  - `broker_health`, `assignments`, `replica_buffers`, `stats` 모든 접근에 잠금 적용
+  - Lock ordering 문서화 (데드락 방지)
+- `client.v`, `protocol.v`, `server.v` 코드 스멜 수정
+- `manager_test.v` 레이스 컨디션 테스트 통과
+
 ## [0.44.0] - 2026-02-10
 
 ### Added
