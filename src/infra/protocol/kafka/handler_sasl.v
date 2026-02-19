@@ -19,7 +19,7 @@ import time
 
 pub struct SaslHandshakeRequest {
 pub:
-	mechanism string // 클라이언트가 선택한 SASL 메커니즘
+	mechanism string
 }
 
 fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslHandshakeRequest {
@@ -40,7 +40,7 @@ fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexibl
 
 pub struct SaslAuthenticateRequest {
 pub:
-	auth_bytes []u8 // 클라이언트의 SASL 인증 바이트
+	auth_bytes []u8
 }
 
 fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslAuthenticateRequest {
@@ -63,8 +63,8 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 
 pub struct SaslHandshakeResponse {
 pub:
-	error_code i16      // 에러 코드 (0 = 에러 없음, 33 = 지원하지 않는 메커니즘)
-	mechanisms []string // 브로커가 활성화한 SASL 메커니즘 목록
+	error_code i16
+	mechanisms []string
 }
 
 pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
@@ -89,10 +89,10 @@ pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
 
 pub struct SaslAuthenticateResponse {
 pub:
-	error_code          i16     // 에러 코드 (0 = 성공, 58 = SASL_AUTHENTICATION_FAILED)
-	error_message       ?string // 인증 실패 시 에러 메시지
-	auth_bytes          []u8    // 서버의 SASL 인증 바이트 (다단계 인증용)
-	session_lifetime_ms i64     // v1+: 세션 수명 (밀리초, 0 = 수명 없음)
+	error_code          i16
+	error_message       ?string
+	auth_bytes          []u8
+	session_lifetime_ms i64
 }
 
 pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
@@ -233,7 +233,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 				error_code:          0
 				error_message:       none
 				auth_bytes:          result.challenge // For SCRAM, this is the server's challenge
-				session_lifetime_ms: 0                // No session lifetime limit
+				session_lifetime_ms: 0
 			}
 			return response.encode(version)
 		} else {

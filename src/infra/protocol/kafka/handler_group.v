@@ -216,7 +216,7 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 		groups << ListGroupsResponseGroup{
 			group_id:      g.group_id
 			protocol_type: g.protocol_type
-			group_state:   g.state // Already string from storage
+			group_state:   g.state
 		}
 	}
 
@@ -397,7 +397,7 @@ fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i1
 /// DeleteGroups 요청
 pub struct DeleteGroupsRequest {
 pub:
-	groups_names []string // 삭제할 그룹 ID 목록
+	groups_names []string
 }
 
 /// DeleteGroups 요청 파싱

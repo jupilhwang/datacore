@@ -115,8 +115,8 @@ fn test_orphan_cleanup_removes_stale_buffers() {
 	m.running = true
 
 	now := time.now().unix_milli()
-	old_timestamp := now - 61000 // 61 seconds ago (older than 60s threshold)
-	recent_timestamp := now - 10000 // 10 seconds ago (within threshold)
+	old_timestamp := now - 61000
+	recent_timestamp := now - 10000
 
 	// Store old buffer (should be cleaned)
 	old_buf := domain.ReplicaBuffer{
@@ -491,7 +491,7 @@ fn test_concurrent_store_and_read_replica_buffers() {
 	writes_per_writer := 50
 
 	mut wg := sync.new_waitgroup()
-	wg.add(num_writers + 2) // writers + readers
+	wg.add(num_writers + 2)
 
 	// Spawn concurrent writers
 	for w in 0 .. num_writers {
@@ -598,7 +598,7 @@ fn test_concurrent_store_and_delete_replica_buffers() {
 	}
 
 	mut wg := sync.new_waitgroup()
-	wg.add(3) // writer + deleter + reader
+	wg.add(3)
 
 	// Writer: add more buffers
 	spawn fn [mut m, mut wg] () {

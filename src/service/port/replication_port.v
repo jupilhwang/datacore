@@ -1,4 +1,3 @@
-// 브로커 간 데이터 복제 작업을 정의합니다.
 // infra/replication/Manager에서 구현됩니다 (V duck typing).
 module port
 

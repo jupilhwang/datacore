@@ -9,16 +9,16 @@ import sync
 pub struct ProtocolMetrics {
 mut:
 	// API 요청 메트릭
-	api_requests_total  map[string]i64 // API별 총 요청 수
-	api_requests_failed map[string]i64 // API별 실패 요청 수
+	api_requests_total  map[string]i64
+	api_requests_failed map[string]i64
 	// 처리 시간 메트릭 (밀리초)
-	api_latency_sum   map[string]i64 // API별 총 지연 시간
-	api_latency_count map[string]i64 // API별 지연 시간 측정 횟수
+	api_latency_sum   map[string]i64
+	api_latency_count map[string]i64
 	// 에러 메트릭
-	errors_total i64 // 총 에러 수
+	errors_total i64
 	// 바이트 메트릭
-	bytes_received_total i64 // 총 수신 바이트
-	bytes_sent_total     i64 // 총 전송 바이트
+	bytes_received_total i64
+	bytes_sent_total     i64
 	// 락
 	lock sync.Mutex
 }

@@ -1,4 +1,3 @@
-// Kafka 컨슈머 그룹 관련 데이터 구조를 정의합니다.
 module domain
 
 /// ConsumerGroup은 컨슈머 그룹을 나타냅니다.

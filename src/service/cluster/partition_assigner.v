@@ -493,9 +493,9 @@ pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChange
 /// BrokerChanges는 브로커 변화 정보를 담습니다.
 pub struct BrokerChanges {
 pub:
-	reason  string              // "broker_joined", "broker_left", "broker_failed", "manual"
-	added   []domain.BrokerInfo // 새로 추가된 브로커
-	removed []domain.BrokerInfo // 제거된 브로커
+	reason  string
+	added   []domain.BrokerInfo
+	removed []domain.BrokerInfo
 }
 
 // 설정 변경

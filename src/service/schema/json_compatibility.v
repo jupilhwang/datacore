@@ -82,7 +82,7 @@ fn check_json_backward_compatible(old_schema string, new_schema string) bool {
 				// Completely new required property - check for default
 				if new_prop := new_info.properties[prop] {
 					if !new_prop.has_default && !new_prop.nullable {
-						return false // Old data won't have this property
+						return false
 					}
 				} else {
 					return false
@@ -138,7 +138,7 @@ fn check_json_forward_compatible(old_schema string, new_schema string) bool {
 			// Property removed - old reader needs default
 			if old_prop := old_info.properties[prop] {
 				if !old_prop.has_default && !old_prop.nullable {
-					return false // Old reader expects this property
+					return false
 				}
 			}
 		}
@@ -200,7 +200,7 @@ fn parse_json_schema_info(schema_str string) JsonSchemaInfo {
 fn parse_json_properties_info(props_json string) map[string]JsonPropertyInfo {
 	mut result := map[string]JsonPropertyInfo{}
 
-	mut pos := 1 // Skip opening brace
+	mut pos := 1
 
 	for pos < props_json.len - 1 {
 		// Skip whitespace and commas
@@ -290,7 +290,7 @@ fn is_json_property_backward_compatible(old_prop JsonPropertyInfo, new_prop Json
 	if old_prop.enum_values.len > 0 && new_prop.enum_values.len > 0 {
 		for old_val in old_prop.enum_values {
 			if old_val !in new_prop.enum_values {
-				return false // Old enum value not in new enum
+				return false
 			}
 		}
 	}

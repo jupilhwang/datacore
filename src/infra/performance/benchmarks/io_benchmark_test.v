@@ -77,7 +77,7 @@ fn test_calculate_io_results_basic() {
 	assert result.iterations == 5
 	assert result.min_time_ns == 1000
 	assert result.max_time_ns == 5000
-	assert result.avg_time_ns == 3000 // (1+2+3+4+5)/5 * 1000
+	assert result.avg_time_ns == 3000
 	assert result.data_size == 1024
 }
 
@@ -93,7 +93,7 @@ fn test_calculate_io_results_empty() {
 /// I/O 결과 처리량 테스트
 fn test_calculate_io_results_throughput() {
 	// 1ms에 1KB = 1MB/s
-	times := [i64(1_000_000)] // 나노초 단위 1ms
+	times := [i64(1_000_000)]
 	result := calculate_io_results('Throughput Test', times, 1024)
 
 	// 처리량은 약 1 MB/s여야 함
@@ -105,7 +105,7 @@ fn test_calculate_io_results_throughput() {
 /// I/O 결과 초당 작업 수 테스트
 fn test_calculate_io_results_ops_per_sec() {
 	// 밀리초당 1 작업 = 초당 1000 작업
-	times := [i64(1_000_000)] // 1ms
+	times := [i64(1_000_000)]
 	result := calculate_io_results('Ops Test', times, 100)
 
 	assert result.ops_per_sec > 999
@@ -208,7 +208,7 @@ fn test_quick_functions_exist() {
 		iterations:    2
 		warmup_runs:   1
 		data_size:     512
-		test_io_uring: false // Skip io_uring in tests for portability
+		test_io_uring: false
 	}
 
 	suite := new_io_benchmark_suite(config)
@@ -238,9 +238,9 @@ fn test_mini_benchmark_run() {
 		file_size:         1024
 		test_regular_io:   true
 		test_mmap:         true
-		test_dma:          false // 이식성을 위해 건너뜀
-		test_io_uring:     false // 이식성을 위해 건너뜀
-		test_numa:         false // 이식성을 위해 건너뜀
+		test_dma:          false
+		test_io_uring:     false
+		test_numa:         false
 		test_buffer_pools: false
 	}
 
@@ -320,5 +320,5 @@ fn test_very_large_times() {
 	result := calculate_io_results('Large Time', times, 1024)
 
 	assert result.avg_time_ns == 1_000_000_000
-	assert result.throughput_mbps < 0.01 // 매우 느림
+	assert result.throughput_mbps < 0.01
 }

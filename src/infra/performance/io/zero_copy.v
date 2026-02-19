@@ -10,8 +10,8 @@ import infra.performance.core
 /// TransferResult는 전송 작업의 결과를 담고 있습니다.
 pub struct TransferResult {
 pub:
-	bytes_transferred i64  // 전송된 바이트 수
-	success           bool // 성공 여부
+	bytes_transferred i64
+	success           bool
 	error_msg         string
 }
 
@@ -56,7 +56,7 @@ pub fn zero_copy_file_to_file(src_path string, dst_path string, offset i64, leng
 fn buffered_copy(mut src os.File, mut dst os.File, length i64) TransferResult {
 	mut total_transferred := i64(0)
 	mut remaining := length
-	buf_size := 65536 // 효율성을 위한 64KB 버퍼
+	buf_size := 65536
 	mut buf := []u8{len: buf_size}
 
 	for remaining > 0 || length < 0 {
@@ -114,7 +114,7 @@ fn buffered_copy(mut src os.File, mut dst os.File, length i64) TransferResult {
 /// IoVec은 I/O 벡터를 나타냅니다.
 pub struct IoVec {
 pub:
-	data []u8 // 데이터 버퍼
+	data []u8
 }
 
 /// scatter_read는 여러 버퍼로 읽습니다.
@@ -213,11 +213,11 @@ pub fn allocate_page_aligned(size int) []u8 {
 /// TransferStats는 전송 통계를 담고 있습니다.
 pub struct TransferStats {
 pub mut:
-	total_bytes_transferred u64 // 총 전송된 바이트
-	total_operations        u64 // 총 작업 수
-	zero_copy_operations    u64 // 제로카피 작업 수
-	buffered_operations     u64 // 버퍼링된 작업 수
-	failed_operations       u64 // 실패한 작업 수
+	total_bytes_transferred u64
+	total_operations        u64
+	zero_copy_operations    u64
+	buffered_operations     u64
+	failed_operations       u64
 }
 
 /// average_transfer_size는 평균 전송 크기를 반환합니다.

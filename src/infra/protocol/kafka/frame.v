@@ -6,9 +6,9 @@ module kafka
 /// 형식: [size: 4바이트][header][body]
 pub struct Frame {
 pub:
-	size   i32         // size 필드 자체를 제외한 전체 크기
-	header FrameHeader // 요청 또는 응답 헤더
-	body   Body        // 요청 또는 응답 본문
+	size   i32
+	header FrameHeader
+	body   Body
 }
 
 /// FrameHeader는 요청 헤더 또는 응답 헤더일 수 있습니다.
@@ -20,7 +20,7 @@ pub:
 	api_key        ApiKey
 	api_version    i16
 	correlation_id i32
-	client_id      ?string // None은 null을 의미
+	client_id      ?string
 }
 
 /// Frame 응답 헤더
@@ -195,7 +195,7 @@ fn parse_body(api_key ApiKey, version i16, data []u8) !Body {
 /// 응답 Frame을 생성합니다.
 pub fn frame_response(correlation_id i32, api_key ApiKey, version i16, body Body) Frame {
 	return Frame{
-		size:   0 // 인코딩 시 계산됨
+		size:   0
 		header: FrameResponseHeader{
 			correlation_id: correlation_id
 		}
@@ -249,6 +249,6 @@ fn encode_body(body Body, version i16) []u8 {
 		ConsumerGroupHeartbeatResponse { body.encode(version) }
 		DescribeClusterResponse { body.encode(version) }
 		DescribeConfigsResponse { body.encode(version) }
-		else { []u8{} } // 요청 타입은 응답 인코딩이 필요 없음
+		else { []u8{} }
 	}
 }

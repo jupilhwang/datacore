@@ -28,7 +28,7 @@ fn test_api_versions_response_header_version() {
 	assert get_response_header_version(.api_versions, 0) == 0
 	assert get_response_header_version(.api_versions, 1) == 0
 	assert get_response_header_version(.api_versions, 2) == 0
-	assert get_response_header_version(.api_versions, 3) == 0 // v3+도 Header v0 사용!
+	assert get_response_header_version(.api_versions, 3) == 0
 	assert get_response_header_version(.api_versions, 4) == 0
 }
 

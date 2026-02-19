@@ -98,8 +98,8 @@ pub fn (c &SnappyCompressor) decompress(data []u8) ![]u8 {
 /// snappy_decompress_raw는 raw snappy 형식의 데이터를 해제합니다.
 /// 간단한 LZ77 복사 구현
 fn snappy_decompress_raw(compressed_data []u8, mut result []u8) !int {
-	mut ip := 0 // 입력 포인터
-	mut op := 0 // 출력 포inter
+	mut ip := 0
+	mut op := 0
 
 	for ip < compressed_data.len {
 		b := compressed_data[ip]

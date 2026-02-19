@@ -1,4 +1,3 @@
-// Kafka 토픽 관련 데이터 구조를 정의합니다.
 module domain
 
 /// Topic은 Kafka 토픽을 나타냅니다.

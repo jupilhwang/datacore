@@ -11,7 +11,7 @@ import rand
 /// 트랜잭션 시작, 파티션 추가, 커밋/롤백을 담당합니다.
 pub struct TransactionCoordinator {
 mut:
-	store port.TransactionStore // 트랜잭션 메타데이터 저장소
+	store port.TransactionStore
 }
 
 /// new_transaction_coordinator는 새로운 트랜잭션 코디네이터를 생성합니다.

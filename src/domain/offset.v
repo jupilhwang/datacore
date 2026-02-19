@@ -1,4 +1,3 @@
-// Kafka 컨슈머 오프셋 관련 데이터 구조를 정의합니다.
 module domain
 
 /// PartitionOffset은 파티션에 대해 커밋된 오프셋을 나타냅니다.

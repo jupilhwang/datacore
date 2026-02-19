@@ -1,4 +1,3 @@
-// Kafka 트랜잭션 관련 데이터 구조를 정의합니다.
 // Exactly-once 시맨틱을 지원합니다.
 module domain
 
@@ -78,7 +77,7 @@ pub fn transaction_state_from_string(s string) TransactionState {
 		'CompleteAbort' { .complete_abort }
 		'Dead' { .dead }
 		'PrepareEpochFence' { .prepare_epoch_fence }
-		else { .empty } // 기본값
+		else { .empty }
 	}
 }
 

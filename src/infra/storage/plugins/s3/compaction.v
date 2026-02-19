@@ -6,11 +6,11 @@ import json
 import time
 
 // Compaction worker 설정 상수
-const max_consecutive_failures = 5 // 컴팩션 최대 연속 실패 횟수
-const failure_backoff_duration = 5 * time.minute // 연속 실패 시 백오프 시간
-const compaction_sequential_threshold = 3 // 순차 처리 임계값 (파티션 수)
-const max_compaction_concurrent = 10 // 컴팩션 최대 동시 실행 수
-const compaction_size_threshold_divisor = 2 // 컴팩션 크기 임계값 계수 (target_segment_bytes / 2)
+const max_consecutive_failures = 5
+const failure_backoff_duration = 5 * time.minute
+const compaction_sequential_threshold = 3
+const max_compaction_concurrent = 10
+const compaction_size_threshold_divisor = 2
 
 /// compaction_worker는 주기적으로 병합할 세그먼트를 확인하고 컴팩션을 수행합니다.
 fn (mut a S3StorageAdapter) compaction_worker() {

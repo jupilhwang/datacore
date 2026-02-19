@@ -18,68 +18,67 @@ pub struct IoUringServerConfig {
 pub:
 	host             string = '0.0.0.0'
 	port             int    = 9092
-	queue_depth      u32    = 256   // io_uring 큐 깊이
-	backlog          int    = 128   // listen 백로그
-	max_connections  int    = 10000 // 최대 동시 연결 수
-	recv_buffer_size int    = 65536 // 수신 버퍼 크기
-	multi_accept     int    = 8     // 한 번에 준비할 accept 수
-	use_sqpoll       bool // SQ 폴링 모드 사용 여부
+	queue_depth      u32    = 256
+	backlog          int    = 128
+	max_connections  int    = 10000
+	recv_buffer_size int    = 65536
+	multi_accept     int    = 8
+	use_sqpoll       bool
 }
 
 /// IoUringServer는 io_uring 기반 네트워크 서버입니다.
 pub struct IoUringServer {
 mut:
 	config    IoUringServerConfig
-	ring      IoUring // io_uring 인스턴스
-	listen_fd int     // 리스닝 소켓 fd
-	running   bool    // 실행 상태
+	ring      IoUring
+	listen_fd int
+	running   bool
 	// 연결 관리
-	connections map[int]&IoUringConnection // fd -> 연결 정보
-	// 통계
-	stats IoUringServerStats
+	connections map[int]&IoUringConnection
+	stats       IoUringServerStats
 }
 
 /// IoUringConnection은 클라이언트 연결 정보입니다.
 pub struct IoUringConnection {
 pub mut:
-	fd             int       // 파일 디스크립터
-	recv_buf       []u8      // 수신 버퍼
-	send_buf       []u8      // 송신 버퍼 (대기 중)
-	connected_at   time.Time // 연결 시간
+	fd             int
+	recv_buf       []u8
+	send_buf       []u8
+	connected_at   time.Time
 	last_active_at time.Time
-	bytes_received u64  // 수신 바이트
-	bytes_sent     u64  // 송신 바이트
-	recv_pending   bool // recv 요청 대기 중
-	send_pending   bool // send 요청 대기 중
+	bytes_received u64
+	bytes_sent     u64
+	recv_pending   bool
+	send_pending   bool
 }
 
 /// IoUringServerStats는 서버 통계입니다.
 pub struct IoUringServerStats {
 pub mut:
-	total_accepts     u64 // 총 연결 수락 수
-	total_connections u64 // 총 연결 수 (누적)
-	active_conns      int // 현재 활성 연결 수
-	total_recv_bytes  u64 // 총 수신 바이트
-	total_send_bytes  u64 // 총 송신 바이트
-	total_recv_ops    u64 // 총 recv 연산 수
-	total_send_ops    u64 // 총 send 연산 수
+	total_accepts     u64
+	total_connections u64
+	active_conns      int
+	total_recv_bytes  u64
+	total_send_bytes  u64
+	total_recv_ops    u64
+	total_send_ops    u64
 }
 
 /// IoUringEventType은 io_uring 이벤트 타입입니다.
 pub enum IoUringEventType {
-	accept // 연결 수락
-	recv   // 데이터 수신
-	send   // 데이터 송신
-	close  // 연결 종료
+	accept
+	recv
+	send
+	close
 }
 
 /// IoUringEvent는 io_uring 완료 이벤트입니다.
 pub struct IoUringEvent {
 pub:
-	event_type IoUringEventType // 이벤트 타입
-	fd         int              // 관련 fd
-	result     i32              // 결과 (바이트 수 또는 에러)
-	data       []u8             // 수신된 데이터 (recv인 경우)
+	event_type IoUringEventType
+	fd         int
+	result     i32
+	data       []u8
 }
 
 // user_data 인코딩: 상위 8비트 = 이벤트 타입, 하위 56비트 = fd
@@ -235,7 +234,7 @@ pub fn (mut s IoUringServer) prepare_recv(fd int) bool {
 	$if linux {
 		if mut conn := s.connections[fd] {
 			if conn.recv_pending {
-				return false // 이미 대기 중
+				return false
 			}
 
 			// 버퍼가 없으면 생성
@@ -436,7 +435,7 @@ fn (mut s IoUringServer) handle_send_completion(fd int, result i32) IoUringEvent
 /// net 모듈을 사용한 동기 I/O로 대체합니다.
 pub struct IoUringServerFallback {
 pub mut:
-	available bool // 항상 true (폴백은 항상 사용 가능)
+	available bool
 }
 
 /// new_io_uring_server_fallback은 폴백 서버 객체를 생성합니다.

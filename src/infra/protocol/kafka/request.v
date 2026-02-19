@@ -11,10 +11,10 @@ module kafka
 /// v1+는 NULLABLE_STRING을 사용합니다.
 pub struct RequestHeader {
 pub:
-	api_key        i16    // API 키 (요청 유형 식별)
-	api_version    i16    // API 버전
-	correlation_id i32    // 요청-응답 매칭을 위한 상관 ID
-	client_id      string // 클라이언트 ID (빈 문자열 = null/없음)
+	api_key        i16
+	api_version    i16
+	correlation_id i32
+	client_id      string
 }
 
 /// 요청 헤더 v2 (flexible 버전, Kafka 2.4+)
@@ -23,25 +23,25 @@ pub:
 /// tag_buffer만 compact 형식입니다.
 pub struct RequestHeaderV2 {
 pub:
-	api_key        i16           // API 키
-	api_version    i16           // API 버전
-	correlation_id i32           // 상관 ID
-	client_id      string        // 클라이언트 ID
-	tagged_fields  []TaggedField // 태그된 필드 목록
+	api_key        i16
+	api_version    i16
+	correlation_id i32
+	client_id      string
+	tagged_fields  []TaggedField
 }
 
 /// 태그된 필드 - flexible 버전에서 확장 데이터를 전달
 pub struct TaggedField {
 pub:
-	tag  u64  // 태그 번호
-	data []u8 // 필드 데이터
+	tag  u64
+	data []u8
 }
 
 /// 일반 요청 래퍼 - 헤더와 본문을 포함
 pub struct Request {
 pub:
-	header RequestHeader // 요청 헤더
-	body   []u8          // 요청 본문 (API별로 다른 형식)
+	header RequestHeader
+	body   []u8
 }
 
 /// 주어진 API에 대한 요청 헤더 버전을 반환합니다.
@@ -145,7 +145,7 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 		.sync_group { version >= 4 }
 		.describe_groups { version >= 5 }
 		.list_groups { version >= 3 }
-		.sasl_handshake { false } // v0-v1은 절대 flexible이 아님
+		.sasl_handshake { false }
 		.api_versions { version >= 3 }
 		.create_topics { version >= 5 }
 		.delete_topics { version >= 4 }
@@ -159,11 +159,11 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 		.end_txn { version >= 3 }
 		.write_txn_markers { version >= 1 }
 		.txn_offset_commit { version >= 3 }
-		.sasl_authenticate { version >= 2 } // v2+는 flexible
+		.sasl_authenticate { version >= 2 }
 		.delete_groups { version >= 2 }
-		.describe_acls { version >= 2 } // v2+는 flexible
-		.create_acls { version >= 2 } // v2+는 flexible
-		.delete_acls { version >= 2 } // v2+는 flexible
+		.describe_acls { version >= 2 }
+		.create_acls { version >= 2 }
+		.delete_acls { version >= 2 }
 		.describe_cluster { version >= 0 }
 		.consumer_group_heartbeat { version >= 0 }
 		.consumer_group_describe { version >= 0 }

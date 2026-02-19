@@ -9,9 +9,9 @@ import infra.protocol.kafka.crc32c
 /// 메모리 할당 없이 고성능 파싱을 위해 내부적으로 사용됩니다.
 pub struct ByteView {
 pub:
-	data   []u8 // 기본 데이터에 대한 참조 (소유하지 않음)
-	offset int  // 원본 배열에서의 시작 오프셋
-	length int  // 이 뷰의 길이
+	data   []u8
+	offset int
+	length int
 }
 
 /// new는 바이트 배열로부터 새로운 ByteView를 생성합니다.
@@ -219,11 +219,11 @@ pub fn (mut r BinaryReader) read_compact_nullable_string() !string {
 	// Compact nullable string: 길이 0은 null, 길이 N은 N-1 바이트를 의미
 	len := r.read_uvarint()!
 	if len == 0 {
-		return '' // null
+		return ''
 	}
 	actual_len := int(len) - 1
 	if actual_len == 0 {
-		return '' // empty string
+		return ''
 	}
 	if r.remaining() < actual_len {
 		return error('not enough data for compact nullable string')
@@ -609,7 +609,7 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	if magic != 2 {
 		// MessageSet v0, v1 (magic 0, 1) 지원
 		// 레거시 MessageSet 형식으로 파싱
-		reader.pos = 0 // 처음으로 리셋
+		reader.pos = 0
 		return parse_message_set(data)!
 	}
 
@@ -728,7 +728,7 @@ pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
 
 	// base_offset은 외부 RecordBatch에서 옴 (0으로 초기화)
 	return ParsedRecordBatch{
-		base_offset:            0 // 외부 RecordBatch의 base_offset 사용 필요
+		base_offset:            0
 		partition_leader_epoch: partition_leader_epoch
 		magic:                  magic
 		attributes:             attributes
@@ -749,7 +749,7 @@ fn parse_message_set(data []u8) !ParsedRecordBatch {
 
 	// MessageSet은 [offset, size, message]의 배열
 	for reader.remaining() > 12 {
-		_ := reader.read_i64() or { break } // offset (MessageSet 파싱에서 사용 안 함)
+		_ := reader.read_i64() or { break }
 		message_size := reader.read_i32() or { break }
 
 		if reader.remaining() < int(message_size) {
@@ -758,9 +758,9 @@ fn parse_message_set(data []u8) !ParsedRecordBatch {
 
 		// 메시지 파싱: [crc, magic, attributes, key, value]
 		start_pos := reader.pos
-		_ = reader.read_i32() or { break } // crc
+		_ = reader.read_i32() or { break }
 		magic := reader.read_i8() or { break }
-		_ = reader.read_i8() or { break } // attributes
+		_ = reader.read_i8() or { break }
 
 		// v1은 timestamp 추가
 		mut timestamp := time.now()
@@ -803,10 +803,10 @@ fn parse_message_set(data []u8) !ParsedRecordBatch {
 /// parse_record는 RecordBatch v2에서 단일 Record를 파싱합니다.
 /// 최적화: 가능한 경우 zero-copy를 위해 ByteView를 사용합니다.
 fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
-	_ = reader.read_varint()! // length (배치에 이미 포함됨)
-	_ = reader.read_i8()! // attributes (v2에서 사용 안 함)
+	_ = reader.read_varint()!
+	_ = reader.read_i8()!
 	timestamp_delta := reader.read_varint()!
-	_ = reader.read_varint()! // offset_delta
+	_ = reader.read_varint()!
 
 	// 키 - 뷰를 사용하고 저장할 때만 소유권 복사로 변환
 	key_length := reader.read_varint()!
@@ -903,18 +903,18 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 	// 중요: CRC-32C는 attributes부터 배치 끝까지 커버 (partitionLeaderEpoch부터가 아님!)
 	// Kafka 스펙에 따라: CRC = crc32c(attributes...end_of_batch)
 	mut crc_data := new_writer()
-	crc_data.write_i16(0) // attributes
-	crc_data.write_i32(i32(records.len - 1)) // lastOffsetDelta
-	crc_data.write_i64(first_timestamp) // baseTimestamp
-	crc_data.write_i64(max_timestamp) // maxTimestamp
-	crc_data.write_i64(-1) // producerId
-	crc_data.write_i16(-1) // producerEpoch
-	crc_data.write_i32(-1) // baseSequence
-	crc_data.write_i32(i32(records.len)) // recordCount
+	crc_data.write_i16(0)
+	crc_data.write_i32(i32(records.len - 1))
+	crc_data.write_i64(first_timestamp)
+	crc_data.write_i64(max_timestamp)
+	crc_data.write_i64(-1)
+	crc_data.write_i16(-1)
+	crc_data.write_i32(-1)
+	crc_data.write_i32(i32(records.len))
 	// 참고: delete_horizon_ms가 지원되면 (attributes bit 5가 control batch인 경우),
 	// baseSequence 이후, recordCount 이전에 삽입되어야 함.
 	// 현재는 delete_horizon_ms를 지원하지 않음.
-	crc_data.write_raw(records_bytes) // records
+	crc_data.write_raw(records_bytes)
 
 	crc_bytes := crc_data.bytes()
 	// crc_data에 대한 CRC-32C (Castagnoli)
@@ -922,14 +922,14 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 
 	// RecordBatch 헤더 필드
 	// batchLength = partitionLeaderEpoch부터 끝까지
-	batch_length := 4 + 1 + 4 + crc_bytes.len // epoch + magic + crc + crc_data
+	batch_length := 4 + 1 + 4 + crc_bytes.len
 
-	writer.write_i64(base_offset) // baseOffset
-	writer.write_i32(i32(batch_length)) // batchLength
-	writer.write_i32(0) // partitionLeaderEpoch
-	writer.write_i8(2) // magic (v2)
-	writer.write_u32(crc) // crc (CRC-32C)
-	writer.write_raw(crc_bytes) // attributes to records
+	writer.write_i64(base_offset)
+	writer.write_i32(i32(batch_length))
+	writer.write_i32(0)
+	writer.write_i8(2)
+	writer.write_u32(crc)
+	writer.write_raw(crc_bytes)
 
 	return writer.bytes()
 }
@@ -939,7 +939,7 @@ fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int
 	// 길이 계산을 위해 먼저 레코드 본문 구성
 	mut body := new_writer()
 
-	body.write_i8(0) // attributes
+	body.write_i8(0)
 
 	// 타임스탬프 델타
 	ts_millis := record.timestamp.unix() * 1000
@@ -953,7 +953,7 @@ fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int
 		body.write_varint(i64(record.key.len))
 		body.write_raw(record.key)
 	} else {
-		body.write_varint(-1) // null 키
+		body.write_varint(-1)
 	}
 
 	// 값
@@ -961,7 +961,7 @@ fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int
 		body.write_varint(i64(record.value.len))
 		body.write_raw(record.value)
 	} else {
-		body.write_varint(-1) // null 값
+		body.write_varint(-1)
 	}
 
 	// 레코드 헤더 (키-값 쌍)

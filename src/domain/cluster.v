@@ -1,4 +1,3 @@
-// 멀티 브로커 클러스터 조정을 위한 핵심 타입을 정의합니다.
 module domain
 
 import time
@@ -14,11 +13,11 @@ pub mut:
 	topic_id         []u8
 	partition        i32
 	preferred_broker i32
-	replica_brokers  []i32 // 레플리카 브로커 목록 (Kafka 프로토콜 호환성용)
-	isr_brokers      []i32 // ISR 브로커 목록 (Stateless 모드에서는 모든 활성 브로커)
+	replica_brokers  []i32
+	isr_brokers      []i32
 	partition_epoch  i32
 	assigned_at      i64
-	reassigned_at    i64 // 재할당 시간 (있는 경우)
+	reassigned_at    i64
 }
 
 /// PartitionAssignmentSnapshot은 특정 시점의 모든 파티션 할당을 나타냅니다.
@@ -36,11 +35,11 @@ pub struct ReassignmentPlan {
 pub mut:
 	plan_id        string
 	cluster_id     string
-	trigger_reason string // 트리거 원인 ("broker_joined", "broker_left", "manual")
+	trigger_reason string
 	changes        []PartitionAssignmentChange
 	created_at     i64
-	executed_at    i64                // 실행 시간 (0이면 미실행)
-	status         ReassignmentStatus // 계획 상태
+	executed_at    i64
+	status         ReassignmentStatus
 }
 
 /// PartitionAssignmentChange는 단일 파티션의 할당 변경을 나타냅니다.
@@ -55,26 +54,26 @@ pub mut:
 
 /// ReassignmentStatus는 재할당 계획의 상태를 나타냅니다.
 pub enum ReassignmentStatus {
-	pending   // 대기 중
-	executing // 실행 중
+	pending
+	executing
 	completed
 	failed
-	cancelled // 취소됨
+	cancelled
 }
 
 /// PartitionAssignerConfig는 파티션 할당 설정을 나타냅니다.
 pub struct PartitionAssignerConfig {
 pub mut:
-	strategy      AssignmentStrategy // 할당 전략
-	rack_aware    bool               // 랙 인식 여부
-	sticky_assign bool               // 스티키 할당 여부 (재할당 시 기존 할당 유지)
+	strategy      AssignmentStrategy
+	rack_aware    bool
+	sticky_assign bool
 }
 
 /// AssignmentStrategy는 파티션 할당 전략을 나타냅니다.
 pub enum AssignmentStrategy {
-	round_robin // 라운드로빈
-	range       // 범위 기반
-	sticky      // 스티키 (최소 이동)
+	round_robin
+	range
+	sticky
 }
 
 /// BrokerInfo는 클러스터 내의 브로커를 나타냅니다.
@@ -87,22 +86,17 @@ pub enum AssignmentStrategy {
 /// status: 브로커 상태
 pub struct BrokerInfo {
 pub mut:
-	broker_id i32
-	host      string
-	port      i32
-	rack      string
-	// 보안
-	security_protocol string // PLAINTEXT, SSL, SASL_PLAINTEXT, SASL_SSL
-	// 다른 리스너를 위한 엔드포인트
-	endpoints []BrokerEndpoint
-	// 상태
-	status BrokerStatus
-	// 타임스탬프
-	registered_at  i64
-	last_heartbeat i64
-	// 메타데이터
-	version  string
-	features []string
+	broker_id         i32
+	host              string
+	port              i32
+	rack              string
+	security_protocol string
+	endpoints         []BrokerEndpoint
+	status            BrokerStatus
+	registered_at     i64
+	last_heartbeat    i64
+	version           string
+	features          []string
 }
 
 /// BrokerEndpoint는 리스너 엔드포인트를 나타냅니다.
@@ -112,7 +106,7 @@ pub mut:
 /// security_protocol: 보안 프로토콜
 pub struct BrokerEndpoint {
 pub:
-	name              string // 예: "PLAINTEXT", "SSL", "SASL_SSL"
+	name              string
 	host              string
 	port              i32
 	security_protocol string
@@ -125,11 +119,11 @@ pub:
 /// shutdown: 종료 중
 /// dead: 죽음 (하트비트 누락)
 pub enum BrokerStatus {
-	starting // 브로커가 시작 중
-	active   // 브로커가 활성 상태이며 요청을 수락 중
-	draining // 브로커가 드레이닝 중 (새 연결을 수락하지 않음)
-	shutdown // 브로커가 종료 중
-	dead     // 브로커가 죽은 것으로 간주됨 (하트비트 누락)
+	starting
+	active
+	draining
+	shutdown
+	dead
 }
 
 /// BrokerHeartbeat는 브로커로부터의 하트비트를 나타냅니다.
@@ -170,10 +164,9 @@ pub:
 /// updated_at: 마지막 업데이트 시간
 pub struct ClusterMetadata {
 pub mut:
-	cluster_id    string
-	controller_id i32 // stateless 모드에서는 -1
-	brokers       []BrokerInfo
-	// 낙관적 동시성을 위한 에포크
+	cluster_id       string
+	controller_id    i32
+	brokers          []BrokerInfo
 	metadata_version i64
 	updated_at       i64
 }
@@ -242,12 +235,10 @@ pub const postgresql_storage_capability = StorageCapability{
 pub struct ClusterConfig {
 pub:
 	cluster_id                   string
-	broker_heartbeat_interval_ms i32 = 3000  // 브로커가 하트비트를 보내는 빈도
-	broker_session_timeout_ms    i32 = 10000 // 브로커를 죽은 것으로 간주하는 시간
-	// 메타데이터
-	metadata_refresh_interval_ms i32 = 30000 // 클러스터 메타데이터를 갱신하는 빈도
-	// 멀티 브로커 모드
-	multi_broker_enabled bool
+	broker_heartbeat_interval_ms i32 = 3000
+	broker_session_timeout_ms    i32 = 10000
+	metadata_refresh_interval_ms i32 = 30000
+	multi_broker_enabled         bool
 }
 
 /// ClusterEvent는 클러스터에서 발생하는 이벤트를 나타냅니다.
@@ -270,9 +261,9 @@ pub:
 /// metadata_updated: 메타데이터 업데이트
 /// partition_reassigned: 파티션 재할당
 pub enum ClusterEventType {
-	broker_joined        // 브로커 가입
-	broker_left          // 브로커 탈퇴
-	broker_failed        // 브로커 실패
-	metadata_updated     // 메타데이터 업데이트
-	partition_reassigned // 파티션 재할당
+	broker_joined
+	broker_left
+	broker_failed
+	metadata_updated
+	partition_reassigned
 }

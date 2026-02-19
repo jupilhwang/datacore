@@ -51,7 +51,7 @@ mut:
 	metrics             observability.DataCoreMetrics
 	start_time          time.Time
 	running             bool
-	ready               bool // 트래픽 수신 준비 상태
+	ready               bool
 }
 
 // ParsedRequest는 handle_connection에서 파싱된 HTTP 요청을 담는 구조체입니다.
@@ -817,8 +817,6 @@ fn (s &RestServer) send_error(mut conn net.TcpConn, status int, error_code int, 
 	}
 	s.send_json(mut conn, status, json.encode(resp))
 }
-
-// 헬퍼 함수
 
 // serve_static_file은 정적 디렉토리에서 정적 파일을 서빙합니다.
 fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {

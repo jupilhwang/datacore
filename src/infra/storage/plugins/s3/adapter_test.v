@@ -52,7 +52,7 @@ fn test_encode_decode_empty_records() {
 }
 
 fn test_encode_decode_large_record() {
-	large_value := []u8{len: 1000000, init: u8(65)} // 1MB of 'A'
+	large_value := []u8{len: 1000000, init: u8(65)}
 
 	original := [
 		StoredRecord{
@@ -204,7 +204,7 @@ fn test_log_segment_structure() {
 		start_offset: 1000
 		end_offset:   1999
 		key:          'path/to/segment.bin'
-		size_bytes:   1048576 // 1MB
+		size_bytes:   1048576
 		created_at:   time.now()
 	}
 

@@ -10,8 +10,8 @@ import time
 /// 배치 쓰기를 통해 S3 API 호출 횟수를 줄이고 성능을 최적화합니다.
 struct TopicPartitionBuffer {
 mut:
-	records            []StoredRecord // 버퍼링된 레코드 목록 (아직 S3에 저장되지 않음)
-	current_size_bytes i64            // 버퍼 내 모든 레코드의 현재 총 크기 (바이트)
+	records            []StoredRecord
+	current_size_bytes i64
 }
 
 /// FlushBatch는 S3 플러시 대상인 단일 파티션의 레코드 배치를 나타냅니다.

@@ -1,4 +1,3 @@
-// Kafka 파티션 관련 데이터 구조를 정의합니다.
 module domain
 
 /// Partition은 토픽 파티션을 나타냅니다.
@@ -11,10 +10,10 @@ pub struct Partition {
 pub:
 	topic         string
 	index         int
-	leader_id     i32   // Stateless: 항상 현재 브로커
-	leader_epoch  i32   // Stateless: 항상 0
-	replica_nodes []i32 // Stateless: 항상 [broker_id]
-	isr_nodes     []i32 // Stateless: 항상 [broker_id]
+	leader_id     i32
+	leader_epoch  i32
+	replica_nodes []i32
+	isr_nodes     []i32
 }
 
 /// PartitionInfo는 파티션 오프셋 정보를 포함합니다.

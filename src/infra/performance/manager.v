@@ -9,8 +9,8 @@ import infra.performance.engines
 @[heap]
 pub struct PerformanceManager {
 pub mut:
-	engine  PerformanceEngine // 성능 엔진
-	enabled bool              // 활성화 여부
+	engine  PerformanceEngine
+	enabled bool
 }
 
 /// new_performance_manager는 사용 가능한 최적의 엔진으로 성능 관리자를 생성합니다.

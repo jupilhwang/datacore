@@ -18,33 +18,33 @@ pub struct MmapPartitionStore {
 pub:
 	topic_name string
 	partition  int
-	base_dir   string // 기본 디렉토리
+	base_dir   string
 mut:
-	segments       []&io.LogSegmentMmap // 세그먼트 목록
-	active_segment ?&io.LogSegmentMmap  // 현재 활성 세그먼트
-	base_offset    i64                  // 기본 오프셋 (첫 세그먼트)
-	high_watermark i64                  // 최고 수위 (다음 쓰기 오프셋)
+	segments       []&io.LogSegmentMmap
+	active_segment ?&io.LogSegmentMmap
+	base_offset    i64
+	high_watermark i64
 	segment_size   i64
-	sync_on_write  bool            // 쓰기마다 sync 여부
-	index          MmapOffsetIndex // 오프셋 인덱스
+	sync_on_write  bool
+	index          MmapOffsetIndex
 }
 
 /// MmapOffsetIndex는 오프셋 → 세그먼트/위치 매핑을 관리합니다.
 /// sparse 인덱스로 메모리 효율적입니다.
 struct MmapOffsetIndex {
 mut:
-	entries      []OffsetIndexEntry // 인덱스 엔트리
-	interval     int = 4096 // 인덱싱 간격 (4096 레코드마다)
-	last_indexed i64 // 마지막 인덱싱된 오프셋
+	entries      []OffsetIndexEntry
+	interval     int = 4096
+	last_indexed i64
 }
 
 /// OffsetIndexEntry는 오프셋 인덱스 엔트리입니다.
 struct OffsetIndexEntry {
 pub:
-	offset       i64 // 레코드 오프셋
-	segment_idx  int // 세그먼트 인덱스
-	position     i64 // 세그먼트 내 위치
-	timestamp_ms i64 // 타임스탬프 (밀리초)
+	offset       i64
+	segment_idx  int
+	position     i64
+	timestamp_ms i64
 }
 
 /// MmapPartitionConfig는 mmap 파티션 설정입니다.
@@ -54,7 +54,7 @@ pub:
 	partition     int
 	base_dir      string
 	segment_size  i64 = 1073741824
-	sync_on_write bool // 기본 false
+	sync_on_write bool
 }
 
 /// new_mmap_partition은 새 mmap 파티션 스토어를 생성합니다.
@@ -364,11 +364,11 @@ fn encode_record_frame(data []u8, timestamp_ms i64) []u8 {
 /// MmapPartitionStats는 파티션 통계입니다.
 pub struct MmapPartitionStats {
 pub:
-	segment_count  int // 세그먼트 수
-	total_bytes    i64 // 총 바이트
-	base_offset    i64 // 기본 오프셋
-	high_watermark i64 // 최고 수위
-	index_entries  int // 인덱스 엔트리 수
+	segment_count  int
+	total_bytes    i64
+	base_offset    i64
+	high_watermark i64
+	index_entries  int
 }
 
 /// get_stats는 파티션 통계를 반환합니다.

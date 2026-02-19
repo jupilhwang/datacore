@@ -1,7 +1,6 @@
 // JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat의
 // 요청/응답 구조체 정의
 //
-// 이 모듈은 Kafka 컨슈머 그룹 프로토콜의 핵심 타입들을 정의합니다.
 // 컨슈머 그룹 조인, 동기화, 하트비트, 탈퇴 등의 작업에 사용됩니다.
 module kafka
 
@@ -14,19 +13,19 @@ module kafka
 pub struct JoinGroupRequest {
 pub:
 	group_id             string
-	session_timeout_ms   i32                        // 세션 타임아웃 (밀리초)
-	rebalance_timeout_ms i32                        // 리밸런싱 타임아웃 (밀리초)
-	member_id            string                     // 멤버 ID (첫 조인 시 빈 문자열)
-	group_instance_id    ?string                    // 정적 멤버십용 인스턴스 ID
-	protocol_type        string                     // 프로토콜 타입 (예: "consumer")
-	protocols            []JoinGroupRequestProtocol // 지원하는 프로토콜 목록
+	session_timeout_ms   i32
+	rebalance_timeout_ms i32
+	member_id            string
+	group_instance_id    ?string
+	protocol_type        string
+	protocols            []JoinGroupRequestProtocol
 }
 
 /// JoinGroup 요청 프로토콜 - 컨슈머가 지원하는 할당 프로토콜
 pub struct JoinGroupRequestProtocol {
 pub:
-	name     string // 프로토콜 이름 (예: "range", "roundrobin")
-	metadata []u8   // 프로토콜 메타데이터 (구독 토픽 등)
+	name     string
+	metadata []u8
 }
 
 /// JoinGroup 응답 - 그룹 조인 결과
@@ -34,21 +33,21 @@ pub struct JoinGroupResponse {
 pub:
 	throttle_time_ms i32
 	error_code       i16
-	generation_id    i32                       // 그룹 세대 ID
-	protocol_type    ?string                   // 선택된 프로토콜 타입
-	protocol_name    ?string                   // 선택된 프로토콜 이름
-	leader           string                    // 리더 멤버 ID
-	skip_assignment  bool                      // 할당 건너뛰기 여부
-	member_id        string                    // 할당된 멤버 ID
-	members          []JoinGroupResponseMember // 그룹 멤버 목록 (리더에게만 전달)
+	generation_id    i32
+	protocol_type    ?string
+	protocol_name    ?string
+	leader           string
+	skip_assignment  bool
+	member_id        string
+	members          []JoinGroupResponseMember
 }
 
 /// JoinGroup 응답 멤버 - 그룹 멤버 정보
 pub struct JoinGroupResponseMember {
 pub:
-	member_id         string  // 멤버 ID
-	group_instance_id ?string // 정적 멤버십 인스턴스 ID (v5+)
-	metadata          []u8    // 멤버 메타데이터
+	member_id         string
+	group_instance_id ?string
+	metadata          []u8
 }
 
 // SyncGroup 요청/응답 타입 (API Key 14) - 그룹 동기화
@@ -60,19 +59,19 @@ pub:
 pub struct SyncGroupRequest {
 pub:
 	group_id          string
-	generation_id     i32                          // 그룹 세대 ID
-	member_id         string                       // 멤버 ID
-	group_instance_id ?string                      // 정적 멤버십 인스턴스 ID
-	protocol_type     ?string                      // 프로토콜 타입
-	protocol_name     ?string                      // 프로토콜 이름
-	assignments       []SyncGroupRequestAssignment // 파티션 할당 (리더만)
+	generation_id     i32
+	member_id         string
+	group_instance_id ?string
+	protocol_type     ?string
+	protocol_name     ?string
+	assignments       []SyncGroupRequestAssignment
 }
 
 /// SyncGroup 요청 할당 - 멤버별 파티션 할당
 pub struct SyncGroupRequestAssignment {
 pub:
-	member_id  string // 멤버 ID
-	assignment []u8   // 할당 데이터 (ConsumerProtocol 형식)
+	member_id  string
+	assignment []u8
 }
 
 /// SyncGroup 응답 - 파티션 할당 결과
@@ -80,9 +79,9 @@ pub struct SyncGroupResponse {
 pub:
 	throttle_time_ms i32
 	error_code       i16
-	protocol_type    ?string // 프로토콜 타입
-	protocol_name    ?string // 프로토콜 이름
-	assignment       []u8    // 이 멤버에게 할당된 파티션
+	protocol_type    ?string
+	protocol_name    ?string
+	assignment       []u8
 }
 
 // Heartbeat 요청/응답 타입 (API Key 12) - 하트비트
@@ -94,16 +93,16 @@ pub:
 pub struct HeartbeatRequest {
 pub:
 	group_id          string
-	generation_id     i32     // 그룹 세대 ID
-	member_id         string  // 멤버 ID
-	group_instance_id ?string // 정적 멤버십 인스턴스 ID
+	generation_id     i32
+	member_id         string
+	group_instance_id ?string
 }
 
 /// Heartbeat 응답 - 하트비트 결과
 pub struct HeartbeatResponse {
 pub:
 	throttle_time_ms i32
-	error_code       i16 // 에러 코드 (REBALANCE_IN_PROGRESS 등)
+	error_code       i16
 }
 
 // LeaveGroup 요청/응답 타입 (API Key 13) - 그룹 탈퇴
@@ -115,16 +114,16 @@ pub:
 pub struct LeaveGroupRequest {
 pub:
 	group_id  string
-	member_id string             // 멤버 ID (v0-v2: 단일 멤버)
-	members   []LeaveGroupMember // 멤버 목록 (v3+: 배치 탈퇴)
+	member_id string
+	members   []LeaveGroupMember
 }
 
 /// LeaveGroup 멤버 - v3+ 배치 탈퇴용 멤버 정보
 pub struct LeaveGroupMember {
 pub:
-	member_id         string  // 멤버 ID
-	group_instance_id ?string // 정적 멤버십 인스턴스 ID
-	reason            ?string // 탈퇴 사유 (v5+)
+	member_id         string
+	group_instance_id ?string
+	reason            ?string
 }
 
 /// LeaveGroup 응답 - 그룹 탈퇴 결과
@@ -132,14 +131,14 @@ pub struct LeaveGroupResponse {
 pub:
 	throttle_time_ms i32
 	error_code       i16
-	members          []LeaveGroupResponseMember // 멤버별 결과
+	members          []LeaveGroupResponseMember
 }
 
 /// LeaveGroup 응답 멤버 - 멤버별 탈퇴 결과
 pub struct LeaveGroupResponseMember {
 pub:
-	member_id         string  // 멤버 ID
-	group_instance_id ?string // 정적 멤버십 인스턴스 ID
+	member_id         string
+	group_instance_id ?string
 	error_code        i16
 }
 
@@ -154,21 +153,21 @@ pub:
 pub struct ConsumerGroupHeartbeatRequest {
 pub:
 	group_id               string
-	member_id              string  // 멤버 ID
-	member_epoch           i32     // 멤버 에포크
-	instance_id            ?string // 정적 멤버십 (group.instance.id)
+	member_id              string
+	member_epoch           i32
+	instance_id            ?string
 	rack_id                ?string
-	rebalance_timeout_ms   i32      // 리밸런싱 타임아웃
-	subscribed_topic_names []string // 구독 토픽 이름 목록
-	server_assignor        ?string  // 서버 할당자 이름
-	topic_partitions       []ConsumerGroupHeartbeatTopicPartition // 현재 할당
+	rebalance_timeout_ms   i32
+	subscribed_topic_names []string
+	server_assignor        ?string
+	topic_partitions       []ConsumerGroupHeartbeatTopicPartition
 }
 
 /// ConsumerGroupHeartbeat 토픽 파티션 - 현재 할당된 파티션
 pub struct ConsumerGroupHeartbeatTopicPartition {
 pub:
-	topic_id   []u8  // 토픽 UUID (16바이트)
-	partitions []i32 // 파티션 인덱스 목록
+	topic_id   []u8 // 토픽 UUID (16바이트)
+	partitions []i32
 }
 
 /// ConsumerGroupHeartbeat 응답 - 새로운 컨슈머 프로토콜 하트비트 응답
@@ -177,23 +176,23 @@ pub:
 	throttle_time_ms      i32
 	error_code            i16
 	error_message         ?string
-	member_id             ?string // 멤버 ID
-	member_epoch          i32     // 멤버 에포크
+	member_id             ?string
+	member_epoch          i32
 	heartbeat_interval_ms i32
-	assignment            ?ConsumerGroupHeartbeatAssignment // 새로운 할당
+	assignment            ?ConsumerGroupHeartbeatAssignment
 }
 
 /// ConsumerGroupHeartbeat 할당 - 파티션 할당 정보
 pub struct ConsumerGroupHeartbeatAssignment {
 pub:
-	topic_partitions []ConsumerGroupHeartbeatResponseTopicPartition // 토픽별 파티션
+	topic_partitions []ConsumerGroupHeartbeatResponseTopicPartition
 }
 
 /// ConsumerGroupHeartbeat 응답 토픽 파티션 - 할당된 파티션
 pub struct ConsumerGroupHeartbeatResponseTopicPartition {
 pub:
-	topic_id   []u8  // 토픽 UUID (16바이트)
-	partitions []i32 // 파티션 인덱스 목록
+	topic_id   []u8 // 토픽 UUID (16바이트)
+	partitions []i32
 }
 
 // ConsumerGroupDescribe 요청/응답 타입 (API Key 69) - KIP-848
@@ -203,15 +202,15 @@ pub:
 /// ConsumerGroupDescribe 요청 - 컨슈머 그룹 상세 정보 조회 요청 (KIP-848)
 pub struct ConsumerGroupDescribeRequest {
 pub:
-	group_ids                     []string // 조회할 그룹 ID 목록
-	include_authorized_operations bool     // 권한 있는 작업 포함 여부
+	group_ids                     []string
+	include_authorized_operations bool
 }
 
 /// ConsumerGroupDescribe 응답 - 컨슈머 그룹 상세 정보
 pub struct ConsumerGroupDescribeResponse {
 pub:
 	throttle_time_ms i32
-	groups           []ConsumerGroupDescribeResponseGroup // 그룹 정보 목록
+	groups           []ConsumerGroupDescribeResponseGroup
 }
 
 /// ConsumerGroupDescribe 응답 그룹 - 개별 그룹 정보
@@ -220,36 +219,36 @@ pub:
 	error_code            i16
 	error_message         ?string
 	group_id              string
-	group_state           string // 그룹 상태
-	group_epoch           i32    // 그룹 에포크
-	assignment_epoch      i32    // 할당 에포크
-	assignor_name         string // 할당자 이름
-	members               []ConsumerGroupDescribeResponseMember // 멤버 목록
-	authorized_operations i32 // 권한 있는 작업
+	group_state           string
+	group_epoch           i32
+	assignment_epoch      i32
+	assignor_name         string
+	members               []ConsumerGroupDescribeResponseMember
+	authorized_operations i32
 }
 
 /// ConsumerGroupDescribe 응답 멤버 - 멤버 정보
 pub struct ConsumerGroupDescribeResponseMember {
 pub:
-	member_id            string  // 멤버 ID
-	instance_id          ?string // 인스턴스 ID
+	member_id            string
+	instance_id          ?string
 	rack_id              ?string
-	member_epoch         i32    // 멤버 에포크
-	client_id            string // 클라이언트 ID
-	client_host          string // 클라이언트 호스트
+	member_epoch         i32
+	client_id            string
+	client_host          string
 	subscribed_topic_ids [][]u8 // 구독 토픽 ID 목록 (UUID)
-	assignment           ?ConsumerGroupDescribeResponseMemberAssignment // 현재 할당
+	assignment           ?ConsumerGroupDescribeResponseMemberAssignment
 }
 
 /// ConsumerGroupDescribe 응답 멤버 할당 - 멤버의 파티션 할당
 pub struct ConsumerGroupDescribeResponseMemberAssignment {
 pub:
-	topic_partitions []ConsumerGroupDescribeTopicPartition // 토픽별 파티션 목록
+	topic_partitions []ConsumerGroupDescribeTopicPartition
 }
 
 /// ConsumerGroupDescribe 토픽 파티션 - 할당된 파티션
 pub struct ConsumerGroupDescribeTopicPartition {
 pub:
-	topic_id   []u8  // 토픽 UUID (16바이트)
-	partitions []i32 // 파티션 인덱스 목록
+	topic_id   []u8 // 토픽 UUID (16바이트)
+	partitions []i32
 }

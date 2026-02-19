@@ -16,11 +16,11 @@ import time
 /// TopicOptions는 토픽 명령어 옵션을 담는 구조체입니다.
 pub struct TopicOptions {
 pub:
-	bootstrap_server string = 'localhost:9092' // 브로커 주소
+	bootstrap_server string = 'localhost:9092'
 	topic            string
 	partitions       int = 1
-	replication      int = 1     // 복제 계수
-	timeout_ms       int = 30000 // 타임아웃 (ms)
+	replication      int = 1
+	timeout_ms       int = 30000
 }
 
 /// parse_topic_options는 토픽 명령어 옵션을 파싱합니다.
@@ -99,7 +99,7 @@ pub fn run_topic_create(opts TopicOptions) ! {
 		opts.timeout_ms)
 
 	// 요청 전송
-	send_kafka_request(mut conn, 19, 3, request)! // API Key 19 = CreateTopics, version 3 (비유연)
+	send_kafka_request(mut conn, 19, 3, request)!
 
 	// 응답 읽기
 	response := read_kafka_response(mut conn)!
@@ -124,7 +124,7 @@ pub fn run_topic_list(opts TopicOptions) ! {
 	request := build_metadata_request([])
 
 	// 요청 전송
-	send_kafka_request(mut conn, 3, 12, request)! // API Key 3 = Metadata, version 12
+	send_kafka_request(mut conn, 3, 12, request)!
 
 	// 응답 읽기
 	response := read_kafka_response(mut conn)!
@@ -198,7 +198,7 @@ pub fn run_topic_delete(opts TopicOptions) ! {
 	request := build_delete_topic_request(opts.topic, opts.timeout_ms)
 
 	// 요청 전송
-	send_kafka_request(mut conn, 20, 6, request)! // API Key 20 = DeleteTopics, version 6
+	send_kafka_request(mut conn, 20, 6, request)!
 
 	// 응답 읽기
 	response := read_kafka_response(mut conn)!
@@ -256,10 +256,9 @@ fn send_kafka_request(mut conn net.TcpConn, api_key i16, api_version i16, body [
 
 	// 유연한 헤더(V2) 또는 비유연 헤더(V1) 사용 여부 결정
 	// CreateTopics V3는 비유연, Metadata V12는 유연
-	is_flexible_api := (api_key == 3 && api_version >= 9) || // Metadata V9+
-	 (api_key == 1 && api_version >= 12) || // Fetch V12+
-	 (api_key == 20 && api_version >= 6) || // DeleteTopics V6+
-	 (api_key == 19 && api_version >= 5) // CreateTopics V5+는 유연
+	is_flexible_api := (api_key == 3 && api_version >= 9)
+		|| (api_key == 1 && api_version >= 12) || (api_key == 20 && api_version >= 6)
+		|| (api_key == 19 && api_version >= 5)
 
 	if is_flexible_api {
 		// 유연한 헤더 V2: Compact Client ID + Tagged Fields
@@ -326,10 +325,10 @@ fn build_create_topic_request(name string, partitions int, replication int, time
 	mut body := []u8{}
 
 	// Topics 배열 (비유연 배열)
-	body << u8(0) // 배열 길이 바이트 1
-	body << u8(0) // 배열 길이 바이트 2
-	body << u8(0) // 배열 길이 바이트 3
-	body << u8(1) // 배열 길이 바이트 4 (1개 토픽)
+	body << u8(0)
+	body << u8(0)
+	body << u8(0)
+	body << u8(1)
 
 	// 토픽 이름 (string)
 	body << u8(name.len >> 8)
@@ -347,16 +346,16 @@ fn build_create_topic_request(name string, partitions int, replication int, time
 	body << u8(replication & 0xff)
 
 	// Assignments (빈 배열)
-	body << u8(0) // 배열 길이 바이트 1
-	body << u8(0) // 배열 길이 바이트 2
-	body << u8(0) // 배열 길이 바이트 3
-	body << u8(0) // 배열 길이 바이트 4 (0개 할당)
+	body << u8(0)
+	body << u8(0)
+	body << u8(0)
+	body << u8(0)
 
 	// Configs (빈 배열)
-	body << u8(0) // 배열 길이 바이트 1
-	body << u8(0) // 배열 길이 바이트 2
-	body << u8(0) // 배열 길이 바이트 3
-	body << u8(0) // 배열 길이 바이트 4 (0개 설정)
+	body << u8(0)
+	body << u8(0)
+	body << u8(0)
+	body << u8(0)
 
 	// 타임아웃 ms (4바이트)
 	body << u8(timeout_ms >> 24)
@@ -373,7 +372,7 @@ fn build_metadata_request(topics []string) []u8 {
 
 	// Topics 배열 (compact nullable array)
 	if topics.len == 0 {
-		body << u8(1) // null array = 모든 토픽
+		body << u8(1)
 	} else {
 		body << u8(topics.len + 1)
 		for topic in topics {
@@ -408,7 +407,7 @@ fn build_delete_topic_request(name string, timeout_ms int) []u8 {
 	mut body := []u8{}
 
 	// Topics 배열 (compact array)
-	body << u8(2) // 배열 길이 + 1
+	body << u8(2)
 
 	// 토픽 이름 (compact nullable string)
 	body << u8(name.len + 1)
@@ -480,7 +479,7 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 		return error('Invalid response: too short')
 	}
 
-	mut pos := 4 // throttle_time_ms 건너뛰기
+	mut pos := 4
 
 	// topics 배열 길이 읽기 (i32)
 	if pos + 4 > response.len {
@@ -600,23 +599,23 @@ fn parse_metadata_response_topics(response []u8) []TopicInfo {
 		return topics
 	}
 
-	mut pos := 4 // correlation_id 건너뛰기
+	mut pos := 4
 	if pos >= response.len {
 		return topics
 	}
 
-	pos += 1 // tagged fields
+	pos += 1
 	if pos >= response.len {
 		return topics
 	}
 
-	pos += 4 // throttle_time
+	pos += 4
 	if pos >= response.len {
 		return topics
 	}
 
 	pos = skip_brokers_array(response, pos)
-	pos += 40 // cluster_id, controller_id
+	pos += 40
 
 	if pos >= response.len {
 		return topics

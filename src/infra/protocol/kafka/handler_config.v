@@ -41,12 +41,12 @@ pub:
 	name          string
 	value         ?string
 	read_only     bool
-	is_default    bool // v0 (deprecated in v1+)
-	config_source i8   // v1+ (replaces is_default)
+	is_default    bool
+	config_source i8
 	is_sensitive  bool
-	synonyms      []DescribeConfigsSynonym // v1+
-	config_type   i8                       // v3+
-	documentation ?string                  // v3+
+	synonyms      []DescribeConfigsSynonym
+	config_type   i8
+	documentation ?string
 }
 
 pub struct DescribeConfigsSynonym {
@@ -258,7 +258,7 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 					value:         topic.config['retention.ms'] or { '604800000' }
 					read_only:     false
 					is_default:    true
-					config_source: 4 // DEFAULT_CONFIG
+					config_source: 4
 					is_sensitive:  false
 					synonyms:      []
 					config_type:   0

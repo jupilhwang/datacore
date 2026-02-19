@@ -70,7 +70,7 @@ mut:
 /// HealthStatus는 스토리지의 상태를 나타냅니다.
 pub enum HealthStatus {
 	healthy
-	degraded // 성능 저하
+	degraded
 	unhealthy
 }
 

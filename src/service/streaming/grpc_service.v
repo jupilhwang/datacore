@@ -7,18 +7,16 @@ import service.port
 import sync
 import time
 
-// gRPC Service
-
 // GrpcService manages gRPC connections and operations
 pub struct GrpcService {
 	config domain.GrpcConfig
 mut:
-	storage     port.StoragePort                // Storage for message operations
-	connections map[string]&GrpcConnectionState // Active connections
-	topic_subs  map[string][]string             // topic -> connection IDs
-	mutex       sync.RwMutex                    // Thread safety
-	stats       GrpcStats                       // Statistics
-	running     bool // Service running flag
+	storage     port.StoragePort
+	connections map[string]&GrpcConnectionState
+	topic_subs  map[string][]string
+	mutex       sync.RwMutex
+	stats       GrpcStats
+	running     bool
 }
 
 // GrpcConnectionState는 gRPC 연결 상태를 보관합니다
@@ -26,25 +24,25 @@ mut:
 struct GrpcConnectionState {
 pub mut:
 	connection    domain.GrpcConnection
-	subscriptions map[string]domain.Subscription // sub_id -> Subscription
-	send_chan     chan domain.GrpcStreamResponse // Channel for sending responses
-	last_ping     i64 // Last ping timestamp
+	subscriptions map[string]domain.Subscription
+	send_chan     chan domain.GrpcStreamResponse
+	last_ping     i64
 }
 
 // GrpcStats holds gRPC service statistics
 pub struct GrpcStats {
 pub mut:
-	active_connections  int // Number of active connections
-	total_subscriptions int // Total active subscriptions
-	produce_requests    i64 // Total produce requests
-	consume_requests    i64 // Total consume requests
-	messages_produced   i64 // Total messages produced
-	messages_consumed   i64 // Total messages consumed
-	bytes_produced      i64 // Total bytes produced
-	bytes_consumed      i64 // Total bytes consumed
-	connections_created i64 // Total connections created
-	connections_closed  i64 // Total connections closed
-	errors              i64 // Total errors
+	active_connections  int
+	total_subscriptions int
+	produce_requests    i64
+	consume_requests    i64
+	messages_produced   i64
+	messages_consumed   i64
+	bytes_produced      i64
+	bytes_consumed      i64
+	connections_created i64
+	connections_closed  i64
+	errors              i64
 }
 
 // new_grpc_service creates a new gRPC service

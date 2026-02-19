@@ -20,9 +20,9 @@ import time
 /// CoordinatorKeyType은 코디네이터 키 타입을 정의합니다.
 /// v1부터 지원되며, v6에서 SHARE 타입이 추가되었습니다.
 pub enum CoordinatorKeyType as i8 {
-	group       = 0 // 컨슈머 그룹 코디네이터
-	transaction = 1 // 트랜잭션 코디네이터
-	share       = 2 // Share Group 코디네이터 (v6, KIP-932)
+	group       = 0
+	transaction = 1
+	share       = 2
 }
 
 pub struct FindCoordinatorRequest {
@@ -153,7 +153,7 @@ fn coordinator_key_type_str(key_type i8) string {
 	return match key_type {
 		0 { 'GROUP' }
 		1 { 'TRANSACTION' }
-		2 { 'SHARE' } // v6, KIP-932
+		2 { 'SHARE' }
 		else { 'UNKNOWN' }
 	}
 }
@@ -198,7 +198,7 @@ fn (mut h Handler) compute_coordinator_broker(key string, key_type i8) (i32, str
 			// group_id를 해시하여 파티션 번호 결정 (0-999 범위)
 			mut hash := i32(0)
 			for c in key.bytes() {
-				hash = (hash * 31 + i32(c)) & 0x7FFFFFFF // 양수로 유지
+				hash = (hash * 31 + i32(c)) & 0x7FFFFFFF
 			}
 			partition := hash % 1000
 

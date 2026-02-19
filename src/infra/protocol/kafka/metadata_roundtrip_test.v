@@ -74,7 +74,7 @@ fn test_metadata_response_roundtrip_v12() {
 	assert tcount > 0
 	// iterate topics
 	for _ in 0 .. int(tcount - 1) {
-		_ = reader.read_i16()! // error_code
+		_ = reader.read_i16()!
 		name := reader.read_compact_string()!
 		// topic_id (16)
 		tid := reader.read_uuid()!

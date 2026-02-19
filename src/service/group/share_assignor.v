@@ -49,7 +49,7 @@ pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, t
 	}
 
 	// 구독 토픽별로 멤버 그룹화
-	mut topic_assignments := map[string][]string{} // topic -> member_ids
+	mut topic_assignments := map[string][]string{}
 
 	for m in members {
 		for topic in m.topics {

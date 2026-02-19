@@ -5,8 +5,6 @@ module kafka
 import domain
 import infra.protocol.kafka.crc32c
 
-// 헬퍼 함수
-
 /// varint_size는 varint의 인코딩된 크기를 계산합니다.
 /// 정확성을 위해 codec.v의 write_varint와 동일한 ZigZag 인코딩을 사용합니다.
 fn varint_size(val i64) int {
@@ -146,7 +144,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 
 		// 레코드를 한 번만 작성
 		writer.write_varint(i64(record_size))
-		writer.write_i8(0) // 속성
+		writer.write_i8(0)
 		writer.write_varint(timestamp_delta)
 		writer.write_varint(i64(offset_delta))
 

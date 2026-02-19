@@ -6,8 +6,6 @@ import domain
 import sync
 import time
 
-// Share 세션 매니저
-
 /// ShareSessionManager는 share 세션을 관리합니다.
 /// 세션 생성, 업데이트, 만료 처리를 담당합니다.
 pub struct ShareSessionManager {
@@ -84,7 +82,7 @@ pub fn (mut m ShareSessionManager) update_session(group_id string, member_id str
 	// 에포크 증가
 	session.session_epoch += 1
 	if session.session_epoch > 2147483647 {
-		session.session_epoch = 1 // 래핑
+		session.session_epoch = 1
 	}
 
 	return session

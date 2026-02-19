@@ -11,32 +11,32 @@ import infra.performance
 /// BenchmarkConfig는 벤치마크 실행 설정을 정의합니다.
 pub struct BenchmarkConfig {
 pub:
-	warmup_iterations    int   = 1000  // 워밍업 반복 횟수
-	benchmark_iterations int   = 10000 // 벤치마크 반복 횟수
-	buffer_sizes         []int = [64, 256, 1024, 4096, 16384, 65536] // 테스트할 버퍼 크기들
-	concurrent_workers   int   = 4 // 동시 작업자 수
+	warmup_iterations    int   = 1000
+	benchmark_iterations int   = 10000
+	buffer_sizes         []int = [64, 256, 1024, 4096, 16384, 65536]
+	concurrent_workers   int   = 4
 }
 
 /// BenchmarkResult는 벤치마크 결과를 저장합니다.
 pub struct BenchmarkResult {
 pub:
-	name           string // 벤치마크 이름
-	iterations     int    // 반복 횟수
+	name           string
+	iterations     int
 	total_time_ns  i64
 	avg_time_ns    i64
 	min_time_ns    i64
 	max_time_ns    i64
-	ops_per_second f64 // 초당 작업 수
-	memory_saved   i64 // 풀링으로 절약된 예상 메모리
+	ops_per_second f64
+	memory_saved   i64
 }
 
 /// BenchmarkSuite는 모든 벤치마크를 실행하는 스위트입니다.
 @[heap]
 pub struct BenchmarkSuite {
 mut:
-	config  BenchmarkConfig                 // 벤치마크 설정
-	results []BenchmarkResult               // 벤치마크 결과 목록
-	manager &performance.PerformanceManager // 성능 관리자 참조
+	config  BenchmarkConfig
+	results []BenchmarkResult
+	manager &performance.PerformanceManager
 }
 
 /// new_benchmark_suite는 새로운 벤치마크 스위트를 생성합니다.
@@ -122,7 +122,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
 	mut result := s.calculate_result('BufferPool Hit Rate Test', times)
 	result = BenchmarkResult{
 		...result
-		memory_saved: i64(stats.buffer_hits) // 버퍼 히트 수로 대체
+		memory_saved: i64(stats.buffer_hits)
 	}
 
 	return result
@@ -205,7 +205,7 @@ pub fn (mut s BenchmarkSuite) benchmark_request_response_cycle() BenchmarkResult
 
 		// 응답 버퍼 획득
 		mut resp_buf := new_response_buffer(8192)
-		resp_buf.write_i32_be(100) // 데이터 쓰기
+		resp_buf.write_i32_be(100)
 		resp_buf.write([u8(1), 2, 3, 4])
 
 		// 버퍼 해제

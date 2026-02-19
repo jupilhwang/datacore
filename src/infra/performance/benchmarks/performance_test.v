@@ -281,7 +281,7 @@ fn test_record_pool() {
 
 	// Get again - should be from pool
 	mut r2 := pool.get()
-	assert r2.key.len == 0 // Should be reset
+	assert r2.key.len == 0
 	assert r2.value.len == 0
 }
 
@@ -314,7 +314,7 @@ fn test_request_pool() {
 	pool.put(req)
 
 	mut req2 := pool.get()
-	assert req2.api_key == 0 // Should be reset
+	assert req2.api_key == 0
 	assert req2.correlation_id == 0
 }
 

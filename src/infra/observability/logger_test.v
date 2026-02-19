@@ -71,7 +71,7 @@ fn test_log_level_from_string() {
 	assert log_level_from_string('WARN') == .warn
 	assert log_level_from_string('error') == .error
 	assert log_level_from_string('FATAL') == .fatal
-	assert log_level_from_string('unknown') == .info // 기본값
+	assert log_level_from_string('unknown') == .info
 }
 
 fn test_log_level_str() {
@@ -112,7 +112,7 @@ fn test_field_constructors() {
 
 fn test_field_duration() {
 	f := field_duration('latency', 1500 * time.millisecond)
-	assert f.key == 'latency_ms' // field_duration은 _ms 접미사를 추가함
+	assert f.key == 'latency_ms'
 	assert f.value.contains('1500')
 }
 
@@ -133,7 +133,7 @@ fn test_json_output_format() {
 
 	json := format_entry_json(entry)
 	assert json.contains('"level":"INFO"')
-	assert json.contains('"msg":"test message"') // JSON 형식은 "message"가 아닌 "msg" 사용
+	assert json.contains('"msg":"test message"')
 	assert json.contains('"trace_id":"trace-id"')
 	assert json.contains('"key":"value"')
 }

@@ -211,11 +211,11 @@ fn test_compression_metrics() {
 	initial_decompress_total := metrics.decompress_total.value
 
 	// 압축 기록
-	metrics.record_compress(100, 50, 1000000, true) // 1ms
+	metrics.record_compress(100, 50, 1000000, true)
 	assert metrics.compress_total.value == initial_compress_total + 1
 
 	// 해제 기록
-	metrics.record_decompress(50, 100, 2000000, true) // 2ms
+	metrics.record_decompress(50, 100, 2000000, true)
 	assert metrics.decompress_total.value == initial_decompress_total + 1
 }
 

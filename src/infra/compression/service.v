@@ -21,11 +21,11 @@ pub:
 	default_compression CompressionType = CompressionType.none
 	enable_metrics      bool            = true
 	// 압축 임계값 설정 (v0.42.0)
-	compression_threshold_bytes int = 1024 // 압축 최소 크기 (기본 1KB)
+	compression_threshold_bytes int = 1024
 	// 압축 레벨 설정
-	gzip_level       int = 6 // Gzip 압축 레벨 (1-9, 기본 6)
-	zstd_level       int = 3 // Zstd 압축 레벨 (1-22, 기본 3)
-	lz4_acceleration int = 1 // LZ4 가속 레벨 (1-12, 기본 1)
+	gzip_level       int = 6
+	zstd_level       int = 3
+	lz4_acceleration int = 1
 }
 
 /// new_compression_service는 새 CompressionService를 생성합니다.

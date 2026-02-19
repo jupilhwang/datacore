@@ -241,9 +241,9 @@ fn is_valid_json(s string) bool {
 		mut i := 1
 		for i < trimmed.len - 1 {
 			if trimmed[i] == `\\` {
-				i += 2 // Skip escaped character
+				i += 2
 			} else if trimmed[i] == `"` {
-				return false // Unescaped quote in middle
+				return false
 			} else {
 				i += 1
 			}

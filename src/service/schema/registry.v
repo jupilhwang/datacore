@@ -13,15 +13,15 @@ import crypto.md5
 pub struct SchemaRegistry {
 mut:
 	// 인메모리 캐시
-	schemas         map[int]domain.Schema             // schema_id -> Schema
-	subjects        map[string][]domain.SchemaVersion // subject -> versions
-	subject_configs map[string]domain.SubjectConfig   // subject -> config
+	schemas         map[int]domain.Schema
+	subjects        map[string][]domain.SchemaVersion
+	subject_configs map[string]domain.SubjectConfig
 	// 버전 조회 캐시 (v0.28.0 최적화)
-	version_map map[string]map[int]int // subject -> (version -> versions 배열 인덱스)
+	version_map map[string]map[int]int
 
 	// 전역 상태
-	next_id       int                  // 다음 스키마 ID
-	global_config domain.SubjectConfig // 전역 기본 설정
+	next_id       int
+	global_config domain.SubjectConfig
 
 	// 스레드 안전성
 	lock sync.RwMutex
@@ -29,7 +29,6 @@ mut:
 	// 영구 저장을 위한 스토리지
 	storage port.StoragePort
 
-	// 설정
 	default_compat domain.CompatibilityLevel
 
 	// 부팅 복구 상태
@@ -39,17 +38,17 @@ mut:
 /// RegistryConfig는 레지스트리 설정을 담습니다.
 pub struct RegistryConfig {
 pub:
-	default_compatibility domain.CompatibilityLevel = .backward // 기본 호환성 수준
-	auto_register         bool                      = true      // 자동 등록 여부
-	normalize_schemas     bool                      = true      // 스키마 정규화 여부
+	default_compatibility domain.CompatibilityLevel = .backward
+	auto_register         bool                      = true
+	normalize_schemas     bool                      = true
 }
 
 /// RegistryStats는 레지스트리 통계를 담습니다.
 pub struct RegistryStats {
 pub:
-	total_schemas  int // 총 스키마 수
-	total_subjects int // 총 subject 수
-	next_id        int // 다음 스키마 ID
+	total_schemas  int
+	total_subjects int
+	next_id        int
 }
 
 // 스키마 저장을 위한 내부 토픽
@@ -235,7 +234,7 @@ pub fn (mut r SchemaRegistry) register(subject string, schema_str string, schema
 	if subject !in r.version_map {
 		r.version_map[subject] = map[int]int{}
 	}
-	r.version_map[subject][version_num] = versions.len // 배열 인덱스
+	r.version_map[subject][version_num] = versions.len
 
 	// 스토리지에 영구 저장 (잠금 해제 작업)
 	r.persist_schema(subject, schema, version) or {
@@ -342,7 +341,7 @@ pub fn (mut r SchemaRegistry) delete_subject(subject string) ![]int {
 
 	r.subjects.delete(subject)
 	r.subject_configs.delete(subject)
-	r.version_map.delete(subject) // version_map 정리 (v0.28.0)
+	r.version_map.delete(subject)
 
 	return deleted
 }
@@ -403,7 +402,7 @@ pub fn (mut r SchemaRegistry) test_compatibility(subject string, schema_str stri
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 
-	versions := r.subjects[subject] or { return true } // 버전 없음 = 호환
+	versions := r.subjects[subject] or { return true }
 	if versions.len == 0 {
 		return true
 	}
@@ -519,7 +518,7 @@ fn (mut r SchemaRegistry) persist_schema(subject string, schema domain.Schema, v
 	r.storage.get_topic(schemas_topic) or {
 		// 단일 파티션으로 내부 토픽 생성
 		r.storage.create_topic(schemas_topic, 1, domain.TopicConfig{
-			retention_ms:   -1 // 영구 보존
+			retention_ms:   -1
 			cleanup_policy: 'compact'
 		}) or {
 			// 다른 스레드에서 이미 생성되었을 수 있음

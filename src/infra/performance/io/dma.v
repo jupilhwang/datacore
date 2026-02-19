@@ -64,11 +64,11 @@ $if linux {
 /// PlatformCapabilities는 사용 가능한 I/O 기능을 나타냅니다.
 pub struct PlatformCapabilities {
 pub:
-	has_scatter_gather  bool   // readv/writev 지원
-	has_sendfile        bool   // sendfile 지원
-	has_splice          bool   // splice 지원 (Linux 전용)
-	has_copy_file_range bool   // copy_file_range 지원 (Linux 4.5+)
-	os_name             string // OS 이름
+	has_scatter_gather  bool
+	has_sendfile        bool
+	has_splice          bool
+	has_copy_file_range bool
+	os_name             string
 }
 
 /// get_platform_capabilities는 현재 OS의 사용 가능한 I/O 기능을 반환합니다.
@@ -92,7 +92,7 @@ pub fn get_platform_capabilities() PlatformCapabilities {
 	} $else $if windows {
 		return PlatformCapabilities{
 			has_scatter_gather:  false
-			has_sendfile:        false // TransmitFile로 구현 가능
+			has_sendfile:        false
 			has_splice:          false
 			has_copy_file_range: false
 			os_name:             'Windows'
@@ -113,11 +113,11 @@ pub fn get_platform_capabilities() PlatformCapabilities {
 /// DmaResult는 DMA 작업의 결과를 담고 있습니다.
 pub struct DmaResult {
 pub:
-	bytes_transferred i64  // 전송된 바이트 수
-	success           bool // 성공 여부
+	bytes_transferred i64
+	success           bool
 	error_msg         string
-	used_zero_copy    bool // 제로카피 사용 여부
-	new_offset        i64  // 작업 후 업데이트된 오프셋
+	used_zero_copy    bool
+	new_offset        i64
 }
 
 /// dma_success는 성공 결과를 생성합니다.
@@ -154,8 +154,8 @@ fn dma_error(msg string) DmaResult {
 /// ScatterGatherBuffer는 scatter-gather 작업을 위한 버퍼를 나타냅니다.
 pub struct ScatterGatherBuffer {
 pub mut:
-	data []u8 // 데이터 버퍼
-	len  int  // 데이터 길이
+	data []u8
+	len  int
 }
 
 /// new_sg_buffer는 새 scatter-gather 버퍼를 생성합니다.
@@ -375,19 +375,19 @@ pub fn copy_file_range_native(fd_in int, off_in i64, fd_out int, off_out i64, co
 /// DmaTransfer는 자동 폴백을 포함한 고수준 DMA 전송을 제공합니다.
 pub struct DmaTransfer {
 pub:
-	capabilities PlatformCapabilities // 플랫폼 기능
+	capabilities PlatformCapabilities
 pub mut:
-	stats DmaStats // DMA 통계
+	stats DmaStats
 }
 
 /// DmaStats는 DMA 전송 통계를 담고 있습니다.
 pub struct DmaStats {
 pub mut:
-	total_transfers     u64 // 총 전송 수
-	zero_copy_transfers u64 // 제로카피 전송 수
-	fallback_transfers  u64 // 폴백 전송 수
-	bytes_zero_copy     u64 // 제로카피로 전송된 바이트
-	bytes_fallback      u64 // 폴백으로 전송된 바이트
+	total_transfers     u64
+	zero_copy_transfers u64
+	fallback_transfers  u64
+	bytes_zero_copy     u64
+	bytes_fallback      u64
 }
 
 /// new_dma_transfer는 새 DMA 전송 핸들러를 생성합니다.
@@ -499,7 +499,7 @@ pub fn get_fd(file &os.File) int {
 	$if linux || macos {
 		// Unix 계열 시스템에서는 unsafe 접근을 사용할 수 있습니다
 		// 프로덕션에서는 적절한 V API 지원이 필요합니다
-		return -1 // 플레이스홀더 - 실제 구현에는 V 내부가 필요
+		return -1
 	} $else {
 		return -1
 	}
@@ -531,7 +531,7 @@ pub fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) Dm
 	return DmaResult{
 		bytes_transferred: total
 		success:           true
-		used_zero_copy:    false // V의 API 사용, 네이티브 readv 아님
+		used_zero_copy:    false
 	}
 }
 
@@ -559,6 +559,6 @@ pub fn gather_write_file(mut file os.File, buffers []ScatterGatherBuffer) DmaRes
 	return DmaResult{
 		bytes_transferred: total
 		success:           true
-		used_zero_copy:    false // V의 API 사용, 네이티브 writev 아님
+		used_zero_copy:    false
 	}
 }

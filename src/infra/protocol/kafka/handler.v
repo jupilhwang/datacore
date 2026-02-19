@@ -32,17 +32,17 @@ pub struct Handler {
 	cluster_id  string
 mut:
 	storage                 port.StoragePort
-	offset_manager          &offset.OffsetManager               // Offset management service
-	broker_registry         ?&cluster.BrokerRegistry            // Optional: Broker registry for multi-broker mode
-	partition_assigner      ?PartitionAssignerPtr               // Optional: Partition assigner for dynamic partition assignment
-	auth_manager            ?port.AuthManager                   // Optional: SASL authentication manager
-	acl_manager             ?port.AclManager                    // Optional: ACL manager
-	txn_coordinator         ?transaction.TransactionCoordinator // Optional: Transaction coordinator
-	share_group_coordinator ?&group.ShareGroupCoordinator       // Optional: Share group coordinator (KIP-932)
-	schema_registry         ?&schema.SchemaRegistry             // Optional: Schema registry for schema encoding/decoding
+	offset_manager          &offset.OffsetManager
+	broker_registry         ?&cluster.BrokerRegistry
+	partition_assigner      ?PartitionAssignerPtr
+	auth_manager            ?port.AuthManager
+	acl_manager             ?port.AclManager
+	txn_coordinator         ?transaction.TransactionCoordinator
+	share_group_coordinator ?&group.ShareGroupCoordinator
+	schema_registry         ?&schema.SchemaRegistry
 	logger                  &observability.Logger
-	metrics                 &observability.ProtocolMetrics  // Protocol metrics collector
-	compression_service     &compression.CompressionService // Compression service for record decompression
+	metrics                 &observability.ProtocolMetrics
+	compression_service     &compression.CompressionService
 }
 
 /// 스토리지와 함께 새로운 Kafka 프로토콜 핸들러를 생성합니다.
@@ -590,8 +590,8 @@ fn generate_uuid() []u8 {
 	// 배열 초기화와 함께 랜덤 값 생성 최적화
 	mut uuid := []u8{len: 16, init: u8(rand.int_in_range(0, 256) or { 0 })}
 	// 버전 (4) 및 변형 (RFC 4122) 설정
-	uuid[6] = (uuid[6] & 0x0f) | 0x40 // 버전 4
-	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 변형
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
 	return uuid
 }
 

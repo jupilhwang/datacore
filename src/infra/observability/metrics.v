@@ -22,9 +22,9 @@ pub:
 	labels      map[string]string
 pub mut:
 	value   f64
-	count   u64      // 히스토그램용
-	sum     f64      // 히스토그램용
-	buckets []Bucket // 히스토그램용
+	count   u64
+	sum     f64
+	buckets []Bucket
 }
 
 /// Bucket은 히스토그램 버킷을 나타냅니다.
@@ -209,16 +209,16 @@ pub fn (r &MetricsRegistry) export_prometheus() string {
 pub struct BrokerTopicMetrics {
 pub mut:
 	// 메시지 비율
-	messages_in_per_sec    &Metric // 토픽별 수신 메시지 비율
-	bytes_in_per_sec       &Metric // 토픽별 클라이언트로부터의 바이트 수신 비율
-	bytes_out_per_sec      &Metric // 토픽별 클라이언트로의 바이트 송신 비율
-	bytes_rejected_per_sec &Metric // 토픽별 거부된 바이트 비율
+	messages_in_per_sec    &Metric
+	bytes_in_per_sec       &Metric
+	bytes_out_per_sec      &Metric
+	bytes_rejected_per_sec &Metric
 
 	// 요청 비율
-	total_produce_requests_per_sec  &Metric // 토픽별 Produce 요청 비율
-	total_fetch_requests_per_sec    &Metric // 토픽별 Fetch 요청 비율
-	failed_produce_requests_per_sec &Metric // 토픽별 실패한 Produce 요청 비율
-	failed_fetch_requests_per_sec   &Metric // 토픽별 실패한 Fetch 요청 비율
+	total_produce_requests_per_sec  &Metric
+	total_fetch_requests_per_sec    &Metric
+	failed_produce_requests_per_sec &Metric
+	failed_fetch_requests_per_sec   &Metric
 
 	// 유효성 검사 실패
 	invalid_magic_number_records_per_sec &Metric
@@ -230,37 +230,37 @@ pub mut:
 pub struct RequestMetrics {
 pub mut:
 	// 유형별 요청 비율
-	requests_per_sec &Metric // 요청 비율
-	errors_per_sec   &Metric // 에러 비율
+	requests_per_sec &Metric
+	errors_per_sec   &Metric
 
 	// 요청 크기
-	request_bytes  &Metric // 요청 크기
-	response_bytes &Metric // 응답 크기
+	request_bytes  &Metric
+	response_bytes &Metric
 
 	// 요청 타이밍 (모두 초 단위)
-	total_time_ms          &Metric // 요청 총 시간
-	request_queue_time_ms  &Metric // 요청 큐 대기 시간
-	local_time_ms          &Metric // 리더에서 처리된 시간
-	response_queue_time_ms &Metric // 응답 큐 대기 시간
-	response_send_time_ms  &Metric // 응답 전송 시간
+	total_time_ms          &Metric
+	request_queue_time_ms  &Metric
+	local_time_ms          &Metric
+	response_queue_time_ms &Metric
+	response_send_time_ms  &Metric
 
 	// 큐
-	request_queue_size &Metric // 요청 큐 크기
+	request_queue_size &Metric
 }
 
 /// SocketServerMetrics - 네트워크/소켓 메트릭 (kafka.network:type=SocketServer)
 pub struct SocketServerMetrics {
 pub mut:
 	// 연결 메트릭
-	connections_total         &Metric // 생성된 총 연결 수
-	connections_active        &Metric // 현재 활성 연결 수
-	connections_creation_rate &Metric // 초당 새 연결 수
-	connections_close_rate    &Metric // 초당 닫힌 연결 수
-	connections_rejected      &Metric // 거부된 연결 수 (제한)
+	connections_total         &Metric
+	connections_active        &Metric
+	connections_creation_rate &Metric
+	connections_close_rate    &Metric
+	connections_rejected      &Metric
 
 	// I/O 메트릭
-	network_processor_avg_idle_percent &Metric // 네트워크 프로세서의 평균 유휴 시간
-	expired_connections_killed_count   &Metric // 만료로 인해 종료된 연결 수
+	network_processor_avg_idle_percent &Metric
+	expired_connections_killed_count   &Metric
 
 	// 트래픽
 	bytes_received_total &Metric
@@ -285,8 +285,8 @@ pub mut:
 	event_processing_time_ms &Metric
 
 	// 그룹 수
-	group_count_consumer &Metric // 컨슈머 프로토콜 그룹
-	group_count_classic  &Metric // 클래식 프로토콜 그룹
+	group_count_consumer &Metric
+	group_count_classic  &Metric
 
 	// 컨슈머 그룹 상태 (KIP-848)
 	consumer_group_count_empty       &Metric
@@ -309,7 +309,7 @@ pub mut:
 	classic_group_rebalance_count  &Metric
 
 	// 오프셋 메트릭
-	num_offsets             &Metric // 총 커밋된 오프셋
+	num_offsets             &Metric
 	offset_commit_rate      &Metric
 	offset_commit_count     &Metric
 	offset_expiration_rate  &Metric
@@ -320,10 +320,10 @@ pub mut:
 pub struct LogMetrics {
 pub mut:
 	// 파티션별
-	log_start_offset &Metric // 파티션의 첫 번째 오프셋
-	log_end_offset   &Metric // 파티션의 마지막 오프셋
-	size_bytes       &Metric // 디스크상 파티션 크기
-	num_log_segments &Metric // 로그 세그먼트 수
+	log_start_offset &Metric
+	log_end_offset   &Metric
+	size_bytes       &Metric
+	num_log_segments &Metric
 
 	// 로그 매니저
 	log_flush_rate_and_time_ms  &Metric

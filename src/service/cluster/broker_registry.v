@@ -19,11 +19,11 @@ pub struct BrokerRegistry {
 	config domain.ClusterConfig
 mut:
 	local_broker     domain.BrokerInfo
-	metadata_port    ?port.ClusterMetadataPort // 클러스터 메타데이터 포트 (분산 스토리지용)
-	brokers          map[i32]domain.BrokerInfo // 브로커 인메모리 캐시 (단일 브로커 모드 또는 캐싱용)
+	metadata_port    ?port.ClusterMetadataPort
+	brokers          map[i32]domain.BrokerInfo
 	lock             sync.RwMutex
 	running          bool
-	capability       domain.StorageCapability // 스토리지 기능 정보
+	capability       domain.StorageCapability
 	metrics_provider ?MetricsProvider
 	prev_bytes_in    u64
 	prev_bytes_out   u64
@@ -32,7 +32,7 @@ mut:
 	partition_assigner ?&PartitionAssigner
 	logger             &observability.Logger
 	// 브로커 변경 콜백
-	on_broker_change_cb ?fn (changes BrokerChanges) // 브로커 변경 시 호출될 콜백
+	on_broker_change_cb ?fn (changes BrokerChanges)
 }
 
 /// BrokerRegistryConfig는 레지스트리 설정을 담습니다.
@@ -388,7 +388,7 @@ pub fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
 
 	return domain.ClusterMetadata{
 		cluster_id:       r.config.cluster_id
-		controller_id:    r.local_broker.broker_id // 단일 브로커에서는 자신이 컨트롤러
+		controller_id:    r.local_broker.broker_id
 		brokers:          brokers
 		metadata_version: 1
 		updated_at:       time.now().unix_milli()

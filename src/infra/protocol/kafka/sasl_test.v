@@ -82,7 +82,7 @@ fn test_sasl_handshake_response_encode_v0_unsupported() {
 	mut reader := kafka.new_reader(bytes)
 
 	error_code := reader.read_i16()!
-	assert error_code == 33 // UNSUPPORTED_SASL_MECHANISM
+	assert error_code == 33
 
 	array_len := reader.read_array_len()!
 	assert array_len == 1
@@ -141,7 +141,7 @@ fn test_sasl_authenticate_response_encode_v0_success() {
 
 	// error_message: NULLABLE_STRING
 	error_msg := reader.read_nullable_string()!
-	assert error_msg == '' // null/empty
+	assert error_msg == ''
 
 	// auth_bytes: BYTES
 	auth_bytes := reader.read_bytes()!
@@ -153,7 +153,7 @@ fn test_sasl_authenticate_response_encode_v1_with_lifetime() {
 		error_code:          0
 		error_message:       none
 		auth_bytes:          []u8{}
-		session_lifetime_ms: 3600000 // 1 hour
+		session_lifetime_ms: 3600000
 	}
 
 	bytes := response.encode(1)
@@ -184,7 +184,7 @@ fn test_sasl_authenticate_response_encode_v0_failure() {
 	mut reader := kafka.new_reader(bytes)
 
 	error_code := reader.read_i16()!
-	assert error_code == 58 // SASL_AUTHENTICATION_FAILED
+	assert error_code == 58
 
 	error_msg := reader.read_nullable_string()!
 	assert error_msg == 'Invalid credentials'
@@ -237,11 +237,8 @@ fn create_test_handler_with_auth() kafka.Handler {
 		panic('failed to create compression service: ${err}')
 	}
 
-	return kafka.new_handler_with_auth(1, // broker_id
-	 '127.0.0.1', // host
-	 9092, // port
-	 'test-cluster', // cluster_id
-	 storage, auth_service, compression_service)
+	return kafka.new_handler_with_auth(1, '127.0.0.1', 9092, 'test-cluster', storage,
+		auth_service, compression_service)
 }
 
 fn create_mock_storage() port.StoragePort {
@@ -334,12 +331,12 @@ fn test_handler_sasl_handshake_success() {
 	// Build SaslHandshake request: [size][header][body]
 	// Request header v0: api_key(2) + version(2) + correlation_id(4) + client_id(nullable string)
 	mut request := kafka.new_writer()
-	request.write_i32(0) // size (ignored by parse_request but required)
-	request.write_i16(17) // api_key: SaslHandshake
-	request.write_i16(0) // version
-	request.write_i32(1) // correlation_id
-	request.write_nullable_string('test-client') // client_id
-	request.write_string('PLAIN') // mechanism
+	request.write_i32(0)
+	request.write_i16(17)
+	request.write_i16(0)
+	request.write_i32(1)
+	request.write_nullable_string('test-client')
+	request.write_string('PLAIN')
 
 	// Handle request
 	response := handler.handle_request(request.bytes()[4..]) or {
@@ -350,7 +347,7 @@ fn test_handler_sasl_handshake_success() {
 	mut reader := kafka.new_reader(response)
 
 	// Response: [size(4)][correlation_id(4)][body]
-	_ := reader.read_i32()! // size
+	_ := reader.read_i32()!
 	correlation_id := reader.read_i32()!
 	assert correlation_id == 1
 
@@ -369,23 +366,23 @@ fn test_handler_sasl_handshake_unsupported_mechanism() {
 	mut handler := create_test_handler_with_auth()
 
 	mut request := kafka.new_writer()
-	request.write_i32(0) // size
-	request.write_i16(17) // api_key: SaslHandshake
-	request.write_i16(0) // version
-	request.write_i32(2) // correlation_id
+	request.write_i32(0)
+	request.write_i16(17)
+	request.write_i16(0)
+	request.write_i32(2)
 	request.write_nullable_string('test-client')
-	request.write_string('SCRAM-SHA-256') // unsupported mechanism
+	request.write_string('SCRAM-SHA-256')
 
 	response := handler.handle_request(request.bytes()[4..]) or {
 		panic('handle_request failed: ${err}')
 	}
 
 	mut reader := kafka.new_reader(response)
-	_ := reader.read_i32()! // size
-	_ := reader.read_i32()! // correlation_id
+	_ := reader.read_i32()!
+	_ := reader.read_i32()!
 
 	error_code := reader.read_i16()!
-	assert error_code == 33 // UNSUPPORTED_SASL_MECHANISM
+	assert error_code == 33
 }
 
 fn test_handler_sasl_authenticate_success() {
@@ -395,10 +392,10 @@ fn test_handler_sasl_authenticate_success() {
 	auth_bytes := make_plain_auth('', 'admin', 'adminpass')
 
 	mut request := kafka.new_writer()
-	request.write_i32(0) // size
-	request.write_i16(36) // api_key: SaslAuthenticate
-	request.write_i16(0) // version
-	request.write_i32(3) // correlation_id
+	request.write_i32(0)
+	request.write_i16(36)
+	request.write_i16(0)
+	request.write_i32(3)
 	request.write_nullable_string('test-client')
 	request.write_bytes(auth_bytes)
 
@@ -407,13 +404,13 @@ fn test_handler_sasl_authenticate_success() {
 	}
 
 	mut reader := kafka.new_reader(response)
-	_ := reader.read_i32()! // size
+	_ := reader.read_i32()!
 	correlation_id := reader.read_i32()!
 	assert correlation_id == 3
 
 	// Body: error_code(2) + error_message + auth_bytes
 	error_code := reader.read_i16()!
-	assert error_code == 0 // SUCCESS
+	assert error_code == 0
 }
 
 fn test_handler_sasl_authenticate_failure() {
@@ -423,10 +420,10 @@ fn test_handler_sasl_authenticate_failure() {
 	auth_bytes := make_plain_auth('', 'admin', 'wrongpassword')
 
 	mut request := kafka.new_writer()
-	request.write_i32(0) // size
-	request.write_i16(36) // api_key: SaslAuthenticate
-	request.write_i16(0) // version
-	request.write_i32(4) // correlation_id
+	request.write_i32(0)
+	request.write_i16(36)
+	request.write_i16(0)
+	request.write_i32(4)
 	request.write_nullable_string('test-client')
 	request.write_bytes(auth_bytes)
 
@@ -435,9 +432,9 @@ fn test_handler_sasl_authenticate_failure() {
 	}
 
 	mut reader := kafka.new_reader(response)
-	_ := reader.read_i32()! // size
-	_ := reader.read_i32()! // correlation_id
+	_ := reader.read_i32()!
+	_ := reader.read_i32()!
 
 	error_code := reader.read_i16()!
-	assert error_code == 58 // SASL_AUTHENTICATION_FAILED
+	assert error_code == 58
 }

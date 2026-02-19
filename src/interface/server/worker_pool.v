@@ -16,42 +16,42 @@ import infra.performance.engines
 /// WorkerPoolConfig는 워커 풀 설정을 담는 구조체입니다.
 pub struct WorkerPoolConfig {
 pub:
-	max_workers      int = 1000 // 최대 동시 연결 핸들러 수
-	queue_size       int = 5000 // 최대 대기 연결 큐 크기
-	acquire_timeout  int = 5000 // 워커 슬롯 획득 타임아웃 (ms)
-	metrics_interval int = 60   // 메트릭 로깅 간격 (초)
+	max_workers      int = 1000
+	queue_size       int = 5000
+	acquire_timeout  int = 5000
+	metrics_interval int = 60
 	// NUMA 설정 (v0.33.0)
-	numa_aware        bool // NUMA 인식 모드 (Linux 전용, 기본 false)
-	numa_bind_workers bool = true // 워커를 NUMA 노드에 라운드로빈 바인딩
+	numa_aware        bool
+	numa_bind_workers bool = true
 }
 
 /// WorkerPoolMetrics는 워커 풀 통계를 추적하는 구조체입니다.
 pub struct WorkerPoolMetrics {
 pub mut:
-	active_workers     int // 현재 활성 워커 수
-	peak_workers       int // 최대 동시 워커 수
-	queued_connections int // 현재 대기 중인 연결 수
-	total_acquired     u64 // 총 슬롯 획득 성공 수
-	total_released     u64 // 총 슬롯 해제 수
-	total_timeouts     u64 // 총 획득 타임아웃 수
-	total_rejected     u64 // 총 거부 수 (큐 가득 참)
+	active_workers     int
+	peak_workers       int
+	queued_connections int
+	total_acquired     u64
+	total_released     u64
+	total_timeouts     u64
+	total_rejected     u64
 	// NUMA 통계 (v0.33.0)
-	numa_bindings      u64 // NUMA 바인딩 성공 횟수
-	numa_binding_fails u64 // NUMA 바인딩 실패 횟수
+	numa_bindings      u64
+	numa_binding_fails u64
 }
 
 /// WorkerPool은 연결 처리를 위한 고정 크기 워커 슬롯 풀을 관리합니다.
 /// 세마포어 패턴을 사용하여 동시 실행 수를 제한합니다.
 pub struct WorkerPool {
 mut:
-	config       WorkerPoolConfig  // 워커 풀 설정
-	semaphore    chan bool         // 워커 슬롯용 카운팅 세마포어 (채널 기반)
-	metrics      WorkerPoolMetrics // 워커 풀 통계
-	metrics_lock sync.Mutex        // 메트릭 동기화용 뮤텍스
-	running      bool              // 풀 실행 상태 플래그
+	config       WorkerPoolConfig
+	semaphore    chan bool
+	metrics      WorkerPoolMetrics
+	metrics_lock sync.Mutex
+	running      bool
 	// NUMA 관련 (v0.33.0)
-	numa_node_count int // NUMA 노드 수
-	next_numa_node  int // 다음 바인딩할 NUMA 노드 (라운드로빈)
+	numa_node_count int
+	next_numa_node  int
 }
 
 /// new_worker_pool은 새로운 워커 풀을 생성합니다.
@@ -70,7 +70,7 @@ pub fn new_worker_pool(config WorkerPoolConfig) &WorkerPool {
 	return &WorkerPool{
 		config:          config
 		semaphore:       sem
-		running:         true // 초기 상태: 실행 중
+		running:         true
 		numa_node_count: numa_nodes
 		next_numa_node:  0
 	}
@@ -186,7 +186,7 @@ pub fn (mut wp WorkerPool) shutdown() {
 		select {
 			_ := <-wp.semaphore {}
 			else {
-				break // 더 이상 토큰이 없으면 종료
+				break
 			}
 		}
 	}
@@ -202,8 +202,8 @@ pub fn (wp &WorkerPool) is_running() bool {
 /// 사용 예: defer { guard.release() }
 pub struct WorkerGuard {
 mut:
-	pool     &WorkerPool // 연결된 워커 풀 참조
-	released bool        // 해제 여부 (중복 해제 방지)
+	pool     &WorkerPool
+	released bool
 }
 
 /// new_worker_guard는 새로운 워커 가드를 생성합니다.
@@ -211,7 +211,7 @@ mut:
 pub fn new_worker_guard(mut pool WorkerPool) WorkerGuard {
 	return WorkerGuard{
 		pool:     pool
-		released: false // 초기 상태: 미해제
+		released: false
 	}
 }
 
@@ -220,7 +220,7 @@ pub fn new_worker_guard(mut pool WorkerPool) WorkerGuard {
 pub fn (mut g WorkerGuard) release() {
 	if !g.released {
 		g.pool.release()
-		g.released = true // 중복 해제 방지
+		g.released = true
 	}
 }
 

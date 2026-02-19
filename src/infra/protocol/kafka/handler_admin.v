@@ -261,7 +261,7 @@ pub:
 pub struct DeleteRecordsPartition {
 pub:
 	partition_index i32
-	offset          i64 // Records before this offset will be deleted
+	offset          i64
 }
 
 pub struct DeleteRecordsResponse {
@@ -279,7 +279,7 @@ pub:
 pub struct DeleteRecordsResponsePartition {
 pub:
 	partition_index i32
-	low_watermark   i64 // The new low watermark (earliest available offset)
+	low_watermark   i64
 	error_code      i16
 }
 
@@ -576,7 +576,7 @@ pub fn (mut h Handler) handle_delete_records(body []u8, version i16) ![]u8 {
 			info := h.storage.get_partition_info(t.name, int(p.partition_index)) or {
 				resp_partitions << DeleteRecordsResponsePartition{
 					partition_index: p.partition_index
-					low_watermark:   p.offset // Use requested offset as low watermark
+					low_watermark:   p.offset
 					error_code:      0
 				}
 				continue

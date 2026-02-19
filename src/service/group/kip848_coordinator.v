@@ -24,14 +24,14 @@ import rand
 /// KIP848GroupCoordinator는 새 프로토콜을 사용하는 컨슈머 그룹을 관리합니다.
 /// 서버 측 파티션 할당과 점진적 리밸런싱을 지원합니다.
 pub struct KIP848GroupCoordinator {
-	assignors        map[string]ServerAssignor // 사용 가능한 할당자
-	default_assignor string                    // 기본 할당자
+	assignors        map[string]ServerAssignor
+	default_assignor string
 mut:
-	storage               port.StoragePort                // 스토리지 포트
-	groups                map[string]&KIP848ConsumerGroup // 그룹 맵
+	storage               port.StoragePort
+	groups                map[string]&KIP848ConsumerGroup
 	heartbeat_interval_ms i32
 	session_timeout_ms    i32
-	rebalance_timeout_ms  i32 // 리밸런싱 타임아웃 (ms)
+	rebalance_timeout_ms  i32
 }
 
 /// new_kip848_coordinator는 새로운 KIP-848 그룹 코디네이터를 생성합니다.
@@ -46,7 +46,7 @@ pub fn new_kip848_coordinator(storage port.StoragePort) &KIP848GroupCoordinator 
 	return &KIP848GroupCoordinator{
 		storage:               storage
 		assignors:             assignors
-		default_assignor:      'sticky' // Sticky가 이제 기본값
+		default_assignor:      'sticky'
 		groups:                map[string]&KIP848ConsumerGroup{}
 		heartbeat_interval_ms: 3000
 		session_timeout_ms:    45000
@@ -58,11 +58,11 @@ pub fn new_kip848_coordinator(storage port.StoragePort) &KIP848GroupCoordinator 
 pub struct HeartbeatResult {
 pub:
 	error_code            i16
-	error_message         ?string // 오류 메시지
-	member_id             string  // 멤버 ID
-	member_epoch          i32     // 멤버 에포크
+	error_message         ?string
+	member_id             string
+	member_epoch          i32
 	heartbeat_interval_ms i32
-	assignment            ?[]TopicPartition // 파티션 할당
+	assignment            ?[]TopicPartition
 }
 
 /// process_heartbeat는 ConsumerGroupHeartbeat 요청을 처리합니다.
@@ -80,7 +80,7 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	// group_id 유효성 검사
 	if group_id == '' {
 		return HeartbeatResult{
-			error_code:    24 // INVALID_GROUP_ID
+			error_code:    24
 			error_message: 'Group ID cannot be empty'
 			member_epoch:  -1
 		}
@@ -104,7 +104,7 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	} else {
 		// 유효하지 않은 에포크
 		return HeartbeatResult{
-			error_code:    25 // UNKNOWN_MEMBER_ID
+			error_code:    25
 			error_message: 'Invalid member epoch'
 			member_epoch:  -1
 		}
@@ -204,7 +204,7 @@ fn (mut c KIP848GroupCoordinator) handle_join(mut group KIP848ConsumerGroup,
 	// 새 할당 계산
 	c.compute_assignment(mut group) or {
 		return HeartbeatResult{
-			error_code:    -1 // UNKNOWN_SERVER_ERROR
+			error_code:    -1
 			error_message: 'Failed to compute assignment: ${err.msg()}'
 			member_id:     member_id
 			member_epoch:  -1
@@ -263,7 +263,7 @@ fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup
 	// 멤버 찾기
 	mut member := group.members[member_id] or {
 		return HeartbeatResult{
-			error_code:    25 // UNKNOWN_MEMBER_ID
+			error_code:    25
 			error_message: 'Unknown member ID'
 			member_epoch:  -1
 		}
@@ -272,7 +272,7 @@ fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup
 	// 에포크 확인
 	if member_epoch < member.member_epoch {
 		return HeartbeatResult{
-			error_code:    82 // FENCED_INSTANCE_ID
+			error_code:    82
 			error_message: 'Member epoch is stale'
 			member_id:     member_id
 			member_epoch:  member.member_epoch

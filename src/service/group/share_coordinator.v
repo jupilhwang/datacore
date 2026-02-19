@@ -16,7 +16,6 @@ pub struct ShareGroupCoordinator {
 mut:
 	// group_id로 키가 지정된 share 그룹
 	groups map[string]&domain.ShareGroup
-	// 설정
 	config domain.ShareGroupConfig
 	// 영구 저장을 위한 스토리지
 	storage port.StoragePort
@@ -107,22 +106,22 @@ pub fn (mut c ShareGroupCoordinator) list_groups() []string {
 pub struct ShareGroupHeartbeatRequest {
 pub:
 	group_id               string
-	member_id              string // 멤버 ID
-	member_epoch           i32    // 멤버 에포크
+	member_id              string
+	member_epoch           i32
 	rack_id                string
-	subscribed_topic_names []string // 구독 토픽 목록
+	subscribed_topic_names []string
 }
 
 /// ShareGroupHeartbeatResponse는 하트비트 응답을 나타냅니다.
 pub struct ShareGroupHeartbeatResponse {
 pub:
 	error_code                i16
-	error_message             string // 오류 메시지
-	member_id                 string // 멤버 ID
-	member_epoch              i32    // 멤버 에포크
+	error_message             string
+	member_id                 string
+	member_epoch              i32
 	heartbeat_interval        i32
-	assignment                []domain.SharePartitionAssignment // 파티션 할당
-	should_compute_assignment bool // 할당 계산 필요 여부
+	assignment                []domain.SharePartitionAssignment
+	should_compute_assignment bool
 }
 
 /// heartbeat는 share 그룹 하트비트를 처리합니다.
@@ -172,7 +171,7 @@ pub fn (mut c ShareGroupCoordinator) heartbeat(req ShareGroupHeartbeatRequest) S
 	if !is_new_member && req.member_epoch != member.member_epoch {
 		// 펜스된 멤버
 		return ShareGroupHeartbeatResponse{
-			error_code:    22 // FENCED_MEMBER_EPOCH
+			error_code:    22
 			error_message: 'member epoch mismatch'
 			member_id:     member_id
 			member_epoch:  member.member_epoch
@@ -376,7 +375,7 @@ pub fn (mut c ShareGroupCoordinator) acknowledge_records(group_id string, member
 		return domain.ShareAcknowledgeResult{
 			topic_name:    batch.topic_name
 			partition:     batch.partition
-			error_code:    69 // UNKNOWN_SHARE_GROUP
+			error_code:    69
 			error_message: 'share group not found'
 		}
 	}
@@ -426,12 +425,12 @@ pub fn (mut c ShareGroupCoordinator) close_session(group_id string, member_id st
 pub struct ShareGroupStats {
 pub:
 	group_id           string
-	member_count       int // 멤버 수
+	member_count       int
 	partition_count    int
-	total_acquired     i64 // 총 획득 수
-	total_acknowledged i64 // 총 확인 수
-	total_released     i64 // 총 해제 수
-	total_rejected     i64 // 총 거부 수
+	total_acquired     i64
+	total_acknowledged i64
+	total_released     i64
+	total_rejected     i64
 }
 
 /// get_stats는 share 그룹의 통계를 반환합니다.
@@ -458,8 +457,6 @@ pub fn (mut c ShareGroupCoordinator) get_stats(group_id string) ShareGroupStats 
 		total_rejected:     total_rejected
 	}
 }
-
-// 헬퍼 함수
 
 /// generate_member_id는 UUID 형식의 멤버 ID를 생성합니다.
 fn generate_member_id() string {

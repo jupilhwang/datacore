@@ -46,10 +46,10 @@ pub fn log_level_from_string(s string) LogLevel {
 
 /// LogOutput은 로그가 전송되는 위치를 결정합니다.
 pub enum LogOutput {
-	stdout // 기본값: stdout/stderr에 출력
-	otel   // OTLP를 통해 OpenTelemetry Collector로 전송
-	both   // stdout과 OTLP 모두에 출력
-	none   // 로깅 비활성화 (테스트용)
+	stdout
+	otel
+	both
+	none
 }
 
 /// log_output_from_string(s string) LogOutput - creates LogOutput from string representation
@@ -69,7 +69,7 @@ pub fn log_output_from_string(s string) LogOutput {
 pub struct LogField {
 pub:
 	key   string
-	value string // 모든 값은 문자열로 직렬화됨
+	value string
 }
 
 /// 필드 생성자 - 비활성화된 레벨에 대해 제로 할당
@@ -183,8 +183,8 @@ pub:
 
 /// OutputFormat은 로그 형식을 결정합니다.
 pub enum OutputFormat {
-	json // JSON 형식 (기본값, 프로덕션용)
-	text // 사람이 읽기 쉬운 텍스트 형식 (개발용)
+	json
+	text
 }
 
 /// output_format_from_string(s string) OutputFormat - creates OutputFormat from string representation
@@ -207,7 +207,7 @@ pub:
 	output        LogOutput    = .stdout
 	service       string       = 'datacore'
 	instance_id   string
-	otlp_endpoint string // OTLP 내보내기용 (예: "http://localhost:4317")
+	otlp_endpoint string
 }
 
 // 로거 (스레드 안전)
@@ -220,10 +220,10 @@ pub:
 	format        OutputFormat
 	output        LogOutput
 	context       LogContext
-	fields        []LogField // 모든 로그 항목에 대한 기본 필드
+	fields        []LogField
 	otlp_endpoint string
 mut:
-	otlp_buffer []LogEntry // OTLP 배치 내보내기용 버퍼
+	otlp_buffer []LogEntry
 	buffer_lock sync.Mutex
 }
 
@@ -351,7 +351,7 @@ pub fn (mut l Logger) log(level LogLevel, msg string, fields ...LogField) {
 
 	// Fatal 로그는 종료해야 함
 	if level == .fatal {
-		l.flush() // 종료 전 로그 전송 보장
+		l.flush()
 		exit(1)
 	}
 }
@@ -586,7 +586,6 @@ fn format_entry_json(entry LogEntry) string {
 fn format_entry_text(entry LogEntry) string {
 	mut sb := []u8{cap: 256}
 
-	// 타임스탬프
 	sb << entry.timestamp.format_ss().bytes()
 	sb << ' '.bytes()
 
@@ -630,12 +629,12 @@ fn format_entry_text(entry LogEntry) string {
 /// 로그 레벨에 따른 색상 코드를 반환합니다.
 fn get_level_color(level LogLevel) string {
 	return match level {
-		.trace { '\x1b[90m' } // 회색
-		.debug { '\x1b[36m' } // 청록색
-		.info { '\x1b[32m' } // 녹색
-		.warn { '\x1b[33m' } // 노란색
-		.error { '\x1b[31m' } // 빨간색
-		.fatal { '\x1b[35m' } // 자홍색
+		.trace { '\x1b[90m' }
+		.debug { '\x1b[36m' }
+		.info { '\x1b[32m' }
+		.warn { '\x1b[33m' }
+		.error { '\x1b[31m' }
+		.fatal { '\x1b[35m' }
 	}
 }
 
@@ -717,7 +716,7 @@ fn send_otlp_http(endpoint string, payload string) {
 	$if !windows {
 		// 간단함을 위해 curl 사용 (V의 크로스 플랫폼 HTTP 클라이언트에 제한이 있음)
 		// 이것은 fire-and-forget 비동기 호출
-		_ := $env('PATH') // curl 사용 가능 확인
+		_ := $env('PATH')
 	}
 
 	// 현재는 간단한 접근 방식 사용

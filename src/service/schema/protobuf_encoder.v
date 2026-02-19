@@ -39,13 +39,13 @@ pub fn (mut e ProtobufEncoder) decode(data []u8, schema_str string) ![]u8 {
 }
 
 // Wire types
-const wire_varint = 0 // int32, int64, uint32, uint64, sint32, sint64, bool, enum
+const wire_varint = 0
 
-const wire_64bit = 1 // fixed64, sfixed64, double
+const wire_64bit = 1
 
-const wire_length_delimited = 2 // string, bytes, embedded messages, packed repeated fields
+const wire_length_delimited = 2
 
-const wire_32bit = 5 // fixed32, sfixed32, float
+const wire_32bit = 5
 
 // encode_message encodes a JSON object as a Protobuf message
 fn encode_message(json_str string, schema ProtoMessage) ![]u8 {
@@ -60,7 +60,7 @@ fn encode_message(json_str string, schema ProtoMessage) ![]u8 {
 		}
 
 		if is_json_null(value) {
-			continue // Skip null values
+			continue
 		}
 
 		// Encode field tag (field_number << 3 | wire_type)
@@ -266,7 +266,7 @@ fn decode_field(mut reader ProtoReader, field ProtoField, wire_type int) !string
 				if idx >= 0 && idx < field.enum_values.len {
 					return '"${field.enum_values[idx]}"'
 				}
-				return '${val}' // Return numeric value if enum unknown
+				return '${val}'
 			}
 
 			// Unknown - skip based on wire type
@@ -446,7 +446,7 @@ fn get_wire_type(field_type string) int {
 			return wire_32bit
 		}
 		else {
-			return wire_length_delimited // string, bytes, embedded message
+			return wire_length_delimited
 		}
 	}
 }

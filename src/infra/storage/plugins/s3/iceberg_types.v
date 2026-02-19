@@ -1,4 +1,3 @@
-// Iceberg 메타데이터, 스냅샷, 매니페스트 관련 타입을 정의합니다.
 module s3
 
 import time
@@ -27,7 +26,7 @@ pub mut:
 	name          string
 	typ           string
 	required      bool
-	default_value string // v3: 기본 컬럼 값 지원
+	default_value string
 }
 
 /// IcebergPartitionSpec은 파티션 사양을 나타냅니다.
@@ -51,7 +50,7 @@ pub mut:
 	field_id       int
 	name           string
 	transform      string
-	transform_args []string // v3: 멀티 인자 변환 지원
+	transform_args []string
 }
 
 /// IcebergSnapshot은 테이블 스냅샷을 나타냅니다.
@@ -108,8 +107,8 @@ pub mut:
 	upper_bounds       map[string]string
 	partition          map[string]string
 	// v3 Row Lineage 지원
-	row_lineage_first i64 // v3: 행 리니지 시작 ID
-	row_lineage_last  i64 // v3: 행 리니지 종료 ID
+	row_lineage_first i64
+	row_lineage_last  i64
 }
 
 /// IcebergMetadata는 테이블 메타데이터를 나타냅니다.
@@ -126,7 +125,7 @@ pub mut:
 /// Properties: 테이블 속성
 pub struct IcebergMetadata {
 pub mut:
-	format_version      int = 3 // v3 기본값으로 변경
+	format_version      int = 3
 	table_uuid          string
 	location            string
 	last_updated_ms     i64
@@ -160,7 +159,7 @@ pub:
 	warehouse      string
 	region         string = 'us-east-1'
 	endpoint       string
-	format_version int = 3 // v3 기본값
+	format_version int = 3
 }
 
 /// generate_table_uuid는 새로운 테이블 UUID를 생성합니다.

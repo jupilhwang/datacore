@@ -25,30 +25,30 @@ pub struct JoinGroupRequest {
 pub:
 	group_id             string
 	session_timeout_ms   i32
-	rebalance_timeout_ms i32        // 리밸런싱 타임아웃 (ms)
-	member_id            string     // 멤버 ID (빈 문자열이면 새로 생성)
-	group_instance_id    string     // 정적 멤버십을 위한 인스턴스 ID
-	protocol_type        string     // 프로토콜 타입 (예: "consumer")
-	protocols            []Protocol // 지원하는 프로토콜 목록
+	rebalance_timeout_ms i32
+	member_id            string
+	group_instance_id    string
+	protocol_type        string
+	protocols            []Protocol
 }
 
 /// Protocol은 그룹 프로토콜을 나타냅니다.
 pub struct Protocol {
 pub:
-	name     string // 프로토콜 이름 (예: "range", "roundrobin")
-	metadata []u8   // 프로토콜 메타데이터 (구독 정보 등)
+	name     string
+	metadata []u8
 }
 
 /// JoinGroupResponse는 그룹 참가 응답을 나타냅니다.
 pub struct JoinGroupResponse {
 pub:
-	error_code    i16                  // 오류 코드 (0이면 성공)
-	generation_id int                  // 그룹 세대 ID
-	protocol_type string               // 선택된 프로토콜 타입
-	protocol_name string               // 선택된 프로토콜 이름
-	leader        string               // 리더 멤버 ID
-	member_id     string               // 할당된 멤버 ID
-	members       []domain.GroupMember // 그룹 멤버 목록 (리더에게만 전달)
+	error_code    i16
+	generation_id int
+	protocol_type string
+	protocol_name string
+	leader        string
+	member_id     string
+	members       []domain.GroupMember
 }
 
 /// join_group은 그룹 참가 요청을 처리합니다.
@@ -157,23 +157,23 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 pub struct SyncGroupRequest {
 pub:
 	group_id      string
-	generation_id int                // 그룹 세대 ID
-	member_id     string             // 멤버 ID
-	assignments   []MemberAssignment // 멤버별 파티션 할당 (리더가 제공)
+	generation_id int
+	member_id     string
+	assignments   []MemberAssignment
 }
 
 /// MemberAssignment는 멤버 할당을 나타냅니다.
 pub struct MemberAssignment {
 pub:
-	member_id  string // 멤버 ID
-	assignment []u8   // 할당 데이터 (파티션 목록)
+	member_id  string
+	assignment []u8
 }
 
 /// SyncGroupResponse는 그룹 동기화 응답을 나타냅니다.
 pub struct SyncGroupResponse {
 pub:
-	error_code i16  // 오류 코드 (0이면 성공)
-	assignment []u8 // 이 멤버에 대한 할당 데이터
+	error_code i16
+	assignment []u8
 }
 
 /// sync_group은 그룹 동기화 요청을 처리합니다.
@@ -221,14 +221,14 @@ pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupRespon
 pub struct HeartbeatRequest {
 pub:
 	group_id      string
-	generation_id int    // 그룹 세대 ID
-	member_id     string // 멤버 ID
+	generation_id int
+	member_id     string
 }
 
 /// HeartbeatResponse는 하트비트 응답을 나타냅니다.
 pub struct HeartbeatResponse {
 pub:
-	error_code i16 // 오류 코드 (0이면 성공, REBALANCE_IN_PROGRESS면 리밸런싱 필요)
+	error_code i16
 }
 
 /// heartbeat는 하트비트 요청을 처리합니다.

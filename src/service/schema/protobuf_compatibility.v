@@ -12,15 +12,15 @@ mut:
 	number      int
 	is_repeated bool
 	is_optional bool
-	is_required bool // proto2 only
+	is_required bool
 }
 
 // ProtoSchemaInfo represents parsed protobuf schema information
 struct ProtoSchemaInfo {
 mut:
-	syntax          string // "proto2" or "proto3"
+	syntax          string
 	message_name    string
-	fields          map[int]ProtoFieldInfo // keyed by field number
+	fields          map[int]ProtoFieldInfo
 	reserved_nums   []int
 	reserved_names  []string
 	nested_messages []string
@@ -203,7 +203,7 @@ fn parse_protobuf_schema_info(schema_str string) ProtoSchemaInfo {
 							start := range_parts[0].trim_space().int()
 							mut end_num := 0
 							if range_parts[1].trim_space() == 'max' {
-								end_num = 536870911 // Protobuf max field number
+								end_num = 536870911
 							} else {
 								end_num = range_parts[1].trim_space().int()
 							}

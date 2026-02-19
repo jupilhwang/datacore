@@ -32,57 +32,57 @@ pub fn new_schema_api(registry &schema.SchemaRegistry) &SchemaAPI {
 
 // RegisterSchemaRequest는 POST /subjects/{subject}/versions 요청 구조체입니다.
 struct RegisterSchemaRequest {
-	schema      string             @[json: 'schema']     // 스키마 문자열
-	schema_type string             @[json: 'schemaType'] // 스키마 타입 (AVRO, JSON, PROTOBUF)
-	references  []ReferenceRequest @[json: 'references'] // 참조 스키마
+	schema      string             @[json: 'schema']
+	schema_type string             @[json: 'schemaType']
+	references  []ReferenceRequest @[json: 'references']
 }
 
 // ReferenceRequest는 스키마 참조 정보를 담는 구조체입니다.
 struct ReferenceRequest {
-	name    string @[json: 'name']    // 참조 이름
-	subject string @[json: 'subject'] // 참조 서브젝트
-	version int    @[json: 'version'] // 참조 버전
+	name    string @[json: 'name']
+	subject string @[json: 'subject']
+	version int    @[json: 'version']
 }
 
 // SchemaResponse는 GET /schemas/ids/{id} 응답 구조체입니다.
 struct SchemaResponse {
-	schema      string @[json: 'schema']     // 스키마 문자열
-	schema_type string @[json: 'schemaType'] // 스키마 타입
+	schema      string @[json: 'schema']
+	schema_type string @[json: 'schemaType']
 }
 
 // RegisterResponse는 POST /subjects/{subject}/versions 응답 구조체입니다.
 struct RegisterResponse {
-	id int @[json: 'id'] // 등록된 스키마 ID
+	id int @[json: 'id']
 }
 
 // VersionResponse는 GET /subjects/{subject}/versions/{version} 응답 구조체입니다.
 struct VersionResponse {
-	subject     string @[json: 'subject']    // 서브젝트 이름
-	id          int    @[json: 'id']         // 스키마 ID
-	version     int    @[json: 'version']    // 버전 번호
-	schema      string @[json: 'schema']     // 스키마 문자열
-	schema_type string @[json: 'schemaType'] // 스키마 타입
+	subject     string @[json: 'subject']
+	id          int    @[json: 'id']
+	version     int    @[json: 'version']
+	schema      string @[json: 'schema']
+	schema_type string @[json: 'schemaType']
 }
 
 // CompatibilityRequest는 PUT /config/{subject} 요청 구조체입니다.
 struct CompatibilityRequest {
-	compatibility string @[json: 'compatibility'] // 호환성 레벨
+	compatibility string @[json: 'compatibility']
 }
 
 // CompatibilityResponse는 GET /config/{subject} 응답 구조체입니다.
 struct CompatibilityResponse {
-	compatibility_level string @[json: 'compatibilityLevel'] // 호환성 레벨
+	compatibility_level string @[json: 'compatibilityLevel']
 }
 
 // CompatibilityCheckResponse는 POST /compatibility/subjects/{subject}/versions/{version} 응답 구조체입니다.
 struct CompatibilityCheckResponse {
-	is_compatible bool @[json: 'is_compatible'] // 호환 여부
+	is_compatible bool @[json: 'is_compatible']
 }
 
 // ErrorResponse는 에러 응답 구조체입니다.
 struct ErrorResponse {
-	error_code int    @[json: 'error_code'] // 에러 코드
-	message    string @[json: 'message']    // 에러 메시지
+	error_code int    @[json: 'error_code']
+	message    string @[json: 'message']
 }
 
 // HTTP 엔드포인트 핸들러

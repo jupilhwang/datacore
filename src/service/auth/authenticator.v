@@ -28,15 +28,15 @@ fn log_message(level observability.LogLevel, component string, message string, c
 pub struct AuthMetrics {
 mut:
 	// 인증 메트릭
-	auth_attempts i64 // 총 인증 시도 횟수
-	auth_success  i64 // 성공한 인증 횟수
-	auth_failures i64 // 실패한 인증 횟수
+	auth_attempts i64
+	auth_success  i64
+	auth_failures i64
 	// 메커니즘별 메트릭
-	mechanism_attempts map[string]i64 // 메커니즘별 시도 횟수
-	mechanism_success  map[string]i64 // 메커니즘별 성공 횟수
+	mechanism_attempts map[string]i64
+	mechanism_success  map[string]i64
 	// 지연 시간 메트릭 (밀리초)
-	auth_latency_sum   i64 // 총 지연 시간
-	auth_latency_count i64 // 지연 시간 측정 횟수
+	auth_latency_sum   i64
+	auth_latency_count i64
 	// 락
 	lock sync.Mutex
 }
@@ -125,10 +125,10 @@ pub fn (mut m AuthMetrics) get_summary() string {
 /// 지원되는 SASL 메커니즘과 인증자를 관리합니다.
 pub struct AuthService {
 mut:
-	user_store     port.UserStore                    // 사용자 저장소
-	mechanisms     []domain.SaslMechanism            // 지원되는 SASL 메커니즘 목록
-	authenticators map[string]port.SaslAuthenticator // 메커니즘별 인증자 맵
-	metrics        &AuthMetrics                      // 인증 메트릭 수집
+	user_store     port.UserStore
+	mechanisms     []domain.SaslMechanism
+	authenticators map[string]port.SaslAuthenticator
+	metrics        &AuthMetrics
 }
 
 /// new_auth_service는 새로운 인증 서비스를 생성합니다.
@@ -230,7 +230,7 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 /// 사용자 이름과 비밀번호를 평문으로 전송하는 간단한 인증 방식입니다.
 pub struct PlainAuthenticator {
 mut:
-	user_store port.UserStore // 사용자 저장소
+	user_store port.UserStore
 }
 
 /// new_plain_authenticator는 새로운 PLAIN 인증자를 생성합니다.
@@ -279,9 +279,9 @@ pub fn (mut a PlainAuthenticator) step(response []u8) !domain.AuthResult {
 
 /// PlainAuthData는 파싱된 PLAIN 인증 데이터를 나타냅니다.
 struct PlainAuthData {
-	authzid  string // 권한 부여 ID (선택사항)
-	username string // 인증 ID (사용자 이름)
-	password string // 비밀번호
+	authzid  string
+	username string
+	password string
 }
 
 /// parse_plain_auth는 SASL PLAIN 인증 바이트를 파싱합니다.

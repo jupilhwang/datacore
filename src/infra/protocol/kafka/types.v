@@ -197,7 +197,7 @@ pub enum ErrorCode {
 	ineligible_replica                    = 107
 	new_leader_elected                    = 108
 	// KIP-890: Transactional semantics improvements
-	transaction_abortable = 109 // v5+ FindCoordinator, 트랜잭션이 중단 가능한 상태임을 나타냄
+	transaction_abortable = 109
 }
 
 /// API 버전 범위
@@ -211,21 +211,21 @@ pub:
 /// 지원되는 API 버전을 반환합니다.
 pub fn get_supported_api_versions() []ApiVersionRange {
 	return [
-		ApiVersionRange{.produce, 0, 13}, // v9+ flexible, v13+ TopicId support
-		ApiVersionRange{.fetch, 0, 16}, // v12+ flexible, v13 TopicId, v15 ReplicaState, v16 NodeEndpoints
-		ApiVersionRange{.list_offsets, 0, 8}, // v6+ flexible, v7-8 identical structure
-		ApiVersionRange{.metadata, 0, 12}, // v9+ flexible, v10+ topic_id, v12 name is nullable
-		ApiVersionRange{.offset_commit, 0, 9}, // v8+ flexible
-		ApiVersionRange{.offset_fetch, 0, 10}, // v6+ flexible, v8+ groups format, v9+ member_id/epoch
-		ApiVersionRange{.find_coordinator, 0, 6}, // v3+ flexible, v4+ batch support, v5 TRANSACTION_ABORTABLE, v6 share groups
-		ApiVersionRange{.join_group, 0, 9}, // v6+ flexible
-		ApiVersionRange{.heartbeat, 0, 4}, // v4+ flexible
-		ApiVersionRange{.leave_group, 0, 5}, // v4+ flexible
-		ApiVersionRange{.sync_group, 0, 5}, // v4+ flexible
-		ApiVersionRange{.describe_groups, 0, 5}, // v5+ flexible
-		ApiVersionRange{.list_groups, 0, 4}, // v3+ flexible, v4+ states_filter. v5 adds GroupType (not supported)
-		ApiVersionRange{.sasl_handshake, 0, 1}, // SASL mechanism negotiation
-		ApiVersionRange{.api_versions, 0, 3}, // v0-v2 non-flexible, v3 flexible
+		ApiVersionRange{.produce, 0, 13},
+		ApiVersionRange{.fetch, 0, 16},
+		ApiVersionRange{.list_offsets, 0, 8},
+		ApiVersionRange{.metadata, 0, 12},
+		ApiVersionRange{.offset_commit, 0, 9},
+		ApiVersionRange{.offset_fetch, 0, 10},
+		ApiVersionRange{.find_coordinator, 0, 6},
+		ApiVersionRange{.join_group, 0, 9},
+		ApiVersionRange{.heartbeat, 0, 4},
+		ApiVersionRange{.leave_group, 0, 5},
+		ApiVersionRange{.sync_group, 0, 5},
+		ApiVersionRange{.describe_groups, 0, 5},
+		ApiVersionRange{.list_groups, 0, 4},
+		ApiVersionRange{.sasl_handshake, 0, 1},
+		ApiVersionRange{.api_versions, 0, 3},
 		ApiVersionRange{.create_topics, 0, 7},
 		ApiVersionRange{.delete_topics, 0, 6},
 		ApiVersionRange{.delete_records, 0, 2},
@@ -237,11 +237,11 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.describe_configs, 0, 4},
 		ApiVersionRange{.alter_configs, 0, 2},
 		ApiVersionRange{.create_partitions, 0, 3},
-		ApiVersionRange{.sasl_authenticate, 0, 2}, // SASL authentication (v2+ flexible)
+		ApiVersionRange{.sasl_authenticate, 0, 2},
 		ApiVersionRange{.delete_groups, 0, 2},
-		ApiVersionRange{.describe_acls, 0, 3}, // ACL 조회 (v2+ flexible)
-		ApiVersionRange{.create_acls, 0, 3}, // ACL 생성 (v2+ flexible)
-		ApiVersionRange{.delete_acls, 0, 3}, // ACL 삭제 (v2+ flexible)
+		ApiVersionRange{.describe_acls, 0, 3},
+		ApiVersionRange{.create_acls, 0, 3},
+		ApiVersionRange{.delete_acls, 0, 3},
 		ApiVersionRange{.describe_cluster, 0, 0},
 		ApiVersionRange{.consumer_group_heartbeat, 0, 0},
 		ApiVersionRange{.consumer_group_describe, 0, 0},

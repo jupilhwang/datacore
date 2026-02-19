@@ -72,7 +72,7 @@ fn test_response_buffer_write() {
 fn test_response_buffer_grow() {
 	init_global_performance(performance.PerformanceConfig{})
 
-	mut buf := new_response_buffer(16) // 작은 초기 크기
+	mut buf := new_response_buffer(16)
 
 	// 용량보다 많이 쓰기
 	for _ in 0 .. 100 {

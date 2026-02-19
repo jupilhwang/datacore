@@ -1,4 +1,3 @@
-// SSE, WebSocket, gRPC 등 스트리밍 작업을 위한 인터페이스를 정의합니다.
 // 실시간 메시지 스트리밍 기능을 추상화합니다.
 module port
 
@@ -42,12 +41,12 @@ mut:
 /// StreamingStats는 스트리밍 통계 정보를 담습니다.
 pub struct StreamingStats {
 pub:
-	active_connections  int // 활성 연결 수
-	total_subscriptions int // 총 활성 구독 수
-	messages_sent       i64 // 전송된 총 메시지 수
-	bytes_sent          i64 // 전송된 총 바이트 수
-	connections_created i64 // 생성된 총 연결 수
-	connections_closed  i64 // 종료된 총 연결 수
+	active_connections  int
+	total_subscriptions int
+	messages_sent       i64
+	bytes_sent          i64
+	connections_created i64
+	connections_closed  i64
 }
 
 // 메시지 컨슈머 포트 (메시지 조회용)
@@ -95,9 +94,9 @@ mut:
 /// SubscriptionFilter는 메시지 필터링 조건을 정의합니다.
 pub struct SubscriptionFilter {
 pub:
-	key_pattern    ?string           // 키 패턴 (glob 또는 정규식)
-	header_filters map[string]string // 헤더 키-값 필터
-	value_contains ?string           // 값에 포함된 문자열
+	key_pattern    ?string
+	header_filters map[string]string
+	value_contains ?string
 }
 
 /// matches는 레코드가 필터 조건에 맞는지 확인합니다.
@@ -155,15 +154,15 @@ fn simple_match(pattern string, value string) bool {
 
 /// StreamingError는 스트리밍 관련 오류를 나타냅니다.
 pub enum StreamingError {
-	connection_not_found      // 연결을 찾을 수 없음
-	subscription_not_found    // 구독을 찾을 수 없음
-	max_connections_reached   // 최대 연결 수 도달
-	max_subscriptions_reached // 최대 구독 수 도달
-	topic_not_found           // 토픽을 찾을 수 없음
-	partition_not_found       // 파티션을 찾을 수 없음
-	invalid_offset            // 유효하지 않은 오프셋
-	connection_closed         // 연결이 종료됨
-	write_failed              // 쓰기 실패
+	connection_not_found
+	subscription_not_found
+	max_connections_reached
+	max_subscriptions_reached
+	topic_not_found
+	partition_not_found
+	invalid_offset
+	connection_closed
+	write_failed
 }
 
 /// streaming_error_message는 StreamingError에 대한 오류 메시지를 반환합니다.

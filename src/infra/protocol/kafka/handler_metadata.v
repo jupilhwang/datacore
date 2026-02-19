@@ -15,17 +15,17 @@ import time
 /// allow_auto_topic_creation이 true이면 존재하지 않는 토픽을 자동 생성합니다.
 pub struct MetadataRequest {
 pub:
-	topics                         []MetadataRequestTopic // 조회할 토픽 목록 (빈 배열: 전체)
+	topics                         []MetadataRequestTopic
 	allow_auto_topic_creation      bool
-	include_cluster_authorized_ops bool // 클러스터 권한 작업 포함 여부 (v8-10)
-	include_topic_authorized_ops   bool // 토픽 권한 작업 포함 여부 (v8+)
+	include_cluster_authorized_ops bool
+	include_topic_authorized_ops   bool
 }
 
 /// Metadata 요청 토픽 - 조회할 토픽 정보
 pub struct MetadataRequestTopic {
 pub:
-	topic_id []u8    // 토픽 UUID (v10+)
-	name     ?string // 토픽 이름 (nullable)
+	topic_id []u8 // 토픽 UUID (v10+)
+	name     ?string
 }
 
 /// Metadata 응답 - 클러스터 및 토픽 메타데이터
@@ -35,7 +35,7 @@ pub:
 	brokers                []MetadataResponseBroker
 	cluster_id             ?string
 	controller_id          i32
-	topics                 []MetadataResponseTopic // 토픽 메타데이터 목록
+	topics                 []MetadataResponseTopic
 	cluster_authorized_ops i32
 }
 
@@ -45,7 +45,7 @@ pub:
 	node_id i32
 	host    string
 	port    i32
-	rack    ?string // 랙 ID (nullable)
+	rack    ?string
 }
 
 /// Metadata 응답 토픽 - 토픽 메타데이터
@@ -65,10 +65,10 @@ pub:
 	error_code       i16
 	partition_index  i32
 	leader_id        i32
-	leader_epoch     i32   // 리더 에포크 (v7+)
-	replica_nodes    []i32 // 복제본 브로커 ID 목록
-	isr_nodes        []i32 // ISR(In-Sync Replicas) 브로커 ID 목록
-	offline_replicas []i32 // 오프라인 복제본 브로커 ID 목록 (v5+)
+	leader_epoch     i32
+	replica_nodes    []i32
+	isr_nodes        []i32
+	offline_replicas []i32
 }
 
 // Metadata 요청을 파싱합니다.
@@ -365,7 +365,7 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 							topic_id:             []u8{len: 16}
 							is_internal:          false
 							partitions:           []
-							topic_authorized_ops: -2147483648 // 권한 정보 없음
+							topic_authorized_ops: -2147483648
 						}
 						continue
 					}

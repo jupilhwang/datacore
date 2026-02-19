@@ -8,11 +8,11 @@ import infra.performance.core
 /// GenericPerformanceEngine은 범용 성능 최적화 엔진입니다.
 pub struct GenericPerformanceEngine {
 pub mut:
-	buffer_pool  &core.BufferPool      = unsafe { nil } // 버퍼 풀
-	record_pool  &core.RecordPool      = unsafe { nil } // 레코드 풀
-	batch_pool   &core.RecordBatchPool = unsafe { nil } // 배치 풀
-	request_pool &core.RequestPool     = unsafe { nil } // 요청 풀
-	config       core.PerformanceConfig // 성능 설정
+	buffer_pool  &core.BufferPool      = unsafe { nil }
+	record_pool  &core.RecordPool      = unsafe { nil }
+	batch_pool   &core.RecordBatchPool = unsafe { nil }
+	request_pool &core.RequestPool     = unsafe { nil }
+	config       core.PerformanceConfig
 }
 
 /// name은 엔진 이름을 반환합니다.

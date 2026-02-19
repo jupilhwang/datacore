@@ -30,7 +30,7 @@ pub struct SSEHandler {
 pub mut:
 	sse_service &streaming.SSEService
 	storage     port.StoragePort
-	metrics     &observability.ProtocolMetrics // SSE 메트릭 수집
+	metrics     &observability.ProtocolMetrics
 }
 
 /// new_sse_handler는 새로운 SSE 핸들러를 생성합니다.
@@ -181,7 +181,7 @@ pub fn (mut h SSEHandler) start_streaming(conn_id string, mut writer SSEResponse
 		}
 
 		// 서비스 메서드를 사용하여 새 메시지 폴링 (오프셋 업데이트를 올바르게 처리)
-		if now - last_poll >= 100 { // 100ms마다 폴링
+		if now - last_poll >= 100 {
 			h.sse_service.poll_messages_for_connection(conn_id) or { break }
 			writer.flush() or { break }
 			last_poll = now
@@ -201,13 +201,13 @@ pub fn (mut h SSEHandler) start_streaming(conn_id string, mut writer SSEResponse
 pub struct SSERequest {
 pub:
 	topic         string
-	partition     ?i32    // 파티션 (선택사항)
-	offset_str    string  // 오프셋 문자열 (earliest, latest, 또는 숫자)
-	group_id      ?string // 컨슈머 그룹 ID (선택사항)
-	client_id     string  // 클라이언트 식별자
-	client_ip     string  // 클라이언트 IP 주소
-	user_agent    string  // User agent
-	last_event_id string  // 재연결을 위한 Last-Event-ID 헤더
+	partition     ?i32
+	offset_str    string
+	group_id      ?string
+	client_id     string
+	client_ip     string
+	user_agent    string
+	last_event_id string
 }
 
 /// parse_sse_request는 HTTP 요청 데이터에서 SSE 요청을 파싱합니다.

@@ -40,7 +40,6 @@ mut:
 	/// write_file_at은 파일의 지정된 오프셋에 데이터를 씁니다.
 	write_file_at(path string, offset i64, data []u8) !
 
-	// 통계
 	/// get_stats는 성능 통계를 반환합니다.
 	get_stats() core.PerformanceStats
 }

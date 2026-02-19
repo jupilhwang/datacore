@@ -16,14 +16,14 @@ import time
 /// ConsumeOptions는 소비 명령어 옵션을 담는 구조체입니다.
 pub struct ConsumeOptions {
 pub:
-	bootstrap_server string = 'localhost:9092' // 브로커 주소
+	bootstrap_server string = 'localhost:9092'
 	topic            string
 	partition        int
-	group            string // 컨슈머 그룹 ID
-	offset           string = 'latest' // 시작 오프셋 (latest, earliest, 숫자)
-	max_messages     int    = -1       // 최대 메시지 수 (-1 = 무제한)
-	timeout_ms       int    = 30000    // 타임아웃 (ms)
-	from_beginning   bool // 처음부터 시작
+	group            string
+	offset           string = 'latest'
+	max_messages     int    = -1
+	timeout_ms       int    = 30000
+	from_beginning   bool
 }
 
 // set_bootstrap_server_opt updates opts with bootstrap server from args[i+1]
@@ -249,9 +249,9 @@ struct ConsumedRecord {
 fn get_starting_offset(mut conn net.TcpConn, opts ConsumeOptions) !i64 {
 	// 옵션에 따라 오프셋 결정
 	if opts.offset == 'earliest' || opts.from_beginning {
-		return get_list_offset(mut conn, opts.topic, opts.partition, -2) // -2 = earliest
+		return get_list_offset(mut conn, opts.topic, opts.partition, -2)
 	} else if opts.offset == 'latest' {
-		return get_list_offset(mut conn, opts.topic, opts.partition, -1) // -1 = latest
+		return get_list_offset(mut conn, opts.topic, opts.partition, -1)
 	} else {
 		// 숫자 오프셋
 		return opts.offset.i64()
@@ -264,7 +264,7 @@ fn get_list_offset(mut conn net.TcpConn, topic string, partition int, timestamp 
 	request := build_list_offsets_request(topic, partition, timestamp)
 
 	// 요청 전송
-	send_kafka_request(mut conn, 2, 7, request)! // API Key 2 = ListOffsets, version 7
+	send_kafka_request(mut conn, 2, 7, request)!
 
 	// 응답 읽기
 	response := read_kafka_response(mut conn)!
@@ -287,14 +287,14 @@ fn build_list_offsets_request(topic string, partition int, timestamp i64) []u8 {
 	body << u8(0)
 
 	// Topics 배열 (compact array)
-	body << u8(2) // 1개 토픽 + 1
+	body << u8(2)
 
 	// 토픽 이름 (compact string)
 	body << u8(topic.len + 1)
 	body << topic.bytes()
 
 	// Partitions 배열 (compact array)
-	body << u8(2) // 1개 파티션 + 1
+	body << u8(2)
 
 	// 파티션 인덱스 (4바이트)
 	body << u8(partition >> 24)
@@ -308,7 +308,6 @@ fn build_list_offsets_request(topic string, partition int, timestamp i64) []u8 {
 	body << u8(0xff)
 	body << u8(0xff)
 
-	// 타임스탬프 (8바이트)
 	body << u8(timestamp >> 56)
 	body << u8((timestamp >> 48) & 0xff)
 	body << u8((timestamp >> 40) & 0xff)
@@ -406,13 +405,13 @@ fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, t
 	write_negative_i32(mut body)
 
 	// Topics 배열 (compact array)
-	body << u8(2) // 1개 토픽 + 1
+	body << u8(2)
 
 	// Topic ID (16바이트 UUID) - v13+, 이름 기반 조회 시 0
 	write_zeroes(mut body, 16)
 
 	// Partitions 배열 (compact array)
-	body << u8(2) // 1개 파티션 + 1
+	body << u8(2)
 
 	// 파티션 인덱스 (4바이트)
 	write_i32_be(mut body, partition)
@@ -469,10 +468,10 @@ fn parse_fetch_response(response []u8) []ConsumedRecord {
 		// 매직 바이트 0x02 찾기 (record batch v2)
 		if response[pos] == 0x02 {
 			// 이 위치에서 record batch 파싱 시도
-			parsed := try_parse_record_batch(response, pos - 16) // 배치 시작으로 백업
+			parsed := try_parse_record_batch(response, pos - 16)
 			if parsed.len > 0 {
 				records << parsed
-				break // 레코드 찾음
+				break
 			}
 		}
 		pos++
@@ -501,7 +500,7 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 	// + producer_id (8) + producer_epoch (2) + base_sequence (4) + records_count (4) 건너뛰기
 
 	// 이것은 간소화된 버전 - 전체 구현은 각 필드를 적절히 파싱해야 함
-	record_start := start + 57 // 레코드 배열의 대략적인 시작 위치
+	record_start := start + 57
 
 	if record_start < data.len {
 		// 최소 하나의 레코드 추출 시도
@@ -511,7 +510,7 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 		// 전체 구현은 varint와 레코드 형식을 디코딩해야 함
 	}
 
-	_ = base_offset // 미사용 경고 방지
+	_ = base_offset
 
 	return records
 }

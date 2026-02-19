@@ -9,14 +9,14 @@ import net.http
 import time
 
 // S3 HTTP 요청 재시도 설정 상수
-const max_retries = 3 // 최대 재시도 횟수
-const initial_backoff_ms = 100 // 초기 백오프 시간 (밀리초)
-const dns_backoff_ms = 1000 // DNS/네트워크 오류 시 초기 백오프 (밀리초)
-const max_backoff_jitter_ms = 50 // 최대 백오프 지터 (밀리초)
-const max_delete_concurrent = 20 // 삭제 최대 동시 실행 수
-const hmac_block_size = 64 // HMAC SHA256 블록 크기
-const s3_read_timeout_ms = 15000 // S3 HTTP 읽기 타임아웃 (15초)
-const s3_write_timeout_ms = 15000 // S3 HTTP 쓰기 타임아웃 (15초)
+const max_retries = 3
+const initial_backoff_ms = 100
+const dns_backoff_ms = 1000
+const max_backoff_jitter_ms = 50
+const max_delete_concurrent = 20
+const hmac_block_size = 64
+const s3_read_timeout_ms = 15000
+const s3_write_timeout_ms = 15000
 
 /// is_network_error는 DNS 해석 실패, 연결 거부, 타임아웃 등 네트워크 오류를 감지합니다.
 /// Docker 컨테이너 환경에서 S3 엔드포인트 연결 시 발생할 수 있는 일시적 오류를 식별합니다.
@@ -34,10 +34,10 @@ fn is_network_error(err_str string) bool {
 /// ListObjectsV2 API 응답에서 파싱된 개별 객체 정보를 담습니다.
 pub struct S3Object {
 pub:
-	key           string    // 객체 키 (S3 버킷 내 경로)
-	size          i64       // 객체 크기 (바이트)
-	last_modified time.Time // 마지막 수정 시간 (UTC)
-	etag          string    // ETag (객체 무결성 검증용 해시)
+	key           string
+	size          i64
+	last_modified time.Time
+	etag          string
 }
 
 /// get_object는 S3에서 객체를 조회합니다.

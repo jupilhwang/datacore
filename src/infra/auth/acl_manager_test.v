@@ -92,7 +92,7 @@ fn test_memory_acl_manager() {
 	denied := manager.authorize('User:bob', '127.0.0.1', .write, domain.ResourcePattern{
 		resource_type: .group
 		name:          'test-group-1'
-		pattern_type:  .literal // 리소스는 literal, 패턴은 접두사 매칭
+		pattern_type:  .literal
 	}) or { true }
 	assert denied == false
 

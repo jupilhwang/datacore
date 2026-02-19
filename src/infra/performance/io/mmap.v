@@ -8,25 +8,25 @@ import time
 /// MmapRegion은 파일의 메모리 매핑된 영역을 나타냅니다.
 pub struct MmapRegion {
 pub:
-	file_path string // 매핑된 파일 경로
-	offset    i64    // 파일 내 오프셋
-	length    int    // 매핑된 영역의 길이
+	file_path string
+	offset    i64
+	length    int
 mut:
-	data      []u8 // 메모리 매핑된 데이터 (시뮬레이션)
-	is_mapped bool // 영역이 현재 매핑되어 있는지 여부
-	dirty     bool // 영역이 수정되었는지 여부
+	data      []u8
+	is_mapped bool
+	dirty     bool
 }
 
 /// MmapFile은 메모리 매핑된 파일 래퍼입니다.
 pub struct MmapFile {
 pub:
-	path      string // 파일 경로
-	read_only bool   // 읽기 전용 여부
+	path      string
+	read_only bool
 mut:
-	file      ?os.File     // 파일 핸들
-	size      i64          // 파일 크기
-	regions   []MmapRegion // 매핑된 영역 목록
-	page_size int          // 페이지 크기
+	file      ?os.File
+	size      i64
+	regions   []MmapRegion
+	page_size int
 }
 
 /// open은 메모리 매핑을 위해 파일을 엽니다.
@@ -43,7 +43,7 @@ pub fn MmapFile.open(path string, read_only bool) !MmapFile {
 		file:      file
 		size:      i64(file_size)
 		regions:   []MmapRegion{}
-		page_size: 4096 // 표준 페이지 크기
+		page_size: 4096
 	}
 }
 
@@ -204,13 +204,13 @@ pub fn (mut m MmapFile) close() ! {
 /// LogSegmentMmap은 Kafka 스타일 스토리지를 위한 메모리 매핑된 로그 세그먼트입니다.
 pub struct LogSegmentMmap {
 pub:
-	base_offset i64    // 기본 오프셋
-	path        string // 디렉토리 경로
+	base_offset i64
+	path        string
 mut:
-	log_file   ?MmapFile // 로그 파일
-	index_file ?MmapFile // 인덱스 파일
-	position   i64       // 현재 위치
-	max_size   i64       // 최대 크기
+	log_file   ?MmapFile
+	index_file ?MmapFile
+	position   i64
+	max_size   i64
 }
 
 /// create는 메모리 매핑을 사용하여 새 로그 세그먼트를 생성합니다.
@@ -353,9 +353,9 @@ pub fn (mut s LogSegmentMmap) close() ! {
 /// MmapBenchmark는 mmap vs 일반 I/O 벤치마크입니다.
 pub struct MmapBenchmark {
 mut:
-	iterations u64    // 반복 횟수
-	data_size  int    // 데이터 크기
-	temp_dir   string // 임시 디렉토리
+	iterations u64
+	data_size  int
+	temp_dir   string
 }
 
 /// new는 새 MmapBenchmark를 생성합니다.

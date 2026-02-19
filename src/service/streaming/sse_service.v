@@ -13,12 +13,12 @@ import time
 pub struct SSEService {
 	config domain.SSEConfig
 mut:
-	storage     port.StoragePort               // Storage for fetching messages
-	connections map[string]&SSEConnectionState // Active connections
-	topic_subs  map[string][]string            // topic -> connection IDs
-	mutex       sync.RwMutex                   // Thread safety
-	stats       port.StreamingStats            // Statistics
-	running     bool // Service running flag
+	storage     port.StoragePort
+	connections map[string]&SSEConnectionState
+	topic_subs  map[string][]string
+	mutex       sync.RwMutex
+	stats       port.StreamingStats
+	running     bool
 }
 
 // SSEConnectionState holds the state of an SSE connection
@@ -26,9 +26,9 @@ mut:
 struct SSEConnectionState {
 pub mut:
 	connection    domain.SSEConnection
-	subscriptions map[string]domain.Subscription // sub_id -> Subscription
-	writer        ?&port.SSEWriterPort           // Writer for sending events
-	last_ping     i64 // Last heartbeat sent
+	subscriptions map[string]domain.Subscription
+	writer        ?&port.SSEWriterPort
+	last_ping     i64
 }
 
 // new_sse_service creates a new SSE service

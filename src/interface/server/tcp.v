@@ -40,27 +40,27 @@ pub:
 	port                   int    = 9092
 	broker_id              int    = 1
 	cluster_id             string = 'datacore-cluster'
-	max_connections        int    = 10000     // 최대 동시 연결 수
-	max_connections_per_ip int    = 100       // IP당 최대 연결 수
-	idle_timeout_ms        int    = 600000    // 유휴 타임아웃 (10분)
-	request_timeout_ms     int    = 30000     // 요청 타임아웃 (30초)
-	max_request_size       int    = 104857600 // 최대 요청 크기 (100MB)
-	max_pending_requests   int    = 100       // 요청 파이프라이닝 제한
-	shutdown_timeout_ms    int    = 30000     // 우아한 종료 타임아웃
+	max_connections        int    = 10000
+	max_connections_per_ip int    = 100
+	idle_timeout_ms        int    = 600000
+	request_timeout_ms     int    = 30000
+	max_request_size       int    = 104857600
+	max_pending_requests   int    = 100
+	shutdown_timeout_ms    int    = 30000
 	// 워커 풀 설정 (v0.28.0)
-	max_concurrent_handlers int = 1000 // 최대 동시 연결 핸들러 수
-	handler_acquire_timeout int = 5000 // 핸들러 슬롯 획득 타임아웃 (ms)
+	max_concurrent_handlers int = 1000
+	handler_acquire_timeout int = 5000
 	// io_uring 설정 (v0.32.0)
-	use_io_uring         bool = true // io_uring 사용 여부 (Linux 전용)
-	io_uring_queue_depth u32  = 256  // io_uring 큐 깊이
-	io_uring_sqpoll      bool // SQ 폴링 모드 사용 여부 (기본 false)
+	use_io_uring         bool = true
+	io_uring_queue_depth u32  = 256
+	io_uring_sqpoll      bool
 	// NUMA 설정 (v0.33.0)
-	numa_enabled      bool // NUMA 인식 모드 활성화 (Linux 전용, 기본 false)
-	numa_bind_workers bool = true // 워커를 NUMA 노드에 바인딩
+	numa_enabled      bool
+	numa_bind_workers bool = true
 	// TCP 최적화 설정 (v0.42.0)
-	tcp_nodelay       bool = true   // TCP_NODELAY 활성화 (Nagle 알고리즘 비활성화)
-	tcp_send_buf_size int  = 262144 // TCP 송신 버퍼 크기 (256KB)
-	tcp_recv_buf_size int  = 262144 // TCP 수신 버퍼 크기 (256KB)
+	tcp_nodelay       bool = true
+	tcp_send_buf_size int  = 262144
+	tcp_recv_buf_size int  = 262144
 }
 
 /// RequestHandler는 프로토콜 요청을 처리하는 인터페이스입니다.
@@ -73,9 +73,9 @@ mut:
 /// ServerState는 서버의 현재 상태를 나타내는 열거형입니다.
 pub enum ServerState {
 	stopped
-	starting // 시작 중
-	running  // 실행 중
-	stopping // 종료 중
+	starting
+	running
+	stopping
 }
 
 /// Server는 논블로킹 I/O 기반 TCP 서버입니다.
@@ -83,13 +83,13 @@ pub enum ServerState {
 /// 동시 연결 수를 제어합니다.
 pub struct Server {
 mut:
-	config        ServerConfig       // 서버 설정
-	state         ServerState        // 현재 서버 상태
-	conn_mgr      &ConnectionManager // 연결 관리자
-	handler       RequestHandler     // 요청 핸들러
-	shutdown_chan chan bool          // 종료 신호 채널
-	state_lock    sync.Mutex         // 상태 변경 동기화용 뮤텍스
-	worker_pool   &WorkerPool        // 연결 핸들러용 워커 풀 (v0.28.0)
+	config        ServerConfig
+	state         ServerState
+	conn_mgr      &ConnectionManager
+	handler       RequestHandler
+	shutdown_chan chan bool
+	state_lock    sync.Mutex
+	worker_pool   &WorkerPool
 }
 
 /// new_server는 새로운 TCP 서버를 생성합니다.
@@ -99,17 +99,17 @@ pub fn new_server(config ServerConfig, handler RequestHandler) &Server {
 	pool_config := WorkerPoolConfig{
 		max_workers:       config.max_concurrent_handlers
 		acquire_timeout:   config.handler_acquire_timeout
-		numa_aware:        config.numa_enabled      // v0.33.0
-		numa_bind_workers: config.numa_bind_workers // v0.33.0
+		numa_aware:        config.numa_enabled
+		numa_bind_workers: config.numa_bind_workers
 	}
 
 	return &Server{
 		config:        config
-		state:         .stopped // 초기 상태: 정지됨
-		conn_mgr:      new_connection_manager(config) // 연결 관리자 초기화
+		state:         .stopped
+		conn_mgr:      new_connection_manager(config)
 		handler:       handler
-		shutdown_chan: chan bool{cap: 1} // 버퍼 크기 1의 종료 채널
-		worker_pool:   new_worker_pool(pool_config) // 워커 풀 초기화
+		shutdown_chan: chan bool{cap: 1}
+		worker_pool:   new_worker_pool(pool_config)
 	}
 }
 
@@ -399,10 +399,10 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				eprintln('[Connection] Error handling request from ${client_addr}: ${err}')
 				// 클라이언트 타임아웃 방지를 위한 최소 에러 응답 생성
 				// 유연한 응답인지 확인 (Fetch v12+, Metadata v9+ 등)
-				is_flexible := (api_key == 1 && api_version >= 12) || // Fetch
-				 (api_key == 0 && api_version >= 9) || // Produce
-				 (api_key == 3 && api_version >= 9) || // Metadata
-				 (api_key == 10 && api_version >= 6) // FindCoordinator
+				is_flexible := (api_key == 1 && api_version >= 12)
+					|| (api_key == 0 && api_version >= 9)
+					|| (api_key == 3 && api_version >= 9)
+					|| (api_key == 10 && api_version >= 6)
 
 				if api_key == 1 && is_flexible {
 					// Fetch v12+ 에러 응답은 적절한 본문 구조 필요
@@ -413,25 +413,25 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 					error_resp[0] = 0
 					error_resp[1] = 0
 					error_resp[2] = 0
-					error_resp[3] = 17 // size = 17 (correlation_id(4) + header_tagged(1) + body(12))
+					error_resp[3] = 17
 					error_resp[4] = u8(correlation_id >> 24)
 					error_resp[5] = u8(correlation_id >> 16)
 					error_resp[6] = u8(correlation_id >> 8)
 					error_resp[7] = u8(correlation_id)
-					error_resp[8] = 0 // header tagged_fields = 0
+					error_resp[8] = 0
 					// 본문 시작 (인덱스 9)
-					error_resp[9] = 0 // throttle_time_ms 바이트 0
-					error_resp[10] = 0 // throttle_time_ms 바이트 1
-					error_resp[11] = 0 // throttle_time_ms 바이트 2
-					error_resp[12] = 0 // throttle_time_ms 바이트 3
-					error_resp[13] = 0 // error_code 바이트 0 (NONE = 0)
-					error_resp[14] = 0 // error_code 바이트 1
-					error_resp[15] = 0 // session_id 바이트 0
-					error_resp[16] = 0 // session_id 바이트 1
-					error_resp[17] = 0 // session_id 바이트 2
-					error_resp[18] = 0 // session_id 바이트 3
-					error_resp[19] = 1 // topics compact array length = 0 (1로 인코딩)
-					error_resp[20] = 0 // body tagged_fields = 0
+					error_resp[9] = 0
+					error_resp[10] = 0
+					error_resp[11] = 0
+					error_resp[12] = 0
+					error_resp[13] = 0
+					error_resp[14] = 0
+					error_resp[15] = 0
+					error_resp[16] = 0
+					error_resp[17] = 0
+					error_resp[18] = 0
+					error_resp[19] = 1
+					error_resp[20] = 0
 					error_resp
 				} else if is_flexible {
 					// 기타 유연한 응답: size(4) + correlation_id(4) + tagged_fields(1)
@@ -439,12 +439,12 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 					error_resp[0] = 0
 					error_resp[1] = 0
 					error_resp[2] = 0
-					error_resp[3] = 5 // size = 5 (correlation_id + tagged_fields)
+					error_resp[3] = 5
 					error_resp[4] = u8(correlation_id >> 24)
 					error_resp[5] = u8(correlation_id >> 16)
 					error_resp[6] = u8(correlation_id >> 8)
 					error_resp[7] = u8(correlation_id)
-					error_resp[8] = 0 // tagged_fields = 0 (태그 없음)
+					error_resp[8] = 0
 					error_resp
 				} else {
 					// 비유연 응답: size(4) + correlation_id(4)
@@ -452,7 +452,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 					error_resp[0] = 0
 					error_resp[1] = 0
 					error_resp[2] = 0
-					error_resp[3] = 4 // size = 4 (correlation_id만)
+					error_resp[3] = 4
 					error_resp[4] = u8(correlation_id >> 24)
 					error_resp[5] = u8(correlation_id >> 16)
 					error_resp[6] = u8(correlation_id >> 8)
@@ -507,7 +507,7 @@ fn (mut s Server) cleanup_loop() {
 /// 5분마다 활성 연결 수, 총 연결 수, 거부된 연결 수를 출력합니다.
 fn (mut s Server) stats_loop() {
 	for s.is_running() {
-		time.sleep(300 * time.second) // 5분(300초)마다 통계 출력
+		time.sleep(300 * time.second)
 
 		if !s.is_running() {
 			break
@@ -521,11 +521,11 @@ fn (mut s Server) stats_loop() {
 /// format_bytes는 바이트를 읽기 쉬운 형식으로 변환합니다.
 /// GB, MB, KB, B 단위로 자동 변환하여 문자열을 반환합니다.
 fn format_bytes(bytes u64) string {
-	if bytes >= 1073741824 { // 1GB = 1024^3
+	if bytes >= 1073741824 {
 		return '${f64(bytes) / 1073741824.0:.2}GB'
-	} else if bytes >= 1048576 { // 1MB = 1024^2
+	} else if bytes >= 1048576 {
 		return '${f64(bytes) / 1048576.0:.2}MB'
-	} else if bytes >= 1024 { // 1KB = 1024
+	} else if bytes >= 1024 {
 		return '${f64(bytes) / 1024.0:.2}KB'
 	}
 	return '${bytes}B'

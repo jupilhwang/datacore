@@ -8,11 +8,11 @@ import sync
 
 /// SpanKind는 스팬의 유형을 나타냅니다.
 pub enum SpanKind {
-	internal // 기본값, 내부 작업
-	server   // 요청을 처리하는 서버 측 작업
-	client   // 요청을 보내는 클라이언트 측 작업
-	producer // 메시지 생산 (예: Kafka 프로듀서)
-	consumer // 메시지 소비 (예: Kafka 컨슈머)
+	internal
+	server
+	client
+	producer
+	consumer
 }
 
 /// SpanStatus는 스팬의 결과를 나타냅니다.
@@ -25,11 +25,11 @@ pub enum SpanStatus {
 /// SpanContext는 트레이스 식별 정보를 포함합니다.
 pub struct SpanContext {
 pub:
-	trace_id    string // 32자 16진수 (128비트)
-	span_id     string // 16자 16진수 (64비트)
-	parent_id   string // 부모 스팬 ID (루트인 경우 비어 있음)
-	trace_flags u8     // 샘플링 플래그
-	trace_state string // W3C 트레이스 상태
+	trace_id    string
+	span_id     string
+	parent_id   string
+	trace_flags u8
+	trace_state string
 }
 
 /// is_valid는 컨텍스트가 유효한지 확인합니다.
@@ -360,7 +360,7 @@ pub fn (s AlwaysOffSampler) should_sample() bool {
 
 /// RatioSampler는 비율에 따라 샘플링합니다.
 pub struct RatioSampler {
-	ratio f64 // 0.0에서 1.0
+	ratio f64
 }
 
 pub fn new_ratio_sampler(ratio f64) RatioSampler {
@@ -413,7 +413,7 @@ pub fn extract_context(headers map[string]string) SpanContext {
 	}
 
 	if parts[0] != '00' {
-		return SpanContext{} // 지원되지 않는 버전
+		return SpanContext{}
 	}
 
 	trace_flags := u8(parts[3].parse_uint(16, 8) or { 0 })
@@ -457,7 +457,7 @@ pub fn export_span_json(span &Span, tracer &Tracer) string {
 		sb << ',"parentSpanId":"${span.context.parent_id}"'.bytes()
 	}
 	sb << ',"name":"${span.name}"'.bytes()
-	sb << ',"kind":${int(span.kind) + 1}'.bytes() // OTLP는 1부터 시작하는 인덱스 사용
+	sb << ',"kind":${int(span.kind) + 1}'.bytes()
 	sb << ',"startTimeUnixNano":${span.start_time.unix_nano()}'.bytes()
 	sb << ',"endTimeUnixNano":${span.end_time.unix_nano()}'.bytes()
 
@@ -483,7 +483,6 @@ pub fn export_span_json(span &Span, tracer &Tracer) string {
 	}
 	sb << ']'.bytes()
 
-	// 상태
 	sb << ',"status":{"code":${int(span.status)}'.bytes()
 	if span.status_msg.len > 0 {
 		sb << ',"message":"${span.status_msg}"'.bytes()

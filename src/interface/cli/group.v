@@ -14,7 +14,7 @@ import time as _
 /// GroupOptions는 그룹 명령어 옵션을 담는 구조체입니다.
 pub struct GroupOptions {
 pub:
-	bootstrap_server string = 'localhost:9092' // 브로커 주소
+	bootstrap_server string = 'localhost:9092'
 	group_id         string
 }
 
@@ -121,7 +121,7 @@ fn build_list_groups_request() []u8 {
 	mut body := []u8{}
 
 	// Groups 필터 (빈 배열 = 모든 그룹)
-	body << u8(1) // 배열 길이 = 0
+	body << u8(1)
 
 	// Tagged fields (빈)
 	body << u8(0)
@@ -134,7 +134,7 @@ fn build_describe_groups_request(group_id string) []u8 {
 	mut body := []u8{}
 
 	// Groups 배열 (compact array)
-	body << u8(2) // 배열 길이 = 1
+	body << u8(2)
 
 	// Group ID (compact string)
 	body << u8(group_id.len + 1)

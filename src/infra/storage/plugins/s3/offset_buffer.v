@@ -10,11 +10,11 @@ import time
 /// flush_worker가 주기적으로 dirty 상태인 버퍼를 S3에 플러시합니다.
 struct OffsetGroupBuffer {
 pub mut:
-	offsets       map[string]OffsetEntry // "topic:partition" -> entry
-	version       i32                    // 마지막 S3 스냅샷 version
-	dirty         bool                   // 변경 여부
-	dirty_count   int                    // 플러시 이후 변경 건수
-	last_flush_at i64                    // 마지막 플러시 시각 (unix millis)
+	offsets       map[string]OffsetEntry
+	version       i32
+	dirty         bool
+	dirty_count   int
+	last_flush_at i64
 }
 
 /// buffer_offset은 오프셋을 메모리 버퍼에 축적합니다.

@@ -1,4 +1,3 @@
-// Kafka 메시지의 핵심 데이터 구조를 정의합니다.
 module domain
 
 import time
@@ -33,9 +32,9 @@ pub:
 /// abort: 트랜잭션 롤백 마커
 /// commit: 트랜잭션 커밋 마커
 pub enum ControlRecordType {
-	none   = 0 // 제어 레코드 아님
-	abort  = 1 // 트랜잭션 롤백 마커
-	commit = 2 // 트랜잭션 커밋 마커
+	none   = 0
+	abort  = 1
+	commit = 2
 }
 
 /// RecordBatch는 레코드의 배치를 나타냅니다.
@@ -45,15 +44,15 @@ pub enum ControlRecordType {
 pub struct RecordBatch {
 pub:
 	base_offset            i64
-	partition_leader_epoch i32 // Stateless: 항상 0
-	magic                  i8 = 2 // v2 형식
+	partition_leader_epoch i32
+	magic                  i8 = 2
 	crc                    u32
 	attributes             i16
 	last_offset_delta      i32
 	first_timestamp        i64
 	max_timestamp          i64
-	producer_id            i64 = -1 // 멱등성은 스토리지에서 처리
-	producer_epoch         i16 = -1 // 멱등성은 스토리지에서 처리
+	producer_id            i64 = -1
+	producer_epoch         i16 = -1
 	base_sequence          i32 = -1
 	records                []Record
 }
@@ -80,7 +79,7 @@ pub:
 pub struct FetchResult {
 pub:
 	records            []Record
-	first_offset       i64 // 반환된 첫 번째 레코드의 실제 오프셋
+	first_offset       i64
 	high_watermark     i64
 	last_stable_offset i64
 	log_start_offset   i64

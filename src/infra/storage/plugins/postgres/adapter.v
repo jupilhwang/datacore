@@ -106,12 +106,12 @@ pub struct PostgresStorageAdapter {
 pub mut:
 	config PostgresConfig
 mut:
-	pool             &pg.ConnectionPool // PostgreSQL 커넥션 풀
-	cluster_metadata &PostgresClusterMetadataPort = unsafe { nil } // 클러스터 메타데이터 포트
-	topic_cache      map[string]domain.TopicMetadata // topic_name -> metadata 캐시
-	topic_id_idx     map[string]string               // topic_id (hex) -> topic_name 인덱스
-	cache_lock       sync.RwMutex                    // 캐시 동시성 제어용 락
-	initialized      bool // 초기화 완료 여부
+	pool             &pg.ConnectionPool
+	cluster_metadata &PostgresClusterMetadataPort = unsafe { nil }
+	topic_cache      map[string]domain.TopicMetadata
+	topic_id_idx     map[string]string
+	cache_lock       sync.RwMutex
+	initialized      bool
 	// 메트릭
 	metrics      PostgresMetrics
 	metrics_lock sync.Mutex
@@ -120,13 +120,13 @@ mut:
 /// PostgresConfig는 PostgreSQL 스토리지 설정을 담습니다.
 pub struct PostgresConfig {
 pub:
-	host      string = 'localhost' // 호스트 주소
+	host      string = 'localhost'
 	port      int    = 5432
-	user      string = 'datacore' // 사용자 이름
-	password  string // 비밀번호
-	database  string = 'datacore' // 데이터베이스 이름
-	pool_size int    = 10         // 커넥션 풀 크기
-	sslmode   string = 'disable'  // SSL 모드 (disable, allow, prefer, require, verify-ca, verify-full)
+	user      string = 'datacore'
+	password  string
+	database  string = 'datacore'
+	pool_size int    = 10
+	sslmode   string = 'disable'
 }
 
 /// postgres_capability는 PostgreSQL 어댑터의 스토리지 기능을 정의합니다.
@@ -642,7 +642,7 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 /// append는 파티션에 레코드를 추가합니다.
 /// 행 락(FOR UPDATE)을 사용하여 동시성을 제어합니다.
 pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
-	_ = required_acks // DB 트랜잭션으로 이미 동기 저장이므로 무시
+	_ = required_acks
 	start_time := time.now()
 
 	// 메트릭: append 시작
@@ -1116,10 +1116,10 @@ pub fn (a &PostgresStorageAdapter) get_cluster_metadata_port() ?&port.ClusterMet
 /// 데이터베이스의 현재 상태를 요약한 정보를 담습니다.
 pub struct StorageStats {
 pub:
-	topic_count      int // 토픽 수
-	total_partitions int // 총 파티션 수
-	total_records    i64 // 총 레코드 수
-	group_count      int // 컨슈머 그룹 수
+	topic_count      int
+	total_partitions int
+	total_records    i64
+	group_count      int
 }
 
 /// get_stats는 현재 스토리지 통계를 반환합니다.

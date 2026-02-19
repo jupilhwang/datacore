@@ -17,7 +17,7 @@ fn test_get_numa_capabilities() {
 		assert caps.platform_name == 'Linux'
 	} $else $if macos {
 		assert caps.platform_name == 'macOS'
-		assert caps.has_numa == false // macOS doesn't have NUMA
+		assert caps.has_numa == false
 	} $else $if windows {
 		assert caps.platform_name == 'Windows'
 	}
@@ -72,7 +72,7 @@ fn test_numa_alloc_local() {
 
 fn test_numa_alloc_on_node() {
 	size := usize(8192)
-	node := 0 // Node 0 should always exist
+	node := 0
 
 	mem := numa_alloc(size, node)
 
@@ -133,7 +133,7 @@ fn test_numa_free_null() {
 		is_numa: false
 	}
 
-	numa_free(mem) // Should not crash
+	numa_free(mem)
 }
 
 // Buffer Pool Tests
@@ -213,7 +213,7 @@ fn test_numa_buffer_pool_multiple_gets() {
 		}
 	}
 
-	assert buffers.len >= 3 // At least the pre-allocated ones
+	assert buffers.len >= 3
 
 	// Return all buffers
 	for buf in buffers {
@@ -245,7 +245,7 @@ fn test_numa_buffer_pool_stats() {
 
 	final_stats := pool.get_stats()
 	assert final_stats.allocations_total == 1
-	assert final_stats.cache_hits >= 0 // May be hit or miss
+	assert final_stats.cache_hits >= 0
 }
 
 // Thread Binding Tests
@@ -257,7 +257,7 @@ fn test_bind_to_node() {
 	$if linux {
 		// On Linux with NUMA, should succeed
 		// On Linux without NUMA, returns false
-		_ = result // Result depends on NUMA availability
+		_ = result
 	} $else {
 		// On other platforms, should return false
 		assert result == false
@@ -287,7 +287,7 @@ fn test_set_local_alloc() {
 // NUMA Array Tests
 
 fn test_numa_array_creation() {
-	arr := new_numa_array(100, 8) // 100 elements, 8 bytes each
+	arr := new_numa_array(100, 8)
 	defer {
 		arr.close()
 	}

@@ -21,45 +21,45 @@ import time
 /// 연결 상태, 통계, 인증 정보 등을 포함합니다.
 pub struct ClientConnection {
 pub mut:
-	fd             int       // 파일 디스크립터
-	remote_addr    string    // 원격 주소
-	connected_at   time.Time // 연결 시간
+	fd             int
+	remote_addr    string
+	connected_at   time.Time
 	last_active_at time.Time
-	request_count  u64    // 요청 수
-	bytes_received u64    // 수신 바이트
-	bytes_sent     u64    // 송신 바이트
-	client_id      string // 클라이언트 ID
-	api_version    i16    // 클라이언트 선호 API 버전
-	client_sw_name string // 클라이언트 소프트웨어 이름
-	client_sw_ver  string // 클라이언트 소프트웨어 버전
+	request_count  u64
+	bytes_received u64
+	bytes_sent     u64
+	client_id      string
+	api_version    i16
+	client_sw_name string
+	client_sw_ver  string
 	// 인증 상태
-	auth_state     domain.AuthState  // 현재 인증 상태
-	principal      ?domain.Principal // 인증된 주체 (있는 경우)
-	sasl_mechanism ?string           // 사용 중인 SASL 메커니즘
+	auth_state     domain.AuthState
+	principal      ?domain.Principal
+	sasl_mechanism ?string
 }
 
 /// ConnectionMetrics는 연결 통계를 추적하는 구조체입니다.
 pub struct ConnectionMetrics {
 pub mut:
-	active_connections   int // 현재 활성 연결 수
-	total_connections    u64 // 총 연결 수 (누적)
-	rejected_connections u64 // 거부된 연결 수
-	rejected_max_total   u64 // 거부됨: 최대 연결 수 도달
-	rejected_max_per_ip  u64 // 거부됨: IP별 최대 연결 수 도달
-	total_bytes_received u64 // 총 수신 바이트
-	total_bytes_sent     u64 // 총 송신 바이트
-	total_requests       u64 // 총 처리된 요청 수
+	active_connections   int
+	total_connections    u64
+	rejected_connections u64
+	rejected_max_total   u64
+	rejected_max_per_ip  u64
+	total_bytes_received u64
+	total_bytes_sent     u64
+	total_requests       u64
 }
 
 /// ConnectionManager는 스레드 안전하게 클라이언트 연결을 관리합니다.
 /// RwMutex를 사용하여 동시 읽기와 배타적 쓰기를 지원합니다.
 pub struct ConnectionManager {
 mut:
-	connections map[int]&ClientConnection // fd를 키로 하는 연결 맵
-	config      ServerConfig              // 서버 설정 참조
-	ip_counts   map[string]int            // IP별 연결 수 추적
-	metrics     ConnectionMetrics         // 연결 통계
-	lock        sync.RwMutex              // connections와 ip_counts 보호용 읽기-쓰기 락
+	connections map[int]&ClientConnection
+	config      ServerConfig
+	ip_counts   map[string]int
+	metrics     ConnectionMetrics
+	lock        sync.RwMutex
 }
 
 /// new_connection_manager는 새로운 연결 관리자를 생성합니다.

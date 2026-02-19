@@ -19,15 +19,13 @@ fn log_message(level observability.LogLevel, component string, message string, c
 	}
 }
 
-// gRPC 핸들러
-
 // GrpcHandler는 HTTP/2를 통한 gRPC 연결을 처리합니다.
 pub struct GrpcHandler {
 	config domain.GrpcConfig
 pub mut:
 	grpc_service &streaming.GrpcService
 	storage      port.StoragePort
-	metrics      &observability.ProtocolMetrics // gRPC 메트릭 수집
+	metrics      &observability.ProtocolMetrics
 }
 
 /// new_grpc_handler는 새로운 gRPC 핸들러를 생성합니다.
@@ -361,7 +359,7 @@ fn (h &GrpcHandler) parse_consume_request(data []u8) !domain.GrpcStreamRequest {
 	max_bytes := if pos + 4 <= data.len {
 		int(data[pos]) << 24 | int(data[pos + 1]) << 16 | int(data[pos + 2]) << 8 | int(data[pos + 3])
 	} else {
-		1048576 // 기본값 1MB
+		1048576
 	}
 
 	return domain.GrpcStreamRequest{
@@ -579,7 +577,6 @@ fn (h &GrpcHandler) encode_produce_response(resp domain.GrpcProduceResponse) []u
 	buf << u8(resp.record_count >> 8)
 	buf << u8(resp.record_count)
 
-	// 타임스탬프 (8바이트)
 	buf << u8(resp.timestamp >> 56)
 	buf << u8(resp.timestamp >> 48)
 	buf << u8(resp.timestamp >> 40)
@@ -631,7 +628,6 @@ fn (h &GrpcHandler) encode_message_response(resp domain.GrpcMessageResponse) []u
 	buf << u8(resp.offset >> 8)
 	buf << u8(resp.offset)
 
-	// 타임스탬프 (8바이트)
 	buf << u8(resp.timestamp >> 56)
 	buf << u8(resp.timestamp >> 48)
 	buf << u8(resp.timestamp >> 40)
@@ -641,14 +637,12 @@ fn (h &GrpcHandler) encode_message_response(resp domain.GrpcMessageResponse) []u
 	buf << u8(resp.timestamp >> 8)
 	buf << u8(resp.timestamp)
 
-	// 키 길이 + 키
 	buf << u8(resp.key.len >> 24)
 	buf << u8(resp.key.len >> 16)
 	buf << u8(resp.key.len >> 8)
 	buf << u8(resp.key.len)
 	buf << resp.key
 
-	// 값 길이 + 값
 	buf << u8(resp.value.len >> 24)
 	buf << u8(resp.value.len >> 16)
 	buf << u8(resp.value.len >> 8)
@@ -662,12 +656,10 @@ fn (h &GrpcHandler) encode_message_response(resp domain.GrpcMessageResponse) []u
 	buf << u8(resp.headers.len)
 
 	for k, v in resp.headers {
-		// 키 길이 + 키
 		buf << u8(k.len >> 8)
 		buf << u8(k.len)
 		buf << k.bytes()
 
-		// 값 길이 + 값
 		buf << u8(v.len >> 8)
 		buf << u8(v.len)
 		buf << v
@@ -722,7 +714,6 @@ fn (h &GrpcHandler) encode_pong_response(resp domain.GrpcPongResponse) []u8 {
 	// 응답 타입 (1바이트)
 	buf << u8(domain.GrpcStreamResponseType.pong)
 
-	// 타임스탬프 (8바이트)
 	buf << u8(resp.timestamp >> 56)
 	buf << u8(resp.timestamp >> 48)
 	buf << u8(resp.timestamp >> 40)

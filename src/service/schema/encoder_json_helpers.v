@@ -271,7 +271,7 @@ fn parse_json_map(s string) ?map[string]string {
 		}
 
 		key_val := read_json_value(trimmed, pos) or { break }
-		key := key_val[1..key_val.len - 1] // Remove quotes
+		key := key_val[1..key_val.len - 1]
 		pos += key_val.len
 
 		// Skip colon and whitespace

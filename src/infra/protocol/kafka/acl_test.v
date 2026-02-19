@@ -91,30 +91,30 @@ fn test_handler_create_acls() {
 
 	// Build CreateAcls request
 	mut request := kafka.new_writer()
-	request.write_i32(0) // size
-	request.write_i16(30) // api_key: CreateAcls
-	request.write_i16(1) // version: 1 (supports pattern_type)
-	request.write_i32(1) // correlation_id
+	request.write_i32(0)
+	request.write_i16(30)
+	request.write_i16(1)
+	request.write_i32(1)
 	request.write_nullable_string('test-client')
 
 	// Body: count(1) + creation
 	request.write_array_len(1)
-	request.write_i8(2) // resource_type: TOPIC
+	request.write_i8(2)
 	request.write_string('test-topic')
-	request.write_i8(3) // pattern_type: LITERAL
+	request.write_i8(3)
 	request.write_string('User:alice')
 	request.write_string('*')
-	request.write_i8(3) // operation: READ
-	request.write_i8(2) // permission_type: ALLOW
+	request.write_i8(3)
+	request.write_i8(2)
 
 	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
-	_ = reader.read_i32()! // size
-	_ = reader.read_i32()! // correlation_id
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
 
 	// Body: throttle_time_ms + results array
-	_ = reader.read_i32()! // throttle_time_ms
+	_ = reader.read_i32()!
 	count := reader.read_array_len()!
 	assert count == 1
 
@@ -131,35 +131,35 @@ fn test_handler_describe_acls() {
 	mut create_req := kafka.new_writer()
 	create_req.write_i32(0)
 	create_req.write_i16(30)
-	create_req.write_i16(1) // version 1
+	create_req.write_i16(1)
 	create_req.write_i32(1)
 	create_req.write_nullable_string('test-client')
 	create_req.write_array_len(1)
-	create_req.write_i8(2) // TOPIC
+	create_req.write_i8(2)
 	create_req.write_string('test-topic')
-	create_req.write_i8(3) // LITERAL
+	create_req.write_i8(3)
 	create_req.write_string('User:alice')
 	create_req.write_string('*')
-	create_req.write_i8(3) // READ
-	create_req.write_i8(2) // ALLOW
+	create_req.write_i8(3)
+	create_req.write_i8(2)
 	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
 
 	// Now describe ACLs
 	mut request := kafka.new_writer()
 	request.write_i32(0)
-	request.write_i16(29) // api_key: DescribeAcls
-	request.write_i16(1) // version 1
-	request.write_i32(2) // correlation_id
+	request.write_i16(29)
+	request.write_i16(1)
+	request.write_i32(2)
 	request.write_nullable_string('test-client')
 
 	// Filter: match everything
-	request.write_i8(1) // resource_type: ANY
-	request.write_nullable_string(none) // resource_name: null
-	request.write_i8(1) // pattern_type: ANY
-	request.write_nullable_string(none) // principal: null
-	request.write_nullable_string(none) // host: null
-	request.write_i8(1) // operation: ANY
-	request.write_i8(1) // permission_type: ANY
+	request.write_i8(1)
+	request.write_nullable_string(none)
+	request.write_i8(1)
+	request.write_nullable_string(none)
+	request.write_nullable_string(none)
+	request.write_i8(1)
+	request.write_i8(1)
 
 	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
@@ -167,23 +167,23 @@ fn test_handler_describe_acls() {
 	_ = reader.read_i32()!
 	_ = reader.read_i32()!
 
-	_ = reader.read_i32()! // throttle_time_ms
+	_ = reader.read_i32()!
 	error_code := reader.read_i16()!
 	assert error_code == 0
-	_ = reader.read_nullable_string()! // error_message
+	_ = reader.read_nullable_string()!
 
 	// Resources array
 	res_count := reader.read_array_len()!
 	assert res_count == 1
 
 	res_type := reader.read_i8()!
-	assert res_type == 2 // TOPIC
+	assert res_type == 2
 	res_name := reader.read_string()!
 	assert res_name == 'test-topic'
 
 	// Read pattern_type (v1+)
 	pattern_type := reader.read_i8()!
-	assert pattern_type == 3 // LITERAL
+	assert pattern_type == 3
 
 	// ACLs array
 	acl_count := reader.read_array_len()!
@@ -194,9 +194,9 @@ fn test_handler_describe_acls() {
 	host := reader.read_string()!
 	assert host == '*'
 	op := reader.read_i8()!
-	assert op == 3 // READ
+	assert op == 3
 	perm := reader.read_i8()!
-	assert perm == 2 // ALLOW
+	assert perm == 2
 }
 
 fn test_handler_delete_acls() {
@@ -206,36 +206,36 @@ fn test_handler_delete_acls() {
 	mut create_req := kafka.new_writer()
 	create_req.write_i32(0)
 	create_req.write_i16(30)
-	create_req.write_i16(1) // version 1
+	create_req.write_i16(1)
 	create_req.write_i32(1)
 	create_req.write_nullable_string('test-client')
 	create_req.write_array_len(1)
-	create_req.write_i8(2) // TOPIC
+	create_req.write_i8(2)
 	create_req.write_string('test-topic')
-	create_req.write_i8(3) // LITERAL
+	create_req.write_i8(3)
 	create_req.write_string('User:alice')
 	create_req.write_string('*')
-	create_req.write_i8(3) // READ
-	create_req.write_i8(2) // ALLOW
+	create_req.write_i8(3)
+	create_req.write_i8(2)
 	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
 
 	// Delete ACL
 	mut request := kafka.new_writer()
 	request.write_i32(0)
-	request.write_i16(31) // api_key: DeleteAcls
-	request.write_i16(1) // version 1
-	request.write_i32(3) // correlation_id
+	request.write_i16(31)
+	request.write_i16(1)
+	request.write_i32(3)
 	request.write_nullable_string('test-client')
 
 	// Filter array
 	request.write_array_len(1)
-	request.write_i8(2) // TOPIC
+	request.write_i8(2)
 	request.write_nullable_string('test-topic')
-	request.write_i8(3) // LITERAL
+	request.write_i8(3)
 	request.write_nullable_string(none)
 	request.write_nullable_string(none)
-	request.write_i8(1) // ANY
-	request.write_i8(1) // ANY
+	request.write_i8(1)
+	request.write_i8(1)
 
 	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
@@ -243,7 +243,7 @@ fn test_handler_delete_acls() {
 	_ = reader.read_i32()!
 	_ = reader.read_i32()!
 
-	_ = reader.read_i32()! // throttle_time_ms
+	_ = reader.read_i32()!
 
 	// Results array
 	count := reader.read_array_len()!
@@ -268,7 +268,7 @@ fn test_handler_delete_acls() {
 
 	// Read pattern_type (v1+)
 	pattern_type := reader.read_i8()!
-	assert pattern_type == 3 // LITERAL
+	assert pattern_type == 3
 
 	principal := reader.read_string()!
 	assert principal == 'User:alice'

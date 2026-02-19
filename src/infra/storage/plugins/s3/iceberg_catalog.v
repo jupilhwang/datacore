@@ -22,7 +22,7 @@ mut:
 pub struct HadoopCatalog {
 pub mut:
 	adapter    &S3StorageAdapter
-	warehouse  string // S3 기본 위치 (예: s3://bucket/warehouse/)
+	warehouse  string
 	properties map[string]string
 }
 
@@ -188,7 +188,7 @@ pub fn (mut c HadoopCatalog) list_tables(namespace []string) ![]IcebergTableIden
 /// namespace_exists은 네임스페이스가 존재하는지 확인합니다.
 pub fn (mut c HadoopCatalog) namespace_exists(namespace []string) bool {
 	if namespace.len == 0 {
-		return true // 기본 네임스페이스는 항상 존재
+		return true
 	}
 
 	ns_path := c.namespace_path(namespace)

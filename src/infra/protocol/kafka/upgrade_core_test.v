@@ -50,7 +50,7 @@ fn test_findcoordinator_v4() {
 	// v4 is flexible
 	req := parse_find_coordinator_request(mut reader, 4, true) or { panic(err) }
 
-	assert req.key == '' // v4 doesn't have legacy key field
+	assert req.key == ''
 	assert req.key_type == 0
 	assert req.coordinator_keys.len == 1
 	assert req.coordinator_keys[0] == 'group2'

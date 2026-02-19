@@ -37,7 +37,7 @@ pub mut:
 	allocations u64
 	returns     u64
 	discards    u64
-	bytes_saved u64 // 재사용으로 절약된 바이트 수
+	bytes_saved u64
 }
 
 /// WriterGuard는 RAII 스타일의 Writer 관리를 제공합니다.
@@ -203,7 +203,7 @@ pub fn (mut p WriterPool) shutdown() {
 /// reset은 Writer를 재사용을 위해 초기화합니다.
 pub fn (mut w PooledWriter) reset() {
 	w.len = 0
-	w.data = w.data[..0] // 용량은 유지하고 길이만 0으로
+	w.data = w.data[..0]
 }
 
 /// write는 데이터를 Writer에 씁니다.

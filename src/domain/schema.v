@@ -1,4 +1,3 @@
-// Schema Registry 도메인 엔티티를 정의합니다.
 // 메시지 스키마의 등록, 버전 관리, 호환성 검사를 지원합니다.
 module domain
 
@@ -22,11 +21,11 @@ pub enum SchemaType {
 /// fingerprint: 중복 제거를 위한 스키마 지문
 pub struct Schema {
 pub:
-	id          int               // 전역 고유 스키마 ID
-	schema_type SchemaType        // AVRO, JSON, PROTOBUF
-	schema_str  string            // 원시 스키마 정의
-	references  []SchemaReference // 다른 스키마 참조
-	fingerprint string            // 중복 제거용 지문
+	id          int
+	schema_type SchemaType
+	schema_str  string
+	references  []SchemaReference
+	fingerprint string
 }
 
 /// SchemaReference는 다른 스키마에 대한 참조를 나타냅니다.
@@ -35,9 +34,9 @@ pub:
 /// version: 참조된 스키마의 버전
 pub struct SchemaReference {
 pub:
-	name    string // 참조 이름
-	subject string // 참조된 스키마의 서브젝트
-	version int    // 참조된 스키마의 버전
+	name    string
+	subject string
+	version int
 }
 
 /// SchemaVersion은 서브젝트 하위의 스키마 버전을 나타냅니다.
@@ -48,9 +47,9 @@ pub:
 /// created_at: 생성 시간
 pub struct SchemaVersion {
 pub:
-	version       int    // 버전 번호 (1-based)
-	schema_id     int    // 전역 스키마 ID
-	subject       string // 서브젝트 이름 (예: "orders-value")
+	version       int
+	schema_id     int
+	subject       string
 	compatibility CompatibilityLevel
 	created_at    time.Time
 }
@@ -61,12 +60,12 @@ pub:
 /// forward: 이전 스키마가 새 데이터를 읽을 수 있음
 /// full: 양방향 호환
 pub enum CompatibilityLevel {
-	none     // 호환성 검사 없음
-	backward // 새 스키마가 이전 데이터를 읽을 수 있음
+	none
+	backward
 	backward_transitive
-	forward // 이전 스키마가 새 데이터를 읽을 수 있음
+	forward
 	forward_transitive
-	full // 양방향 호환
+	full
 	full_transitive
 }
 
@@ -77,8 +76,8 @@ pub enum CompatibilityLevel {
 pub struct SubjectConfig {
 pub:
 	compatibility CompatibilityLevel = .backward
-	alias         string // 서브젝트 별칭
-	normalize     bool   // 비교 전 스키마 정규화 여부
+	alias         string
+	normalize     bool
 }
 
 /// SchemaInfo는 API 응답을 위한 스키마 정보를 나타냅니다.
@@ -89,7 +88,7 @@ pub:
 	schema_str  string
 	subject     string
 	version     int
-	created_at  i64 // Unix 타임스탬프
+	created_at  i64
 }
 
 /// SubjectVersion은 서브젝트와 버전 목록을 나타냅니다.

@@ -24,8 +24,8 @@ pub struct FetchPartitionRequest {
 pub:
 	topic        string
 	partition    int
-	fetch_offset i64 // 시작 오프셋
-	max_bytes    int // 최대 바이트 수
+	fetch_offset i64
+	max_bytes    int
 }
 
 /// FetchPartitionResponse는 단일 파티션에 대한 fetch 응답을 나타냅니다.
@@ -33,30 +33,30 @@ pub struct FetchPartitionResponse {
 pub:
 	topic              string
 	partition          int
-	error_code         i16             // 오류 코드 (0이면 성공)
-	high_watermark     i64             // 하이 워터마크 (커밋된 마지막 오프셋 + 1)
-	last_stable_offset i64             // 마지막 안정 오프셋 (트랜잭션 완료된 오프셋)
-	log_start_offset   i64             // 로그 시작 오프셋
-	records            []domain.Record // 가져온 레코드 목록
+	error_code         i16
+	high_watermark     i64
+	last_stable_offset i64
+	log_start_offset   i64
+	records            []domain.Record
 }
 
 /// FetchRequest는 fetch 요청을 나타냅니다.
 pub struct FetchRequest {
 pub:
-	replica_id      i32                     // 레플리카 ID (-1이면 컨슈머)
-	max_wait_ms     i32                     // 최대 대기 시간 (ms)
-	min_bytes       i32                     // 최소 바이트 수
-	max_bytes       i32                     // 최대 바이트 수
-	isolation_level i8                      // 격리 수준 (0: read_uncommitted, 1: read_committed)
-	partitions      []FetchPartitionRequest // 파티션별 요청 목록
+	replica_id      i32
+	max_wait_ms     i32
+	min_bytes       i32
+	max_bytes       i32
+	isolation_level i8
+	partitions      []FetchPartitionRequest
 }
 
 /// FetchResponse는 fetch 응답을 나타냅니다.
 pub struct FetchResponse {
 pub:
 	throttle_time_ms i32
-	error_code       i16                      // 전체 오류 코드
-	partitions       []FetchPartitionResponse // 파티션별 응답 목록
+	error_code       i16
+	partitions       []FetchPartitionResponse
 }
 
 // 병렬 처리 임계값 - 파티션 수가 이 값을 초과하면 병렬 fetch 사용

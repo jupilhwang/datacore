@@ -10,16 +10,16 @@ struct PartitionIndex {
 mut:
 	topic           string
 	partition       int
-	earliest_offset i64          // 가장 이른 오프셋
-	high_watermark  i64          // high watermark (다음 쓰기 오프셋)
-	log_segments    []LogSegment // 로그 세그먼트 목록
+	earliest_offset i64
+	high_watermark  i64
+	log_segments    []LogSegment
 }
 
 /// LogSegment는 S3에 저장된 로그 세그먼트를 나타냅니다.
 struct LogSegment {
-	start_offset i64    // 시작 오프셋
-	end_offset   i64    // 종료 오프셋
-	key          string // S3 객체 키
+	start_offset i64
+	end_offset   i64
+	key          string
 	size_bytes   i64
 	created_at   time.Time
 }
@@ -27,8 +27,8 @@ struct LogSegment {
 /// CachedPartitionIndex는 메타데이터와 함께 캐시된 파티션 인덱스를 담습니다.
 struct CachedPartitionIndex {
 	index     PartitionIndex
-	etag      string    // S3 ETag
-	cached_at time.Time // 캐시 시간
+	etag      string
+	cached_at time.Time
 }
 
 /// get_partition_index는 캐시 또는 S3에서 파티션 인덱스를 조회합니다.
@@ -80,7 +80,7 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 			cached_at: time.now()
 		}
 		a.topic_lock.unlock()
-		return a.topic_index_cache[key].index // 새로 캐시된 빈 인덱스 반환
+		return a.topic_index_cache[key].index
 	}
 
 	// 3. S3 인덱스 디코딩

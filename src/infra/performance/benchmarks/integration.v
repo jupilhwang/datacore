@@ -24,8 +24,8 @@ pub fn init_global_performance(config performance.PerformanceConfig) {
 @[heap]
 pub struct RequestBuffer {
 pub mut:
-	buffer     &core.Buffer                    // 내부 버퍼
-	manager    &performance.PerformanceManager // 성능 관리자 참조
+	buffer     &core.Buffer
+	manager    &performance.PerformanceManager
 	created_at time.Time
 }
 
@@ -63,9 +63,9 @@ pub fn (mut r RequestBuffer) release() {
 @[heap]
 pub struct ResponseBuffer {
 pub mut:
-	buffer  &core.Buffer                    // 내부 버퍼
-	manager &performance.PerformanceManager // 성능 관리자 참조
-	offset  int // 현재 쓰기 위치
+	buffer  &core.Buffer
+	manager &performance.PerformanceManager
+	offset  int
 }
 
 /// new_response_buffer는 응답 빌드를 위한 버퍼를 획득합니다.
@@ -129,9 +129,9 @@ pub fn (mut r ResponseBuffer) release() {
 @[heap]
 pub struct ConnectionBuffers {
 pub mut:
-	read_buffer  &core.Buffer                    // 읽기 버퍼
-	write_buffer &core.Buffer                    // 쓰기 버퍼
-	manager      &performance.PerformanceManager // 성능 관리자 참조
+	read_buffer  &core.Buffer
+	write_buffer &core.Buffer
+	manager      &performance.PerformanceManager
 }
 
 /// new_connection_buffers는 연결 버퍼를 생성합니다.
@@ -172,7 +172,7 @@ pub fn (mut c ConnectionBuffers) release() {
 @[heap]
 pub struct StorageRecordPool {
 mut:
-	manager &performance.PerformanceManager // 성능 관리자 참조
+	manager &performance.PerformanceManager
 }
 
 /// new_storage_record_pool은 스토리지 레코드 풀을 생성합니다.
@@ -208,11 +208,11 @@ pub fn (mut p StorageRecordPool) put_batch(b &core.PooledRecordBatch) {
 @[heap]
 pub struct FetchBuffer {
 pub mut:
-	buffer        &core.Buffer                    // 내부 버퍼
-	manager       &performance.PerformanceManager // 성능 관리자 참조
-	zero_copy_fd  int // 제로카피용 파일 디스크립터 (미사용 시 -1)
-	zero_copy_off i64 // 제로카피 오프셋
-	zero_copy_len int // 제로카피 길이
+	buffer        &core.Buffer
+	manager       &performance.PerformanceManager
+	zero_copy_fd  int
+	zero_copy_off i64
+	zero_copy_len int
 }
 
 /// new_fetch_buffer는 fetch 버퍼를 생성합니다.
@@ -249,23 +249,23 @@ pub fn (mut f FetchBuffer) release() {
 /// IntegrationStats는 통합 통계를 보유합니다.
 pub struct IntegrationStats {
 pub:
-	request_buffers_allocated  u64 // 할당된 요청 버퍼 수
-	response_buffers_allocated u64 // 할당된 응답 버퍼 수
-	connection_buffers_active  int // 활성 연결 버퍼 수
-	storage_records_pooled     u64 // 풀링된 스토리지 레코드 수
-	fetch_zero_copy_count      u64 // 제로카피 fetch 횟수
-	perf_stats                 performance.PerformanceStats // 성능 통계
+	request_buffers_allocated  u64
+	response_buffers_allocated u64
+	connection_buffers_active  int
+	storage_records_pooled     u64
+	fetch_zero_copy_count      u64
+	perf_stats                 performance.PerformanceStats
 }
 
 /// IntegrationMetrics는 통합 사용량을 추적합니다.
 @[heap]
 pub struct IntegrationMetrics {
 pub mut:
-	request_buffers_allocated  u64 // 할당된 요청 버퍼 수
-	response_buffers_allocated u64 // 할당된 응답 버퍼 수
-	connection_buffers_active  int // 활성 연결 버퍼 수
-	storage_records_pooled     u64 // 풀링된 스토리지 레코드 수
-	fetch_zero_copy_count      u64 // 제로카피 fetch 횟수
+	request_buffers_allocated  u64
+	response_buffers_allocated u64
+	connection_buffers_active  int
+	storage_records_pooled     u64
+	fetch_zero_copy_count      u64
 }
 
 /// 메트릭 싱글톤

@@ -36,11 +36,8 @@ fn create_full_integration_handler() kafka.Handler {
 		panic('failed to create compression service: ${err}')
 	}
 
-	return kafka.new_handler_full(1, // broker_id
-	 '127.0.0.1', // host
-	 9092, // port
-	 'integration-test-cluster', // cluster_id
-	 storage, auth_service, acl_manager, *txn_coordinator, compression_service)
+	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'integration-test-cluster', storage,
+		auth_service, acl_manager, *txn_coordinator, compression_service)
 }
 
 // 통합 테스트용 Mock Storage
@@ -163,7 +160,7 @@ fn test_sasl_auth_then_acl_check() {
 	// Step 1: SASL Handshake
 	mut handshake_req := kafka.new_writer()
 	handshake_req.write_i32(0)
-	handshake_req.write_i16(17) // SaslHandshake
+	handshake_req.write_i16(17)
 	handshake_req.write_i16(0)
 	handshake_req.write_i32(1)
 	handshake_req.write_nullable_string('integration-client')
@@ -180,7 +177,7 @@ fn test_sasl_auth_then_acl_check() {
 	auth_bytes := make_plain_auth_bytes('', 'producer', 'producerpass')
 	mut auth_req := kafka.new_writer()
 	auth_req.write_i32(0)
-	auth_req.write_i16(36) // SaslAuthenticate
+	auth_req.write_i16(36)
 	auth_req.write_i16(0)
 	auth_req.write_i32(2)
 	auth_req.write_nullable_string('integration-client')
@@ -196,24 +193,24 @@ fn test_sasl_auth_then_acl_check() {
 	// Step 3: Create ACL for producer user
 	mut create_acl_req := kafka.new_writer()
 	create_acl_req.write_i32(0)
-	create_acl_req.write_i16(30) // CreateAcls
+	create_acl_req.write_i16(30)
 	create_acl_req.write_i16(1)
 	create_acl_req.write_i32(3)
 	create_acl_req.write_nullable_string('integration-client')
 	create_acl_req.write_array_len(1)
-	create_acl_req.write_i8(2) // TOPIC
+	create_acl_req.write_i8(2)
 	create_acl_req.write_string('test-topic')
-	create_acl_req.write_i8(3) // LITERAL
+	create_acl_req.write_i8(3)
 	create_acl_req.write_string('User:producer')
 	create_acl_req.write_string('*')
-	create_acl_req.write_i8(4) // WRITE
-	create_acl_req.write_i8(2) // ALLOW
+	create_acl_req.write_i8(4)
+	create_acl_req.write_i8(2)
 
 	create_acl_resp := handler.handle_request(create_acl_req.bytes()[4..]) or { panic(err) }
 	mut acl_reader := kafka.new_reader(create_acl_resp)
 	_ = acl_reader.read_i32()!
 	_ = acl_reader.read_i32()!
-	_ = acl_reader.read_i32()! // throttle
+	_ = acl_reader.read_i32()!
 	acl_count := acl_reader.read_array_len()!
 	assert acl_count == 1
 	acl_error := acl_reader.read_i16()!
@@ -222,23 +219,23 @@ fn test_sasl_auth_then_acl_check() {
 	// Step 4: Describe ACLs to verify
 	mut describe_acl_req := kafka.new_writer()
 	describe_acl_req.write_i32(0)
-	describe_acl_req.write_i16(29) // DescribeAcls
+	describe_acl_req.write_i16(29)
 	describe_acl_req.write_i16(1)
 	describe_acl_req.write_i32(4)
 	describe_acl_req.write_nullable_string('integration-client')
-	describe_acl_req.write_i8(2) // TOPIC
+	describe_acl_req.write_i8(2)
 	describe_acl_req.write_nullable_string('test-topic')
-	describe_acl_req.write_i8(3) // LITERAL
+	describe_acl_req.write_i8(3)
 	describe_acl_req.write_nullable_string('User:producer')
 	describe_acl_req.write_nullable_string(none)
-	describe_acl_req.write_i8(1) // ANY
-	describe_acl_req.write_i8(1) // ANY
+	describe_acl_req.write_i8(1)
+	describe_acl_req.write_i8(1)
 
 	describe_resp := handler.handle_request(describe_acl_req.bytes()[4..]) or { panic(err) }
 	mut desc_reader := kafka.new_reader(describe_resp)
 	_ = desc_reader.read_i32()!
 	_ = desc_reader.read_i32()!
-	_ = desc_reader.read_i32()! // throttle
+	_ = desc_reader.read_i32()!
 	desc_error := desc_reader.read_i16()!
 	assert desc_error == 0
 	_ = desc_reader.read_nullable_string()!
@@ -254,7 +251,7 @@ fn test_transaction_with_acl() {
 	// Step 1: Create ACL for transactional user
 	mut create_acl_req := kafka.new_writer()
 	create_acl_req.write_i32(0)
-	create_acl_req.write_i16(30) // CreateAcls
+	create_acl_req.write_i16(30)
 	create_acl_req.write_i16(1)
 	create_acl_req.write_i32(1)
 	create_acl_req.write_nullable_string('txn-client')
@@ -263,29 +260,29 @@ fn test_transaction_with_acl() {
 	create_acl_req.write_array_len(2)
 
 	// ACL 1: WRITE on test-topic
-	create_acl_req.write_i8(2) // TOPIC
+	create_acl_req.write_i8(2)
 	create_acl_req.write_string('test-topic')
-	create_acl_req.write_i8(3) // LITERAL
+	create_acl_req.write_i8(3)
 	create_acl_req.write_string('User:txn-user')
 	create_acl_req.write_string('*')
-	create_acl_req.write_i8(4) // WRITE
-	create_acl_req.write_i8(2) // ALLOW
+	create_acl_req.write_i8(4)
+	create_acl_req.write_i8(2)
 
 	// ACL 2: IDEMPOTENT_WRITE on cluster
-	create_acl_req.write_i8(4) // CLUSTER
+	create_acl_req.write_i8(4)
 	create_acl_req.write_string('kafka-cluster')
-	create_acl_req.write_i8(3) // LITERAL
+	create_acl_req.write_i8(3)
 	create_acl_req.write_string('User:txn-user')
 	create_acl_req.write_string('*')
-	create_acl_req.write_i8(11) // IDEMPOTENT_WRITE
-	create_acl_req.write_i8(2) // ALLOW
+	create_acl_req.write_i8(11)
+	create_acl_req.write_i8(2)
 
 	_ = handler.handle_request(create_acl_req.bytes()[4..]) or { panic(err) }
 
 	// Step 2: InitProducerId for transactional producer
 	mut init_req := kafka.new_writer()
 	init_req.write_i32(0)
-	init_req.write_i16(22) // InitProducerId
+	init_req.write_i16(22)
 	init_req.write_i16(3)
 	init_req.write_i32(2)
 	init_req.write_nullable_string('txn-client')
@@ -313,7 +310,7 @@ fn test_transaction_with_acl() {
 	// Step 3: AddPartitionsToTxn
 	mut add_req := kafka.new_writer()
 	add_req.write_i32(0)
-	add_req.write_i16(24) // AddPartitionsToTxn
+	add_req.write_i16(24)
 	add_req.write_i16(3)
 	add_req.write_i32(3)
 	add_req.write_nullable_string('txn-client')
@@ -347,7 +344,7 @@ fn test_transaction_with_acl() {
 	// Step 4: EndTxn (Commit)
 	mut end_req := kafka.new_writer()
 	end_req.write_i32(0)
-	end_req.write_i16(26) // EndTxn
+	end_req.write_i16(26)
 	end_req.write_i16(3)
 	end_req.write_i32(4)
 	end_req.write_nullable_string('txn-client')
@@ -355,7 +352,7 @@ fn test_transaction_with_acl() {
 	end_req.write_compact_string('txn-integration-test')
 	end_req.write_i64(pid)
 	end_req.write_i16(epoch)
-	end_req.write_i8(1) // COMMIT
+	end_req.write_i8(1)
 	end_req.write_tagged_fields()
 
 	end_resp := handler.handle_request(end_req.bytes()[4..]) or { panic(err) }
@@ -407,13 +404,13 @@ fn test_full_sasl_acl_transaction_flow() {
 	create_acl_req.write_i32(3)
 	create_acl_req.write_nullable_string('full-test-client')
 	create_acl_req.write_array_len(1)
-	create_acl_req.write_i8(2) // TOPIC
+	create_acl_req.write_i8(2)
 	create_acl_req.write_string('txn-topic')
-	create_acl_req.write_i8(3) // LITERAL
+	create_acl_req.write_i8(3)
 	create_acl_req.write_string('User:txn-user')
 	create_acl_req.write_string('*')
-	create_acl_req.write_i8(5) // ALL
-	create_acl_req.write_i8(2) // ALLOW
+	create_acl_req.write_i8(5)
+	create_acl_req.write_i8(2)
 	_ = handler.handle_request(create_acl_req.bytes()[4..]) or { panic(err) }
 
 	// Step 3: Transaction Flow
@@ -445,7 +442,7 @@ fn test_full_sasl_acl_transaction_flow() {
 	// AddOffsetsToTxn
 	mut add_offsets_req := kafka.new_writer()
 	add_offsets_req.write_i32(0)
-	add_offsets_req.write_i16(25) // AddOffsetsToTxn
+	add_offsets_req.write_i16(25)
 	add_offsets_req.write_i16(3)
 	add_offsets_req.write_i32(5)
 	add_offsets_req.write_nullable_string('full-test-client')
@@ -476,7 +473,7 @@ fn test_full_sasl_acl_transaction_flow() {
 	end_req.write_compact_string('full-integration-txn')
 	end_req.write_i64(pid)
 	end_req.write_i16(epoch)
-	end_req.write_i8(0) // ABORT
+	end_req.write_i8(0)
 	end_req.write_tagged_fields()
 
 	end_resp := handler.handle_request(end_req.bytes()[4..]) or { panic(err) }
@@ -567,7 +564,7 @@ fn test_transaction_invalid_producer_id() {
 	add_req.write_nullable_string('test-client')
 	add_req.write_tagged_fields()
 	add_req.write_compact_string('non-existent-txn')
-	add_req.write_i64(999999) // Invalid PID
+	add_req.write_i64(999999)
 	add_req.write_i16(0)
 	add_req.write_compact_array_len(1)
 	add_req.write_compact_string('test-topic')
@@ -608,13 +605,13 @@ fn test_acl_lifecycle() {
 	create_req.write_i32(1)
 	create_req.write_nullable_string('test-client')
 	create_req.write_array_len(1)
-	create_req.write_i8(2) // TOPIC
+	create_req.write_i8(2)
 	create_req.write_string('lifecycle-topic')
-	create_req.write_i8(3) // LITERAL
+	create_req.write_i8(3)
 	create_req.write_string('User:lifecycle-user')
 	create_req.write_string('*')
-	create_req.write_i8(3) // READ
-	create_req.write_i8(2) // ALLOW
+	create_req.write_i8(3)
+	create_req.write_i8(2)
 	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
 
 	// Verify ACL exists
@@ -624,13 +621,13 @@ fn test_acl_lifecycle() {
 	describe_req.write_i16(1)
 	describe_req.write_i32(2)
 	describe_req.write_nullable_string('test-client')
-	describe_req.write_i8(2) // TOPIC
+	describe_req.write_i8(2)
 	describe_req.write_nullable_string('lifecycle-topic')
-	describe_req.write_i8(3) // LITERAL
+	describe_req.write_i8(3)
 	describe_req.write_nullable_string(none)
 	describe_req.write_nullable_string(none)
-	describe_req.write_i8(1) // ANY
-	describe_req.write_i8(1) // ANY
+	describe_req.write_i8(1)
+	describe_req.write_i8(1)
 
 	describe_resp := handler.handle_request(describe_req.bytes()[4..]) or { panic(err) }
 	mut desc_reader := kafka.new_reader(describe_resp)
@@ -650,13 +647,13 @@ fn test_acl_lifecycle() {
 	delete_req.write_i32(3)
 	delete_req.write_nullable_string('test-client')
 	delete_req.write_array_len(1)
-	delete_req.write_i8(2) // TOPIC
+	delete_req.write_i8(2)
 	delete_req.write_nullable_string('lifecycle-topic')
-	delete_req.write_i8(3) // LITERAL
+	delete_req.write_i8(3)
 	delete_req.write_nullable_string(none)
 	delete_req.write_nullable_string(none)
-	delete_req.write_i8(1) // ANY
-	delete_req.write_i8(1) // ANY
+	delete_req.write_i8(1)
+	delete_req.write_i8(1)
 
 	delete_resp := handler.handle_request(delete_req.bytes()[4..]) or { panic(err) }
 	mut del_reader := kafka.new_reader(delete_resp)

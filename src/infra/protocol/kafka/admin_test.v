@@ -329,13 +329,13 @@ fn test_handler_create_topics_success() {
 
 	// Build request
 	mut writer := new_writer()
-	writer.write_i32(1) // 1 topic
+	writer.write_i32(1)
 	writer.write_string('new-topic')
-	writer.write_i32(5) // 5 partitions
-	writer.write_i16(1) // replication factor
-	writer.write_i32(0) // no replica assignment
-	writer.write_i32(0) // no configs
-	writer.write_i32(30000) // timeout
+	writer.write_i32(5)
+	writer.write_i16(1)
+	writer.write_i32(0)
+	writer.write_i32(0)
+	writer.write_i32(30000)
 
 	result := handler.handle_create_topics(writer.bytes(), 0) or {
 		assert false, 'handler failed: ${err}'
@@ -380,8 +380,8 @@ fn test_handler_create_topics_already_exists() {
 
 	// 응답 파싱하여 에러 코드 확인
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // array len
-	_ := reader.read_string() or { '' } // topic name
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.topic_already_exists)
@@ -402,9 +402,9 @@ fn test_handler_delete_topics_success() {
 
 	// Build request
 	mut writer := new_writer()
-	writer.write_i32(1) // 1 topic
+	writer.write_i32(1)
 	writer.write_string('to-delete')
-	writer.write_i32(30000) // timeout
+	writer.write_i32(30000)
 
 	result := handler.handle_delete_topics(writer.bytes(), 0) or {
 		assert false, 'handler failed: ${err}'
@@ -434,8 +434,8 @@ fn test_handler_delete_topics_not_found() {
 
 	// 응답 파싱하여 에러 코드 확인
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // array len
-	_ := reader.read_string() or { '' } // topic name
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
@@ -449,7 +449,7 @@ fn test_handler_create_multiple_topics() {
 
 	// 3개 토픽으로 요청 빌드
 	mut writer := new_writer()
-	writer.write_i32(3) // 3 topics
+	writer.write_i32(3)
 
 	for name in ['topic-a', 'topic-b', 'topic-c'] {
 		writer.write_string(name)
@@ -566,7 +566,7 @@ fn test_handler_describe_groups_found() {
 
 	// 기존 그룹에 대한 요청 빌드
 	mut writer := new_writer()
-	writer.write_i32(1) // 1 group
+	writer.write_i32(1)
 	writer.write_string('test-group-1')
 
 	result := handler.handle_describe_groups(writer.bytes(), 0) or {
@@ -716,13 +716,13 @@ fn test_handler_alter_configs_success() {
 
 	// Build request
 	mut writer := new_writer()
-	writer.write_i32(1) // 1 resource
-	writer.write_i8(2) // TOPIC
+	writer.write_i32(1)
+	writer.write_i8(2)
 	writer.write_string('test-topic')
-	writer.write_i32(1) // 1 config
+	writer.write_i32(1)
 	writer.write_string('retention.ms')
 	writer.write_string('86400000')
-	writer.write_i8(0) // validate_only = false
+	writer.write_i8(0)
 
 	result := handler.handle_alter_configs(writer.bytes(), 0) or {
 		assert false, 'handler failed: ${err}'
@@ -751,9 +751,9 @@ fn test_handler_alter_configs_topic_not_found() {
 	// Build request for non-existent topic
 	mut writer := new_writer()
 	writer.write_i32(1)
-	writer.write_i8(2) // TOPIC
+	writer.write_i8(2)
 	writer.write_string('nonexistent')
-	writer.write_i32(0) // no configs
+	writer.write_i32(0)
 	writer.write_i8(0)
 
 	result := handler.handle_alter_configs(writer.bytes(), 0) or {
@@ -763,8 +763,8 @@ fn test_handler_alter_configs_topic_not_found() {
 
 	// Parse response
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // throttle
-	_ := reader.read_i32() or { 0 } // results len
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
@@ -821,12 +821,12 @@ fn test_handler_create_partitions_success() {
 
 	// Build request to increase to 10 partitions
 	mut writer := new_writer()
-	writer.write_i32(1) // 1 topic
+	writer.write_i32(1)
 	writer.write_string('test-topic')
-	writer.write_i32(10) // new count
-	writer.write_i32(-1) // no assignments
-	writer.write_i32(30000) // timeout
-	writer.write_i8(0) // validate_only = false
+	writer.write_i32(10)
+	writer.write_i32(-1)
+	writer.write_i32(30000)
+	writer.write_i8(0)
 
 	result := handler.handle_create_partitions(writer.bytes(), 0) or {
 		assert false, 'handler failed: ${err}'
@@ -874,9 +874,9 @@ fn test_handler_create_partitions_topic_not_found() {
 
 	// Parse response
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // throttle
-	_ := reader.read_i32() or { 0 } // results len
-	_ := reader.read_string() or { '' } // name
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
@@ -898,7 +898,7 @@ fn test_handler_create_partitions_invalid_count() {
 	mut writer := new_writer()
 	writer.write_i32(1)
 	writer.write_string('test-topic')
-	writer.write_i32(5) // less than current (invalid)
+	writer.write_i32(5)
 	writer.write_i32(-1)
 	writer.write_i32(30000)
 	writer.write_i8(0)
@@ -910,9 +910,9 @@ fn test_handler_create_partitions_invalid_count() {
 
 	// Parse response
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // throttle
-	_ := reader.read_i32() or { 0 } // results len
-	_ := reader.read_string() or { '' } // name
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.invalid_partitions)
@@ -974,12 +974,12 @@ fn test_handler_delete_records_success() {
 
 	// Build request
 	mut writer := new_writer()
-	writer.write_i32(1) // 1 topic
+	writer.write_i32(1)
 	writer.write_string('test-topic')
-	writer.write_i32(1) // 1 partition
-	writer.write_i32(0) // partition index
-	writer.write_i64(50) // delete before offset 50
-	writer.write_i32(30000) // timeout
+	writer.write_i32(1)
+	writer.write_i32(0)
+	writer.write_i64(50)
+	writer.write_i32(30000)
 
 	result := handler.handle_delete_records(writer.bytes(), 0) or {
 		assert false, 'handler failed: ${err}'
@@ -1033,12 +1033,12 @@ fn test_handler_delete_records_topic_not_found() {
 
 	// Parse response
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // throttle
-	_ := reader.read_i32() or { 0 } // topics len
-	_ := reader.read_string() or { '' } // name
-	_ := reader.read_i32() or { 0 } // partitions len
-	_ := reader.read_i32() or { 0 } // partition index
-	_ := reader.read_i64() or { 0 } // low watermark
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i64() or { 0 }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
@@ -1211,7 +1211,7 @@ fn test_handler_delete_groups_success_empty_group() {
 
 	// Build request (v0)
 	mut writer := new_writer()
-	writer.write_i32(1) // 1 group
+	writer.write_i32(1)
 	writer.write_string('empty-group')
 
 	result := handler.handle_delete_groups(writer.bytes(), 0) or {
@@ -1261,9 +1261,9 @@ fn test_handler_delete_groups_non_empty_group() {
 
 	// Parse response
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // throttle
-	_ := reader.read_i32() or { 0 } // results len
-	_ := reader.read_string() or { '' } // group id
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.non_empty_group)
@@ -1289,9 +1289,9 @@ fn test_handler_delete_groups_not_found() {
 
 	// Parse response
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // throttle
-	_ := reader.read_i32() or { 0 } // results len
-	_ := reader.read_string() or { '' } // group id
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.group_id_not_found)
@@ -1305,7 +1305,7 @@ fn test_handler_delete_groups_empty_group_id() {
 	// Build request with empty group id
 	mut writer := new_writer()
 	writer.write_i32(1)
-	writer.write_string('') // empty group id
+	writer.write_string('')
 
 	result := handler.handle_delete_groups(writer.bytes(), 0) or {
 		assert false, 'handler failed: ${err}'
@@ -1314,9 +1314,9 @@ fn test_handler_delete_groups_empty_group_id() {
 
 	// Parse response
 	mut reader := new_reader(result)
-	_ := reader.read_i32() or { 0 } // throttle
-	_ := reader.read_i32() or { 0 } // results len
-	_ := reader.read_string() or { '' } // group id
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
 	error_code := reader.read_i16() or { -999 }
 
 	assert error_code == i16(ErrorCode.invalid_group_id)
@@ -1390,6 +1390,6 @@ fn test_handler_delete_groups_multiple() {
 
 	// Verify actual deletions
 	assert 'empty-group' !in storage.groups
-	assert 'test-group-1' in storage.groups // 삭제되지 않음
+	assert 'test-group-1' in storage.groups
 	assert 'dead-group' !in storage.groups
 }

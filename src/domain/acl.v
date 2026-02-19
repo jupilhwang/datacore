@@ -1,4 +1,3 @@
-// Kafka 리소스에 대한 권한 관리를 정의합니다.
 module domain
 
 /// ResourceType은 접근하려는 리소스의 유형을 나타냅니다.
@@ -30,7 +29,7 @@ pub enum ResourceType {
 pub enum PatternType {
 	unknown  = 0
 	any      = 1
-	match    = 2 // 리터럴 매칭
+	match    = 2
 	literal  = 3
 	prefixed = 4
 }

@@ -37,29 +37,29 @@ pub const s3_capability = domain.StorageCapability{
 /// S3Config는 S3 스토리지 설정을 담습니다.
 pub struct S3Config {
 pub mut:
-	bucket_name    string = 'datacore-storage' // S3 버킷 이름
-	region         string = 'us-east-1'        // AWS 리전
-	endpoint       string // 선택사항: MinIO/LocalStack용 엔드포인트
-	access_key     string // AWS 액세스 키
-	secret_key     string // AWS 시크릿 키
-	prefix         string = 'datacore/' // 객체 키 접두사
-	max_retries    int    = 3           // 최대 재시도 횟수
-	retry_delay_ms int    = 100         // 재시도 지연 시간 (밀리초)
-	use_path_style bool   = true        // MinIO 호환성을 위한 경로 스타일 사용
-	timezone       string = 'UTC'       // SigV4 호환성을 위한 타임존
+	bucket_name    string = 'datacore-storage'
+	region         string = 'us-east-1'
+	endpoint       string
+	access_key     string
+	secret_key     string
+	prefix         string = 'datacore/'
+	max_retries    int    = 3
+	retry_delay_ms int    = 100
+	use_path_style bool   = true
+	timezone       string = 'UTC'
 	// 배치 설정
-	batch_timeout_ms int // 배치 타임아웃 (밀리초)
-	batch_max_bytes  i64 // 배치 최대 바이트
+	batch_timeout_ms int
+	batch_max_bytes  i64
 	// 컴팩션 설정
-	compaction_interval_ms int // 컴팩션 간격 (밀리초)
-	target_segment_bytes   i64 // 목표 세그먼트 크기
-	index_cache_ttl_ms     int // 인덱스 캐시 TTL (밀리초)
+	compaction_interval_ms int
+	target_segment_bytes   i64
+	index_cache_ttl_ms     int
 	// 브로커 설정
-	broker_id i32 // 브로커 ID (오프셋 스냅샷에 사용)
+	broker_id i32
 	// 오프셋 배치 설정
-	offset_batch_enabled         bool = true // 오프셋 배치 버퍼 사용 여부
-	offset_flush_interval_ms     int  = 100  // 오프셋 플러시 간격 (밀리초)
-	offset_flush_threshold_count int  = 50   // 즉시 플러시를 트리거하는 변경 건수
+	offset_batch_enabled         bool = true
+	offset_flush_interval_ms     int  = 100
+	offset_flush_threshold_count int  = 50
 }
 
 /// S3StorageAdapter는 S3 스토리지용 StoragePort를 구현합니다.
@@ -68,30 +68,30 @@ pub mut:
 	config S3Config
 	// TTL이 있는 로컬 캐시
 	topic_cache       map[string]CachedTopic
-	topic_id_cache    map[string]string // topic_id (hex) -> topic_name, O(1) 조회용
+	topic_id_cache    map[string]string
 	group_cache       map[string]CachedGroup
 	offset_cache      map[string]map[string]i64
-	topic_index_cache map[string]CachedPartitionIndex // 인덱스 캐시
+	topic_index_cache map[string]CachedPartitionIndex
 	// 스레드 안전성을 위한 락
 	topic_lock  sync.RwMutex
 	group_lock  sync.RwMutex
 	offset_lock sync.RwMutex
 	// 배치 S3 쓰기를 위한 플러시 버퍼
-	topic_partition_buffers map[string]TopicPartitionBuffer // 키: "topic:partition"
+	topic_partition_buffers map[string]TopicPartitionBuffer
 	buffer_lock             sync.Mutex
-	index_update_lock       sync.Mutex // 경쟁 조건 방지를 위한 S3 인덱스 업데이트 락
+	index_update_lock       sync.Mutex
 	is_flushing             bool
 	// 컴팩션 설정
-	min_segment_count_to_compact int = 5 // 컴팩션을 위한 최소 세그먼트 수
+	min_segment_count_to_compact int = 5
 	compactor_running            bool
 	// 메트릭
 	metrics      S3Metrics
 	metrics_lock sync.Mutex
 	// 오프셋 배치 버퍼
-	offset_buffers     map[string]OffsetGroupBuffer // group_id -> 버퍼
+	offset_buffers     map[string]OffsetGroupBuffer
 	offset_buffer_lock sync.Mutex
 	// Iceberg 테이블 작성기 (Iceberg가 활성화된 경우)
-	iceberg_writers map[string]&IcebergWriter // 키: "topic:partition"
+	iceberg_writers map[string]&IcebergWriter
 	iceberg_lock    sync.RwMutex
 }
 
@@ -149,38 +149,38 @@ fn log_message(level LogLevel, component string, message string, context map[str
 struct S3Metrics {
 mut:
 	// 플러시 메트릭
-	flush_count         i64 // 총 플러시 작업 수
-	flush_success_count i64 // 성공한 플러시 작업 수
-	flush_error_count   i64 // 실패한 플러시 작업 수
-	flush_total_ms      i64 // 총 플러시 시간 (밀리초)
+	flush_count         i64
+	flush_success_count i64
+	flush_error_count   i64
+	flush_total_ms      i64
 	// 컴팩션 메트릭
-	compaction_count         i64 // 총 컴팩션 작업 수
-	compaction_success_count i64 // 성공한 컴팩션 작업 수
-	compaction_error_count   i64 // 실패한 컴팩션 작업 수
-	compaction_total_ms      i64 // 총 컴팩션 시간 (밀리초)
-	compaction_bytes_merged  i64 // 병합된 총 바이트 수
+	compaction_count         i64
+	compaction_success_count i64
+	compaction_error_count   i64
+	compaction_total_ms      i64
+	compaction_bytes_merged  i64
 	// S3 API 메트릭
-	s3_get_count    i64 // S3 GET 요청 수
-	s3_put_count    i64 // S3 PUT 요청 수
-	s3_delete_count i64 // S3 DELETE 요청 수
-	s3_list_count   i64 // S3 LIST 요청 수
-	s3_error_count  i64 // S3 API 에러 수
+	s3_get_count    i64
+	s3_put_count    i64
+	s3_delete_count i64
+	s3_list_count   i64
+	s3_error_count  i64
 	// 캐시 메트릭
-	cache_hit_count  i64 // 캐시 히트 수
-	cache_miss_count i64 // 캐시 미스 수
+	cache_hit_count  i64
+	cache_miss_count i64
 	// 오프셋 커밋 메트릭
-	offset_commit_count         i64 // 총 오프셋 커밋 수
-	offset_commit_success_count i64 // 성공한 오프셋 커밋 수
-	offset_commit_error_count   i64 // 실패한 오프셋 커밋 수
+	offset_commit_count         i64
+	offset_commit_success_count i64
+	offset_commit_error_count   i64
 	// 오프셋 플러시 메트릭
-	offset_flush_count         i64 // 총 오프셋 플러시 수
-	offset_flush_success_count i64 // 성공한 오프셋 플러시 수
-	offset_flush_error_count   i64 // 실패한 오프셋 플러시 수
+	offset_flush_count         i64
+	offset_flush_success_count i64
+	offset_flush_error_count   i64
 	// Sync append metrics (acks != 0)
-	sync_append_count         i64 // total sync append operations
-	sync_append_success_count i64 // successful sync append operations
-	sync_append_error_count   i64 // failed sync append operations
-	sync_append_total_ms      i64 // total sync append latency (ms)
+	sync_append_count         i64
+	sync_append_success_count i64
+	sync_append_error_count   i64
+	sync_append_total_ms      i64
 }
 
 /// reset_metrics는 모든 메트릭을 0으로 초기화합니다.
@@ -671,7 +671,7 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		if seg.end_offset < offset {
 			continue
 		}
-		if seg.start_offset > offset + i64(max_bytes / fetch_offset_estimate_divisor) { // 대략적인 추정
+		if seg.start_offset > offset + i64(max_bytes / fetch_offset_estimate_divisor) {
 			break
 		}
 
@@ -681,7 +681,7 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		if offset == seg.start_offset && max_bytes > 0 {
 			mut fetch_size := i64(max_bytes) * fetch_size_multiplier
 			if fetch_size > seg.size_bytes {
-				fetch_size = -1 // 전체 읽기
+				fetch_size = -1
 			}
 			range_end := if fetch_size > 0 { fetch_size } else { -1 }
 			data, _ = a.get_object(seg.key, 0, range_end) or { continue }

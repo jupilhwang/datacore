@@ -21,7 +21,7 @@ fn encode_varint(val u64) []u8 {
 		mut b := u8(n & 0x7F)
 		n = n >> 7
 		if n != 0 {
-			b |= 0x80 // More bytes to follow
+			b |= 0x80
 		}
 		result << b
 		if n == 0 {

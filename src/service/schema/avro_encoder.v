@@ -158,7 +158,7 @@ fn (mut e AvroEncoder) encode_record(data map[string]string, schema AvroSchema) 
 				if field.is_union {
 					result << e.encode_union_value('', field.union_types, schema)!
 				} else {
-					result << [u8(0)] // null marker for union
+					result << [u8(0)]
 				}
 				continue
 			}
@@ -170,7 +170,7 @@ fn (mut e AvroEncoder) encode_record(data map[string]string, schema AvroSchema) 
 				if field.is_union {
 					result << e.encode_union_value('', field.union_types, schema)!
 				} else {
-					result << [u8(0)] // null marker
+					result << [u8(0)]
 				}
 			}
 			continue
@@ -192,7 +192,7 @@ fn (mut e AvroEncoder) decode_record(mut reader AvroReader, schema AvroSchema) !
 			if reader.pos >= reader.data.len {
 				// Use default if available
 				if field.has_default {
-					fields[field.name] = field.field_type // Simplified
+					fields[field.name] = field.field_type
 				}
 				continue
 			}

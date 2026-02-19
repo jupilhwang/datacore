@@ -168,14 +168,14 @@ fn test_register_duplicate_schema() {
 	assert id1 == id2
 
 	stats := registry.get_stats()
-	assert stats.total_schemas == 1 // Same schema, not duplicated
+	assert stats.total_schemas == 1
 }
 
 // Test Multiple Schema Versions
 fn test_register_multiple_versions() {
 	storage := new_mock_storage()
 	config := RegistryConfig{
-		default_compatibility: .none // Disable compatibility for this test
+		default_compatibility: .none
 	}
 	mut registry := new_registry(storage, config)
 
@@ -192,7 +192,7 @@ fn test_register_multiple_versions() {
 		return
 	}
 
-	assert id1 != id2 // Different schemas get different IDs
+	assert id1 != id2
 
 	versions := registry.list_versions('user-value') or { []int{} }
 	assert versions.len == 2
@@ -452,11 +452,11 @@ fn test_compute_fingerprint() {
 	fp1 := compute_fingerprint(schema)
 	fp2 := compute_fingerprint(schema)
 
-	assert fp1 == fp2 // Same schema = same fingerprint
-	assert fp1.len == 32 // MD5 hex is 32 chars
+	assert fp1 == fp2
+	assert fp1.len == 32
 
 	fp3 := compute_fingerprint('{"type":"string"}')
-	assert fp1 != fp3 // Different schema = different fingerprint
+	assert fp1 != fp3
 }
 
 // Test Test Compatibility

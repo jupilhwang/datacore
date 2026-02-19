@@ -15,11 +15,11 @@ pub mut:
 	adapter           &S3StorageAdapter
 	config            IcebergConfig
 	table_metadata    IcebergMetadata
-	partition_buffers map[string][]parquet.ParquetRecord // 파티션별 버퍼
+	partition_buffers map[string][]parquet.ParquetRecord
 	buffer_lock       sync.Mutex
 	current_schema    IcebergSchema
 	partition_spec    IcebergPartitionSpec
-	file_counter      int // 파일명 생성용 카운터
+	file_counter      int
 }
 
 /// new_iceberg_writer는 새로운 Iceberg Writer를 생성합니다.
@@ -116,7 +116,7 @@ fn (w &IcebergWriter) compute_partition_values(record domain.Record) map[string]
 			'identity' {
 				// 원본 값을 그대로 사용
 				match field.source_id {
-					2 { values[field.name] = record.timestamp.format_ss()[0..10] } // timestamp 날짜만
+					2 { values[field.name] = record.timestamp.format_ss()[0..10] }
 					else { values[field.name] = 'unknown' }
 				}
 			}

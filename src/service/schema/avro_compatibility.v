@@ -8,27 +8,27 @@ module schema
 struct AvroField {
 mut:
 	name        string
-	field_type  string // primitive type or complex type name
+	field_type  string
 	has_default bool
-	is_nullable bool // union with null
+	is_nullable bool
 	is_array    bool
 	is_map      bool
 	is_union    bool
-	union_types []string // types in union
+	union_types []string
 }
 
 // AvroSchema represents a parsed Avro schema
 pub struct AvroSchema {
 pub mut:
-	schema_type string // record, enum, array, map, union, fixed, primitive
-	name        string // schema name (for record/enum)
+	schema_type string
+	name        string
 	namespace   string
-	fields      []AvroField // for record type
-	symbols     []string    // for enum type
-	items_type  string      // for array type
-	values_type string      // for map type
-	union_types []string    // for union type
-	fixed_size  int         // for fixed type
+	fields      []AvroField
+	symbols     []string
+	items_type  string
+	values_type string
+	union_types []string
+	fixed_size  int
 }
 
 // Avro Schema Compatibility
@@ -277,7 +277,7 @@ fn parse_avro_fields(schema_str string) ![]AvroField {
 	fields_start := schema_str.index('"fields"') or { return []AvroField{} }
 
 	// Find the array start after "fields":
-	mut pos := fields_start + 8 // length of '"fields"'
+	mut pos := fields_start + 8
 	for pos < schema_str.len && schema_str[pos] != `[` {
 		pos += 1
 	}
@@ -302,7 +302,7 @@ fn parse_avro_fields(schema_str string) ![]AvroField {
 
 	// Parse individual field objects
 	mut fields := []AvroField{}
-	mut field_start := 1 // skip opening [
+	mut field_start := 1
 	mut brace_depth := 0
 
 	for i := 1; i < fields_json.len - 1; i++ {

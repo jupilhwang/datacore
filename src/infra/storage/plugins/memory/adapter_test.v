@@ -268,7 +268,7 @@ fn test_commit_and_fetch_offsets() {
 		domain.TopicPartition{
 			topic:     'topic-1'
 			partition: 2
-		}, // 커밋되지 않음
+		},
 	]
 
 	results := adapter.fetch_offsets('test-group', partitions)!
@@ -276,7 +276,7 @@ fn test_commit_and_fetch_offsets() {
 	assert results.len == 3
 	assert results[0].offset == 100
 	assert results[1].offset == 200
-	assert results[2].offset == -1 // 커밋되지 않음
+	assert results[2].offset == -1
 }
 
 fn test_fetch_offsets_unknown_group() {
@@ -318,7 +318,7 @@ fn test_max_messages_retention() {
 
 	// 조회는 오프셋 5부터 시작해야 함
 	result := adapter.fetch('test-topic', 0, 0, 1048576)!
-	assert result.records.len == 0 // 오프셋 0-4 삭제됨
+	assert result.records.len == 0
 
 	result2 := adapter.fetch('test-topic', 0, 5, 1048576)!
 	assert result2.records.len == 5

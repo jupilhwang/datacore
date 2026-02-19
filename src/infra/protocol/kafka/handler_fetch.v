@@ -16,55 +16,55 @@ import domain
 /// max_wait_ms와 min_bytes를 통해 long polling을 지원합니다.
 pub struct FetchRequest {
 pub:
-	replica_id            i32 // 복제본 ID (-1: 컨슈머, 0+: 팔로워 브로커)
+	replica_id            i32
 	max_wait_ms           i32
-	min_bytes             i32                          // 최소 응답 바이트 수
-	max_bytes             i32                          // 최대 응답 바이트 수
-	isolation_level       i8                           // 격리 수준 (0: read_uncommitted, 1: read_committed)
-	topics                []FetchRequestTopic          // 조회할 토픽 목록
-	forgotten_topics_data []FetchRequestForgottenTopic // 세션에서 제거할 토픽 (v7+)
+	min_bytes             i32
+	max_bytes             i32
+	isolation_level       i8
+	topics                []FetchRequestTopic
+	forgotten_topics_data []FetchRequestForgottenTopic
 }
 
 /// Fetch 요청에서 잊혀진 토픽 - 세션 기반 fetch에서 더 이상 필요없는 토픽
 pub struct FetchRequestForgottenTopic {
 pub:
 	name       string
-	topic_id   []u8  // 토픽 UUID (v13+)
-	partitions []i32 // 잊혀진 파티션 목록
+	topic_id   []u8 // 토픽 UUID (v13+)
+	partitions []i32
 }
 
 /// Fetch 요청 토픽 - 조회할 토픽 정보
 pub struct FetchRequestTopic {
 pub:
 	name       string
-	topic_id   []u8                    // 토픽 UUID (v13+, 16바이트)
-	partitions []FetchRequestPartition // 조회할 파티션 목록
+	topic_id   []u8 // 토픽 UUID (v13+, 16바이트)
+	partitions []FetchRequestPartition
 }
 
 /// Fetch 요청 파티션 - 조회할 파티션 정보
 pub struct FetchRequestPartition {
 pub:
 	partition           i32
-	fetch_offset        i64 // 조회 시작 오프셋
-	partition_max_bytes i32 // 파티션당 최대 바이트 수
+	fetch_offset        i64
+	partition_max_bytes i32
 }
 
 /// Fetch 응답 - 조회된 메시지 데이터를 포함하는 응답
 pub struct FetchResponse {
 pub:
 	throttle_time_ms i32
-	error_code       i16                  // 최상위 에러 코드
-	session_id       i32                  // 세션 ID (v7+)
-	topics           []FetchResponseTopic // 응답 토픽 목록
-	node_endpoints   []NodeEndpoint       // 노드 엔드포인트 목록 (v16+)
+	error_code       i16
+	session_id       i32
+	topics           []FetchResponseTopic
+	node_endpoints   []NodeEndpoint
 }
 
 /// Fetch 응답 토픽 - 토픽별 조회 결과
 pub struct FetchResponseTopic {
 pub:
 	name       string
-	topic_id   []u8                     // 토픽 UUID (v13+)
-	partitions []FetchResponsePartition // 파티션별 응답
+	topic_id   []u8 // 토픽 UUID (v13+)
+	partitions []FetchResponsePartition
 }
 
 /// Fetch 응답 파티션 - 파티션별 조회 결과
@@ -72,10 +72,10 @@ pub struct FetchResponsePartition {
 pub:
 	partition_index    i32
 	error_code         i16
-	high_watermark     i64  // 하이 워터마크 (커밋된 최신 오프셋)
-	last_stable_offset i64  // 마지막 안정 오프셋 (트랜잭션 완료된 오프셋)
-	log_start_offset   i64  // 로그 시작 오프셋
-	records            []u8 // 레코드 배치 데이터
+	high_watermark     i64
+	last_stable_offset i64
+	log_start_offset   i64
+	records            []u8
 }
 
 /// 노드 엔드포인트 - 브로커 노드 정보 (v16+)
@@ -84,7 +84,7 @@ pub:
 	node_id i32
 	host    string
 	port    i32
-	rack    string // 랙 정보 (nullable)
+	rack    string
 }
 
 // Fetch 요청을 파싱합니다.
@@ -113,8 +113,8 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 
 	// v7+에서 세션 기반 fetch 지원
 	if version >= 7 {
-		_ = reader.read_i32()! // session_id (무상태 모드에서는 무시)
-		_ = reader.read_i32()! // session_epoch (무상태 모드에서는 무시)
+		_ = reader.read_i32()!
+		_ = reader.read_i32()!
 	}
 
 	// 토픽 배열 파싱
@@ -143,14 +143,14 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 
 			// v9+에서 current_leader_epoch 필드 추가 (무시)
 			if version >= 9 {
-				_ = reader.read_i32()! // current_leader_epoch
+				_ = reader.read_i32()!
 			}
 
 			fetch_offset := reader.read_i64()!
 
 			// v5+에서 log_start_offset 필드 추가 (무시)
 			if version >= 5 {
-				_ = reader.read_i64()! // log_start_offset
+				_ = reader.read_i64()!
 			}
 
 			partition_max_bytes := reader.read_i32()!
@@ -272,14 +272,14 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 			// v4+에서 aborted_transactions 배열 추가 (빈 배열)
 			if version >= 4 {
 				if is_flexible {
-					writer.write_uvarint(1) // compact array: 길이 + 1
+					writer.write_uvarint(1)
 				} else {
 					writer.write_array_len(0)
 				}
 			}
 			// v11+에서 preferred_read_replica 필드 추가
 			if version >= 11 {
-				writer.write_i32(-1) // -1: 선호 복제본 없음
+				writer.write_i32(-1)
 			}
 			// 레코드 배치 데이터 인코딩
 			if is_flexible {
@@ -442,7 +442,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 		error_code:       0
 		session_id:       0
 		topics:           topics
-		node_endpoints:   []NodeEndpoint{} // v16+에서 사용, 현재는 빈 배열
+		node_endpoints:   []NodeEndpoint{}
 	}
 }
 
@@ -469,8 +469,8 @@ fn (mut h Handler) get_topic_compression_type(topic_name string) compression.Com
 // CompressionResult는 압축 결과를 나타냅니다.
 struct CompressionResult {
 pub:
-	data        []u8 // 압축된 데이터 또는 원본 데이터
-	bytes_saved i64  // 절약된 바이트 수 (0 if no compression)
+	data        []u8
+	bytes_saved i64
 }
 
 // compress_records_for_fetch는 Fetch 응답용으로 레코드를 압축합니다.
@@ -597,16 +597,16 @@ fn simple_fetch_to_fetch_request(simple SimpleFetchRequest) FetchRequest {
 /// zerocopy_fetch.v와의 호환성을 위해 사용됩니다.
 pub struct SimpleFetchRequest {
 pub:
-	replica_id       i32                // 복제본 ID (-1: 컨슈머)
-	max_wait_ms      i32                // 최대 대기 시간
-	min_bytes        i32                // 최소 응답 바이트
-	max_bytes        i32                // 최대 응답 바이트
-	isolation_level  i8                 // 격리 수준
-	session_id       i32                // 세션 ID (무상태: 무시, 항상 0으로 응답)
-	session_epoch    i32                // 세션 에포크 (무상태: 무시)
-	topics           []SimpleFetchTopic // 조회할 토픽 목록
-	forgotten_topics []ForgottenTopic   // 잊혀진 토픽 (무상태: 무시)
-	rack_id          string             // 랙 ID (v11+)
+	replica_id       i32
+	max_wait_ms      i32
+	min_bytes        i32
+	max_bytes        i32
+	isolation_level  i8
+	session_id       i32
+	session_epoch    i32
+	topics           []SimpleFetchTopic
+	forgotten_topics []ForgottenTopic
+	rack_id          string
 }
 
 /// SimpleFetchTopic - Fetch 요청의 토픽 데이터
@@ -621,11 +621,11 @@ pub:
 pub struct SimpleFetchPartition {
 pub:
 	partition            i32
-	current_leader_epoch i32 // 현재 리더 에포크 (v9+)
-	fetch_offset         i64 // 조회 시작 오프셋
-	last_fetched_epoch   i32 // 마지막 조회 에포크 (v12+)
-	log_start_offset     i64 // 로그 시작 오프셋 (v5+)
-	partition_max_bytes  i32 // 파티션당 최대 바이트
+	current_leader_epoch i32
+	fetch_offset         i64
+	last_fetched_epoch   i32
+	log_start_offset     i64
+	partition_max_bytes  i32
 }
 
 /// ForgottenTopic - 세션 추적용 잊혀진 토픽
@@ -633,7 +633,7 @@ pub struct ForgottenTopic {
 pub:
 	topic_id   []u8
 	name       string
-	partitions []i32 // 잊혀진 파티션 목록
+	partitions []i32
 }
 
 /// 경량 Fetch 요청 파서
@@ -644,7 +644,7 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 	// v15+에서는 replica_id가 본문에서 제거되고 tagged field의 replica_state로 대체됨
 	// v0-14: replica_id (INT32)가 첫 번째 필드
 	// v15+: replica_id가 본문에 없음 (tagged field에 replica_state로 존재)
-	mut replica_id := i32(-1) // 컨슈머의 기본값
+	mut replica_id := i32(-1)
 	if version < 15 {
 		replica_id = reader.read_i32()!
 	}

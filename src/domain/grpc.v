@@ -1,26 +1,22 @@
-// gRPC 스트리밍 프로토콜 도메인 모델
 module domain
 
 import time
 
-// gRPC 요청/응답 타입
-// V에서 Protocol Buffer 메시지에 해당하는 구조체들
-
 /// GrpcProduceRequest는 gRPC produce 요청을 나타냅니다.
 pub struct GrpcProduceRequest {
 pub:
-	topic     string       // 대상 토픽
-	partition ?i32         // 대상 파티션 (선택사항, -1이면 자동 할당)
-	records   []GrpcRecord // 전송할 레코드 목록
+	topic     string
+	partition ?i32
+	records   []GrpcRecord
 }
 
 /// GrpcRecord는 gRPC 형식의 단일 레코드를 나타냅니다.
 pub struct GrpcRecord {
 pub:
-	key       []u8            // 레코드 키 (선택사항)
-	value     []u8            // 레코드 값
-	headers   map[string][]u8 // 레코드 헤더
-	timestamp i64             // 타임스탬프 (0이면 서버 시간 사용)
+	key       []u8
+	value     []u8
+	headers   map[string][]u8
+	timestamp i64
 }
 
 /// GrpcProduceResponse는 gRPC produce 응답을 나타냅니다.
@@ -28,10 +24,10 @@ pub struct GrpcProduceResponse {
 pub:
 	topic        string
 	partition    i32
-	base_offset  i64 // 생성된 레코드의 기본 오프셋
-	record_count int // 생성된 레코드 수
-	timestamp    i64 // 로그 추가 시간
-	error_code   i32 // 에러 코드 (0 = 성공)
+	base_offset  i64
+	record_count int
+	timestamp    i64
+	error_code   i32
 	error_msg    string
 }
 
@@ -60,17 +56,15 @@ pub fn new_grpc_produce_error(topic string, partition i32, code i32, msg string)
 	}
 }
 
-// Consume 스트리밍
-
 /// GrpcConsumeRequest는 gRPC consume 요청을 나타냅니다.
 pub struct GrpcConsumeRequest {
 pub:
-	topic       string // 소비할 토픽
+	topic       string
 	partition   i32
-	offset      i64     // 시작 오프셋
-	max_records int     // 배치당 최대 레코드 수
-	max_bytes   int     // 배치당 최대 바이트 수
-	group_id    ?string // 컨슈머 그룹 ID (선택사항)
+	offset      i64
+	max_records int
+	max_bytes   int
+	group_id    ?string
 }
 
 /// GrpcConsumeResponse는 gRPC consume 응답(스트림 요소)을 나타냅니다.
@@ -78,10 +72,10 @@ pub struct GrpcConsumeResponse {
 pub:
 	topic          string
 	partition      i32
-	records        []GrpcRecord // 조회된 레코드 목록
-	high_watermark i64          // 하이 워터마크 오프셋
-	next_offset    i64          // 다음 조회 오프셋
-	error_code     i32          // 에러 코드 (0 = 성공)
+	records        []GrpcRecord
+	high_watermark i64
+	next_offset    i64
+	error_code     i32
 	error_msg      string
 }
 
@@ -109,25 +103,23 @@ pub fn new_grpc_consume_error(topic string, partition i32, code i32, msg string)
 	}
 }
 
-// 양방향 스트리밍
-
 /// GrpcStreamRequest는 양방향 스트림 요청을 나타냅니다.
 pub struct GrpcStreamRequest {
 pub:
-	request_type GrpcStreamRequestType // 요청 유형
-	produce      ?GrpcProduceRequest   // produce 요청 (유형이 produce인 경우)
-	consume      ?GrpcConsumeRequest   // consume 요청 (유형이 subscribe인 경우)
-	commit       ?GrpcCommitRequest    // commit 요청 (유형이 commit인 경우)
-	ack          ?GrpcAckRequest       // ack 요청 (유형이 ack인 경우)
+	request_type GrpcStreamRequestType
+	produce      ?GrpcProduceRequest
+	consume      ?GrpcConsumeRequest
+	commit       ?GrpcCommitRequest
+	ack          ?GrpcAckRequest
 }
 
 /// GrpcStreamRequestType은 스트림 요청의 유형을 나타냅니다.
 pub enum GrpcStreamRequestType {
-	produce   // 레코드 전송
-	subscribe // 토픽/파티션 구독
-	commit    // 오프셋 커밋
-	ack       // 메시지 수신 확인
-	ping      // Keep-alive ping
+	produce
+	subscribe
+	commit
+	ack
+	ping
 }
 
 /// grpc_stream_request_type_from_int는 정수를 GrpcStreamRequestType으로 변환합니다.
@@ -145,8 +137,8 @@ pub fn grpc_stream_request_type_from_int(i int) GrpcStreamRequestType {
 /// GrpcCommitRequest는 오프셋 커밋 요청을 나타냅니다.
 pub struct GrpcCommitRequest {
 pub:
-	group_id string                // 컨슈머 그룹 ID
-	offsets  []GrpcPartitionOffset // 커밋할 오프셋 목록
+	group_id string
+	offsets  []GrpcPartitionOffset
 }
 
 /// GrpcPartitionOffset은 파티션 오프셋을 나타냅니다.
@@ -154,8 +146,8 @@ pub struct GrpcPartitionOffset {
 pub:
 	topic     string
 	partition i32
-	offset    i64    // 커밋할 오프셋
-	metadata  string // 커밋 메타데이터
+	offset    i64
+	metadata  string
 }
 
 /// GrpcAckRequest는 메시지 수신 확인을 나타냅니다.
@@ -163,27 +155,27 @@ pub struct GrpcAckRequest {
 pub:
 	topic     string
 	partition i32
-	offset    i64 // 확인된 오프셋
+	offset    i64
 }
 
 /// GrpcStreamResponse는 양방향 스트림 응답을 나타냅니다.
 pub struct GrpcStreamResponse {
 pub:
-	response_type GrpcStreamResponseType // 응답 유형
-	produce       ?GrpcProduceResponse   // produce 결과
-	message       ?GrpcMessageResponse   // 소비된 메시지
-	commit        ?GrpcCommitResponse    // commit 결과
-	error         ?GrpcErrorResponse     // 에러 응답
-	pong          ?GrpcPongResponse      // pong 응답
+	response_type GrpcStreamResponseType
+	produce       ?GrpcProduceResponse
+	message       ?GrpcMessageResponse
+	commit        ?GrpcCommitResponse
+	error         ?GrpcErrorResponse
+	pong          ?GrpcPongResponse
 }
 
 /// GrpcStreamResponseType은 스트림 응답의 유형을 나타냅니다.
 pub enum GrpcStreamResponseType {
-	produce_ack // produce 확인
-	message     // 소비된 메시지
-	commit_ack  // commit 확인
-	error       // 에러 응답
-	pong        // pong 응답
+	produce_ack
+	message
+	commit_ack
+	error
+	pong
 }
 
 /// GrpcMessageResponse는 소비된 메시지를 나타냅니다.
@@ -191,18 +183,18 @@ pub struct GrpcMessageResponse {
 pub:
 	topic     string
 	partition i32
-	offset    i64             // 메시지 오프셋
-	timestamp i64             // 메시지 타임스탬프
-	key       []u8            // 메시지 키
-	value     []u8            // 메시지 값
-	headers   map[string][]u8 // 메시지 헤더
+	offset    i64
+	timestamp i64
+	key       []u8
+	value     []u8
+	headers   map[string][]u8
 }
 
 /// GrpcCommitResponse는 커밋 결과를 나타냅니다.
 pub struct GrpcCommitResponse {
 pub:
-	success bool   // 커밋 성공 여부
-	message string // 결과 메시지
+	success bool
+	message string
 }
 
 /// GrpcErrorResponse는 에러를 나타냅니다.
@@ -215,43 +207,41 @@ pub:
 /// GrpcPongResponse는 pong을 나타냅니다.
 pub struct GrpcPongResponse {
 pub:
-	timestamp i64 // 서버 타임스탬프
+	timestamp i64
 }
-
-// gRPC 연결 상태
 
 /// GrpcConnectionState는 gRPC 연결의 상태를 나타냅니다.
 pub enum GrpcConnectionState {
-	connecting // 초기 연결 중
-	ready      // 요청 처리 준비 완료
-	streaming  // 활성 스트리밍 중
-	closing    // 정상 종료 중
-	closed     // 연결 종료됨
+	connecting
+	ready
+	streaming
+	closing
+	closed
 }
 
 /// GrpcConnection은 활성 gRPC 연결을 나타냅니다.
 pub struct GrpcConnection {
 pub:
-	id         string // 연결 ID
-	client_ip  string // 클라이언트 IP 주소
-	created_at i64    // 연결 생성 시간
+	id         string
+	client_ip  string
+	created_at i64
 pub mut:
-	state          GrpcConnectionState // 현재 상태
-	subscriptions  []Subscription      // 활성 구독 목록 (consume 스트림용)
-	requests_recv  i64                 // 총 수신 요청 수
-	responses_sent i64                 // 총 송신 응답 수
-	bytes_recv     i64                 // 총 수신 바이트
-	bytes_sent     i64                 // 총 송신 바이트
-	last_activity  i64                 // 마지막 활동 타임스탬프
-	stream_type    GrpcStreamType      // 스트림 유형
+	state          GrpcConnectionState
+	subscriptions  []Subscription
+	requests_recv  i64
+	responses_sent i64
+	bytes_recv     i64
+	bytes_sent     i64
+	last_activity  i64
+	stream_type    GrpcStreamType
 }
 
 /// GrpcStreamType은 gRPC 스트림의 유형을 나타냅니다.
 pub enum GrpcStreamType {
-	unary            // 단일 요청/응답
-	server_streaming // 서버 스트리밍 (예: consume)
-	client_streaming // 클라이언트 스트리밍 (예: 배치 produce)
-	bidirectional    // 양방향 스트리밍
+	unary
+	server_streaming
+	client_streaming
+	bidirectional
 }
 
 /// new_grpc_connection은 새로운 gRPC 연결을 생성합니다.
@@ -272,28 +262,24 @@ pub fn new_grpc_connection(client_ip string, stream_type GrpcStreamType) GrpcCon
 	}
 }
 
-// gRPC 설정
-
 /// GrpcConfig는 gRPC 서버 설정을 보관합니다.
 pub struct GrpcConfig {
 pub:
-	port                   int  = 9093    // gRPC 서버 포트
-	max_connections        int  = 10000   // 최대 동시 연결 수
-	max_message_size       int  = 4194304 // 최대 메시지 크기 (4MB)
-	max_concurrent_streams int  = 100     // 연결당 최대 동시 스트림 수
-	keepalive_time_ms      int  = 30000   // Keepalive 시간 (30초)
-	keepalive_timeout_ms   int  = 10000   // Keepalive 타임아웃 (10초)
-	connection_timeout_ms  int  = 300000  // 연결 타임아웃 (5분)
-	max_batch_size         int  = 1000    // 배치당 최대 레코드 수
-	enable_reflection      bool = true    // 디버깅용 gRPC reflection 활성화
+	port                   int  = 9093
+	max_connections        int  = 10000
+	max_message_size       int  = 4194304
+	max_concurrent_streams int  = 100
+	keepalive_time_ms      int  = 30000
+	keepalive_timeout_ms   int  = 10000
+	connection_timeout_ms  int  = 300000
+	max_batch_size         int  = 1000
+	enable_reflection      bool = true
 }
 
 /// default_grpc_config는 기본 gRPC 설정을 반환합니다.
 pub fn default_grpc_config() GrpcConfig {
 	return GrpcConfig{}
 }
-
-// gRPC 에러 코드 (Kafka 호환)
 
 pub const grpc_error_none = 0
 pub const grpc_error_unknown = -1
@@ -334,13 +320,10 @@ pub fn grpc_error_message(code i32) string {
 	}
 }
 
-// 바이너리 인코딩 헬퍼 (gRPC 와이어 포맷용)
-
 /// encode는 GrpcRecord를 바이트로 인코딩합니다.
 pub fn (r &GrpcRecord) encode() []u8 {
 	mut buf := []u8{cap: 64 + r.key.len + r.value.len}
 
-	// 키 길이 (4바이트) + 키
 	key_len := r.key.len
 	buf << u8(key_len >> 24)
 	buf << u8(key_len >> 16)
@@ -348,7 +331,6 @@ pub fn (r &GrpcRecord) encode() []u8 {
 	buf << u8(key_len)
 	buf << r.key
 
-	// 값 길이 (4바이트) + 값
 	val_len := r.value.len
 	buf << u8(val_len >> 24)
 	buf << u8(val_len >> 16)
@@ -356,7 +338,6 @@ pub fn (r &GrpcRecord) encode() []u8 {
 	buf << u8(val_len)
 	buf << r.value
 
-	// 타임스탬프 (8바이트)
 	ts := r.timestamp
 	buf << u8(ts >> 56)
 	buf << u8(ts >> 48)
@@ -367,22 +348,18 @@ pub fn (r &GrpcRecord) encode() []u8 {
 	buf << u8(ts >> 8)
 	buf << u8(ts)
 
-	// 헤더 개수 (4바이트)
 	header_count := r.headers.len
 	buf << u8(header_count >> 24)
 	buf << u8(header_count >> 16)
 	buf << u8(header_count >> 8)
 	buf << u8(header_count)
 
-	// 헤더들
 	for k, v in r.headers {
-		// 키 길이 (2바이트) + 키
 		k_len := k.len
 		buf << u8(k_len >> 8)
 		buf << u8(k_len)
 		buf << k.bytes()
 
-		// 값 길이 (2바이트) + 값
 		v_len := v.len
 		buf << u8(v_len >> 8)
 		buf << u8(v_len)
@@ -400,7 +377,6 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 
 	mut pos := 0
 
-	// 키 길이 + 키
 	key_len := int(u32(data[pos]) << 24 | u32(data[pos + 1]) << 16 | u32(data[pos + 2]) << 8 | u32(data[
 		pos + 3]))
 	pos += 4
@@ -410,7 +386,6 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	key := data[pos..pos + key_len].clone()
 	pos += key_len
 
-	// 값 길이 + 값
 	if pos + 4 > data.len {
 		return error('Data too short for value length')
 	}
@@ -423,7 +398,6 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	value := data[pos..pos + val_len].clone()
 	pos += val_len
 
-	// 타임스탬프
 	if pos + 8 > data.len {
 		return error('Data too short for timestamp')
 	}
@@ -432,7 +406,6 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 		pos + 7]))
 	pos += 8
 
-	// 헤더 개수
 	if pos + 4 > data.len {
 		return error('Data too short for header count')
 	}
@@ -440,10 +413,8 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 		pos + 3]))
 	pos += 4
 
-	// 헤더들
 	mut headers := map[string][]u8{}
 	for _ in 0 .. header_count {
-		// 헤더 키
 		if pos + 2 > data.len {
 			return error('Data too short for header key length')
 		}
@@ -455,7 +426,6 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 		hk := data[pos..pos + hk_len].bytestr()
 		pos += hk_len
 
-		// 헤더 값
 		if pos + 2 > data.len {
 			return error('Data too short for header value length')
 		}

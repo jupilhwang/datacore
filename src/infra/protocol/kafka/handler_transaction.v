@@ -55,7 +55,7 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 		// In production, this should be coordinated across brokers
 		producer_id = rand.i64()
 		if producer_id < 0 {
-			producer_id = -producer_id // Ensure positive
+			producer_id = -producer_id
 		}
 		producer_epoch = 0
 	} else {
@@ -121,7 +121,7 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 				for p in t.partitions {
 					p_results << AddPartitionsToTxnPartitionResult{
 						partition_index: p
-						error_code:      i16(ErrorCode.invalid_txn_state) // Simplified error mapping
+						error_code:      i16(ErrorCode.invalid_txn_state)
 					}
 				}
 				results << AddPartitionsToTxnResult{
@@ -202,7 +202,7 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 		txn_coord.end_txn(req.transactional_id, req.producer_id, req.producer_epoch, result) or {
 			return EndTxnResponse{
 				throttle_time_ms: default_throttle_time_ms
-				error_code:       i16(ErrorCode.invalid_txn_state) // Simplified error mapping
+				error_code:       i16(ErrorCode.invalid_txn_state)
 			}.encode(version)
 		}
 
@@ -238,7 +238,7 @@ fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 			req.group_id) or {
 			return AddOffsetsToTxnResponse{
 				throttle_time_ms: default_throttle_time_ms
-				error_code:       i16(ErrorCode.invalid_txn_state) // Simplified error mapping
+				error_code:       i16(ErrorCode.invalid_txn_state)
 			}.encode(version)
 		}
 
@@ -343,7 +343,7 @@ fn build_txn_control_records(producer_id i64, producer_epoch i16, committed bool
 	// - version: INT16 (0)
 	// - type: INT16 (0=ABORT, 1=COMMIT)
 	mut key_writer := new_writer()
-	key_writer.write_i16(0) // version
+	key_writer.write_i16(0)
 	key_writer.write_i16(marker_type)
 
 	// 컨트롤 레코드 값 형식 (Kafka 표준):
@@ -351,9 +351,9 @@ fn build_txn_control_records(producer_id i64, producer_epoch i16, committed bool
 	// - type: INT16 (0=ABORT, 1=COMMIT)
 	// - coordinator_epoch: INT32 (선택사항, 0으로 설정)
 	mut value_writer := new_writer()
-	value_writer.write_i16(0) // version
+	value_writer.write_i16(0)
 	value_writer.write_i16(marker_type)
-	value_writer.write_i32(0) // coordinator_epoch
+	value_writer.write_i32(0)
 
 	return [
 		domain.Record{

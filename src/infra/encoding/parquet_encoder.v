@@ -113,7 +113,7 @@ pub mut:
 	partition int
 	key       []u8
 	value     []u8
-	headers   string // JSON 형식으로 저장
+	headers   string
 }
 
 /// ParquetEncoder는 Kafka Record를 Parquet 형식으로 인코딩합니다.
@@ -314,7 +314,7 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	// 여기서는 메타데이터만 반환하고 실제 데이터는 모킹
 	// 실제 구현에서는 C 바인딩이나 외부 프로세스 호출 필요
 	mut mock_data := []u8{}
-	mock_data << 'PAR1'.bytes() // Parquet 매직 넘버
+	mock_data << 'PAR1'.bytes()
 	mock_data << json.encode(e.records).bytes()
 	mock_data << 'PAR1'.bytes()
 
@@ -329,7 +329,7 @@ pub fn encode_batch(records []ParquetRecord, compression ParquetCompression) !([
 		buffer:        []
 		records:       records.clone()
 		current_size:  i64(records.len * 100)
-		max_file_size: 134217728 // 128MB
+		max_file_size: 134217728
 	}
 
 	return encoder.encode()!

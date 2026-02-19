@@ -8,9 +8,9 @@ import time
 /// 기본 데이터를 소유하지 않고 뷰만 제공합니다.
 pub struct ByteSlice {
 pub:
-	data   []u8 // 기본 데이터에 대한 참조
-	offset int  // 원본 배열에서의 시작 오프셋
-	length int  // 이 슬라이스의 길이
+	data   []u8
+	offset int
+	length int
 }
 
 /// new는 바이트 배열에서 새 ByteSlice를 생성합니다.
@@ -76,13 +76,13 @@ pub fn (s ByteSlice) is_empty() bool {
 /// 데이터 복사 없이 레코드 필드를 지연 파싱합니다.
 pub struct RecordView {
 pub:
-	raw_data     ByteSlice // 원본 원시 바이트
-	key_offset   int       // 키가 시작하는 오프셋
-	key_length   int       // 키 길이
-	value_offset int       // 값이 시작하는 오프셋
-	value_length int       // 값 길이
-	timestamp    i64       // 레코드 타임스탬프
-	offset       i64       // 파티션 내 레코드 오프셋
+	raw_data     ByteSlice
+	key_offset   int
+	key_length   int
+	value_offset int
+	value_length int
+	timestamp    i64
+	offset       i64
 }
 
 /// parse는 원시 바이트에서 RecordView를 생성합니다 (제로카피 파싱).
@@ -171,8 +171,8 @@ pub fn (r RecordView) value_bytes() []u8 {
 /// SliceReader는 바이트 스트림 파싱을 위한 효율적인 순차 리더입니다.
 pub struct SliceReader {
 pub mut:
-	slice    ByteSlice // 기본 슬라이스
-	position int       // 현재 읽기 위치
+	slice    ByteSlice
+	position int
 }
 
 /// new는 새 SliceReader를 생성합니다.
@@ -288,9 +288,9 @@ pub fn (mut r SliceReader) seek(pos int) ! {
 /// BatchSliceIterator는 레코드 배치에 대한 제로카피 이터레이터입니다.
 pub struct BatchSliceIterator {
 mut:
-	reader       SliceReader // 기본 리더
-	record_count int         // 레코드 수
-	current      int         // 현재 인덱스
+	reader       SliceReader
+	record_count int
+	current      int
 }
 
 /// new는 새 배치 이터레이터를 생성합니다.
@@ -315,10 +315,10 @@ pub fn (b BatchSliceIterator) has_next() bool {
 /// SlicePool은 재사용 가능한 ByteSlice 객체 풀입니다.
 pub struct SlicePool {
 mut:
-	pool      []ByteSlice // 풀에 있는 슬라이스들
-	pool_size int         // 풀 크기
-	created   u64         // 생성된 수
-	reused    u64         // 재사용된 수
+	pool      []ByteSlice
+	pool_size int
+	created   u64
+	reused    u64
 }
 
 /// new는 새 SlicePool을 생성합니다.
@@ -381,8 +381,8 @@ fn parse_i64_be(data []u8, offset int) i64 {
 /// SliceBenchmark는 슬라이스 연산 벤치마크입니다.
 pub struct SliceBenchmark {
 mut:
-	iterations u64 // 반복 횟수
-	data_size  int // 데이터 크기
+	iterations u64
+	data_size  int
 }
 
 /// new는 새 SliceBenchmark를 생성합니다.

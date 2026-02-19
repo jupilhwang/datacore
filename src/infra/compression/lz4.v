@@ -17,8 +17,8 @@ pub struct Lz4Compressor {
 const lz4_magic_number = [u8(0x04), 0x22, 0x4d, 0x18]
 
 /// LZ4 프레임 헤더 플래그
-const lz4_frame_version = u8(0x40) // 버전 1.0
-const lz4_block_default = u8(0x40) // 64KB 블록 크기
+const lz4_frame_version = u8(0x40)
+const lz4_block_default = u8(0x40)
 
 /// new_lz4_compressor는 새 Lz4Compressor를 생성합니다.
 pub fn new_lz4_compressor() &Lz4Compressor {
@@ -39,8 +39,8 @@ pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 	result << lz4_magic_number
 
 	// 프레임 헤더
-	flg := lz4_frame_version | 0x00 // 독립 블록, 콘텐츠 체크섬 없음
-	bd := lz4_block_default // 64KB 블록 크기
+	flg := lz4_frame_version | 0x00
+	bd := lz4_block_default
 
 	result << flg
 	result << bd
@@ -116,7 +116,7 @@ pub fn (c &Lz4Compressor) decompress(data []u8) ![]u8 {
 	if pos >= data.len {
 		return error('incomplete LZ4 frame header')
 	}
-	_ := data[pos] // bd - block descriptor
+	_ := data[pos]
 	pos++
 
 	// 헤더 체크섬 스킵
@@ -212,7 +212,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 
 			mut match_len := int(compressed_data[ip])
 			ip++
-			match_len += 4 // 최소 매치 길이
+			match_len += 4
 
 			if ip + lit_len > compressed_data.len {
 				return error('incomplete literal in match')
@@ -242,7 +242,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 
 			mut match_len := int(compressed_data[ip])
 			ip++
-			match_len += 4 // 최소 매치 길이
+			match_len += 4
 
 			if ip + lit_len > compressed_data.len {
 				return error('incomplete literal in 3+ match')

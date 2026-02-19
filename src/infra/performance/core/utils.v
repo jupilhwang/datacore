@@ -164,7 +164,7 @@ pub fn decode_uvarint(data []u8) (u64, int) {
 
 	for i, b in data {
 		if i >= 10 {
-			return 0, -1 // 오버플로우
+			return 0, -1
 		}
 
 		result |= u64(b & 0x7f) << shift
@@ -176,7 +176,7 @@ pub fn decode_uvarint(data []u8) (u64, int) {
 		shift += 7
 	}
 
-	return 0, 0 // 불완전
+	return 0, 0
 }
 
 /// varint_size는 값의 인코딩된 크기를 반환합니다.
@@ -203,11 +203,11 @@ pub fn uvarint_size(value u64) int {
 @[heap]
 pub struct RingBuffer {
 mut:
-	buffer   []u8 // 기본 버퍼
+	buffer   []u8
 	capacity int
-	mask     int // 비트 마스크 (용량 - 1)
-	head     int // 쓰기 위치
-	tail     int // 읽기 위치
+	mask     int
+	head     int
+	tail     int
 }
 
 /// new_ring_buffer는 지정된 크기로 새 링 버퍼를 생성합니다.

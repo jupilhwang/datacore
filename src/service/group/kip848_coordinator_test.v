@@ -35,7 +35,7 @@ fn test_range_assignor_single_member() {
 	// Single member should get all partitions
 	assert 'member-1' in assignments
 	member1_partitions := assignments['member-1']
-	assert member1_partitions.len == 5 // 3 + 2
+	assert member1_partitions.len == 5
 }
 
 fn test_range_assignor_multiple_members() {
@@ -359,7 +359,7 @@ fn test_heartbeat_result_success() {
 
 fn test_heartbeat_result_error() {
 	result := HeartbeatResult{
-		error_code:    24 // INVALID_GROUP_ID
+		error_code:    24
 		error_message: 'Group ID cannot be empty'
 		member_epoch:  -1
 	}
@@ -483,12 +483,12 @@ fn test_range_assignor_partial_subscription() {
 	members := [
 		MemberSubscription{
 			member_id:        'member-1'
-			topics:           ['topic-a'] // Only subscribed to topic-a
+			topics:           ['topic-a']
 			owned_partitions: []
 		},
 		MemberSubscription{
 			member_id:        'member-2'
-			topics:           ['topic-b'] // Only subscribed to topic-b
+			topics:           ['topic-b']
 			owned_partitions: []
 		},
 	]

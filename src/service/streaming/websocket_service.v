@@ -13,12 +13,12 @@ import time
 pub struct WebSocketService {
 	config domain.WebSocketConfig
 mut:
-	storage     port.StoragePort                     // Storage for message operations
-	connections map[string]&WebSocketConnectionState // Active connections
-	topic_subs  map[string][]string                  // topic -> connection IDs
-	mutex       sync.RwMutex                         // Thread safety
-	stats       WebSocketStats                       // Statistics
-	running     bool // Service running flag
+	storage     port.StoragePort
+	connections map[string]&WebSocketConnectionState
+	topic_subs  map[string][]string
+	mutex       sync.RwMutex
+	stats       WebSocketStats
+	running     bool
 }
 
 // WebSocketConnectionState는 WebSocket 연결 상태를 보관합니다
@@ -26,22 +26,22 @@ mut:
 struct WebSocketConnectionState {
 pub mut:
 	connection    domain.WebSocketConnection
-	subscriptions map[string]domain.Subscription // sub_id -> Subscription
-	send_chan     chan string                    // Channel for sending messages
-	last_ping     i64 // Last ping sent timestamp
+	subscriptions map[string]domain.Subscription
+	send_chan     chan string
+	last_ping     i64
 }
 
 // WebSocketStats holds WebSocket service statistics
 pub struct WebSocketStats {
 pub mut:
-	active_connections  int // Number of active connections
-	total_subscriptions int // Total active subscriptions
-	messages_sent       i64 // Total messages sent
-	messages_received   i64 // Total messages received
-	bytes_sent          i64 // Total bytes sent
-	bytes_received      i64 // Total bytes received
-	connections_created i64 // Total connections created
-	connections_closed  i64 // Total connections closed
+	active_connections  int
+	total_subscriptions int
+	messages_sent       i64
+	messages_received   i64
+	bytes_sent          i64
+	bytes_received      i64
+	connections_created i64
+	connections_closed  i64
 }
 
 // new_websocket_service creates a new WebSocket service

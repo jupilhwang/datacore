@@ -11,13 +11,13 @@ pub struct ProduceOptions {
 pub:
 	bootstrap_server string = 'localhost:9092'
 	topic            string
-	partition        int = -1 // -1 = auto
+	partition        int = -1
 	key              string
 	value            string
-	file             string // Read messages from file
-	stdin            bool   // Read from stdin
+	file             string
+	stdin            bool
 	timeout_ms       int = 30000
-	acks             int = 1 // 0, 1, or -1 (all)
+	acks             int = 1
 }
 
 // set_produce_bootstrap_server updates opts with bootstrap server
@@ -270,14 +270,14 @@ fn build_produce_request(topic string, partition int, messages []ProduceMessage,
 	body << u8(timeout_ms & 0xff)
 
 	// Topic data array (compact array)
-	body << u8(2) // 1 topic + 1
+	body << u8(2)
 
 	// Topic name (compact string)
 	body << u8(topic.len + 1)
 	body << topic.bytes()
 
 	// Partition data array (compact array)
-	body << u8(2) // 1 partition + 1
+	body << u8(2)
 
 	// Partition index (4 bytes)
 	body << u8(partition >> 24)
@@ -398,7 +398,7 @@ fn build_record_batch(messages []ProduceMessage) []u8 {
 	}
 
 	// Fill in batch length (excluding base_offset and batch_length itself)
-	batch_len := batch.len - 12 // 8 (base_offset) + 4 (batch_length)
+	batch_len := batch.len - 12
 	batch[batch_len_pos] = u8(batch_len >> 24)
 	batch[batch_len_pos + 1] = u8((batch_len >> 16) & 0xff)
 	batch[batch_len_pos + 2] = u8((batch_len >> 8) & 0xff)
@@ -406,8 +406,8 @@ fn build_record_batch(messages []ProduceMessage) []u8 {
 
 	// CRC32-C 계산: attributes 필드부터 배치 끝까지
 	// CRC 필드 위치: batch_len_pos(4) + partition_leader_epoch(4) + magic(1) = 17 (0-indexed)
-	crc_pos := batch_len_pos + 4 + 4 + 1 // = 17
-	crc_data_start := crc_pos + 4 // CRC 필드 다음부터
+	crc_pos := batch_len_pos + 4 + 4 + 1
+	crc_data_start := crc_pos + 4
 	crc := calculate_crc32c_cli(batch[crc_data_start..])
 	batch[crc_pos] = u8(crc >> 24)
 	batch[crc_pos + 1] = u8((crc >> 16) & 0xff)
@@ -431,7 +431,7 @@ fn encode_record(msg ProduceMessage, offset_delta int, timestamp_delta i64) []u8
 
 	// Key length (varint) - -1 for null
 	if msg.key.len == 0 {
-		record << u8(1) // -1 in zigzag = 1
+		record << u8(1)
 	} else {
 		record << encode_signed_varint(i64(msg.key.len))
 		record << msg.key

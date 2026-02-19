@@ -58,7 +58,7 @@ pub fn (c &ZstdCompressor) compress(data []u8) ![]u8 {
 	result << u8((zstd_magic_number >> 24) & 0xff)
 
 	// 프레임 헤더
-	fhd := u8(0xA0) // FCS_flag=2, Single_Segment=1
+	fhd := u8(0xA0)
 	result << fhd
 
 	// Frame_Content_Size (4바이트, 리틀 엔디안)
@@ -114,8 +114,8 @@ pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 	pos++
 
 	// 플래그 파싱
-	fcs_flag := (fhd >> 6) & 0x03 // Frame_Content_Size_flag
-	single_segment := (fhd & 0x20) != 0 // bit 5
+	fcs_flag := (fhd >> 6) & 0x03
+	single_segment := (fhd & 0x20) != 0
 
 	// Window_Descriptor (Single_Segment가 아닌 경우)
 	if !single_segment {

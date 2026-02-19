@@ -20,7 +20,7 @@ fn test_fetch_response_v12_v13_encoding() {
 						high_watermark:     100
 						last_stable_offset: 100
 						log_start_offset:   0
-						records:            [u8(0x01), 0x02, 0x03] // Dummy records payload
+						records:            [u8(0x01), 0x02, 0x03]
 					},
 				]
 			},
@@ -35,23 +35,23 @@ fn test_fetch_response_v12_v13_encoding() {
 
 	// Header (Response Header v1: CorrelationId + TaggedFields) - NOT handled by encode() but by handler
 	// encode() starts with throttle_time_ms
-	offset += 4 // throttle_time_ms
-	offset += 2 // error_code
-	offset += 4 // session_id
+	offset += 4
+	offset += 2
+	offset += 4
 
 	// Topics Array (Compact Array)
-	assert encoded_v12[offset] == 2 // Len 1 (1+1)
+	assert encoded_v12[offset] == 2
 	offset += 1
 
 	// Topic Name (Compact String)
-	assert encoded_v12[offset] == 15 // Len 14 + 1
+	assert encoded_v12[offset] == 15
 	offset += 1
 	name_bytes := encoded_v12[offset..offset + 14]
 	assert name_bytes.bytestr() == 'test-topic-v12'
 	offset += 14
 
 	// Partitions Array (Compact Array)
-	assert encoded_v12[offset] == 2 // Len 1
+	assert encoded_v12[offset] == 2
 	offset += 1
 
 	// Partition Index
@@ -95,7 +95,7 @@ fn test_fetch_response_v12_v13_encoding() {
 				partitions: [
 					FetchResponsePartition{
 						partition_index: 0
-						records:         []u8{} // Empty records
+						records:         []u8{}
 					},
 				]
 			},
@@ -104,7 +104,7 @@ fn test_fetch_response_v12_v13_encoding() {
 
 	encoded_v13 := resp_v13.encode(13)
 	offset = 0
-	offset += 4 + 2 + 4 // throttle, error, session
+	offset += 4 + 2 + 4
 
 	// Topics Array
 	offset += 1

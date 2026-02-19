@@ -463,10 +463,10 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 
 /// LockInfo는 분산 락을 나타냅니다.
 struct LockInfo {
-	lock_name   string // 락 이름
-	holder_id   string // 락 보유자 ID
+	lock_name   string
+	holder_id   string
 	expires_at  i64
-	acquired_at i64 // 획득 시간
+	acquired_at i64
 }
 
 /// try_acquire_lock은 분산 락 획득을 시도합니다.

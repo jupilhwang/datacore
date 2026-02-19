@@ -26,7 +26,7 @@ fn test_calculate_known_values() {
 	data3 := [u8(0x01), 0x02, 0x03, 0x04]
 	crc3 := calculate(data3)
 	// 이 값은 실제 CRC32-C 계산 결과
-	assert crc3 != 0 // 기본 검증
+	assert crc3 != 0
 }
 
 fn test_calculate_consistency() {
@@ -105,8 +105,8 @@ fn test_hw_sw_consistency() {
 		'abc'.bytes(),
 		'abcd'.bytes(),
 		'abcde'.bytes(),
-		'abcdefgh'.bytes(), // 8바이트 - 64비트 경계
-		'abcdefghi'.bytes(), // 9바이트
+		'abcdefgh'.bytes(),
+		'abcdefghi'.bytes(),
 		'123456789'.bytes(),
 		'Hello, World!'.bytes(),
 		'The quick brown fox jumps over the lazy dog'.bytes(),
@@ -114,7 +114,7 @@ fn test_hw_sw_consistency() {
 
 	for data in test_cases {
 		sw_crc := crc32c_sw(data)
-		api_crc := calculate(data) // 하드웨어 또는 소프트웨어 사용
+		api_crc := calculate(data)
 
 		assert sw_crc == api_crc, 'CRC mismatch for "${data.bytestr()}": sw=0x${sw_crc:08X}, api=0x${api_crc:08X}'
 	}
@@ -157,7 +157,7 @@ fn test_very_large_data() {
 fn test_all_zeros() {
 	data := []u8{len: 16, init: 0}
 	crc := calculate(data)
-	assert crc != 0 // CRC of zeros is not zero
+	assert crc != 0
 }
 
 fn test_all_ones() {

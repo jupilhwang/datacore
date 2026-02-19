@@ -179,7 +179,7 @@ fn test_pipeline_oldest_pending_age() {
 	time.sleep(10 * time.millisecond)
 
 	age := pipeline.oldest_pending_age()
-	assert age >= 10 // 최소 10ms
+	assert age >= 10
 }
 
 fn test_pipeline_has_timed_out() {
@@ -195,7 +195,7 @@ fn test_pipeline_has_timed_out() {
 
 	// 대기 후 짧은 타임아웃으로 확인
 	time.sleep(50 * time.millisecond)
-	assert pipeline.has_timed_out(10) // 10ms 타임아웃, 50ms 대기
+	assert pipeline.has_timed_out(10)
 }
 
 fn test_pipeline_stats() {

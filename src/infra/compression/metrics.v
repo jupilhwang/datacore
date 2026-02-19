@@ -91,7 +91,7 @@ pub fn (mut m CompressionMetrics) record_decompress(compressed_size i64, decompr
 pub struct CompressionTimer {
 	start_time time.Time
 	metrics    &CompressionMetrics
-	typ        string // 'compress' or 'decompress'
+	typ        string
 	size       i64
 }
 

@@ -15,26 +15,26 @@ import time
 /// PendingRequest는 응답을 기다리는 요청을 나타냅니다.
 pub struct PendingRequest {
 pub:
-	correlation_id i32       // 상관 ID (요청-응답 매칭용)
-	api_key        i16       // API 키
-	api_version    i16       // API 버전
-	received_at    time.Time // 수신 시간
-	request_data   []u8      // 요청 데이터
+	correlation_id i32
+	api_key        i16
+	api_version    i16
+	received_at    time.Time
+	request_data   []u8
 pub mut:
-	response_data []u8   // 응답 데이터
-	completed     bool   // 완료 여부
-	error_msg     string // 에러 메시지 (있는 경우)
+	response_data []u8
+	completed     bool
+	error_msg     string
 }
 
 /// RequestPipeline은 연결에 대한 파이프라인된 요청을 관리합니다.
 /// 응답이 요청 수신 순서대로 전송되도록 보장합니다.
 pub struct RequestPipeline {
 mut:
-	pending         []PendingRequest // 대기 중인 요청 목록 (FIFO 순서)
-	max_pending     int              // 최대 대기 요청 수 제한
-	lock            sync.Mutex       // 동시 접근 보호용 뮤텍스
-	total_enqueued  u64              // 총 큐에 추가된 요청 수 (통계)
-	total_completed u64              // 총 완료된 요청 수 (통계)
+	pending         []PendingRequest
+	max_pending     int
+	lock            sync.Mutex
+	total_enqueued  u64
+	total_completed u64
 }
 
 /// new_pipeline - creates a new request pipeline
@@ -42,7 +42,7 @@ mut:
 pub fn new_pipeline(max_pending int) &RequestPipeline {
 	return &RequestPipeline{
 		max_pending: max_pending
-		pending:     []PendingRequest{cap: max_pending} // 용량 미리 할당
+		pending:     []PendingRequest{cap: max_pending}
 	}
 }
 
@@ -188,10 +188,10 @@ pub fn (mut p RequestPipeline) get_stats() PipelineStats {
 /// PipelineStats는 파이프라인 통계를 담는 구조체입니다.
 pub struct PipelineStats {
 pub:
-	pending_count   int // 현재 대기 중인 요청 수
-	max_pending     int // 최대 대기 가능 요청 수
-	total_enqueued  u64 // 총 큐에 추가된 요청 수
-	total_completed u64 // 총 완료된 요청 수
+	pending_count   int
+	max_pending     int
+	total_enqueued  u64
+	total_completed u64
 }
 
 /// oldest_pending_age - returns the age of the oldest pending request in milliseconds

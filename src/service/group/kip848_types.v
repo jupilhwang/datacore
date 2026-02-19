@@ -7,36 +7,36 @@ module group
 
 /// MemberState는 새 프로토콜에서 멤버의 상태를 나타냅니다.
 pub enum MemberState {
-	unsubscribed  // 구독 없음
-	subscribing   // 토픽 구독 중
-	stable        // 안정적인 할당 보유
-	reconciling   // 할당 변경 조정 중
-	assigning     // 서버가 새 할당 계산 중
-	unsubscribing // 그룹 탈퇴 중
-	fenced        // 펜스됨 (에포크 불일치)
+	unsubscribed
+	subscribing
+	stable
+	reconciling
+	assigning
+	unsubscribing
+	fenced
 }
 
 /// KIP848Member는 KIP-848 프로토콜을 사용하는 컨슈머 그룹 멤버를 나타냅니다.
 pub struct KIP848Member {
 pub mut:
-	member_id              string  // 멤버 ID
-	instance_id            ?string // 정적 멤버십을 위한 인스턴스 ID
+	member_id              string
+	instance_id            ?string
 	rack_id                ?string
-	client_id              string           // 클라이언트 ID
-	client_host            string           // 클라이언트 호스트
-	subscribed_topic_names []string         // 구독 토픽 이름 목록
-	subscribed_topic_regex ?string          // 구독 토픽 정규식
-	server_assignor        ?string          // 서버 할당자
-	member_epoch           i32              // 멤버 에포크
-	previous_member_epoch  i32              // 이전 멤버 에포크
-	state                  MemberState      // 멤버 상태
-	assigned_partitions    []TopicPartition // 할당된 파티션
-	pending_partitions     []TopicPartition // 할당 예정 파티션
-	revoking_partitions    []TopicPartition // 회수 예정 파티션
-	rebalance_timeout_ms   i32              // 리밸런싱 타임아웃 (ms)
+	client_id              string
+	client_host            string
+	subscribed_topic_names []string
+	subscribed_topic_regex ?string
+	server_assignor        ?string
+	member_epoch           i32
+	previous_member_epoch  i32
+	state                  MemberState
+	assigned_partitions    []TopicPartition
+	pending_partitions     []TopicPartition
+	revoking_partitions    []TopicPartition
+	rebalance_timeout_ms   i32
 	session_timeout_ms     i32
-	last_heartbeat         i64 // 마지막 하트비트 (Unix 타임스탬프 ms)
-	joined_at              i64 // 참가 시간
+	last_heartbeat         i64
+	joined_at              i64
 }
 
 /// TopicPartition은 토픽-파티션 쌍을 나타냅니다.
@@ -53,26 +53,26 @@ pub:
 pub struct KIP848ConsumerGroup {
 pub mut:
 	group_id           string
-	group_epoch        i32                         // 그룹 에포크
-	assignment_epoch   i32                         // 할당 에포크
-	state              KIP848GroupState            // 그룹 상태
-	protocol_type      string                      // 프로토콜 타입
-	server_assignor    string                      // 서버 할당자
-	members            map[string]&KIP848Member    // 멤버 맵 (member_id -> 멤버)
-	target_assignment  map[string][]TopicPartition // 대상 할당 (member_id -> 파티션)
-	current_assignment map[string][]TopicPartition // 현재 안정 할당
-	subscribed_topics  map[string]bool             // 모든 구독 토픽
+	group_epoch        i32
+	assignment_epoch   i32
+	state              KIP848GroupState
+	protocol_type      string
+	server_assignor    string
+	members            map[string]&KIP848Member
+	target_assignment  map[string][]TopicPartition
+	current_assignment map[string][]TopicPartition
+	subscribed_topics  map[string]bool
 	created_at         i64
 	updated_at         i64
 }
 
 /// KIP848GroupState는 KIP-848 그룹의 상태를 나타냅니다.
 pub enum KIP848GroupState {
-	empty       // 멤버 없음
-	assigning   // 새 할당 계산 중
-	reconciling // 멤버들이 조정 중
-	stable      // 모든 멤버가 안정적인 할당 보유
-	dead        // 그룹 삭제 중
+	empty
+	assigning
+	reconciling
+	stable
+	dead
 }
 
 // 서버 측 할당자 인터페이스 및 타입
@@ -89,11 +89,11 @@ pub interface ServerAssignor {
 /// MemberSubscription은 할당을 위한 멤버의 구독 정보를 담습니다.
 pub struct MemberSubscription {
 pub:
-	member_id        string  // 멤버 ID
-	instance_id      ?string // 인스턴스 ID
+	member_id        string
+	instance_id      ?string
 	rack_id          ?string
-	topics           []string         // 구독 토픽 목록
-	owned_partitions []TopicPartition // 현재 소유 파티션 (sticky 할당용)
+	topics           []string
+	owned_partitions []TopicPartition
 }
 
 /// TopicMetadata는 할당을 위한 토픽 정보를 담습니다.

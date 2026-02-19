@@ -10,8 +10,8 @@ import infra.observability
 #include <zstd.h>
 
 // ZSTD 특수 반환값 상수
-const zstd_contentsize_unknown = u64(0) - 1 // -1을 u64로
-const zstd_contentsize_error = u64(0) - 2 // -2를 u64로
+const zstd_contentsize_unknown = u64(0) - 1
+const zstd_contentsize_error = u64(0) - 2
 
 /// ZstdCompressorC는 C 라이브러리를 사용한 Zstd 압축기입니다.
 /// Kafka와 호환되는 ZSTD Frame Format을 사용합니다.

@@ -52,7 +52,7 @@ pub fn (mut s MemoryUserStore) create_user(username string, password string, mec
 	now := time.now().unix()
 	user := domain.User{
 		username:      username
-		password_hash: password // 프로덕션에서는 해시된 값이어야 합니다
+		password_hash: password
 		mechanism:     mechanism
 		created_at:    now
 		updated_at:    now

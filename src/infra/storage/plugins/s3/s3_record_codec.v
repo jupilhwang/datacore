@@ -6,12 +6,12 @@ import time
 
 /// StoredRecord는 오프셋을 포함한 스토리지용 내부 표현입니다.
 struct StoredRecord {
-	offset           i64             // 레코드 오프셋
-	timestamp        time.Time       // 레코드 타임스탬프
-	key              []u8            // 레코드 키
-	value            []u8            // 레코드 값
-	headers          map[string][]u8 // 레코드 헤더
-	compression_type u8              // 원본 압축 타입 (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
+	offset           i64
+	timestamp        time.Time
+	key              []u8
+	value            []u8
+	headers          map[string][]u8
+	compression_type u8
 }
 
 /// encode_stored_records는 StoredRecord 목록을 바이너리 형식으로 인코딩합니다.
@@ -114,7 +114,6 @@ fn decode_stored_records(data []u8) []StoredRecord {
 		}
 		pos += 8
 
-		// 타임스탬프
 		mut ts := i64(0)
 		for i := 0; i < 8; i++ {
 			ts = i64((u64(ts) << 8) | u64(data[pos + i]))

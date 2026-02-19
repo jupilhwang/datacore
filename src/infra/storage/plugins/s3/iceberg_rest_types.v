@@ -1,4 +1,3 @@
-// Apache Iceberg REST Catalog API의 요청/응답 타입을 정의합니다.
 // v3 테이블 포맷 지원
 module s3
 
@@ -15,13 +14,13 @@ import json
 /// ReferencedDataFile: 참조 데이터 파일 (dv 타입에서 사용)
 pub struct IcebergDeleteFile {
 pub mut:
-	content_type         string // 'position_deletes', 'equality_deletes', 'dv' (v3)
+	content_type         string
 	file_path            string
 	file_format          string
 	record_count         i64
 	file_size_in_bytes   i64
-	referenced_data_file string // v3: dv가 참조하는 데이터 파일
-	equality_ids         []int  // equality_deletes에서 사용되는 필드 ID 목록
+	referenced_data_file string
+	equality_ids         []int
 	partition            map[string]string
 }
 
@@ -34,12 +33,12 @@ pub mut:
 /// Cardinality: 삭제된 행 수
 pub struct IcebergDeletionVector {
 pub mut:
-	storage_type string // 'inline' 또는 'path'
-	data         string // base64 인코딩된 인라인 데이터
-	path         string // 외부 파일 경로
-	offset       i64    // 파일 내 오프셋
-	length       i64    // 데이터 길이
-	cardinality  i64    // 삭제된 행 수
+	storage_type string
+	data         string
+	path         string
+	offset       i64
+	length       i64
+	cardinality  i64
 }
 
 // REST Catalog API 요청/응답 타입
@@ -142,8 +141,8 @@ pub mut:
 	required        bool   @[json: 'required']
 	typ             string @[json: 'type']
 	doc             string @[json: 'doc']
-	initial_default string @[json: 'initial-default'] // v3: 기본값
-	write_default   string @[json: 'write-default']   // v3: 쓰기 기본값
+	initial_default string @[json: 'initial-default']
+	write_default   string @[json: 'write-default']
 }
 
 /// PartitionSpecRest는 REST API용 파티션 스펙입니다.
@@ -160,7 +159,7 @@ pub mut:
 	source_id      int      @[json: 'source-id']
 	name           string   @[json: 'name']
 	transform      string   @[json: 'transform']
-	transform_args []string @[json: 'transform-args'] // v3: 다중 인자 변환
+	transform_args []string @[json: 'transform-args']
 }
 
 /// SortOrderRest는 REST API용 정렬 순서입니다.
@@ -300,8 +299,6 @@ pub mut:
 	message    string   @[json: 'message']
 	stack      []string @[json: 'stack']
 }
-
-// 헬퍼 함수
 
 /// new_catalog_config는 기본 카탈로그 설정을 생성합니다.
 pub fn new_catalog_config(warehouse string, format_version int) CatalogConfig {

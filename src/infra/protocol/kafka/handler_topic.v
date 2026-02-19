@@ -11,7 +11,7 @@ pub struct CreateTopicsRequest {
 pub:
 	topics        []CreateTopicsRequestTopic
 	timeout_ms    i32
-	validate_only bool // v4+
+	validate_only bool
 }
 
 pub struct CreateTopicsRequestTopic {
@@ -33,7 +33,7 @@ fn parse_create_topics_request(mut reader BinaryReader, version i16, is_flexible
 		// Skip replica assignments
 		acount := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. acount {
-			_ = reader.read_i32()! // partition
+			_ = reader.read_i32()!
 			rcount := reader.read_flex_array_len(is_flexible)!
 			for _ in 0 .. rcount {
 				_ = reader.read_i32()!
@@ -77,8 +77,8 @@ pub:
 
 pub struct DeleteTopicsRequestTopic {
 pub:
-	name     string // v0-v5, or empty for v6+
-	topic_id []u8   // v6+: UUID (16 bytes)
+	name     string
+	topic_id []u8 // v6+: UUID (16 bytes)
 }
 
 fn parse_delete_topics_request(mut reader BinaryReader, version i16, is_flexible bool) !DeleteTopicsRequest {
@@ -368,7 +368,7 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 			error_code := if err.str().contains('not found') {
 				i16(ErrorCode.unknown_topic_or_partition)
 			} else if err.str().contains('internal') {
-				i16(ErrorCode.invalid_topic_exception) // Internal topics cannot be deleted
+				i16(ErrorCode.invalid_topic_exception)
 			} else {
 				i16(ErrorCode.unknown_server_error)
 			}

@@ -5,12 +5,12 @@ import time
 
 fn test_generate_trace_id() {
 	id := generate_trace_id()
-	assert id.len == 32 // 16바이트 = 32자 16진수
+	assert id.len == 32
 }
 
 fn test_generate_span_id() {
 	id := generate_span_id()
-	assert id.len == 16 // 8바이트 = 16자 16진수
+	assert id.len == 16
 }
 
 fn test_span_context_is_valid() {
@@ -21,14 +21,14 @@ fn test_span_context_is_valid() {
 	assert valid.is_valid() == true
 
 	invalid1 := SpanContext{
-		trace_id: 'a'.repeat(31) // 너무 짧음
+		trace_id: 'a'.repeat(31)
 		span_id:  'b'.repeat(16)
 	}
 	assert invalid1.is_valid() == false
 
 	invalid2 := SpanContext{
 		trace_id: 'a'.repeat(32)
-		span_id:  'b'.repeat(15) // 너무 짧음
+		span_id:  'b'.repeat(15)
 	}
 	assert invalid2.is_valid() == false
 }

@@ -100,7 +100,7 @@ pub mut:
 	config MemoryConfig
 mut:
 	topics         map[string]&TopicStore
-	topic_id_index map[string]string // topic_id (hex) -> topic_name, O(1) 조회용
+	topic_id_index map[string]string
 	groups         map[string]domain.ConsumerGroup
 	offsets        map[string]map[string]i64
 	global_lock    sync.RwMutex
@@ -112,14 +112,14 @@ mut:
 /// MemoryConfig는 메모리 스토리지 설정을 담습니다.
 pub struct MemoryConfig {
 pub:
-	max_messages_per_partition int = 1000000   // 파티션당 최대 메시지 수 (기본 100만)
-	max_bytes_per_partition    i64 = -1        // 파티션당 최대 바이트 (-1 = 무제한)
-	retention_ms               i64 = 604800000 // 보존 기간 (기본 7일)
+	max_messages_per_partition int = 1000000
+	max_bytes_per_partition    i64 = -1
+	retention_ms               i64 = 604800000
 	// mmap 설정 (v0.33.0)
-	use_mmap       bool // mmap 사용 여부 (파일 기반 영속성, 기본 false)
-	mmap_dir       string = '/tmp/datacore' // mmap 파일 디렉토리
+	use_mmap       bool
+	mmap_dir       string = '/tmp/datacore'
 	segment_size   i64    = 1073741824
-	sync_on_append bool // 매 append 시 sync 여부 (기본 false)
+	sync_on_append bool
 }
 
 /// memory_capability는 메모리 어댑터의 스토리지 기능을 정의합니다.
@@ -137,9 +137,9 @@ struct TopicStore {
 pub mut:
 	metadata        domain.TopicMetadata
 	config          domain.TopicConfig
-	partitions      []&PartitionStore     // 인메모리 파티션 (use_mmap=false)
-	mmap_partitions []&MmapPartitionStore // mmap 파티션 (use_mmap=true, v0.33.0)
-	use_mmap        bool                  // mmap 모드 여부
+	partitions      []&PartitionStore
+	mmap_partitions []&MmapPartitionStore
+	use_mmap        bool
 	lock            sync.RwMutex
 }
 
@@ -393,7 +393,7 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 /// append는 파티션에 레코드를 추가합니다.
 /// 파티션 수준 락킹으로 동시성을 제어합니다.
 pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
-	_ = required_acks // 메모리는 이미 즉시 저장이므로 무시
+	_ = required_acks
 	// 메트릭: append 시작
 	a.metrics_lock.@lock()
 	a.metrics.append_count++
@@ -637,7 +637,7 @@ fn (mut a MemoryStorageAdapter) fetch_mmap(topic &TopicStore, partition int, off
 	}
 
 	// max_bytes 기반으로 최대 레코드 수 계산
-	max_records := if max_bytes <= 0 { 1000 } else { max_bytes / 100 } // 대략적인 레코드 크기 추정
+	max_records := if max_bytes <= 0 { 1000 } else { max_bytes / 100 }
 	record_bytes := mmap_part.read(offset, max_records)!
 
 	// 바이트 배열을 domain.Record로 변환
@@ -667,13 +667,13 @@ fn (mut a MemoryStorageAdapter) fetch_mmap(topic &TopicStore, partition int, off
 		records << domain.Record{
 			key:       key
 			value:     value
-			timestamp: time.now() // 실제로는 세그먼트에서 읽어야 함
+			timestamp: time.now()
 		}
 	}
 
 	return domain.FetchResult{
 		records:            records
-		first_offset:       offset // 요청된 오프셋이 실제 반환되는 첫 번째 레코드의 오프셋
+		first_offset:       offset
 		high_watermark:     high_watermark
 		last_stable_offset: high_watermark
 		log_start_offset:   base_offset

@@ -16,9 +16,9 @@ pub mut:
 	server    &Server = unsafe { nil }
 	client    &Client = unsafe { nil }
 	// In-memory storage
-	replica_buffers map[string][]domain.ReplicaBuffer   // Key: "topic:partition"
-	assignments     map[string]domain.ReplicaAssignment // Key: "topic:partition"
-	broker_health   map[string]domain.ReplicationHealth // Key: broker_id
+	replica_buffers map[string][]domain.ReplicaBuffer
+	assignments     map[string]domain.ReplicaAssignment
+	broker_health   map[string]domain.ReplicationHealth
 	stats           domain.ReplicationStats
 	// Locks for shared mutable state
 	replica_buffers_lock sync.Mutex
@@ -26,7 +26,7 @@ pub mut:
 	broker_health_lock   sync.Mutex
 	stats_lock           sync.Mutex
 	// Cluster info (injected from outside)
-	cluster_brokers []string // List of all broker addresses (e.g., "localhost:9093")
+	cluster_brokers []string
 	// State
 	logger  log.Logger
 	running bool
@@ -460,7 +460,7 @@ fn (mut m Manager) heartbeat_worker() {
 // Buffers older than 60 seconds without FLUSH_ACK are considered orphans
 fn (mut m Manager) orphan_cleanup_worker() {
 	m.logger.info('Orphan cleanup worker started (interval=${m.config.orphan_cleanup_interval_ms}ms)')
-	orphan_max_age_ms := i64(60000) // 60 seconds
+	orphan_max_age_ms := i64(60000)
 
 	for m.running {
 		time.sleep(time.Duration(m.config.orphan_cleanup_interval_ms * time.millisecond))

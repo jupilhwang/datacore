@@ -110,7 +110,7 @@ pub fn (mut c Client) send_with_retry(broker_address string, msg domain.Replicat
 
 			// Exponential backoff
 			if attempt < max_retries - 1 {
-				sleep_ms := 100 * (1 << attempt) // 100ms, 200ms, 400ms, ...
+				sleep_ms := 100 * (1 << attempt)
 				time.sleep(time.Duration(sleep_ms * time.millisecond))
 			}
 			continue

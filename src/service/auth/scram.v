@@ -21,29 +21,29 @@ const nonce_length = 24
 
 /// ScramState는 SCRAM 인증의 현재 상태를 나타냅니다.
 pub enum ScramState {
-	initial           // 초기 상태
-	client_first_sent // client-first-message 수신
-	server_first_sent // server-first-message 전송
-	completed         // 인증 완료
-	failed            // 인증 실패
+	initial
+	client_first_sent
+	server_first_sent
+	completed
+	failed
 }
 
 /// ScramSha256Authenticator는 SCRAM-SHA-256 인증을 구현합니다.
 /// RFC 5802 및 RFC 7677을 준수합니다.
 pub struct ScramSha256Authenticator {
 mut:
-	user_store      port.UserStore // 사용자 저장소
-	state           ScramState     // 현재 인증 상태
-	username        string         // 인증 중인 사용자명
-	client_nonce    string         // 클라이언트 nonce
-	server_nonce    string         // 서버 nonce
-	combined_nonce  string         // client_nonce + server_nonce
-	salt            []u8           // 사용자별 salt
-	iterations      int            // PBKDF2 iteration 횟수
-	auth_message    string         // 인증 메시지 (서명 검증용)
-	salted_password []u8           // SaltedPassword (ClientKey 계산에 필요)
-	stored_key      []u8           // 저장된 키 (비밀번호에서 파생)
-	server_key      []u8           // 서버 키 (비밀번호에서 파생)
+	user_store      port.UserStore
+	state           ScramState
+	username        string
+	client_nonce    string
+	server_nonce    string
+	combined_nonce  string
+	salt            []u8
+	iterations      int
+	auth_message    string
+	salted_password []u8
+	stored_key      []u8
+	server_key      []u8
 }
 
 /// new_scram_sha256_authenticator - creates a new SCRAM-SHA-256 authenticator
@@ -92,7 +92,7 @@ pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.Au
 
 	// 비밀번호에서 키 파생
 	salted_password := pbkdf2_sha256(user.password_hash.bytes(), a.salt, a.iterations)
-	a.salted_password = salted_password // ClientKey 계산을 위해 저장
+	a.salted_password = salted_password
 	a.stored_key = compute_stored_key(salted_password)
 	a.server_key = compute_server_key(salted_password)
 
@@ -185,10 +185,10 @@ pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 
 /// ClientFirstMessage는 파싱된 client-first-message를 나타냅니다.
 struct ClientFirstMessage {
-	gs2_header string // GS2 헤더 (채널 바인딩 정보)
-	username   string // 사용자명 (n=username)
-	nonce      string // 클라이언트 nonce (r=nonce)
-	bare       string // client-first-message-bare (GS2 헤더 제외)
+	gs2_header string
+	username   string
+	nonce      string
+	bare       string
 }
 
 /// parse_client_first_message는 client-first-message를 파싱합니다.
@@ -248,10 +248,10 @@ fn parse_client_first_message(msg string) ?ClientFirstMessage {
 
 /// ClientFinalMessage는 파싱된 client-final-message를 나타냅니다.
 struct ClientFinalMessage {
-	channel_binding string // 채널 바인딩 (c=...)
-	nonce           string // combined nonce (r=...)
-	proof           string // 클라이언트 proof (p=...)
-	without_proof   string // proof 제외한 메시지
+	channel_binding string
+	nonce           string
+	proof           string
+	without_proof   string
 }
 
 /// parse_client_final_message는 client-final-message를 파싱합니다.

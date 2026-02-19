@@ -19,29 +19,29 @@ import infra.performance.core
 pub struct IoBenchmarkConfig {
 pub:
 	// 테스트 매개변수
-	iterations  int   = 100         // 반복 횟수
-	warmup_runs int   = 10          // 워밍업 실행 횟수
-	data_size   usize = 4096        // 데이터 크기 (바이트)
-	file_size   i64   = 1024 * 1024 // 파일 테스트용 크기 (1MB)
+	iterations  int   = 100
+	warmup_runs int   = 10
+	data_size   usize = 4096
+	file_size   i64   = 1024 * 1024
 
 	// 테스트 선택
-	test_regular_io   bool = true // 일반 I/O 테스트
-	test_mmap         bool = true // mmap 테스트
-	test_dma          bool = true // DMA 테스트
-	test_io_uring     bool = true // io_uring 테스트
-	test_numa         bool = true // NUMA 테스트
-	test_buffer_pools bool = true // 버퍼 풀 테스트
+	test_regular_io   bool = true
+	test_mmap         bool = true
+	test_dma          bool = true
+	test_io_uring     bool = true
+	test_numa         bool = true
+	test_buffer_pools bool = true
 
 	// 출력
-	verbose       bool // 상세 출력
-	output_format OutputFormat = .text // 출력 형식
+	verbose       bool
+	output_format OutputFormat = .text
 }
 
 /// OutputFormat은 벤치마크 결과 출력 형식을 정의합니다.
 pub enum OutputFormat {
-	text     // 텍스트 형식
-	json     // JSON 형식
-	markdown // 마크다운 형식
+	text
+	json
+	markdown
 }
 
 // 벤치마크 결과
@@ -49,35 +49,35 @@ pub enum OutputFormat {
 /// IoBenchmarkResults는 I/O 벤치마크 결과를 저장합니다.
 pub struct IoBenchmarkResults {
 pub mut:
-	test_name       string // 테스트 이름
-	iterations      int    // 반복 횟수
+	test_name       string
+	iterations      int
 	total_time_ns   i64
 	avg_time_ns     i64
 	min_time_ns     i64
 	max_time_ns     i64
-	throughput_mbps f64   // 처리량 (MB/s)
-	ops_per_sec     f64   // 초당 작업 수
-	data_size       usize // 데이터 크기
+	throughput_mbps f64
+	ops_per_sec     f64
+	data_size       usize
 }
 
 /// IoBenchmarkSuite는 I/O 벤치마크 스위트입니다.
 pub struct IoBenchmarkSuite {
 pub mut:
-	config  IoBenchmarkConfig    // 벤치마크 설정
-	results []IoBenchmarkResults // 벤치마크 결과 목록
-	system  SystemInfo           // 시스템 정보
+	config  IoBenchmarkConfig
+	results []IoBenchmarkResults
+	system  SystemInfo
 }
 
 /// SystemInfo는 시스템 정보를 저장합니다.
 pub struct SystemInfo {
 pub:
-	os_name            string // 운영체제 이름
-	numa_nodes         int    // NUMA 노드 수
-	numa_available     bool   // NUMA 사용 가능 여부
-	io_uring_available bool   // io_uring 사용 가능 여부
-	mmap_available     bool   // mmap 사용 가능 여부
-	dma_available      bool   // DMA 사용 가능 여부
-	total_memory       i64    // 총 메모리
+	os_name            string
+	numa_nodes         int
+	numa_available     bool
+	io_uring_available bool
+	mmap_available     bool
+	dma_available      bool
+	total_memory       i64
 }
 
 // 벤치마크 러너
@@ -113,7 +113,7 @@ fn detect_system_capabilities() SystemInfo {
 		numa_nodes:         topology.node_count
 		numa_available:     topology.available
 		io_uring_available: io_caps.has_io_uring
-		mmap_available:     true // 폴백을 통해 항상 사용 가능
+		mmap_available:     true
 		dma_available:      dma_caps.has_scatter_gather
 		total_memory:       total_mem
 	}
@@ -682,8 +682,8 @@ pub fn run_comprehensive_io_benchmark() string {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:    200
 		warmup_runs:   20
-		data_size:     65536            // 64KB
-		file_size:     10 * 1024 * 1024 // 10MB
+		data_size:     65536
+		file_size:     10 * 1024 * 1024
 		verbose:       true
 		output_format: .markdown
 	})

@@ -23,9 +23,9 @@ pub struct ProduceRequest {
 pub:
 	topic      string
 	partition  int
-	records    []domain.Record // 기록할 레코드 목록
-	acks       i16             // 확인 수준 (0: 없음, 1: 리더만, -1: 모든 ISR)
-	timeout_ms i32             // 타임아웃 (ms)
+	records    []domain.Record
+	acks       i16
+	timeout_ms i32
 }
 
 /// ProduceResponse는 produce 응답을 나타냅니다.
@@ -33,9 +33,9 @@ pub struct ProduceResponse {
 pub:
 	topic           string
 	partition       int
-	error_code      i16 // 오류 코드 (0이면 성공)
-	base_offset     i64 // 기록된 첫 번째 레코드의 오프셋
-	log_append_time i64 // 로그 추가 시간 (타임스탬프)
+	error_code      i16
+	base_offset     i64
+	log_append_time i64
 }
 
 /// execute는 produce 요청을 처리합니다.

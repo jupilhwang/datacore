@@ -23,7 +23,7 @@ fn get_test_config() ?PostgresConfig {
 		user:      user
 		password:  password
 		database:  database
-		pool_size: 1 // 테스트 환경에서 연결 슬롯 절약
+		pool_size: 1
 		sslmode:   sslmode
 	}
 }
@@ -350,7 +350,7 @@ fn test_offset_commit_fetch() {
 	assert results[0].offset == 100
 	assert results[0].metadata == 'test-metadata'
 	assert results[1].offset == 200
-	assert results[2].offset == -1 // 커밋되지 않음
+	assert results[2].offset == -1
 }
 
 fn test_health_check() {

@@ -96,11 +96,11 @@ fn test_handler_init_producer_id_transactional() {
 	// InitProducerId with transactional_id
 	mut request := kafka.new_writer()
 	request.write_i32(0)
-	request.write_i16(22) // InitProducerId
-	request.write_i16(3) // version 3
+	request.write_i16(22)
+	request.write_i16(3)
 	request.write_i32(1)
 	request.write_nullable_string('test-client')
-	request.write_tagged_fields() // Header tagged fields (v2 header)
+	request.write_tagged_fields()
 
 	// transactional_id (compact nullable string in v3 flexible)
 	// But wait, InitProducerId v3 is flexible?
@@ -122,12 +122,12 @@ fn test_handler_init_producer_id_transactional() {
 	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
-	_ = reader.read_i32()! // size
-	_ = reader.read_i32()! // correlation_id
-	_ = reader.read_uvarint()! // tag_buffer (header v1)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_uvarint()!
 
 	// Body
-	_ = reader.read_i32()! // throttle_time_ms
+	_ = reader.read_i32()!
 	error_code := reader.read_i16()!
 	assert error_code == 0
 
@@ -147,7 +147,7 @@ fn test_handler_add_partitions_to_txn() {
 	init_req.write_i16(3)
 	init_req.write_i32(1)
 	init_req.write_nullable_string('test-client')
-	init_req.write_tagged_fields() // Header tagged fields
+	init_req.write_tagged_fields()
 	init_req.write_compact_nullable_string('my-txn-id')
 	init_req.write_i32(60000)
 	init_req.write_i64(-1)
@@ -167,11 +167,11 @@ fn test_handler_add_partitions_to_txn() {
 	// 2. AddPartitionsToTxn
 	mut request := kafka.new_writer()
 	request.write_i32(0)
-	request.write_i16(24) // AddPartitionsToTxn
-	request.write_i16(3) // version 3 (flexible)
+	request.write_i16(24)
+	request.write_i16(3)
 	request.write_i32(2)
 	request.write_nullable_string('test-client')
-	request.write_tagged_fields() // Header tagged fields
+	request.write_tagged_fields()
 
 	// transactional_id
 	request.write_compact_string('my-txn-id')
@@ -186,7 +186,7 @@ fn test_handler_add_partitions_to_txn() {
 	request.write_compact_string('test-topic')
 	// partitions array
 	request.write_compact_array_len(1)
-	request.write_i32(0) // partition 0
+	request.write_i32(0)
 	// tagged fields (topic)
 	request.write_tagged_fields()
 	// tagged fields (request)
@@ -200,7 +200,7 @@ fn test_handler_add_partitions_to_txn() {
 	_ = reader.read_i32()!
 	_ = reader.read_uvarint()!
 
-	_ = reader.read_i32()! // throttle
+	_ = reader.read_i32()!
 
 	// results array
 	count := reader.read_compact_array_len()!
@@ -241,7 +241,7 @@ fn test_handler_end_txn_commit() {
 	init_req.write_i16(3)
 	init_req.write_i32(1)
 	init_req.write_nullable_string('test-client')
-	init_req.write_tagged_fields() // Header tagged fields
+	init_req.write_tagged_fields()
 	init_req.write_compact_nullable_string('my-txn-id')
 	init_req.write_i32(60000)
 	init_req.write_i64(-1)
@@ -264,7 +264,7 @@ fn test_handler_end_txn_commit() {
 	add_req.write_i16(3)
 	add_req.write_i32(2)
 	add_req.write_nullable_string('test-client')
-	add_req.write_tagged_fields() // Header tagged fields
+	add_req.write_tagged_fields()
 	add_req.write_compact_string('my-txn-id')
 	add_req.write_i64(pid)
 	add_req.write_i16(epoch)
@@ -279,16 +279,16 @@ fn test_handler_end_txn_commit() {
 	// 3. EndTxn (Commit)
 	mut request := kafka.new_writer()
 	request.write_i32(0)
-	request.write_i16(26) // EndTxn
-	request.write_i16(3) // version 3 (flexible)
+	request.write_i16(26)
+	request.write_i16(3)
 	request.write_i32(3)
 	request.write_nullable_string('test-client')
-	request.write_tagged_fields() // Header tagged fields
+	request.write_tagged_fields()
 
 	request.write_compact_string('my-txn-id')
 	request.write_i64(pid)
 	request.write_i16(epoch)
-	request.write_i8(1) // transaction_result: true (COMMIT)
+	request.write_i8(1)
 	request.write_tagged_fields()
 
 	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
@@ -298,7 +298,7 @@ fn test_handler_end_txn_commit() {
 	_ = reader.read_i32()!
 	_ = reader.read_uvarint()!
 
-	_ = reader.read_i32()! // throttle
+	_ = reader.read_i32()!
 	error_code := reader.read_i16()!
 	assert error_code == 0
 
@@ -312,40 +312,40 @@ fn test_handler_write_txn_markers() {
 
 	// WriteTxnMarkers (API Key 27) v1 is flexible
 	mut request := kafka.new_writer()
-	request.write_i32(0) // size placeholder
-	request.write_i16(27) // WriteTxnMarkers
-	request.write_i16(1) // version 1 (flexible)
-	request.write_i32(1) // correlation_id
+	request.write_i32(0)
+	request.write_i16(27)
+	request.write_i16(1)
+	request.write_i32(1)
 	request.write_nullable_string('test-client')
-	request.write_tagged_fields() // Header tagged fields (v2 header)
+	request.write_tagged_fields()
 
 	// Body: markers array
-	request.write_compact_array_len(1) // 1 marker
+	request.write_compact_array_len(1)
 
 	// Marker 1:
-	request.write_i64(12345) // producer_id
-	request.write_i16(0) // producer_epoch
-	request.write_i8(1) // transaction_result: true (COMMIT)
+	request.write_i64(12345)
+	request.write_i16(0)
+	request.write_i8(1)
 
 	// topics array
 	request.write_compact_array_len(1)
 	request.write_compact_string('test-topic')
 	// partition_indexes array
 	request.write_compact_array_len(1)
-	request.write_i32(0) // partition 0
-	request.write_tagged_fields() // topic tagged fields
+	request.write_i32(0)
+	request.write_tagged_fields()
 
-	request.write_i32(1) // coordinator_epoch
-	request.write_tagged_fields() // marker tagged fields
+	request.write_i32(1)
+	request.write_tagged_fields()
 
-	request.write_tagged_fields() // request tagged fields
+	request.write_tagged_fields()
 
 	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
-	_ = reader.read_i32()! // size
-	_ = reader.read_i32()! // correlation_id
-	_ = reader.read_uvarint()! // tag_buffer (header v1)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_uvarint()!
 
 	// Body: markers array
 	markers_count := reader.read_compact_array_len()!
@@ -370,13 +370,13 @@ fn test_handler_write_txn_markers() {
 	assert partition_index == 0
 
 	error_code := reader.read_i16()!
-	assert error_code == 0 // Success
+	assert error_code == 0
 
 	// Skip tagged fields
-	reader.skip_tagged_fields()! // partition
-	reader.skip_tagged_fields()! // topic
-	reader.skip_tagged_fields()! // marker
-	reader.skip_tagged_fields()! // response
+	reader.skip_tagged_fields()!
+	reader.skip_tagged_fields()!
+	reader.skip_tagged_fields()!
+	reader.skip_tagged_fields()!
 }
 
 fn test_write_txn_markers_unknown_topic() {
@@ -430,7 +430,7 @@ fn test_write_txn_markers_unknown_topic() {
 	assert partition_index == 0
 
 	error_code := reader.read_i16()!
-	assert error_code == 3 // UNKNOWN_TOPIC_OR_PARTITION
+	assert error_code == 3
 }
 
 // 헬퍼: WriteTxnMarkers 지원 mock storage로 핸들러 생성

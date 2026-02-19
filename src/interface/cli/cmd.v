@@ -103,12 +103,12 @@ pub fn (app &App) print_version() {
 /// CliOptions는 CLI 옵션을 담는 구조체입니다.
 pub struct CliOptions {
 pub:
-	config_path string = 'config.toml'       // 설정 파일 경로
-	pid_path    string = '/tmp/datacore.pid' // PID 파일 경로
-	verbose     bool // 상세 출력 활성화
-	debug       bool // 디버그 모드 활성화
-	daemon      bool // 데몬 모드로 실행
-	force       bool // 강제 실행
+	config_path string = 'config.toml'
+	pid_path    string = '/tmp/datacore.pid'
+	verbose     bool
+	debug       bool
+	daemon      bool
+	force       bool
 }
 
 /// get_config_path는 인자에서 설정 파일 경로를 가져옵니다.
@@ -244,14 +244,14 @@ pub fn print_shutdown_complete() {
 /// BrokerStatus는 브로커 상태 정보를 담는 구조체입니다.
 pub struct BrokerStatus {
 pub:
-	running     bool          // 실행 중 여부
-	pid         int           // 프로세스 ID
-	uptime      time.Duration // 가동 시간
+	running     bool
+	pid         int
+	uptime      time.Duration
 	host        string
 	port        int
 	broker_id   int
 	cluster_id  string
-	topics      int // 토픽 수
+	topics      int
 	partitions  int
 	connections int
 }

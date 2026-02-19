@@ -70,10 +70,10 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 
 	// 토픽 설정 구성
 	config := domain.TopicConfig{
-		retention_ms:    parse_config_i64(req.configs, 'retention.ms', 604800000) // 기본값: 7일
-		retention_bytes: parse_config_i64(req.configs, 'retention.bytes', -1) // 기본값: 무제한
-		segment_bytes:   parse_config_i64(req.configs, 'segment.bytes', 1073741824) // 기본값: 1GB
-		cleanup_policy:  req.configs['cleanup.policy'] or { 'delete' } // 기본값: delete
+		retention_ms:    parse_config_i64(req.configs, 'retention.ms', 604800000)
+		retention_bytes: parse_config_i64(req.configs, 'retention.bytes', -1)
+		segment_bytes:   parse_config_i64(req.configs, 'segment.bytes', 1073741824)
+		cleanup_policy:  req.configs['cleanup.policy'] or { 'delete' }
 	}
 
 	// 토픽 생성

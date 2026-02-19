@@ -48,7 +48,7 @@ pub fn (mut m MemoryAclManager) create_acls(acls []domain.AclBinding) ![]domain.
 		}
 
 		results << domain.AclCreateResult{
-			error_code: 0 // None
+			error_code: 0
 		}
 	}
 

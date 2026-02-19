@@ -1,4 +1,3 @@
-// gRPC Service 테스트
 module streaming
 
 import domain

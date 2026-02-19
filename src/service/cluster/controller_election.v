@@ -12,10 +12,10 @@ import time
 const controller_lock_name = 'controller-election'
 
 // 컨트롤러 선출 락 TTL (밀리초)
-const controller_lock_ttl_ms = i64(30000) // 30초
+const controller_lock_ttl_ms = i64(30000)
 
 // 컨트롤러 갱신 주기 (TTL보다 짧아야 함)
-const controller_refresh_interval_ms = 10000 // 10초
+const controller_refresh_interval_ms = 10000
 
 // 컨트롤러 선출기
 
@@ -27,7 +27,7 @@ mut:
 	metadata_port ?port.ClusterMetadataPort
 	// 현재 컨트롤러 상태
 	is_controller bool
-	controller_id i32 // 알 수 없으면 -1
+	controller_id i32
 	// 락 상태
 	lock_acquired bool
 	last_refresh  i64

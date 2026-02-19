@@ -10,10 +10,10 @@ import sync
 @[heap]
 pub struct Buffer {
 pub mut:
-	data       []u8      // 기본 바이트 배열
-	len        int       // 현재 논리적 길이 (사용된 바이트 수)
-	cap        int       // 용량 (할당된 크기)
-	size_class SizeClass // 이 버퍼가 속한 크기 클래스
+	data       []u8
+	len        int
+	cap        int
+	size_class SizeClass
 }
 
 /// write는 버퍼에 바이트를 추가합니다.
@@ -99,11 +99,11 @@ pub fn (b &Buffer) remaining() int {
 
 /// SizeClass는 버퍼 크기 분류를 나타냅니다.
 pub enum SizeClass {
-	tiny   // 256 바이트
-	small  // 4KB
-	medium // 64KB
+	tiny
+	small
+	medium
 	large
-	huge // 16MB
+	huge
 }
 
 /// size_class_bytes는 크기 클래스에 해당하는 바이트 수를 반환합니다.
@@ -137,37 +137,37 @@ fn get_size_class(size int) SizeClass {
 /// PoolConfig는 버퍼 풀 설정을 담고 있습니다.
 pub struct PoolConfig {
 pub:
-	max_tiny       int = 1000 // tiny 버퍼 최대 개수
-	max_small      int = 500  // small 버퍼 최대 개수
-	max_medium     int = 100  // medium 버퍼 최대 개수
-	max_large      int = 20   // large 버퍼 최대 개수
-	max_huge       int = 5    // huge 버퍼 최대 개수
-	prewarm_tiny   int = 100  // tiny 버퍼 사전 할당 개수
-	prewarm_small  int = 50   // small 버퍼 사전 할당 개수
-	prewarm_medium int = 10   // medium 버퍼 사전 할당 개수
-	prewarm_large  int = 2    // large 버퍼 사전 할당 개수
+	max_tiny       int = 1000
+	max_small      int = 500
+	max_medium     int = 100
+	max_large      int = 20
+	max_huge       int = 5
+	prewarm_tiny   int = 100
+	prewarm_small  int = 50
+	prewarm_medium int = 10
+	prewarm_large  int = 2
 }
 
 /// PoolStats는 버퍼 풀 통계를 담고 있습니다.
 pub struct PoolStats {
 pub mut:
-	hits_tiny        u64 // tiny 버퍼 히트 수
-	hits_small       u64 // small 버퍼 히트 수
-	hits_medium      u64 // medium 버퍼 히트 수
-	hits_large       u64 // large 버퍼 히트 수
-	hits_huge        u64 // huge 버퍼 히트 수
-	misses_tiny      u64 // tiny 버퍼 미스 수
-	misses_small     u64 // small 버퍼 미스 수
-	misses_medium    u64 // medium 버퍼 미스 수
-	misses_large     u64 // large 버퍼 미스 수
-	misses_huge      u64 // huge 버퍼 미스 수
-	pool_size_tiny   int // tiny 풀 현재 크기
-	pool_size_small  int // small 풀 현재 크기
-	pool_size_medium int // medium 풀 현재 크기
-	pool_size_large  int // large 풀 현재 크기
-	pool_size_huge   int // huge 풀 현재 크기
-	bytes_allocated  u64 // 총 할당된 바이트 수
-	bytes_reused     u64 // 재사용된 바이트 수
+	hits_tiny        u64
+	hits_small       u64
+	hits_medium      u64
+	hits_large       u64
+	hits_huge        u64
+	misses_tiny      u64
+	misses_small     u64
+	misses_medium    u64
+	misses_large     u64
+	misses_huge      u64
+	pool_size_tiny   int
+	pool_size_small  int
+	pool_size_medium int
+	pool_size_large  int
+	pool_size_huge   int
+	bytes_allocated  u64
+	bytes_reused     u64
 }
 
 /// total_hits는 모든 크기 클래스의 총 히트 수를 반환합니다.
@@ -193,14 +193,14 @@ pub fn (s &PoolStats) hit_rate() f64 {
 @[heap]
 pub struct BufferPool {
 mut:
-	tiny_pool   []&Buffer  // tiny 버퍼 풀
-	small_pool  []&Buffer  // small 버퍼 풀
-	medium_pool []&Buffer  // medium 버퍼 풀
-	large_pool  []&Buffer  // large 버퍼 풀
-	huge_pool   []&Buffer  // huge 버퍼 풀
-	config      PoolConfig // 풀 설정
-	stats       PoolStats  // 풀 통계
-	lock        sync.Mutex // 동기화를 위한 뮤텍스
+	tiny_pool   []&Buffer
+	small_pool  []&Buffer
+	medium_pool []&Buffer
+	large_pool  []&Buffer
+	huge_pool   []&Buffer
+	config      PoolConfig
+	stats       PoolStats
+	lock        sync.Mutex
 }
 
 /// new_buffer_pool은 주어진 설정으로 새 버퍼 풀을 생성합니다.

@@ -16,31 +16,31 @@ import time
 /// 트랜잭션 프로듀서의 경우 transactional_id를 포함합니다.
 pub struct ProduceRequest {
 pub:
-	transactional_id ?string               // 트랜잭션 ID (트랜잭션 프로듀서용, v3+)
-	acks             i16                   // 확인 수준 (-1: all, 0: none, 1: leader)
-	timeout_ms       i32                   // 타임아웃 (밀리초)
-	topic_data       []ProduceRequestTopic // 토픽별 데이터
+	transactional_id ?string
+	acks             i16
+	timeout_ms       i32
+	topic_data       []ProduceRequestTopic
 }
 
 /// Produce 요청 토픽 - 전송할 토픽 데이터
 pub struct ProduceRequestTopic {
 pub:
 	name           string
-	topic_id       []u8                      // 토픽 UUID (v13+, 16바이트)
-	partition_data []ProduceRequestPartition // 파티션별 데이터
+	topic_id       []u8 // 토픽 UUID (v13+, 16바이트)
+	partition_data []ProduceRequestPartition
 }
 
 /// Produce 요청 파티션 - 전송할 파티션 데이터
 pub struct ProduceRequestPartition {
 pub:
 	index   i32
-	records []u8 // RecordBatch 또는 MessageSet 데이터
+	records []u8
 }
 
 /// Produce 응답 - 메시지 전송 결과
 pub struct ProduceResponse {
 pub:
-	topics           []ProduceResponseTopic // 토픽별 응답
+	topics           []ProduceResponseTopic
 	throttle_time_ms i32
 }
 
@@ -48,8 +48,8 @@ pub:
 pub struct ProduceResponseTopic {
 pub:
 	name       string
-	topic_id   []u8                       // 토픽 UUID (v13+)
-	partitions []ProduceResponsePartition // 파티션별 응답
+	topic_id   []u8 // 토픽 UUID (v13+)
+	partitions []ProduceResponsePartition
 }
 
 /// Produce 응답 파티션 - 파티션별 전송 결과
@@ -57,9 +57,9 @@ pub struct ProduceResponsePartition {
 pub:
 	index            i32
 	error_code       i16
-	base_offset      i64 // 첫 번째 메시지의 오프셋
-	log_append_time  i64 // 로그 추가 시간 (밀리초, -1: 사용 안 함)
-	log_start_offset i64 // 로그 시작 오프셋
+	base_offset      i64
+	log_append_time  i64
+	log_start_offset i64
 }
 
 // Produce 요청을 파싱합니다.
@@ -354,7 +354,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					topic_name), observability.field_int('partition', int(p.index)), observability.field_string('header_hex',
 					header_hex), observability.field_int('header_preview_bytes', header_preview_len))
 
-				if magic == 2 && records_to_parse.len >= 61 { // RecordBatch v2
+				if magic == 2 && records_to_parse.len >= 61 {
 					crc := header_reader.read_i32() or { 0 }
 					attributes := header_reader.read_i16() or { 0 }
 					last_offset_delta := header_reader.read_i32() or { 0 }
@@ -400,7 +400,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 							observability.field_string('compression_name', compression_type.str()))
 
 						// Kafka 압축 RecordBatch: header(61 bytes) + CRC(4 bytes) + compressed_records (nested RecordBatch)
-						header_size := 65 // 61 bytes header + 4 bytes CRC
+						header_size := 65
 						compressed_data := records_to_parse[header_size..]
 
 						// 압축된 데이터 상세 정보 로깅

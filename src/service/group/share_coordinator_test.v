@@ -1,4 +1,3 @@
-// Share Group Coordinator 테스트 (KIP-932)
 module group
 
 import domain
@@ -207,13 +206,13 @@ fn test_heartbeat_fenced_member() {
 	req2 := ShareGroupHeartbeatRequest{
 		group_id:               'test-group'
 		member_id:              resp1.member_id
-		member_epoch:           resp1.member_epoch + 100 // Wrong epoch
+		member_epoch:           resp1.member_epoch + 100
 		rack_id:                'rack-1'
 		subscribed_topic_names: ['test-topic']
 	}
 	resp2 := coordinator.heartbeat(req2)
 
-	assert resp2.error_code == 22 // FENCED_MEMBER_EPOCH
+	assert resp2.error_code == 22
 }
 
 fn test_leave_group() {
@@ -442,7 +441,7 @@ fn test_simple_assignor_single_member() {
 	for a in member1_assignments {
 		total_partitions += a.partitions.len
 	}
-	assert total_partitions == 5 // 3 + 2
+	assert total_partitions == 5
 }
 
 fn test_simple_assignor_multiple_members() {

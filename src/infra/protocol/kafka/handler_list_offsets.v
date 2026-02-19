@@ -16,37 +16,37 @@ import time
 /// - 양수: 해당 타임스탬프 이후의 첫 번째 오프셋
 pub struct ListOffsetsRequest {
 pub:
-	replica_id      i32                       // 복제본 ID (-1: 컨슈머)
-	isolation_level i8                        // 격리 수준 (v2+)
-	topics          []ListOffsetsRequestTopic // 조회할 토픽 목록
+	replica_id      i32
+	isolation_level i8
+	topics          []ListOffsetsRequestTopic
 }
 
 /// ListOffsets 요청 토픽 - 조회할 토픽 정보
 pub struct ListOffsetsRequestTopic {
 pub:
 	name       string
-	partitions []ListOffsetsRequestPartition // 조회할 파티션 목록
+	partitions []ListOffsetsRequestPartition
 }
 
 /// ListOffsets 요청 파티션 - 조회할 파티션 정보
 pub struct ListOffsetsRequestPartition {
 pub:
 	partition_index i32
-	timestamp       i64 // 타임스탬프 (-1: 최신, -2: 최초, 양수: 특정 시간)
+	timestamp       i64
 }
 
 /// ListOffsets 응답 - 오프셋 조회 결과
 pub struct ListOffsetsResponse {
 pub:
 	throttle_time_ms i32
-	topics           []ListOffsetsResponseTopic // 토픽별 응답
+	topics           []ListOffsetsResponseTopic
 }
 
 /// ListOffsets 응답 토픽 - 토픽별 조회 결과
 pub struct ListOffsetsResponseTopic {
 pub:
 	name       string
-	partitions []ListOffsetsResponsePartition // 파티션별 응답
+	partitions []ListOffsetsResponsePartition
 }
 
 /// ListOffsets 응답 파티션 - 파티션별 조회 결과
@@ -55,8 +55,8 @@ pub:
 	partition_index i32
 	error_code      i16
 	timestamp       i64
-	offset          i64 // 조회된 오프셋
-	leader_epoch    i32 // 리더 에포크 (v4+)
+	offset          i64
+	leader_epoch    i32
 }
 
 // ListOffsets 요청을 파싱합니다.
@@ -83,7 +83,7 @@ fn parse_list_offsets_request(mut reader BinaryReader, version i16, is_flexible 
 			pi := reader.read_i32()!
 			// v4+에서 current_leader_epoch 필드 추가 (무시)
 			if version >= 4 {
-				_ = reader.read_i32()! // current_leader_epoch
+				_ = reader.read_i32()!
 			}
 			ts := reader.read_i64()!
 			partitions << ListOffsetsRequestPartition{

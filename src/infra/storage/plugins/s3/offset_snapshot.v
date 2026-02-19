@@ -48,10 +48,10 @@ pub mut:
 // OffsetSnapshot은 컨슈머 그룹의 모든 오프셋을 바이너리 스냅샷으로 관리합니다.
 struct OffsetSnapshot {
 pub mut:
-	version   i32                    // 낙관적 잠금용 버전
-	broker_id i32                    // 마지막 쓰기 브로커 ID
-	timestamp i64                    // 스냅샷 생성 시각 (unix millis)
-	offsets   map[string]OffsetEntry // "topic:partition" -> entry
+	version   i32
+	broker_id i32
+	timestamp i64
+	offsets   map[string]OffsetEntry
 }
 
 // new_offset_snapshot은 지정된 broker_id로 빈 스냅샷을 생성합니다.
@@ -252,7 +252,7 @@ fn verify_snapshot_crc(data []u8) ! {
 // decode_snapshot_header는 magic 이후의 헤더 필드를 디코딩합니다.
 // 반환: (version, broker_id, timestamp, entry_count, 다음 읽기 위치)
 fn decode_snapshot_header(data []u8) !(i32, i32, i64, i32, int) {
-	mut pos := 2 // magic 이후
+	mut pos := 2
 
 	version := read_i32_be(data, pos)
 	pos += 4

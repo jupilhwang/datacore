@@ -65,7 +65,7 @@ fn test_avro_encode_string() {
 
 	// Length (5) in zigzag (10) + "hello"
 	assert result.len == 6
-	assert result[0] == 10 // length 5 zigzag = 10
+	assert result[0] == 10
 	assert result[1..6].bytestr() == 'hello'
 }
 
@@ -272,9 +272,9 @@ fn test_protobuf_encode_varint() {
 	// Field tag: (1 << 3) | 0 = 8 = 0x08
 	// Value 150: varint 0x96 0x01
 	assert result.len == 3
-	assert result[0] == 0x08 // tag
-	assert result[1] == 0x96 // 150 low byte
-	assert result[2] == 0x01 // 150 high byte
+	assert result[0] == 0x08
+	assert result[1] == 0x96
+	assert result[2] == 0x01
 }
 
 fn test_protobuf_encode_string() {
@@ -293,8 +293,8 @@ fn test_protobuf_encode_string() {
 	// Length: 4
 	// Value: "test"
 	assert result.len == 6
-	assert result[0] == 0x0A // tag
-	assert result[1] == 4 // length
+	assert result[0] == 0x0A
+	assert result[1] == 4
 	assert result[2..6].bytestr() == 'test'
 }
 

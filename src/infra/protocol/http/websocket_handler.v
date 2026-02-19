@@ -32,7 +32,7 @@ pub struct WebSocketHandler {
 pub mut:
 	ws_service &streaming.WebSocketService
 	storage    port.StoragePort
-	metrics    &observability.ProtocolMetrics // WebSocket 메트릭 수집
+	metrics    &observability.ProtocolMetrics
 }
 
 /// new_websocket_handler는 새로운 WebSocket 핸들러를 생성합니다.

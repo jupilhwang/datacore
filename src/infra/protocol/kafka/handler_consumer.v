@@ -87,7 +87,7 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 	mut error_message := ?string(none)
 	mut member_id := req.member_id
 	mut member_epoch := req.member_epoch
-	mut heartbeat_interval_ms := i32(3000) // 기본 하트비트 간격: 3초
+	mut heartbeat_interval_ms := i32(3000)
 	mut assignment := ?ConsumerGroupHeartbeatAssignment(none)
 
 	// 그룹 ID 유효성 검사

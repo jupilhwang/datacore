@@ -461,8 +461,6 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 	return api.error_response(501, 'Multi-table transactions not implemented')
 }
 
-// 헬퍼 함수
-
 fn (api &IcebergCatalogAPI) rest_schema_to_internal(schema s3.SchemaRest) s3.IcebergSchema {
 	mut fields := []s3.IcebergField{}
 	for field in schema.fields {

@@ -20,43 +20,42 @@ import time
 /// Linux에서는 io_uring을 사용하고, 다른 플랫폼에서는 폴백을 사용합니다.
 pub struct IoUringTcpServer {
 mut:
-	config     ServerConfig   // 서버 설정
-	state      ServerState    // 현재 서버 상태
-	handler    RequestHandler // 요청 핸들러
-	state_lock sync.Mutex     // 상태 변경 동기화용 뮤텍스
+	config     ServerConfig
+	state      ServerState
+	handler    RequestHandler
+	state_lock sync.Mutex
 	// io_uring 관련 (Linux 전용)
-	uring_server ?&engines.IoUringServer // io_uring 서버 인스턴스
+	uring_server ?&engines.IoUringServer
 	// 연결 정보 관리
-	conn_info map[int]&IoUringConnInfo // fd -> 연결 정보
-	// 통계
-	metrics IoUringServerMetrics
+	conn_info map[int]&IoUringConnInfo
+	metrics   IoUringServerMetrics
 }
 
 /// IoUringConnInfo는 io_uring 서버의 연결 정보입니다.
 struct IoUringConnInfo {
 mut:
-	fd             int       // 파일 디스크립터
-	remote_addr    string    // 원격 주소
-	connected_at   time.Time // 연결 시간
+	fd             int
+	remote_addr    string
+	connected_at   time.Time
 	last_active_at time.Time
-	request_count  u64 // 요청 수
-	bytes_received u64 // 수신 바이트
-	bytes_sent     u64 // 송신 바이트
+	request_count  u64
+	bytes_received u64
+	bytes_sent     u64
 	// 요청 파싱 상태
-	recv_buf      []u8 // 수신 버퍼
-	recv_offset   int  // 현재 버퍼 오프셋
-	expected_size int  // 예상 요청 크기 (-1 = 미결정)
+	recv_buf      []u8
+	recv_offset   int
+	expected_size int
 }
 
 /// IoUringServerMetrics는 io_uring 서버 메트릭입니다.
 pub struct IoUringServerMetrics {
 pub mut:
-	active_connections   int  // 현재 활성 연결 수
-	total_connections    u64  // 총 연결 수 (누적)
-	total_requests       u64  // 총 요청 수
-	total_bytes_received u64  // 총 수신 바이트
-	total_bytes_sent     u64  // 총 송신 바이트
-	io_uring_enabled     bool // io_uring 활성화 여부
+	active_connections   int
+	total_connections    u64
+	total_requests       u64
+	total_bytes_received u64
+	total_bytes_sent     u64
+	io_uring_enabled     bool
 }
 
 /// new_io_uring_tcp_server - creates an io_uring based TCP server
@@ -183,7 +182,7 @@ fn (mut s IoUringTcpServer) handle_io_uring_accept(client_fd int) {
 	now := time.now()
 	conn := &IoUringConnInfo{
 		fd:             client_fd
-		remote_addr:    'unknown' // io_uring에서는 주소 정보 별도 처리 필요
+		remote_addr:    'unknown'
 		connected_at:   now
 		last_active_at: now
 		recv_buf:       []u8{cap: 65536}
@@ -235,7 +234,7 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 		// 요청 크기를 아직 모르는 경우
 		if conn.expected_size < 0 {
 			if conn.recv_buf.len < 4 {
-				break // 아직 크기 헤더가 완전히 도착하지 않음
+				break
 			}
 
 			// 빅엔디안으로 요청 크기 읽기
@@ -253,7 +252,7 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 		// 완전한 요청이 도착했는지 확인
 		total_needed := 4 + conn.expected_size
 		if conn.recv_buf.len < total_needed {
-			break // 아직 완전한 요청이 아님
+			break
 		}
 
 		// 요청 데이터 추출
@@ -292,7 +291,7 @@ fn (s &IoUringTcpServer) create_error_response(request_data []u8) []u8 {
 	error_resp[0] = 0
 	error_resp[1] = 0
 	error_resp[2] = 0
-	error_resp[3] = 4 // size = 4 (correlation_id만)
+	error_resp[3] = 4
 	error_resp[4] = u8(correlation_id >> 24)
 	error_resp[5] = u8(correlation_id >> 16)
 	error_resp[6] = u8(correlation_id >> 8)

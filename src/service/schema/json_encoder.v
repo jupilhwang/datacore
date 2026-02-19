@@ -361,7 +361,7 @@ fn parse_schema_properties(props_json string) map[string]&JsonSchema {
 	mut result := map[string]&JsonSchema{}
 
 	// Simple property extraction
-	mut pos := 1 // Skip opening brace
+	mut pos := 1
 
 	for pos < props_json.len - 1 {
 		// Skip whitespace

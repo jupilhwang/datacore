@@ -5,7 +5,7 @@ module kafka
 
 /// encode는 ShareGroupHeartbeatResponse를 바이트로 인코딩합니다.
 pub fn (r ShareGroupHeartbeatResponse) encode(version i16) []u8 {
-	is_flexible := true // Share Group API는 항상 flexible
+	is_flexible := true
 	mut writer := new_writer()
 
 	// ThrottleTimeMs - 스로틀링 시간
@@ -168,7 +168,7 @@ pub fn (r ShareFetchResponse) encode(version i16) []u8 {
 				if part_resp.records.len > 0 {
 					writer.write_bytes(part_resp.records)
 				} else {
-					writer.write_i32(-1) // null bytes
+					writer.write_i32(-1)
 				}
 			}
 			// AcquiredRecords 배열 - 획득된 레코드 범위

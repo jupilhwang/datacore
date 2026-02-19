@@ -6,8 +6,8 @@ import time
 // 테스트용 Mock ClusterMetadataPort
 struct MockClusterMetadataPort {
 mut:
-	locks         map[string]string // lock_name -> holder_id
-	lock_expiry   map[string]i64    // lock_name -> expiry_timestamp
+	locks         map[string]string
+	lock_expiry   map[string]i64
 	controller_id i32
 }
 
@@ -18,7 +18,7 @@ fn (mut m MockClusterMetadataPort) try_acquire_lock(lock_name string, holder_id 
 	if existing_holder := m.locks[lock_name] {
 		if expiry := m.lock_expiry[lock_name] {
 			if now < expiry && existing_holder != holder_id {
-				return false // Lock held by another
+				return false
 			}
 		}
 	}
@@ -92,7 +92,7 @@ fn test_controller_elector_first_broker_wins() {
 		assert false
 		return
 	}
-	assert acquired2 == false // Should fail - broker 1 holds the lock
+	assert acquired2 == false
 }
 
 fn test_controller_elector_resign() {
