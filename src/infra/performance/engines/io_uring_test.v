@@ -1,6 +1,6 @@
 module engines
 
-// io_uring.v 테스트 - Linux 비동기 I/O
+// io_uring.v tests - Linux async I/O
 import os
 import time
 

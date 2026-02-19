@@ -1,6 +1,6 @@
 module io
 
-// slice.v 테스트 - 제로카피 슬라이스 연산
+// slice.v tests - zero-copy slice operations
 
 fn test_byteslice_new() {
 	data := [u8(1), 2, 3, 4, 5]

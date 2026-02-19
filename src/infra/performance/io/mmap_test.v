@@ -1,6 +1,6 @@
 module io
 
-// mmap.v 테스트 - 메모리 매핑 파일 I/O
+// mmap.v tests - memory-mapped file I/O
 import os
 import time
 

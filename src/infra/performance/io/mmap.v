@@ -1,11 +1,11 @@
-/// 고성능 스토리지를 위한 메모리 매핑 파일 I/O
-/// OS 수준 메모리 매핑을 사용한 효율적인 파일 접근 제공
+/// Memory-mapped file I/O for high-performance storage
+/// Provides efficient file access using OS-level memory mapping
 module io
 
 import os
 import time
 
-/// MmapRegion은 파일의 메모리 매핑된 영역을 나타냅니다.
+/// MmapRegion represents a memory-mapped region of a file.
 pub struct MmapRegion {
 pub:
 	file_path string
@@ -17,7 +17,7 @@ mut:
 	dirty     bool
 }
 
-/// MmapFile은 메모리 매핑된 파일 래퍼입니다.
+/// MmapFile is a memory-mapped file wrapper.
 pub struct MmapFile {
 pub:
 	path      string
@@ -29,12 +29,12 @@ mut:
 	page_size int
 }
 
-/// open은 메모리 매핑을 위해 파일을 엽니다.
+/// open opens a file for memory mapping.
 pub fn MmapFile.open(path string, read_only bool) !MmapFile {
 	mode := if read_only { 'r' } else { 'r+' }
 	file := os.open_file(path, mode) or { return error('failed to open file: ${err}') }
 
-	// 파일 크기 가져오기
+	// Get file size
 	file_size := os.file_size(path)
 
 	return MmapFile{
@@ -47,12 +47,12 @@ pub fn MmapFile.open(path string, read_only bool) !MmapFile {
 	}
 }
 
-/// create는 메모리 매핑을 위한 새 파일을 생성합니다.
+/// create creates a new file for memory mapping.
 pub fn MmapFile.create(path string, initial_size i64) !MmapFile {
-	// 파일 생성
+	// Create file
 	mut file := os.create(path) or { return error('failed to create file: ${err}') }
 
-	// 0으로 파일 사전 할당
+	// Pre-allocate file with zeros
 	if initial_size > 0 {
 		zeros := []u8{len: 4096}
 		mut remaining := initial_size
@@ -67,11 +67,11 @@ pub fn MmapFile.create(path string, initial_size i64) !MmapFile {
 
 	file.close()
 
-	// 읽기-쓰기 모드로 다시 열기
+	// Reopen in read-write mode
 	return MmapFile.open(path, false)
 }
 
-/// map_region은 파일의 영역을 메모리에 매핑합니다.
+/// map_region maps a region of the file into memory.
 pub fn (mut m MmapFile) map_region(offset i64, length int) !&MmapRegion {
 	if offset < 0 || offset >= m.size {
 		return error('offset out of bounds: ${offset}, file size: ${m.size}')
@@ -83,13 +83,13 @@ pub fn (mut m MmapFile) map_region(offset i64, length int) !&MmapRegion {
 		length
 	}
 
-	// 오프셋을 페이지 경계에 정렬
+	// Align offset to page boundary
 	page_offset := offset % m.page_size
 	aligned_offset := offset - page_offset
 	aligned_length := actual_length + int(page_offset)
 
-	// 데이터 읽기 (mmap 시뮬레이션)
-	// 실제 구현에서는 플랫폼별 mmap 시스템 호출을 사용합니다
+	// Read data (mmap simulation)
+	// Real implementation would use the platform-specific mmap syscall
 	mut data := []u8{len: aligned_length}
 
 	if file := m.file {
@@ -97,7 +97,7 @@ pub fn (mut m MmapFile) map_region(offset i64, length int) !&MmapRegion {
 		f.seek(aligned_offset, .start) or { return error('failed to seek: ${err}') }
 		bytes_read := f.read(mut data) or { return error('failed to read: ${err}') }
 		if bytes_read < aligned_length {
-			// 예상보다 적게 읽은 경우 크기 조정
+			// Resize if fewer bytes were read than expected
 			data = data[..bytes_read].clone()
 		}
 	}
@@ -115,7 +115,7 @@ pub fn (mut m MmapFile) map_region(offset i64, length int) !&MmapRegion {
 	return &m.regions[m.regions.len - 1]
 }
 
-/// unmap_region은 영역의 매핑을 해제합니다.
+/// unmap_region unmaps a region.
 pub fn (mut m MmapFile) unmap_region(region &MmapRegion) ! {
 	for i, r in m.regions {
 		if r.offset == region.offset && r.length == region.length {
@@ -129,7 +129,7 @@ pub fn (mut m MmapFile) unmap_region(region &MmapRegion) ! {
 	return error('region not found')
 }
 
-/// sync_region은 더티 영역을 디스크에 동기화합니다.
+/// sync_region synchronizes a dirty region to disk.
 pub fn (mut m MmapFile) sync_region(region &MmapRegion) ! {
 	if m.read_only {
 		return error('cannot sync read-only file')
@@ -143,7 +143,7 @@ pub fn (mut m MmapFile) sync_region(region &MmapRegion) ! {
 	}
 }
 
-/// sync_all은 모든 더티 영역을 동기화합니다.
+/// sync_all synchronizes all dirty regions.
 pub fn (mut m MmapFile) sync_all() ! {
 	for region in m.regions {
 		if region.dirty {
@@ -152,12 +152,12 @@ pub fn (mut m MmapFile) sync_all() ! {
 	}
 }
 
-/// file_size는 파일 크기를 반환합니다.
+/// file_size returns the size of the file.
 pub fn (m MmapFile) file_size() i64 {
 	return m.size
 }
 
-/// extend는 파일 크기를 확장합니다.
+/// extend expands the file size.
 pub fn (mut m MmapFile) extend(new_size i64) ! {
 	if m.read_only {
 		return error('cannot extend read-only file')
@@ -169,7 +169,7 @@ pub fn (mut m MmapFile) extend(new_size i64) ! {
 
 	if file := m.file {
 		mut f := file
-		// 끝으로 이동하고 0 쓰기
+		// Seek to end and write zeros
 		f.seek(m.size, .start) or { return error('failed to seek: ${err}') }
 
 		zeros := []u8{len: 4096}
@@ -185,15 +185,15 @@ pub fn (mut m MmapFile) extend(new_size i64) ! {
 	m.size = new_size
 }
 
-/// close는 메모리 매핑된 파일을 닫습니다.
+/// close closes the memory-mapped file.
 pub fn (mut m MmapFile) close() ! {
-	// 모든 더티 영역 동기화
+	// Sync all dirty regions
 	m.sync_all() or {}
 
-	// 영역 정리
+	// Clean up regions
 	m.regions.clear()
 
-	// 파일 닫기
+	// Close file
 	if file := m.file {
 		mut f := file
 		f.close()
@@ -201,7 +201,7 @@ pub fn (mut m MmapFile) close() ! {
 	m.file = none
 }
 
-/// LogSegmentMmap은 Kafka 스타일 스토리지를 위한 메모리 매핑된 로그 세그먼트입니다.
+/// LogSegmentMmap is a memory-mapped log segment for Kafka-style storage.
 pub struct LogSegmentMmap {
 pub:
 	base_offset i64
@@ -213,20 +213,20 @@ mut:
 	max_size   i64
 }
 
-/// create는 메모리 매핑을 사용하여 새 로그 세그먼트를 생성합니다.
+/// create creates a new log segment using memory mapping.
 pub fn LogSegmentMmap.create(dir string, base_offset i64, max_size i64) !LogSegmentMmap {
 	log_path := '${dir}/${base_offset:020}.log'
 	index_path := '${dir}/${base_offset:020}.index'
 
-	// 디렉토리 존재 확인
+	// Ensure directory exists
 	os.mkdir_all(dir) or { return error('failed to create directory: ${err}') }
 
-	// 로그 파일 생성
+	// Create log file
 	log_file := MmapFile.create(log_path, max_size) or {
 		return error('failed to create log file: ${err}')
 	}
 
-	// 인덱스 파일 생성 (로그 크기의 10%)
+	// Create index file (10% of log size)
 	index_size := max_size / 10
 	index_file := MmapFile.create(index_path, index_size) or {
 		return error('failed to create index file: ${err}')
@@ -242,17 +242,17 @@ pub fn LogSegmentMmap.create(dir string, base_offset i64, max_size i64) !LogSegm
 	}
 }
 
-/// open은 기존 로그 세그먼트를 엽니다.
+/// open opens an existing log segment.
 pub fn LogSegmentMmap.open(dir string, base_offset i64) !LogSegmentMmap {
 	log_path := '${dir}/${base_offset:020}.log'
 	index_path := '${dir}/${base_offset:020}.index'
 
-	// 로그 파일 열기
+	// Open log file
 	log_file := MmapFile.open(log_path, false) or {
 		return error('failed to open log file: ${err}')
 	}
 
-	// 인덱스 파일 열기
+	// Open index file
 	index_file := MmapFile.open(index_path, false) or {
 		return error('failed to open index file: ${err}')
 	}
@@ -267,7 +267,7 @@ pub fn LogSegmentMmap.open(dir string, base_offset i64) !LogSegmentMmap {
 	}
 }
 
-/// append는 세그먼트에 레코드를 추가합니다.
+/// append appends a record to the segment.
 pub fn (mut s LogSegmentMmap) append(data []u8) !i64 {
 	record_size := data.len
 
@@ -276,10 +276,10 @@ pub fn (mut s LogSegmentMmap) append(data []u8) !i64 {
 	}
 
 	if mut log_file := s.log_file {
-		// 쓸 영역 매핑
+		// Map region to write
 		mut region := log_file.map_region(s.position, record_size)!
 
-		// 영역에 데이터 쓰기
+		// Write data to the region
 		for i, b in data {
 			if i < region.data.len {
 				region.data[i] = b
@@ -287,7 +287,7 @@ pub fn (mut s LogSegmentMmap) append(data []u8) !i64 {
 		}
 		region.dirty = true
 
-		// 영역 동기화
+		// Sync the region
 		log_file.sync_region(region)!
 
 		offset := s.position
@@ -299,7 +299,7 @@ pub fn (mut s LogSegmentMmap) append(data []u8) !i64 {
 	return error('log file not initialized')
 }
 
-/// read는 세그먼트에서 레코드를 읽습니다.
+/// read reads a record from the segment.
 pub fn (mut s LogSegmentMmap) read(offset i64, length int) ![]u8 {
 	if offset < 0 || offset >= s.position {
 		return error('offset out of bounds')
@@ -313,22 +313,22 @@ pub fn (mut s LogSegmentMmap) read(offset i64, length int) ![]u8 {
 	return error('log file not initialized')
 }
 
-/// current_position은 현재 위치 (다음 쓰기 오프셋)를 반환합니다.
+/// current_position returns the current position (next write offset).
 pub fn (s LogSegmentMmap) current_position() i64 {
 	return s.position
 }
 
-/// remaining_capacity는 남은 용량을 반환합니다.
+/// remaining_capacity returns the remaining capacity.
 pub fn (s LogSegmentMmap) remaining_capacity() i64 {
 	return s.max_size - s.position
 }
 
-/// is_full은 세그먼트가 가득 찼는지 확인합니다.
+/// is_full checks whether the segment is full.
 pub fn (s LogSegmentMmap) is_full() bool {
 	return s.position >= s.max_size
 }
 
-/// flush는 보류 중인 모든 쓰기를 플러시합니다.
+/// flush flushes all pending writes.
 pub fn (mut s LogSegmentMmap) flush() ! {
 	if mut log_file := s.log_file {
 		log_file.sync_all()!
@@ -338,7 +338,7 @@ pub fn (mut s LogSegmentMmap) flush() ! {
 	}
 }
 
-/// close는 세그먼트를 닫습니다.
+/// close closes the segment.
 pub fn (mut s LogSegmentMmap) close() ! {
 	if mut log_file := s.log_file {
 		log_file.close()!
@@ -350,7 +350,7 @@ pub fn (mut s LogSegmentMmap) close() ! {
 	s.index_file = none
 }
 
-/// MmapBenchmark는 mmap vs 일반 I/O 벤치마크입니다.
+/// MmapBenchmark benchmarks mmap vs regular I/O.
 pub struct MmapBenchmark {
 mut:
 	iterations u64
@@ -358,7 +358,7 @@ mut:
 	temp_dir   string
 }
 
-/// new는 새 MmapBenchmark를 생성합니다.
+/// new creates a new MmapBenchmark.
 pub fn MmapBenchmark.new(iterations u64, data_size int) MmapBenchmark {
 	return MmapBenchmark{
 		iterations: iterations
@@ -367,22 +367,22 @@ pub fn MmapBenchmark.new(iterations u64, data_size int) MmapBenchmark {
 	}
 }
 
-/// cleanup은 임시 파일을 정리합니다.
+/// cleanup removes temporary files.
 pub fn (mut b MmapBenchmark) cleanup() {
 	os.rmdir_all(b.temp_dir) or {}
 }
 
-/// benchmark_write는 mmap 쓰기 vs 일반 쓰기를 벤치마크합니다.
+/// benchmark_write benchmarks mmap writes vs regular writes.
 pub fn (mut b MmapBenchmark) benchmark_write() !(i64, i64) {
 	os.mkdir_all(b.temp_dir) or { return error('failed to create temp dir') }
 
-	// 테스트 데이터 생성
+	// Generate test data
 	mut data := []u8{len: b.data_size}
 	for i in 0 .. b.data_size {
 		data[i] = u8(i % 256)
 	}
 
-	// mmap 쓰기 벤치마크
+	// mmap write benchmark
 	mmap_path := '${b.temp_dir}/mmap_test.dat'
 	sw1 := time.new_stopwatch()
 
@@ -404,7 +404,7 @@ pub fn (mut b MmapBenchmark) benchmark_write() !(i64, i64) {
 	mmap_file.close() or {}
 	mmap_time := sw1.elapsed().nanoseconds()
 
-	// 일반 쓰기 벤치마크
+	// Regular write benchmark
 	regular_path := '${b.temp_dir}/regular_test.dat'
 	sw2 := time.new_stopwatch()
 
@@ -420,25 +420,25 @@ pub fn (mut b MmapBenchmark) benchmark_write() !(i64, i64) {
 	return mmap_time, regular_time
 }
 
-/// benchmark_read는 mmap 읽기 vs 일반 읽기를 벤치마크합니다.
+/// benchmark_read benchmarks mmap reads vs regular reads.
 pub fn (mut b MmapBenchmark) benchmark_read() !(i64, i64) {
 	os.mkdir_all(b.temp_dir) or { return error('failed to create temp dir') }
 
-	// 테스트 파일 생성
+	// Create test file
 	test_path := '${b.temp_dir}/read_test.dat'
 	mut data := []u8{len: b.data_size}
 	for i in 0 .. b.data_size {
 		data[i] = u8(i % 256)
 	}
 
-	// 테스트 데이터 쓰기
+	// Write test data
 	mut write_file := os.create(test_path) or { return error('failed to create test file') }
 	for _ in 0 .. b.iterations {
 		write_file.write(data) or {}
 	}
 	write_file.close()
 
-	// mmap 읽기 벤치마크
+	// mmap read benchmark
 	sw1 := time.new_stopwatch()
 	mut mmap_file := MmapFile.open(test_path, true) or { return error('failed to open mmap file') }
 
@@ -449,7 +449,7 @@ pub fn (mut b MmapBenchmark) benchmark_read() !(i64, i64) {
 	mmap_file.close() or {}
 	mmap_time := sw1.elapsed().nanoseconds()
 
-	// 일반 읽기 벤치마크
+	// Regular read benchmark
 	sw2 := time.new_stopwatch()
 	mut regular_file := os.open(test_path) or { return error('failed to open regular file') }
 

@@ -1,13 +1,13 @@
-/// 인프라 레이어 - 제로카피 I/O
-/// 시스템 sendfile을 사용한 고성능 I/O 연산
+/// Infrastructure layer - zero-copy I/O
+/// High-performance I/O operations using system sendfile
 module io
 
 import os
 import infra.performance.core
 
-// 제로카피 전송 결과
+// Zero-copy transfer results
 
-/// TransferResult는 전송 작업의 결과를 담고 있습니다.
+/// TransferResult holds the result of a transfer operation.
 pub struct TransferResult {
 pub:
 	bytes_transferred i64
@@ -15,12 +15,12 @@ pub:
 	error_msg         string
 }
 
-// 파일 기반 제로카피 (표준 파일 연산 사용)
+// File-based zero-copy (using standard file operations)
 
-/// zero_copy_file_to_file은 파일 간에 데이터를 효율적으로 전송합니다.
-/// V가 sendfile을 직접 노출하지 않으므로 버퍼링된 복사로 폴백합니다.
+/// zero_copy_file_to_file efficiently transfers data between files.
+/// Falls back to buffered copy since V does not expose sendfile directly.
 pub fn zero_copy_file_to_file(src_path string, dst_path string, offset i64, length i64) TransferResult {
-	// 소스 파일 열기
+	// Open source file
 	mut src_file := os.open(src_path) or {
 		return TransferResult{
 			success:   false
@@ -29,7 +29,7 @@ pub fn zero_copy_file_to_file(src_path string, dst_path string, offset i64, leng
 	}
 	defer { src_file.close() }
 
-	// 대상 파일 열기/생성
+	// Open/create destination file
 	mut dst_file := os.create(dst_path) or {
 		return TransferResult{
 			success:   false
@@ -38,7 +38,7 @@ pub fn zero_copy_file_to_file(src_path string, dst_path string, offset i64, leng
 	}
 	defer { dst_file.close() }
 
-	// 소스에서 오프셋으로 이동
+	// Seek to offset in source
 	if offset > 0 {
 		src_file.seek(offset, .start) or {
 			return TransferResult{
@@ -48,11 +48,11 @@ pub fn zero_copy_file_to_file(src_path string, dst_path string, offset i64, leng
 		}
 	}
 
-	// 효율적인 버퍼링된 복사 사용
+	// Use efficient buffered copy
 	return buffered_copy(mut src_file, mut dst_file, length)
 }
 
-/// buffered_copy는 효율적인 버퍼링된 복사를 수행합니다.
+/// buffered_copy performs an efficient buffered copy.
 fn buffered_copy(mut src os.File, mut dst os.File, length i64) TransferResult {
 	mut total_transferred := i64(0)
 	mut remaining := length
@@ -109,15 +109,15 @@ fn buffered_copy(mut src os.File, mut dst os.File, length i64) TransferResult {
 	}
 }
 
-// 메모리 매핑 스타일 scatter/gather I/O 시뮬레이션
+// Memory-mapped style scatter/gather I/O simulation
 
-/// IoVec은 I/O 벡터를 나타냅니다.
+/// IoVec represents an I/O vector.
 pub struct IoVec {
 pub:
 	data []u8
 }
 
-/// scatter_read는 여러 버퍼로 읽습니다.
+/// scatter_read reads into multiple buffers.
 pub fn scatter_read(mut file os.File, buffers []&core.Buffer) TransferResult {
 	mut total := i64(0)
 
@@ -137,8 +137,8 @@ pub fn scatter_read(mut file os.File, buffers []&core.Buffer) TransferResult {
 			break
 		}
 
-		// 불변 배열에서 가져온 buf를 직접 수정할 수 없음
-		// 읽은 양만 추적
+		// Cannot directly mutate buf obtained from an immutable slice
+		// Track only how much was read
 		total += i64(bytes_read)
 	}
 
@@ -148,7 +148,7 @@ pub fn scatter_read(mut file os.File, buffers []&core.Buffer) TransferResult {
 	}
 }
 
-/// gather_write는 여러 버퍼에서 씁니다.
+/// gather_write writes from multiple buffers.
 pub fn gather_write(mut file os.File, buffers []&core.Buffer) TransferResult {
 	mut total := i64(0)
 
@@ -174,13 +174,13 @@ pub fn gather_write(mut file os.File, buffers []&core.Buffer) TransferResult {
 	}
 }
 
-// 최적화된 메모리 연산
+// Optimized memory operations
 
-/// fast_copy는 최소한의 오버헤드로 바이트를 복사합니다.
+/// fast_copy copies bytes with minimal overhead.
 pub fn fast_copy(dst []u8, src []u8) int {
 	len := if dst.len < src.len { dst.len } else { src.len }
 
-	// V가 이것을 효율적으로 처리합니다
+	// V handles this efficiently
 	for i := 0; i < len; i++ {
 		unsafe {
 			dst[i] = src[i]
@@ -190,27 +190,27 @@ pub fn fast_copy(dst []u8, src []u8) int {
 	return len
 }
 
-/// fast_zero는 버퍼를 0으로 채웁니다.
+/// fast_zero fills a buffer with zeros.
 pub fn fast_zero(mut buf []u8) {
 	for i := 0; i < buf.len; i++ {
 		buf[i] = 0
 	}
 }
 
-// 페이지 정렬 버퍼 할당
+// Page-aligned buffer allocation
 
 const page_size = 4096
 
-/// allocate_page_aligned는 페이지 정렬된 버퍼를 할당합니다.
+/// allocate_page_aligned allocates a page-aligned buffer.
 pub fn allocate_page_aligned(size int) []u8 {
-	// 페이지 경계로 올림
+	// Round up to page boundary
 	aligned_size := ((size + page_size - 1) / page_size) * page_size
 	return []u8{len: aligned_size, cap: aligned_size}
 }
 
-// 전송 통계
+// Transfer statistics
 
-/// TransferStats는 전송 통계를 담고 있습니다.
+/// TransferStats holds transfer statistics.
 pub struct TransferStats {
 pub mut:
 	total_bytes_transferred u64
@@ -220,7 +220,7 @@ pub mut:
 	failed_operations       u64
 }
 
-/// average_transfer_size는 평균 전송 크기를 반환합니다.
+/// average_transfer_size returns the average transfer size.
 pub fn (s &TransferStats) average_transfer_size() f64 {
 	if s.total_operations == 0 {
 		return 0.0
@@ -228,7 +228,7 @@ pub fn (s &TransferStats) average_transfer_size() f64 {
 	return f64(s.total_bytes_transferred) / f64(s.total_operations)
 }
 
-/// success_rate는 성공률을 반환합니다.
+/// success_rate returns the success rate.
 pub fn (s &TransferStats) success_rate() f64 {
 	if s.total_operations == 0 {
 		return 0.0
