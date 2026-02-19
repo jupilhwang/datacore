@@ -5,9 +5,7 @@ module observability
 
 import sync
 
-// ============================================================================
 // ShardedCounter - 샤딩된 카운터 (락 경합 분산)
-// ============================================================================
 
 const shard_count = 16
 
@@ -114,9 +112,7 @@ pub fn (mut sc ShardedCounter) reset() {
 	}
 }
 
-// ============================================================================
 // ShardedMetrics - 샤딩된 메트릭 컬렉션
-// ============================================================================
 
 /// ShardedMetrics는 락 경합을 최소화하는 메트릭 집합입니다.
 pub struct ShardedMetrics {
@@ -277,9 +273,7 @@ pub fn (mut m ShardedMetrics) reset() {
 	m.fetch_latency_us.reset()
 }
 
-// ============================================================================
 // ShardedMetricsSnapshot - 메트릭 스냅샷
-// ============================================================================
 
 /// ShardedMetricsSnapshot은 특정 시점의 메트릭 값을 저장합니다.
 pub struct ShardedMetricsSnapshot {
@@ -331,9 +325,7 @@ pub fn (s &ShardedMetricsSnapshot) to_string() string {
   Errors: ${s.error_count}'
 }
 
-// ============================================================================
 // 호환성 별칭
-// ============================================================================
 
 pub type AtomicCounter = ShardedCounter
 pub type AtomicMetrics = ShardedMetrics

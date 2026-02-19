@@ -118,7 +118,7 @@ pub:
 	// mmap 설정 (v0.33.0)
 	use_mmap       bool // mmap 사용 여부 (파일 기반 영속성, 기본 false)
 	mmap_dir       string = '/tmp/datacore' // mmap 파일 디렉토리
-	segment_size   i64    = 1073741824      // 세그먼트 크기 (기본 1GB)
+	segment_size   i64    = 1073741824
 	sync_on_append bool // 매 append 시 sync 여부 (기본 false)
 }
 

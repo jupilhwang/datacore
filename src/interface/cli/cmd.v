@@ -1,5 +1,4 @@
 // Interface Layer - CLI Commands
-// 인터페이스 레이어 - CLI 명령어
 //
 // DataCore 브로커 관리 및 운영을 위한 CLI 애플리케이션입니다.
 // 브로커 시작/중지, 토픽 관리, 메시지 생산/소비 등의
@@ -248,13 +247,13 @@ pub:
 	running     bool          // 실행 중 여부
 	pid         int           // 프로세스 ID
 	uptime      time.Duration // 가동 시간
-	host        string        // 호스트
-	port        int           // 포트
-	broker_id   int           // 브로커 ID
-	cluster_id  string        // 클러스터 ID
-	topics      int           // 토픽 수
-	partitions  int           // 파티션 수
-	connections int           // 연결 수
+	host        string
+	port        int
+	broker_id   int
+	cluster_id  string
+	topics      int // 토픽 수
+	partitions  int
+	connections int
 }
 
 /// print_status는 브로커 상태를 출력합니다.

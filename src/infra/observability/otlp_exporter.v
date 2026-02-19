@@ -6,9 +6,7 @@ import net.http
 import sync
 import time
 
-// ============================================================
 // OTLP Exporter Configuration
-// ============================================================
 
 // OTLPConfig holds OTLP exporter configuration
 pub struct OTLPConfig {
@@ -28,9 +26,7 @@ pub:
 	max_span_buffer_size int = 5000  // Max buffered spans
 }
 
-// ============================================================
 // OTLP Exporter
-// ============================================================
 
 // OTLPExporter exports telemetry data to OpenTelemetry Collector
 pub struct OTLPExporter {
@@ -109,9 +105,7 @@ pub fn (mut e OTLPExporter) flush() {
 	}
 }
 
-// ============================================================
 // Log Export
-// ============================================================
 
 // add_log adds a log entry to the buffer
 pub fn (mut e OTLPExporter) add_log(entry LogEntry) {
@@ -208,9 +202,7 @@ fn (e &OTLPExporter) build_log_record(entry LogEntry) string {
 	return sb.bytestr()
 }
 
-// ============================================================
 // Span/Trace Export
-// ============================================================
 
 // add_span adds a span to the buffer
 pub fn (mut e OTLPExporter) add_span(span &Span) {
@@ -353,9 +345,7 @@ fn (e &OTLPExporter) build_attribute(attr SpanAttribute) string {
 	return '{"key":"${key}","value":${value}}'
 }
 
-// ============================================================
 // HTTP Transport
-// ============================================================
 
 // send_with_retry sends HTTP request with retry logic
 fn (e &OTLPExporter) send_with_retry(endpoint string, payload string) {
@@ -396,9 +386,7 @@ fn (e &OTLPExporter) send_http(endpoint string, payload string) bool {
 	return resp.status_code >= 200 && resp.status_code < 300
 }
 
-// ============================================================
 // Global OTLP Exporter (Singleton)
-// ============================================================
 
 // OTLPExporterHolder holds the singleton instance
 struct OTLPExporterHolder {

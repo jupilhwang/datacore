@@ -1,4 +1,3 @@
-// 어댑터 레이어 - Kafka 프로토콜 타입
 module kafka
 
 // Common constants for Kafka protocol responses

@@ -6,9 +6,7 @@ import time
 import infra.performance.core
 import infra.performance
 
-// ============================================================================
 // 벤치마크 설정
-// ============================================================================
 
 /// BenchmarkConfig는 벤치마크 실행 설정을 정의합니다.
 pub struct BenchmarkConfig {
@@ -24,12 +22,12 @@ pub struct BenchmarkResult {
 pub:
 	name           string // 벤치마크 이름
 	iterations     int    // 반복 횟수
-	total_time_ns  i64    // 총 소요 시간 (나노초)
-	avg_time_ns    i64    // 평균 소요 시간 (나노초)
-	min_time_ns    i64    // 최소 소요 시간 (나노초)
-	max_time_ns    i64    // 최대 소요 시간 (나노초)
-	ops_per_second f64    // 초당 작업 수
-	memory_saved   i64    // 풀링으로 절약된 예상 메모리
+	total_time_ns  i64
+	avg_time_ns    i64
+	min_time_ns    i64
+	max_time_ns    i64
+	ops_per_second f64 // 초당 작업 수
+	memory_saved   i64 // 풀링으로 절약된 예상 메모리
 }
 
 /// BenchmarkSuite는 모든 벤치마크를 실행하는 스위트입니다.
@@ -50,9 +48,7 @@ pub fn new_benchmark_suite(config BenchmarkConfig) &BenchmarkSuite {
 	}
 }
 
-// ============================================================================
 // 버퍼 풀 벤치마크
-// ============================================================================
 
 /// benchmark_buffer_pool_allocation은 버퍼 할당 성능을 벤치마크합니다.
 pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_allocation() BenchmarkResult {
@@ -132,9 +128,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
 	return result
 }
 
-// ============================================================================
 // 객체 풀 벤치마크
-// ============================================================================
 
 /// benchmark_record_pool은 레코드 풀 성능을 벤치마크합니다.
 pub fn (mut s BenchmarkSuite) benchmark_record_pool() BenchmarkResult {
@@ -193,9 +187,7 @@ pub fn (mut s BenchmarkSuite) benchmark_request_pool() BenchmarkResult {
 	return s.calculate_result('RequestPool Allocation', times)
 }
 
-// ============================================================================
 // 통합 벤치마크
-// ============================================================================
 
 /// benchmark_request_response_cycle은 전체 요청/응답 사이클을 시뮬레이션합니다.
 pub fn (mut s BenchmarkSuite) benchmark_request_response_cycle() BenchmarkResult {
@@ -271,9 +263,7 @@ pub fn (mut s BenchmarkSuite) benchmark_storage_operations() BenchmarkResult {
 	return s.calculate_result('Storage Operations (10 records)', times)
 }
 
-// ============================================================================
 // 결과 계산
-// ============================================================================
 
 /// calculate_result는 시간 측정값으로부터 벤치마크 결과를 계산합니다.
 fn (s &BenchmarkSuite) calculate_result(name string, times []i64) BenchmarkResult {
@@ -311,9 +301,7 @@ fn (s &BenchmarkSuite) calculate_result(name string, times []i64) BenchmarkResul
 	}
 }
 
-// ============================================================================
 // 모든 벤치마크 실행
-// ============================================================================
 
 /// run_all은 모든 벤치마크를 실행하고 결과를 반환합니다.
 pub fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
@@ -377,9 +365,7 @@ pub fn (mut s BenchmarkSuite) print_results() {
 	println('  Operations: ${stats.ops_count}')
 }
 
-// ============================================================================
 // 빠른 벤치마크 진입점
-// ============================================================================
 
 /// run_quick_benchmark는 기본 설정으로 빠른 벤치마크를 실행합니다.
 pub fn run_quick_benchmark() {

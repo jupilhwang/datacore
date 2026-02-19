@@ -1,13 +1,10 @@
-// 인프라 레이어 - Iceberg REST Catalog API 타입 정의
 // Apache Iceberg REST Catalog API의 요청/응답 타입을 정의합니다.
 // v3 테이블 포맷 지원
 module s3
 
 import json
 
-// =============================================================================
 // v3 테이블 포맷 추가 타입
-// =============================================================================
 
 /// IcebergDeleteFile은 삭제 파일을 나타냅니다 (v3: Binary Deletion Vectors 지원).
 /// ContentType: 삭제 파일 타입 (position_deletes, equality_deletes, dv)
@@ -45,9 +42,7 @@ pub mut:
 	cardinality  i64    // 삭제된 행 수
 }
 
-// =============================================================================
 // REST Catalog API 요청/응답 타입
-// =============================================================================
 
 /// CatalogConfig는 /v1/config 엔드포인트 응답입니다.
 pub struct CatalogConfig {
@@ -306,9 +301,7 @@ pub mut:
 	stack      []string @[json: 'stack']
 }
 
-// =============================================================================
 // 헬퍼 함수
-// =============================================================================
 
 /// new_catalog_config는 기본 카탈로그 설정을 생성합니다.
 pub fn new_catalog_config(warehouse string, format_version int) CatalogConfig {

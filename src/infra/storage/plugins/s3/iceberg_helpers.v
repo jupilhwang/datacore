@@ -1,4 +1,3 @@
-// 인프라 레이어 - Iceberg 통합 헬퍼 메서드
 // S3StorageAdapter에 Iceberg 테이블 형식 지원을 추가합니다.
 module s3
 

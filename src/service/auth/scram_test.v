@@ -1,9 +1,7 @@
 // SCRAM-SHA-256 인증 테스트
 module auth
 
-// ============================================================================
 // Client First Message 파싱 테스트
-// ============================================================================
 
 fn test_parse_client_first_message_valid() {
 	// 표준 SCRAM client-first-message 형식
@@ -52,9 +50,7 @@ fn test_parse_client_first_message_missing_nonce() {
 	assert result == none
 }
 
-// ============================================================================
 // Client Final Message 파싱 테스트
-// ============================================================================
 
 fn test_parse_client_final_message_valid() {
 	msg := 'c=biws,r=fyko+d2lbbFgONRv9qkxdawLHo+Vgk7qvUOKUwuWLIWg4l/9SraGMHuB,p=v0X8v3Bz2T0CJGbJQyF0X+HI4Ts='
@@ -79,9 +75,7 @@ fn test_parse_client_final_message_missing_proof() {
 	assert result == none
 }
 
-// ============================================================================
 // Server First Message 생성 테스트
-// ============================================================================
 
 fn test_build_server_first_message() {
 	salt := [u8(1), 2, 3, 4, 5, 6, 7, 8]
@@ -92,9 +86,7 @@ fn test_build_server_first_message() {
 	assert msg.contains('s=')
 }
 
-// ============================================================================
 // Cryptographic Functions 테스트
-// ============================================================================
 
 fn test_pbkdf2_sha256_basic() {
 	// 간단한 테스트 - 결과가 32바이트(SHA-256 출력)인지 확인
@@ -162,9 +154,7 @@ fn test_compute_client_key_from_salted() {
 	assert result.len == 32
 }
 
-// ============================================================================
 // XOR 및 상수 시간 비교 테스트
-// ============================================================================
 
 fn test_xor_bytes_same_length() {
 	a := [u8(0xFF), 0x00, 0xAA]
@@ -218,9 +208,7 @@ fn test_constant_time_compare_empty() {
 	assert constant_time_compare(a, b) == true
 }
 
-// ============================================================================
 // Salt 생성 테스트
-// ============================================================================
 
 fn test_generate_user_salt_deterministic() {
 	// 같은 사용자명에 대해 같은 salt

@@ -1,11 +1,8 @@
-// 인프라 레이어 - Kafka 트랜잭션 타입 정의
 // 트랜잭션 관련 요청/응답 구조체 정의
 //
 // 이 모듈은 Kafka 트랜잭션 프로토콜의 핵심 타입들을 정의합니다.
 // 프로듀서 ID 초기화, 트랜잭션 시작/종료, 오프셋 커밋 등에 사용됩니다.
 module kafka
-
-// InitProducerId (API Key 22) - 프로듀서 ID 초기화
 
 /// InitProducerId 요청 - 멱등성/트랜잭션 프로듀서가 프로듀서 ID를 얻기 위한 요청
 ///
@@ -22,13 +19,11 @@ pub:
 /// InitProducerId 응답 - 멱등성/트랜잭션 프로듀서에게 프로듀서 ID 반환
 pub struct InitProducerIdResponse {
 pub:
-	throttle_time_ms i32 // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 	error_code       i16 // 에러 코드 (0 = 성공)
 	producer_id      i64 // 할당된 프로듀서 ID
 	producer_epoch   i16 // 프로듀서 에포크
 }
-
-// AddPartitionsToTxn (API Key 24) - 트랜잭션에 파티션 추가
 
 /// AddPartitionsToTxn 요청 - 트랜잭션에 파티션을 추가하는 요청
 ///
@@ -45,29 +40,29 @@ pub:
 /// AddPartitionsToTxn 토픽 - 트랜잭션에 추가할 토픽
 pub struct AddPartitionsToTxnTopic {
 pub:
-	name       string // 토픽 이름
-	partitions []i32  // 파티션 인덱스 목록
+	name       string
+	partitions []i32 // 파티션 인덱스 목록
 }
 
 /// AddPartitionsToTxn 응답 - 파티션 추가 결과
 pub struct AddPartitionsToTxnResponse {
 pub:
-	throttle_time_ms i32                        // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 	results          []AddPartitionsToTxnResult // 토픽별 결과
 }
 
 /// AddPartitionsToTxn 결과 - 토픽별 파티션 추가 결과
 pub struct AddPartitionsToTxnResult {
 pub:
-	name       string // 토픽 이름
+	name       string
 	partitions []AddPartitionsToTxnPartitionResult // 파티션별 결과
 }
 
 /// AddPartitionsToTxn 파티션 결과 - 파티션별 추가 결과
 pub struct AddPartitionsToTxnPartitionResult {
 pub:
-	partition_index i32 // 파티션 인덱스
-	error_code      i16 // 에러 코드
+	partition_index i32
+	error_code      i16
 }
 
 // AddOffsetsToTxn (API Key 25) - 트랜잭션에 오프셋 추가
@@ -87,11 +82,9 @@ pub:
 /// AddOffsetsToTxn 응답 - 오프셋 추가 결과
 pub struct AddOffsetsToTxnResponse {
 pub:
-	throttle_time_ms i32 // 스로틀링 시간 (밀리초)
-	error_code       i16 // 에러 코드
+	throttle_time_ms i32
+	error_code       i16
 }
-
-// EndTxn (API Key 26) - 트랜잭션 종료
 
 /// EndTxn 요청 - 트랜잭션을 커밋하거나 중단하는 요청
 ///
@@ -107,11 +100,9 @@ pub:
 /// EndTxn 응답 - 트랜잭션 종료 결과
 pub struct EndTxnResponse {
 pub:
-	throttle_time_ms i32 // 스로틀링 시간 (밀리초)
-	error_code       i16 // 에러 코드
+	throttle_time_ms i32
+	error_code       i16
 }
-
-// TxnOffsetCommit (API Key 28) - 트랜잭션 오프셋 커밋
 
 /// TxnOffsetCommit 요청 - 트랜잭션 내에서 오프셋을 커밋하는 요청
 ///
@@ -132,14 +123,14 @@ pub:
 /// TxnOffsetCommit 요청 토픽 - 커밋할 토픽
 pub struct TxnOffsetCommitRequestTopic {
 pub:
-	name       string // 토픽 이름
+	name       string
 	partitions []TxnOffsetCommitRequestPartition // 파티션별 오프셋
 }
 
 /// TxnOffsetCommit 요청 파티션 - 커밋할 파티션 오프셋
 pub struct TxnOffsetCommitRequestPartition {
 pub:
-	partition_index        i32    // 파티션 인덱스
+	partition_index        i32
 	committed_offset       i64    // 커밋할 오프셋
 	committed_leader_epoch i32    // 커밋 시점의 리더 에포크
 	committed_metadata     string // 커밋 메타데이터
@@ -148,22 +139,22 @@ pub:
 /// TxnOffsetCommit 응답 - 트랜잭션 오프셋 커밋 결과
 pub struct TxnOffsetCommitResponse {
 pub:
-	throttle_time_ms i32 // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 	topics           []TxnOffsetCommitResponseTopic // 토픽별 결과
 }
 
 /// TxnOffsetCommit 응답 토픽 - 토픽별 커밋 결과
 pub struct TxnOffsetCommitResponseTopic {
 pub:
-	name       string // 토픽 이름
+	name       string
 	partitions []TxnOffsetCommitResponsePartition // 파티션별 결과
 }
 
 /// TxnOffsetCommit 응답 파티션 - 파티션별 커밋 결과
 pub struct TxnOffsetCommitResponsePartition {
 pub:
-	partition_index i32 // 파티션 인덱스
-	error_code      i16 // 에러 코드
+	partition_index i32
+	error_code      i16
 }
 
 // WriteTxnMarkers (API Key 27) - 트랜잭션 마커 쓰기
@@ -190,8 +181,8 @@ pub:
 /// WriteTxnMarker 토픽 - WriteTxnMarkers 요청의 토픽
 pub struct WriteTxnMarkerTopic {
 pub:
-	name              string // 토픽 이름
-	partition_indexes []i32  // 마커를 쓸 파티션 인덱스 목록
+	name              string
+	partition_indexes []i32 // 마커를 쓸 파티션 인덱스 목록
 }
 
 /// WriteTxnMarkers 응답 - WriteTxnMarkers 요청에 대한 응답
@@ -210,13 +201,13 @@ pub:
 /// WriteTxnMarker 토픽 결과 - 토픽에 대한 결과
 pub struct WriteTxnMarkerTopicResult {
 pub:
-	name       string // 토픽 이름
+	name       string
 	partitions []WriteTxnMarkerPartitionResult // 파티션별 결과
 }
 
 /// WriteTxnMarker 파티션 결과 - 파티션에 대한 결과
 pub struct WriteTxnMarkerPartitionResult {
 pub:
-	partition_index i32 // 파티션 인덱스
+	partition_index i32
 	error_code      i16 // 에러 코드 (0 = 성공)
 }

@@ -1,4 +1,3 @@
-// 서비스 레이어 - 스토리지 포트 인터페이스
 // 유스케이스 레이어에서 정의하고 어댑터 레이어에서 구현하는 스토리지 작업 인터페이스
 // 이 인터페이스는 Clean Architecture의 의존성 역전 원칙을 따릅니다.
 module port
@@ -70,9 +69,9 @@ mut:
 
 /// HealthStatus는 스토리지의 상태를 나타냅니다.
 pub enum HealthStatus {
-	healthy   // 정상
-	degraded  // 성능 저하
-	unhealthy // 비정상
+	healthy
+	degraded // 성능 저하
+	unhealthy
 }
 
 /// Lock은 파티션 레벨 잠금을 위한 인터페이스입니다.

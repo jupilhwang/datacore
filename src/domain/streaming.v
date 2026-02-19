@@ -1,4 +1,3 @@
-// 도메인 레이어 - 스트리밍 모델
 // SSE (Server-Sent Events) 및 WebSocket 스트리밍 도메인 모델
 module domain
 
@@ -95,8 +94,8 @@ pub fn (e &SSEEvent) encode() string {
 /// SSEMessageData는 SSE 메시지 이벤트의 데이터 페이로드를 나타냅니다.
 pub struct SSEMessageData {
 pub:
-	topic     string            // 토픽 이름
-	partition i32               // 파티션 번호
+	topic     string
+	partition i32
 	offset    i64               // 메시지 오프셋
 	timestamp i64               // 메시지 타임스탬프 (Unix 밀리초)
 	key       ?string           // 메시지 키 (선택사항)
@@ -125,8 +124,8 @@ pub fn subscription_offset_from_str(s string) SubscriptionOffset {
 /// Subscription은 클라이언트의 토픽/파티션 구독을 나타냅니다.
 pub struct Subscription {
 pub:
-	id          string             // 고유 구독 ID
-	topic       string             // 토픽 이름
+	id          string // 고유 구독 ID
+	topic       string
 	partition   ?i32               // 파티션 (none = 모든 파티션)
 	offset_type SubscriptionOffset // 시작 위치
 	offset      i64                // 특정 오프셋 (offset_type이 specific인 경우)
@@ -248,8 +247,8 @@ pub fn websocket_action_from_str(s string) ?WebSocketAction {
 /// WebSocketMessage는 WebSocket 메시지 (클라이언트 -> 서버)를 나타냅니다.
 pub struct WebSocketMessage {
 pub:
-	action    WebSocketAction   // 액션 유형
-	topic     string            // 토픽 이름
+	action    WebSocketAction // 액션 유형
+	topic     string
 	partition ?i32              // 파티션 (선택사항)
 	offset    ?string           // 오프셋 (선택사항, 구독용)
 	key       ?string           // 메시지 키 (produce용)
@@ -261,11 +260,11 @@ pub:
 /// WebSocketResponse는 WebSocket 메시지 (서버 -> 클라이언트)를 나타냅니다.
 pub struct WebSocketResponse {
 pub:
-	response_type string            // 응답 유형 (message, subscribed, produced, error, pong)
-	topic         string            // 토픽 이름
-	partition     i32               // 파티션 번호
-	offset        i64               // 오프셋
-	timestamp     i64               // 타임스탬프
+	response_type string // 응답 유형 (message, subscribed, produced, error, pong)
+	topic         string
+	partition     i32
+	offset        i64
+	timestamp     i64
 	key           ?string           // 메시지 키
 	value         string            // 메시지 값
 	headers       map[string]string // 메시지 헤더
@@ -412,8 +411,8 @@ pub mut:
 	bytes_sent    i64                      // 총 전송 바이트
 	bytes_recv    i64                      // 총 수신 바이트
 	last_activity i64                      // 마지막 활동 타임스탬프
-	last_ping     i64                      // 마지막 ping 전송 시간
-	last_pong     i64                      // 마지막 pong 수신 시간
+	last_ping     i64
+	last_pong     i64 // 마지막 pong 수신 시간
 }
 
 /// new_ws_connection은 새로운 WebSocket 연결을 생성합니다.

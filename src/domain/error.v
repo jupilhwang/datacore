@@ -1,4 +1,3 @@
-// 도메인 레이어 - 에러 정의
 // Kafka 호환 에러 코드를 정의합니다.
 module domain
 
@@ -14,7 +13,7 @@ pub:
 /// ErrorCode는 Kafka 호환 에러 코드를 나타냅니다.
 /// Kafka 프로토콜 스펙에 정의된 에러 코드와 동일합니다.
 pub enum ErrorCode {
-	none                             = 0   // 성공
+	none                             = 0
 	unknown_server_error             = -1  // 알 수 없는 서버 에러
 	offset_out_of_range              = 1   // 오프셋이 범위를 벗어남
 	corrupt_message                  = 2   // 손상된 메시지

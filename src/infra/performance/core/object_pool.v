@@ -4,9 +4,7 @@ module core
 
 import sync
 
-// ============================================================================
 // PooledRecord - 풀링된 레코드
-// ============================================================================
 
 /// PooledRecord는 풀에서 관리되는 재사용 가능한 레코드입니다.
 @[heap]
@@ -15,10 +13,10 @@ pub mut:
 	key       []u8           // 레코드 키
 	value     []u8           // 레코드 값
 	headers   []RecordHeader // 레코드 헤더 목록
-	timestamp i64            // 타임스탬프
-	partition int            // 파티션 번호
-	offset    i64            // 오프셋
-	in_use    bool           // 사용 중 여부
+	timestamp i64
+	partition int
+	offset    i64
+	in_use    bool // 사용 중 여부
 }
 
 /// RecordHeader는 레코드 헤더를 나타냅니다.
@@ -57,16 +55,14 @@ pub fn (mut r PooledRecord) add_header(key string, value []u8) {
 	}
 }
 
-// ============================================================================
 // PooledRecordBatch - 풀링된 레코드 배치
-// ============================================================================
 
 /// PooledRecordBatch는 풀에서 관리되는 재사용 가능한 레코드 배치입니다.
 @[heap]
 pub struct PooledRecordBatch {
 pub mut:
-	topic       string          // 토픽 이름
-	partition   int             // 파티션 번호
+	topic       string
+	partition   int
 	records     []&PooledRecord // 레코드 목록
 	base_offset i64             // 기본 오프셋
 	first_ts    i64             // 첫 번째 타임스탬프
@@ -113,9 +109,7 @@ pub fn (b &PooledRecordBatch) byte_size() int {
 	return total
 }
 
-// ============================================================================
 // PooledRequest - 풀링된 요청
-// ============================================================================
 
 /// PooledRequest는 풀에서 관리되는 재사용 가능한 요청입니다.
 @[heap]
@@ -139,9 +133,7 @@ pub fn (mut r PooledRequest) reset() {
 	r.in_use = false
 }
 
-// ============================================================================
 // RecordPool - 레코드 객체 풀
-// ============================================================================
 
 /// RecordPool은 PooledRecord 객체를 관리하는 풀입니다.
 @[heap]
@@ -208,9 +200,7 @@ pub fn (mut p RecordPool) get_stats() ObjectPoolStats {
 	return stats
 }
 
-// ============================================================================
 // RecordBatchPool - 레코드 배치 객체 풀
-// ============================================================================
 
 /// RecordBatchPool은 PooledRecordBatch 객체를 관리하는 풀입니다.
 @[heap]
@@ -275,9 +265,7 @@ pub fn (mut p RecordBatchPool) get_stats() ObjectPoolStats {
 	return stats
 }
 
-// ============================================================================
 // RequestPool - 요청 객체 풀
-// ============================================================================
 
 /// RequestPool은 PooledRequest 객체를 관리하는 풀입니다.
 @[heap]
@@ -342,9 +330,7 @@ pub fn (mut p RequestPool) get_stats() ObjectPoolStats {
 	return stats
 }
 
-// ============================================================================
 // 통계
-// ============================================================================
 
 /// ObjectPoolStats는 객체 풀 통계를 담고 있습니다.
 pub struct ObjectPoolStats {

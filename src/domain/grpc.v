@@ -1,4 +1,3 @@
-// 도메인 레이어 - gRPC 모델
 // gRPC 스트리밍 프로토콜 도메인 모델
 module domain
 
@@ -27,13 +26,13 @@ pub:
 /// GrpcProduceResponse는 gRPC produce 응답을 나타냅니다.
 pub struct GrpcProduceResponse {
 pub:
-	topic        string // 토픽 이름
-	partition    i32    // 파티션 번호
-	base_offset  i64    // 생성된 레코드의 기본 오프셋
-	record_count int    // 생성된 레코드 수
-	timestamp    i64    // 로그 추가 시간
-	error_code   i32    // 에러 코드 (0 = 성공)
-	error_msg    string // 에러 메시지
+	topic        string
+	partition    i32
+	base_offset  i64 // 생성된 레코드의 기본 오프셋
+	record_count int // 생성된 레코드 수
+	timestamp    i64 // 로그 추가 시간
+	error_code   i32 // 에러 코드 (0 = 성공)
+	error_msg    string
 }
 
 /// new_grpc_produce_response는 성공적인 produce 응답을 생성합니다.
@@ -66,8 +65,8 @@ pub fn new_grpc_produce_error(topic string, partition i32, code i32, msg string)
 /// GrpcConsumeRequest는 gRPC consume 요청을 나타냅니다.
 pub struct GrpcConsumeRequest {
 pub:
-	topic       string  // 소비할 토픽
-	partition   i32     // 파티션 번호
+	topic       string // 소비할 토픽
+	partition   i32
 	offset      i64     // 시작 오프셋
 	max_records int     // 배치당 최대 레코드 수
 	max_bytes   int     // 배치당 최대 바이트 수
@@ -77,13 +76,13 @@ pub:
 /// GrpcConsumeResponse는 gRPC consume 응답(스트림 요소)을 나타냅니다.
 pub struct GrpcConsumeResponse {
 pub:
-	topic          string       // 토픽 이름
-	partition      i32          // 파티션 번호
+	topic          string
+	partition      i32
 	records        []GrpcRecord // 조회된 레코드 목록
 	high_watermark i64          // 하이 워터마크 오프셋
 	next_offset    i64          // 다음 조회 오프셋
 	error_code     i32          // 에러 코드 (0 = 성공)
-	error_msg      string       // 에러 메시지
+	error_msg      string
 }
 
 /// new_grpc_consume_response는 성공적인 consume 응답을 생성합니다.
@@ -153,8 +152,8 @@ pub:
 /// GrpcPartitionOffset은 파티션 오프셋을 나타냅니다.
 pub struct GrpcPartitionOffset {
 pub:
-	topic     string // 토픽 이름
-	partition i32    // 파티션 번호
+	topic     string
+	partition i32
 	offset    i64    // 커밋할 오프셋
 	metadata  string // 커밋 메타데이터
 }
@@ -162,9 +161,9 @@ pub:
 /// GrpcAckRequest는 메시지 수신 확인을 나타냅니다.
 pub struct GrpcAckRequest {
 pub:
-	topic     string // 토픽 이름
-	partition i32    // 파티션 번호
-	offset    i64    // 확인된 오프셋
+	topic     string
+	partition i32
+	offset    i64 // 확인된 오프셋
 }
 
 /// GrpcStreamResponse는 양방향 스트림 응답을 나타냅니다.
@@ -190,8 +189,8 @@ pub enum GrpcStreamResponseType {
 /// GrpcMessageResponse는 소비된 메시지를 나타냅니다.
 pub struct GrpcMessageResponse {
 pub:
-	topic     string          // 토픽 이름
-	partition i32             // 파티션 번호
+	topic     string
+	partition i32
 	offset    i64             // 메시지 오프셋
 	timestamp i64             // 메시지 타임스탬프
 	key       []u8            // 메시지 키
@@ -209,8 +208,8 @@ pub:
 /// GrpcErrorResponse는 에러를 나타냅니다.
 pub struct GrpcErrorResponse {
 pub:
-	code    i32    // 에러 코드
-	message string // 에러 메시지
+	code    i32
+	message string
 }
 
 /// GrpcPongResponse는 pong을 나타냅니다.

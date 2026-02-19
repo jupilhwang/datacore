@@ -1,4 +1,3 @@
-// 서비스 레이어 - 스키마 레지스트리
 // 스키마 등록, 버전 관리, 호환성 검사를 관리합니다.
 // Confluent Schema Registry와 호환되는 API를 제공합니다.
 module schema

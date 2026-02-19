@@ -202,10 +202,8 @@ pub fn (r &MetricsRegistry) export_prometheus() string {
 	return output
 }
 
-// ============================================================================
 // DataCore용 Kafka 호환 메트릭
 // 참조: https://kafka.apache.org/41/operations/monitoring/
-// ============================================================================
 
 /// BrokerTopicMetrics - 토픽별 브로커 메트릭 (kafka.server:type=BrokerTopicMetrics)
 pub struct BrokerTopicMetrics {
@@ -665,9 +663,7 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 	}
 }
 
-// ============================================================================
 // 메트릭 기록용 헬퍼 함수
-// ============================================================================
 
 /// record_produce는 produce 요청에 대한 메트릭을 기록합니다.
 pub fn (mut m DataCoreMetrics) record_produce(topic string, bytes i64, records int, success bool, latency_ms f64) {

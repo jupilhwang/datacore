@@ -72,7 +72,7 @@ mut:
 
 /// ServerState는 서버의 현재 상태를 나타내는 열거형입니다.
 pub enum ServerState {
-	stopped  // 정지됨
+	stopped
 	starting // 시작 중
 	running  // 실행 중
 	stopping // 종료 중

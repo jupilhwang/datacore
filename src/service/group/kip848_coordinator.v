@@ -29,8 +29,8 @@ pub struct KIP848GroupCoordinator {
 mut:
 	storage               port.StoragePort                // 스토리지 포트
 	groups                map[string]&KIP848ConsumerGroup // 그룹 맵
-	heartbeat_interval_ms i32 // 하트비트 간격 (ms)
-	session_timeout_ms    i32 // 세션 타임아웃 (ms)
+	heartbeat_interval_ms i32
+	session_timeout_ms    i32
 	rebalance_timeout_ms  i32 // 리밸런싱 타임아웃 (ms)
 }
 
@@ -57,11 +57,11 @@ pub fn new_kip848_coordinator(storage port.StoragePort) &KIP848GroupCoordinator 
 /// HeartbeatResult는 하트비트 작업의 결과를 나타냅니다.
 pub struct HeartbeatResult {
 pub:
-	error_code            i16               // 오류 코드
-	error_message         ?string           // 오류 메시지
-	member_id             string            // 멤버 ID
-	member_epoch          i32               // 멤버 에포크
-	heartbeat_interval_ms i32               // 하트비트 간격 (ms)
+	error_code            i16
+	error_message         ?string // 오류 메시지
+	member_id             string  // 멤버 ID
+	member_epoch          i32     // 멤버 에포크
+	heartbeat_interval_ms i32
 	assignment            ?[]TopicPartition // 파티션 할당
 }
 

@@ -11,9 +11,7 @@ module engines
 
 import time
 
-// ============================================================================
 // io_uring 서버 구조체
-// ============================================================================
 
 /// IoUringServerConfig는 io_uring 서버 설정을 담고 있습니다.
 pub struct IoUringServerConfig {
@@ -48,11 +46,11 @@ pub mut:
 	recv_buf       []u8      // 수신 버퍼
 	send_buf       []u8      // 송신 버퍼 (대기 중)
 	connected_at   time.Time // 연결 시간
-	last_active_at time.Time // 마지막 활동 시간
-	bytes_received u64       // 수신 바이트
-	bytes_sent     u64       // 송신 바이트
-	recv_pending   bool      // recv 요청 대기 중
-	send_pending   bool      // send 요청 대기 중
+	last_active_at time.Time
+	bytes_received u64  // 수신 바이트
+	bytes_sent     u64  // 송신 바이트
+	recv_pending   bool // recv 요청 대기 중
+	send_pending   bool // send 요청 대기 중
 }
 
 /// IoUringServerStats는 서버 통계입니다.
@@ -98,9 +96,7 @@ fn decode_user_data(user_data u64) (IoUringEventType, int) {
 	return event_type, fd
 }
 
-// ============================================================================
 // io_uring 서버 구현
-// ============================================================================
 
 /// new_io_uring_server는 새 io_uring 서버를 생성합니다.
 pub fn new_io_uring_server(config IoUringServerConfig) !&IoUringServer {
@@ -311,9 +307,7 @@ pub fn (s &IoUringServer) is_running() bool {
 	return s.running
 }
 
-// ============================================================================
 // 내부 헬퍼 메서드
-// ============================================================================
 
 fn (mut s IoUringServer) prepare_accept() {
 	$if linux {
@@ -436,9 +430,7 @@ fn (mut s IoUringServer) handle_send_completion(fd int, result i32) IoUringEvent
 	}
 }
 
-// ============================================================================
 // 비Linux 폴백 구현
-// ============================================================================
 
 /// IoUringServerFallback은 비Linux 시스템을 위한 폴백입니다.
 /// net 모듈을 사용한 동기 I/O로 대체합니다.

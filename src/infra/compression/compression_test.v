@@ -234,9 +234,7 @@ fn test_list_available_compressors() {
 	assert CompressionType.zstd in compressors
 }
 
-// ============================================================================
 // Manual Compression Test - All Types with Timing
-// ============================================================================
 // 이 테스트는 모든 압축 타입(Snappy, Gzip, LZ4, Zstd)을
 // 통합 테스트 환경에서 검증합니다.
 

@@ -3,6 +3,7 @@
 module config
 
 import os
+import rand
 import toml
 
 /// Config는 DataCore의 전체 설정을 나타냅니다.
@@ -86,7 +87,7 @@ pub:
 /// segment_size_bytes: 세그먼트 크기 (바이트)
 pub struct MemoryStorageConfig {
 pub:
-	max_memory_mb      int = 1024
+	max_memory_mb      int = 20240
 	segment_size_bytes int = 1073741824
 }
 
@@ -135,14 +136,14 @@ pub mut:
 	timezone   string = 'UTC'
 	// 배치 설정
 	batch_timeout_ms int = 25
-	batch_max_bytes  i64 = 485760
+	batch_max_bytes  i64 = 4096000
 	// 컴팩션 설정
-	compaction_interval_ms int = 60000
+	compaction_interval_ms int = 30000
 	target_segment_bytes   i64 = 104857600
 	index_cache_ttl_ms     int = 30000 // 파티션 인덱스 캐시 TTL (기본 30초)
 	// 오프셋 배치 설정
 	offset_batch_enabled         bool = true
-	offset_flush_interval_ms     int  = 25
+	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
 	// Iceberg 설정
 	iceberg IcebergConfig
@@ -211,7 +212,7 @@ pub struct OtelConfig {
 pub:
 	enabled             bool   = true
 	service_name        string = 'datacore'
-	service_version     string = '0.2.0'
+	service_version     string = '0.44.1'
 	instance_id         string
 	environment         string = 'development'
 	otlp_endpoint       string = 'http://localhost:4317'
@@ -244,7 +245,7 @@ pub:
 pub struct LoggingConfig {
 pub:
 	enabled              bool   = true
-	level                string = 'info'   // trace, debug, info, warn, error, fatal
+	level                string = 'debug'  // trace, debug, info, warn, error, fatal
 	format               string = 'json'   // json, text
 	output               string = 'stdout' // stdout, otel, both, none
 	otlp_endpoint        string // 로그 내보내기용 OTLP 엔드포인트
@@ -301,12 +302,17 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	// 브로커 설정 파싱 (우선순위 cascade 적용)
 	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
 		doc, 'broker.host', '0.0.0.0')
+	// broker_id: 설정/환경변수에 없으면 서버 고유값 기반 deterministic 생성 (기본값 0을 sentinel로 사용)
+	mut broker_id := get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID', doc,
+		'broker.broker_id', 0)
+	if broker_id == 0 {
+		broker_id = generate_deterministic_broker_id()
+	}
 	broker := BrokerConfig{
 		host:               broker_host
 		port:               get_config_int(cli_args, 'broker-port', 'DATACORE_BROKER_PORT',
 			doc, 'broker.port', 9092)
-		broker_id:          get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID',
-			doc, 'broker.broker_id', 1)
+		broker_id:          broker_id
 		cluster_id:         get_config_string(cli_args, 'cluster-id', 'DATACORE_CLUSTER_ID',
 			doc, 'broker.cluster_id', 'datacore-cluster')
 		max_connections:    get_config_int(cli_args, 'max-connections', 'DATACORE_MAX_CONNECTIONS',
@@ -345,7 +351,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 
 	// 메모리 설정 파싱
 	memory := MemoryStorageConfig{
-		max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 1024)
+		max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 20240)
 		segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
 	}
 
@@ -361,10 +367,10 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			doc, 'storage.s3.prefix', 'datacore/')
 		timezone:                     get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
 			doc, 'storage.s3.timezone', 'UTC')
-		batch_timeout_ms:             get_int(doc, 'storage.s3.batch_timeout_ms', 1000)
-		batch_max_bytes:              get_i64(doc, 'storage.s3.batch_max_bytes', 10485760)
+		batch_timeout_ms:             get_int(doc, 'storage.s3.batch_timeout_ms', 25)
+		batch_max_bytes:              get_i64(doc, 'storage.s3.batch_max_bytes', 4096000)
 		compaction_interval_ms:       get_int(doc, 'storage.s3.compaction_interval_ms',
-			60000)
+			30000)
 		target_segment_bytes:         get_i64(doc, 'storage.s3.target_segment_bytes',
 			104857600)
 		index_cache_ttl_ms:           get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000)
@@ -481,7 +487,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	otel := OtelConfig{
 		enabled:             get_bool(doc, 'observability.otel.enabled', true)
 		service_name:        get_string(doc, 'observability.otel.service_name', 'datacore')
-		service_version:     get_string(doc, 'observability.otel.service_version', '0.10.0')
+		service_version:     get_string(doc, 'observability.otel.service_version', '0.44.1')
 		instance_id:         get_string(doc, 'observability.otel.instance_id', '')
 		environment:         get_string(doc, 'observability.otel.environment', 'development')
 		otlp_endpoint:       get_string(doc, 'observability.otel.otlp_endpoint', 'http://localhost:4317')
@@ -506,7 +512,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	// 로깅 설정 파싱
 	logging := LoggingConfig{
 		enabled:              get_bool(doc, 'observability.logging.enabled', true)
-		level:                get_string(doc, 'observability.logging.level', 'info')
+		level:                get_string(doc, 'observability.logging.level', 'debug')
 		format:               get_string(doc, 'observability.logging.format', 'json')
 		output:               get_string(doc, 'observability.logging.output', 'stdout')
 		otlp_endpoint:        get_string(doc, 'observability.logging.otlp_endpoint', '')
@@ -558,9 +564,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	return cfg
 }
 
-// ============================================================================
 // 헬퍼 함수
-// ============================================================================
 
 /// get_string은 TOML 문서에서 문자열 값을 가져옵니다.
 fn get_string(doc toml.Doc, key string, default_val string) string {
@@ -592,9 +596,7 @@ fn get_bool(doc toml.Doc, key string, default_val bool) bool {
 	return val.bool()
 }
 
-// ============================================================================
 // 우선순위 Cascade 헬퍼 함수
-// ============================================================================
 // 설정 값 우선순위: CLI args > 환경변수 > TOML > 기본값
 
 /// get_config_string은 우선순위에 따라 문자열 설정 값을 가져옵니다.
@@ -834,12 +836,17 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	// 브로커 설정 (우선순위 cascade 적용)
 	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
 		empty_doc, '', '0.0.0.0')
+	// broker_id: 설정/환경변수에 없으면 서버 고유값 기반 deterministic 생성 (기본값 0을 sentinel로 사용)
+	mut broker_id := get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID', empty_doc,
+		'', 0)
+	if broker_id == 0 {
+		broker_id = generate_deterministic_broker_id()
+	}
 	broker := BrokerConfig{
 		host:               broker_host
 		port:               get_config_int(cli_args, 'broker-port', 'DATACORE_BROKER_PORT',
 			empty_doc, '', 9092)
-		broker_id:          get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID',
-			empty_doc, '', 1)
+		broker_id:          broker_id
 		cluster_id:         get_config_string(cli_args, 'cluster-id', 'DATACORE_CLUSTER_ID',
 			empty_doc, '', 'datacore-cluster')
 		max_connections:    get_config_int(cli_args, 'max-connections', 'DATACORE_MAX_CONNECTIONS',
@@ -877,7 +884,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		empty_doc, '', 'memory')
 
 	memory := MemoryStorageConfig{
-		max_memory_mb:      1024
+		max_memory_mb:      20240
 		segment_size_bytes: 1073741824
 	}
 
@@ -893,9 +900,9 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 			empty_doc, '', 'datacore/')
 		timezone:                     get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
 			empty_doc, '', 'UTC')
-		batch_timeout_ms:             1000
-		batch_max_bytes:              10485760
-		compaction_interval_ms:       60000
+		batch_timeout_ms:             25
+		batch_max_bytes:              4096000
+		compaction_interval_ms:       30000
 		target_segment_bytes:         104857600
 		index_cache_ttl_ms:           30000
 		offset_batch_enabled:         true
@@ -983,7 +990,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	otel := OtelConfig{
 		enabled:             true
 		service_name:        'datacore'
-		service_version:     '0.10.0'
+		service_version:     '0.44.1'
 		instance_id:         ''
 		environment:         'development'
 		otlp_endpoint:       'http://localhost:4317'
@@ -1002,7 +1009,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 
 	logging := LoggingConfig{
 		enabled:              true
-		level:                'info'
+		level:                'debug'
 		format:               'json'
 		output:               'stdout'
 		otlp_endpoint:        ''
@@ -1139,4 +1146,103 @@ pub fn print_env_mapping() {
 		toml_key_to_env_key_lower('logging.level') + ', DATACORE_' +
 		toml_key_to_env_key_upper('logging.level'))
 	println('')
+}
+
+// Deterministic Broker ID 생성
+// 서버의 고유 식별자(MAC 주소, IP 주소, 호스트명)를 기반으로
+// 동일 서버에서 항상 같은 broker_id를 생성합니다.
+// Fallback 순서: MAC 주소 → IP 주소 → 호스트명 → 랜덤
+
+/// generate_deterministic_broker_id는 서버 고유값을 기반으로 deterministic한 broker_id를 생성합니다.
+/// 같은 서버에서 실행하면 항상 같은 값을 반환합니다.
+fn generate_deterministic_broker_id() int {
+	// 1순위: MAC 주소
+	mac := get_mac_address()
+	if mac.len > 0 {
+		return string_to_broker_id(mac)
+	}
+
+	// 2순위: IP 주소
+	ip := get_primary_ip()
+	if ip.len > 0 {
+		return string_to_broker_id(ip)
+	}
+
+	// 3순위: 호스트명
+	hostname := os.hostname() or { '' }
+	if hostname.len > 0 {
+		return string_to_broker_id(hostname)
+	}
+
+	// 최후 수단: 랜덤 폴백
+	return rand.int_in_range(1, 99999999) or { 1 }
+}
+
+/// get_mac_address는 시스템의 첫 번째 물리 네트워크 인터페이스 MAC 주소를 반환합니다.
+/// 루프백(00:00:00:00:00:00)이 아닌 첫 번째 유효한 MAC을 선택합니다.
+fn get_mac_address() string {
+	// Linux: /sys/class/net/ 디렉토리에서 읽기
+	if os.exists('/sys/class/net') {
+		result := os.execute('for iface in /sys/class/net/*; do cat "\${iface}/address" 2>/dev/null; done')
+		if result.exit_code == 0 && result.output.len > 0 {
+			lines := result.output.split('\n')
+			for line in lines {
+				mac := line.trim_space()
+				if mac.len > 0 && mac != '00:00:00:00:00:00' {
+					return mac
+				}
+			}
+		}
+	}
+
+	// macOS: ifconfig에서 읽기
+	result := os.execute('ifconfig 2>/dev/null | grep ether | head -1')
+	if result.exit_code == 0 && result.output.len > 0 {
+		parts := result.output.trim_space().split(' ')
+		for i, part in parts {
+			if part == 'ether' && i + 1 < parts.len {
+				mac := parts[i + 1].trim_space()
+				if mac.len > 0 && mac != '00:00:00:00:00:00' {
+					return mac
+				}
+			}
+		}
+	}
+
+	return ''
+}
+
+/// get_primary_ip는 외부 연결에 사용되는 기본 IP 주소를 반환합니다.
+fn get_primary_ip() string {
+	// Linux: ip route로 기본 출발 IP 확인
+	result_ip := os.execute("ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \\K[^ ]+'")
+	if result_ip.exit_code == 0 && result_ip.output.len > 0 {
+		ip := result_ip.output.trim_space()
+		if ip.len > 0 && ip != '127.0.0.1' {
+			return ip
+		}
+	}
+
+	// macOS: route로 기본 인터페이스 확인 후 IP 추출
+	result_mac := os.execute('ipconfig getifaddr en0 2>/dev/null')
+	if result_mac.exit_code == 0 && result_mac.output.len > 0 {
+		ip := result_mac.output.trim_space()
+		if ip.len > 0 && ip != '127.0.0.1' {
+			return ip
+		}
+	}
+
+	return ''
+}
+
+/// string_to_broker_id는 문자열을 FNV-1a 해시하여 1~99999999 범위의 broker_id로 변환합니다.
+fn string_to_broker_id(s string) int {
+	// FNV-1a 32비트 해시
+	mut hash := u64(0x811c9dc5)
+	for b in s.bytes() {
+		hash = hash ^ u64(b)
+		hash = (hash * u64(0x01000193)) & u64(0xFFFFFFFF)
+	}
+	// 1 ~ 99999999 범위로 맵핑
+	return int(hash % 99999998) + 1
 }

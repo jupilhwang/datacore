@@ -14,9 +14,7 @@ fn make_plain_auth(authzid string, username string, password string) []u8 {
 	return data
 }
 
-// ============================================================================
 // PlainAuthenticator Tests
-// ============================================================================
 
 fn test_plain_authenticator_success() {
 	// Setup: Create user store with test user
@@ -121,9 +119,7 @@ fn test_plain_authenticator_with_authzid() {
 	}
 }
 
-// ============================================================================
 // AuthService Tests
-// ============================================================================
 
 fn test_auth_service_supported_mechanisms() {
 	mut store := infra_auth.new_memory_user_store()
@@ -174,9 +170,7 @@ fn test_auth_service_get_authenticator() {
 	assert false, 'should have returned error'
 }
 
-// ============================================================================
 // Parse PLAIN Auth Tests
-// ============================================================================
 
 fn test_parse_plain_auth_valid() {
 	data := make_plain_auth('', 'user', 'pass')

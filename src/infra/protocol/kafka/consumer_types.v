@@ -1,4 +1,3 @@
-// 인프라 레이어 - Kafka 컨슈머 그룹 타입 정의
 // JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat의
 // 요청/응답 구조체 정의
 //
@@ -14,7 +13,7 @@ module kafka
 /// 리더로 선출되면 파티션 할당을 담당합니다.
 pub struct JoinGroupRequest {
 pub:
-	group_id             string                     // 그룹 ID
+	group_id             string
 	session_timeout_ms   i32                        // 세션 타임아웃 (밀리초)
 	rebalance_timeout_ms i32                        // 리밸런싱 타임아웃 (밀리초)
 	member_id            string                     // 멤버 ID (첫 조인 시 빈 문자열)
@@ -33,8 +32,8 @@ pub:
 /// JoinGroup 응답 - 그룹 조인 결과
 pub struct JoinGroupResponse {
 pub:
-	throttle_time_ms i32                       // 스로틀링 시간 (밀리초)
-	error_code       i16                       // 에러 코드
+	throttle_time_ms i32
+	error_code       i16
 	generation_id    i32                       // 그룹 세대 ID
 	protocol_type    ?string                   // 선택된 프로토콜 타입
 	protocol_name    ?string                   // 선택된 프로토콜 이름
@@ -60,7 +59,7 @@ pub:
 /// 리더만 assignments를 포함하고, 팔로워는 빈 배열을 전송합니다.
 pub struct SyncGroupRequest {
 pub:
-	group_id          string                       // 그룹 ID
+	group_id          string
 	generation_id     i32                          // 그룹 세대 ID
 	member_id         string                       // 멤버 ID
 	group_instance_id ?string                      // 정적 멤버십 인스턴스 ID
@@ -79,8 +78,8 @@ pub:
 /// SyncGroup 응답 - 파티션 할당 결과
 pub struct SyncGroupResponse {
 pub:
-	throttle_time_ms i32     // 스로틀링 시간 (밀리초)
-	error_code       i16     // 에러 코드
+	throttle_time_ms i32
+	error_code       i16
 	protocol_type    ?string // 프로토콜 타입
 	protocol_name    ?string // 프로토콜 이름
 	assignment       []u8    // 이 멤버에게 할당된 파티션
@@ -94,7 +93,7 @@ pub:
 /// 세션 타임아웃 내에 하트비트가 없으면 멤버가 제거됩니다.
 pub struct HeartbeatRequest {
 pub:
-	group_id          string  // 그룹 ID
+	group_id          string
 	generation_id     i32     // 그룹 세대 ID
 	member_id         string  // 멤버 ID
 	group_instance_id ?string // 정적 멤버십 인스턴스 ID
@@ -103,7 +102,7 @@ pub:
 /// Heartbeat 응답 - 하트비트 결과
 pub struct HeartbeatResponse {
 pub:
-	throttle_time_ms i32 // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 	error_code       i16 // 에러 코드 (REBALANCE_IN_PROGRESS 등)
 }
 
@@ -115,7 +114,7 @@ pub:
 /// v3+에서는 여러 멤버를 한 번에 탈퇴시킬 수 있습니다.
 pub struct LeaveGroupRequest {
 pub:
-	group_id  string             // 그룹 ID
+	group_id  string
 	member_id string             // 멤버 ID (v0-v2: 단일 멤버)
 	members   []LeaveGroupMember // 멤버 목록 (v3+: 배치 탈퇴)
 }
@@ -131,8 +130,8 @@ pub:
 /// LeaveGroup 응답 - 그룹 탈퇴 결과
 pub struct LeaveGroupResponse {
 pub:
-	throttle_time_ms i32                        // 스로틀링 시간 (밀리초)
-	error_code       i16                        // 에러 코드
+	throttle_time_ms i32
+	error_code       i16
 	members          []LeaveGroupResponseMember // 멤버별 결과
 }
 
@@ -141,7 +140,7 @@ pub struct LeaveGroupResponseMember {
 pub:
 	member_id         string  // 멤버 ID
 	group_instance_id ?string // 정적 멤버십 인스턴스 ID
-	error_code        i16     // 에러 코드
+	error_code        i16
 }
 
 // ConsumerGroupHeartbeat 요청/응답 타입 (API Key 68) - KIP-848
@@ -154,11 +153,11 @@ pub:
 /// 서버 측 할당(server-side assignment)을 지원합니다.
 pub struct ConsumerGroupHeartbeatRequest {
 pub:
-	group_id               string   // 그룹 ID
-	member_id              string   // 멤버 ID
-	member_epoch           i32      // 멤버 에포크
-	instance_id            ?string  // 정적 멤버십 (group.instance.id)
-	rack_id                ?string  // 랙 ID
+	group_id               string
+	member_id              string  // 멤버 ID
+	member_epoch           i32     // 멤버 에포크
+	instance_id            ?string // 정적 멤버십 (group.instance.id)
+	rack_id                ?string
 	rebalance_timeout_ms   i32      // 리밸런싱 타임아웃
 	subscribed_topic_names []string // 구독 토픽 이름 목록
 	server_assignor        ?string  // 서버 할당자 이름
@@ -175,12 +174,12 @@ pub:
 /// ConsumerGroupHeartbeat 응답 - 새로운 컨슈머 프로토콜 하트비트 응답
 pub struct ConsumerGroupHeartbeatResponse {
 pub:
-	throttle_time_ms      i32     // 스로틀링 시간 (밀리초)
-	error_code            i16     // 에러 코드
-	error_message         ?string // 에러 메시지
+	throttle_time_ms      i32
+	error_code            i16
+	error_message         ?string
 	member_id             ?string // 멤버 ID
 	member_epoch          i32     // 멤버 에포크
-	heartbeat_interval_ms i32     // 하트비트 간격 (밀리초)
+	heartbeat_interval_ms i32
 	assignment            ?ConsumerGroupHeartbeatAssignment // 새로운 할당
 }
 
@@ -211,20 +210,20 @@ pub:
 /// ConsumerGroupDescribe 응답 - 컨슈머 그룹 상세 정보
 pub struct ConsumerGroupDescribeResponse {
 pub:
-	throttle_time_ms i32 // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 	groups           []ConsumerGroupDescribeResponseGroup // 그룹 정보 목록
 }
 
 /// ConsumerGroupDescribe 응답 그룹 - 개별 그룹 정보
 pub struct ConsumerGroupDescribeResponseGroup {
 pub:
-	error_code            i16     // 에러 코드
-	error_message         ?string // 에러 메시지
-	group_id              string  // 그룹 ID
-	group_state           string  // 그룹 상태
-	group_epoch           i32     // 그룹 에포크
-	assignment_epoch      i32     // 할당 에포크
-	assignor_name         string  // 할당자 이름
+	error_code            i16
+	error_message         ?string
+	group_id              string
+	group_state           string // 그룹 상태
+	group_epoch           i32    // 그룹 에포크
+	assignment_epoch      i32    // 할당 에포크
+	assignor_name         string // 할당자 이름
 	members               []ConsumerGroupDescribeResponseMember // 멤버 목록
 	authorized_operations i32 // 권한 있는 작업
 }
@@ -234,11 +233,11 @@ pub struct ConsumerGroupDescribeResponseMember {
 pub:
 	member_id            string  // 멤버 ID
 	instance_id          ?string // 인스턴스 ID
-	rack_id              ?string // 랙 ID
-	member_epoch         i32     // 멤버 에포크
-	client_id            string  // 클라이언트 ID
-	client_host          string  // 클라이언트 호스트
-	subscribed_topic_ids [][]u8  // 구독 토픽 ID 목록 (UUID)
+	rack_id              ?string
+	member_epoch         i32    // 멤버 에포크
+	client_id            string // 클라이언트 ID
+	client_host          string // 클라이언트 호스트
+	subscribed_topic_ids [][]u8 // 구독 토픽 ID 목록 (UUID)
 	assignment           ?ConsumerGroupDescribeResponseMemberAssignment // 현재 할당
 }
 

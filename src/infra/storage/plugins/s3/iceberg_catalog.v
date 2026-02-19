@@ -1,4 +1,3 @@
-// 인프라 레이어 - Iceberg Catalog
 // Iceberg 카탈로그 통합 및 테이블 관리를 제공합니다.
 // 지원 카탈로그: Hadoop (파일 기반), Glue, REST
 module s3

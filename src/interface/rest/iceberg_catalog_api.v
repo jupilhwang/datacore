@@ -161,9 +161,7 @@ fn (mut api IcebergCatalogAPI) handle_transactions(method string, parts []string
 	return api.error_response(404, 'Not found')
 }
 
-// =============================================================================
 // Namespace 엔드포인트 구현
-// =============================================================================
 
 fn (mut api IcebergCatalogAPI) list_namespaces() (int, string) {
 	// 기본 네임스페이스 목록 반환 (실제 구현에서는 catalog에서 조회)
@@ -246,9 +244,7 @@ fn (mut api IcebergCatalogAPI) update_namespace_properties(namespace string, bod
 	return 200, resp.to_json()
 }
 
-// =============================================================================
 // Table 엔드포인트 구현
-// =============================================================================
 
 fn (mut api IcebergCatalogAPI) list_tables(namespace string) (int, string) {
 	ns := [namespace]
@@ -465,9 +461,7 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 	return api.error_response(501, 'Multi-table transactions not implemented')
 }
 
-// =============================================================================
 // 헬퍼 함수
-// =============================================================================
 
 fn (api &IcebergCatalogAPI) rest_schema_to_internal(schema s3.SchemaRest) s3.IcebergSchema {
 	mut fields := []s3.IcebergField{}

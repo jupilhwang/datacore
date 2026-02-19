@@ -1,9 +1,7 @@
 // KIP-848 New Consumer Protocol Tests
 module group
 
-// ============================================================================
 // Assignor Tests
-// ============================================================================
 
 fn test_range_assignor_single_member() {
 	assignor := new_range_assignor()
@@ -244,9 +242,7 @@ fn test_sticky_assignor_with_new_partitions() {
 	assert assignments['member-1'].any(it.partition == 0)
 }
 
-// ============================================================================
 // Member State Tests
-// ============================================================================
 
 fn test_member_state_values() {
 	assert int(MemberState.unsubscribed) == 0
@@ -266,9 +262,7 @@ fn test_group_state_values() {
 	assert int(KIP848GroupState.dead) == 4
 }
 
-// ============================================================================
 // TopicPartition Tests
-// ============================================================================
 
 fn test_topic_partition_creation() {
 	tp := TopicPartition{
@@ -282,9 +276,7 @@ fn test_topic_partition_creation() {
 	assert tp.topic_id.len == 16
 }
 
-// ============================================================================
 // KIP848Member Tests
-// ============================================================================
 
 fn test_member_creation() {
 	member := KIP848Member{
@@ -321,9 +313,7 @@ fn test_member_without_optional_fields() {
 	assert member.rack_id == none
 }
 
-// ============================================================================
 // KIP848ConsumerGroup Tests
-// ============================================================================
 
 fn test_group_creation() {
 	group := KIP848ConsumerGroup{
@@ -344,9 +334,7 @@ fn test_group_creation() {
 	assert group.members.len == 0
 }
 
-// ============================================================================
 // HeartbeatResult Tests
-// ============================================================================
 
 fn test_heartbeat_result_success() {
 	result := HeartbeatResult{
@@ -382,9 +370,7 @@ fn test_heartbeat_result_error() {
 	assert result.assignment == none
 }
 
-// ============================================================================
 // MemberSubscription Tests
-// ============================================================================
 
 fn test_member_subscription() {
 	sub := MemberSubscription{
@@ -409,9 +395,7 @@ fn test_member_subscription() {
 	assert sub.owned_partitions.len == 2
 }
 
-// ============================================================================
 // TopicMetadata Tests
-// ============================================================================
 
 fn test_topic_metadata() {
 	meta := TopicMetadata{
@@ -425,9 +409,7 @@ fn test_topic_metadata() {
 	assert meta.topic_id.len == 16
 }
 
-// ============================================================================
 // Assignor Name Tests
-// ============================================================================
 
 fn test_assignor_names() {
 	range_assignor := new_range_assignor()
@@ -439,9 +421,7 @@ fn test_assignor_names() {
 	assert sticky_assignor.name() == 'sticky'
 }
 
-// ============================================================================
 // Empty Assignment Tests
-// ============================================================================
 
 fn test_range_assignor_empty_members() {
 	assignor := new_range_assignor()
@@ -495,9 +475,7 @@ fn test_round_robin_empty_members() {
 	assert assignments.len == 0
 }
 
-// ============================================================================
 // Partial Subscription Tests
-// ============================================================================
 
 fn test_range_assignor_partial_subscription() {
 	assignor := new_range_assignor()
@@ -542,9 +520,7 @@ fn test_range_assignor_partial_subscription() {
 	}
 }
 
-// ============================================================================
 // Enhanced Sticky Assignor Tests
-// ============================================================================
 
 fn test_sticky_assignor_balanced_distribution() {
 	assignor := new_sticky_assignor()
@@ -668,9 +644,7 @@ fn test_sticky_assignor_member_leave() {
 	assert assignments['member-2'].len == 5
 }
 
-// ============================================================================
 // Cooperative Sticky Assignor Tests
-// ============================================================================
 
 fn test_cooperative_sticky_assignor() {
 	assignor := new_cooperative_sticky_assignor()
@@ -706,9 +680,7 @@ fn test_cooperative_sticky_assignor() {
 	assert total == 4
 }
 
-// ============================================================================
 // Uniform Assignor Tests (KIP-848)
-// ============================================================================
 
 fn test_uniform_assignor() {
 	assignor := new_uniform_assignor()

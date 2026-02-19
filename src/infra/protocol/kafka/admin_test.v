@@ -659,9 +659,7 @@ fn test_describe_groups_response_encoding() {
 	assert encoded.len > 0
 }
 
-// ============================================================================
 // AlterConfigs API Tests
-// ============================================================================
 
 fn test_parse_alter_configs_request() {
 	// Build AlterConfigs request (v0)
@@ -772,9 +770,7 @@ fn test_handler_alter_configs_topic_not_found() {
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
 }
 
-// ============================================================================
 // CreatePartitions API Tests
-// ============================================================================
 
 fn test_parse_create_partitions_request() {
 	// Build CreatePartitions request (v0)
@@ -922,9 +918,7 @@ fn test_handler_create_partitions_invalid_count() {
 	assert error_code == i16(ErrorCode.invalid_partitions)
 }
 
-// ============================================================================
 // DeleteRecords API Tests
-// ============================================================================
 
 fn test_parse_delete_records_request() {
 	// Build DeleteRecords request (v0)
@@ -1050,9 +1044,7 @@ fn test_handler_delete_records_topic_not_found() {
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
 }
 
-// ============================================================================
 // Response Encoding Tests
-// ============================================================================
 
 fn test_alter_configs_response_encoding() {
 	resp := AlterConfigsResponse{
@@ -1113,9 +1105,7 @@ fn test_delete_records_response_encoding() {
 	assert encoded.len > 0
 }
 
-// ============================================================================
 // DeleteGroups API Tests (API Key 42)
-// ============================================================================
 
 fn test_parse_delete_groups_request_v0() {
 	// Build DeleteGroups request (v0 - non-flexible)

@@ -2,8 +2,6 @@
 // 요청/응답 타입, 파싱, 인코딩 및 핸들러
 module kafka
 
-// ApiVersions (API Key 18) - API 버전 조회
-
 pub struct ApiVersionsRequest {
 pub:
 	client_software_name    string

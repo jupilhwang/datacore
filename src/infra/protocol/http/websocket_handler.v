@@ -1,4 +1,3 @@
-// 인프라 레이어 - WebSocket 핸들러
 // WebSocket 연결을 위한 HTTP 핸들러
 module http
 

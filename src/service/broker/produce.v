@@ -1,4 +1,3 @@
-// 서비스 레이어 - Produce 유스케이스
 // Kafka Produce 요청의 비즈니스 로직을 처리합니다.
 // 프로듀서가 토픽/파티션에 메시지를 기록할 때 사용됩니다.
 module broker
@@ -22,8 +21,8 @@ pub fn new_produce_usecase(storage port.StoragePort) &ProduceUseCase {
 /// ProduceRequest는 produce 요청을 나타냅니다.
 pub struct ProduceRequest {
 pub:
-	topic      string          // 토픽 이름
-	partition  int             // 파티션 번호
+	topic      string
+	partition  int
 	records    []domain.Record // 기록할 레코드 목록
 	acks       i16             // 확인 수준 (0: 없음, 1: 리더만, -1: 모든 ISR)
 	timeout_ms i32             // 타임아웃 (ms)
@@ -32,11 +31,11 @@ pub:
 /// ProduceResponse는 produce 응답을 나타냅니다.
 pub struct ProduceResponse {
 pub:
-	topic           string // 토픽 이름
-	partition       int    // 파티션 번호
-	error_code      i16    // 오류 코드 (0이면 성공)
-	base_offset     i64    // 기록된 첫 번째 레코드의 오프셋
-	log_append_time i64    // 로그 추가 시간 (타임스탬프)
+	topic           string
+	partition       int
+	error_code      i16 // 오류 코드 (0이면 성공)
+	base_offset     i64 // 기록된 첫 번째 레코드의 오프셋
+	log_append_time i64 // 로그 추가 시간 (타임스탬프)
 }
 
 /// execute는 produce 요청을 처리합니다.

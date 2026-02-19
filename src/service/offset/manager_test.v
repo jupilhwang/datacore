@@ -28,9 +28,7 @@ fn create_test_manager() &OffsetManager {
 	return create_test_manager_with_storage(storage)
 }
 
-// ============================================================================
 // OffsetManager.commit_offsets() Tests
-// ============================================================================
 
 fn test_commit_offsets_success() {
 	mut manager := create_test_manager()
@@ -102,9 +100,7 @@ fn test_commit_offsets_empty_offsets() {
 	assert resp.results.len == 0
 }
 
-// ============================================================================
 // OffsetManager.fetch_offsets() Tests
-// ============================================================================
 
 fn test_fetch_offsets_success() {
 	// Create shared storage and topic
@@ -223,9 +219,7 @@ fn test_fetch_offsets_empty_partitions() {
 	assert resp.results.len == 0
 }
 
-// ============================================================================
 // OffsetManager Integration Tests
-// ============================================================================
 
 fn test_commit_and_fetch_multiple_groups() {
 	mut manager := create_test_manager()

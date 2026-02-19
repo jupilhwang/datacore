@@ -1,4 +1,3 @@
-// 인프라 레이어 - Iceberg Writer
 // Iceberg 테이블 형식으로 Parquet 파일을 생성하고 메타데이터를 관리합니다.
 module s3
 

@@ -1,4 +1,3 @@
-// 서비스 레이어 - Share 그룹 코디네이터 (KIP-932)
 // Share 그룹, 파티션 할당, 진행 중인 레코드 상태를 관리합니다.
 // Share 그룹은 전통적인 컨슈머 그룹과 달리 여러 컨슈머가 동일한 파티션을 공유합니다.
 module group
@@ -107,21 +106,21 @@ pub fn (mut c ShareGroupCoordinator) list_groups() []string {
 /// ShareGroupHeartbeatRequest는 하트비트 요청을 나타냅니다.
 pub struct ShareGroupHeartbeatRequest {
 pub:
-	group_id               string   // 그룹 ID
-	member_id              string   // 멤버 ID
-	member_epoch           i32      // 멤버 에포크
-	rack_id                string   // 랙 ID
+	group_id               string
+	member_id              string // 멤버 ID
+	member_epoch           i32    // 멤버 에포크
+	rack_id                string
 	subscribed_topic_names []string // 구독 토픽 목록
 }
 
 /// ShareGroupHeartbeatResponse는 하트비트 응답을 나타냅니다.
 pub struct ShareGroupHeartbeatResponse {
 pub:
-	error_code                i16    // 오류 코드
+	error_code                i16
 	error_message             string // 오류 메시지
 	member_id                 string // 멤버 ID
 	member_epoch              i32    // 멤버 에포크
-	heartbeat_interval        i32    // 하트비트 간격 (ms)
+	heartbeat_interval        i32
 	assignment                []domain.SharePartitionAssignment // 파티션 할당
 	should_compute_assignment bool // 할당 계산 필요 여부
 }
@@ -426,13 +425,13 @@ pub fn (mut c ShareGroupCoordinator) close_session(group_id string, member_id st
 /// ShareGroupStats는 share 그룹의 통계를 담습니다.
 pub struct ShareGroupStats {
 pub:
-	group_id           string // 그룹 ID
-	member_count       int    // 멤버 수
-	partition_count    int    // 파티션 수
-	total_acquired     i64    // 총 획득 수
-	total_acknowledged i64    // 총 확인 수
-	total_released     i64    // 총 해제 수
-	total_rejected     i64    // 총 거부 수
+	group_id           string
+	member_count       int // 멤버 수
+	partition_count    int
+	total_acquired     i64 // 총 획득 수
+	total_acknowledged i64 // 총 확인 수
+	total_released     i64 // 총 해제 수
+	total_rejected     i64 // 총 거부 수
 }
 
 /// get_stats는 share 그룹의 통계를 반환합니다.

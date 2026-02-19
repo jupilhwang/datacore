@@ -1,12 +1,9 @@
-// 인프라 레이어 - Kafka 프로토콜 메트릭
 // Kafka API 요청/응답 메트릭 수집
 module observability
 
 import sync
 
-// ============================================================
 // Kafka 프로토콜 메트릭
-// ============================================================
 
 /// ProtocolMetrics는 Kafka 프로토콜 핸들러의 메트릭을 추적합니다.
 pub struct ProtocolMetrics {

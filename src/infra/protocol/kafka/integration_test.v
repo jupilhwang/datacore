@@ -11,9 +11,7 @@ import service.auth
 import service.transaction
 import service.port
 
-// ============================================================================
 // Full Integration Handler (SASL + ACL + Transaction)
-// ============================================================================
 
 fn create_full_integration_handler() kafka.Handler {
 	storage := IntegrationMockStorage{}
@@ -145,9 +143,7 @@ fn (m &IntegrationMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadat
 	return none
 }
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 fn make_plain_auth_bytes(authzid string, username string, password string) []u8 {
 	mut data := []u8{}
@@ -159,9 +155,7 @@ fn make_plain_auth_bytes(authzid string, username string, password string) []u8 
 	return data
 }
 
-// ============================================================================
 // Test 1: SASL Authentication + ACL Authorization Flow
-// ============================================================================
 
 fn test_sasl_auth_then_acl_check() {
 	mut handler := create_full_integration_handler()
@@ -252,9 +246,7 @@ fn test_sasl_auth_then_acl_check() {
 	assert res_count == 1, 'Should find 1 ACL resource'
 }
 
-// ============================================================================
 // Test 2: Transaction Flow with ACL Checks
-// ============================================================================
 
 fn test_transaction_with_acl() {
 	mut handler := create_full_integration_handler()
@@ -376,9 +368,7 @@ fn test_transaction_with_acl() {
 	assert end_error == 0, 'EndTxn (Commit) should succeed'
 }
 
-// ============================================================================
 // Test 3: Full SASL + ACL + Transaction Integration
-// ============================================================================
 
 fn test_full_sasl_acl_transaction_flow() {
 	mut handler := create_full_integration_handler()
@@ -499,9 +489,7 @@ fn test_full_sasl_acl_transaction_flow() {
 	assert end_error == 0, 'EndTxn (Abort) should succeed'
 }
 
-// ============================================================================
 // Test 4: Authentication Failure Scenarios
-// ============================================================================
 
 fn test_sasl_auth_failure_wrong_password() {
 	mut handler := create_full_integration_handler()
@@ -565,9 +553,7 @@ fn test_sasl_auth_failure_unknown_user() {
 	assert auth_error == 58, 'Should return SASL_AUTHENTICATION_FAILED (58)'
 }
 
-// ============================================================================
 // Test 5: Transaction Error Scenarios
-// ============================================================================
 
 fn test_transaction_invalid_producer_id() {
 	mut handler := create_full_integration_handler()
@@ -609,9 +595,7 @@ fn test_transaction_invalid_producer_id() {
 	assert error_code != 0, 'Should return error for invalid producer ID'
 }
 
-// ============================================================================
 // Test 6: ACL Delete and Re-check
-// ============================================================================
 
 fn test_acl_lifecycle() {
 	mut handler := create_full_integration_handler()

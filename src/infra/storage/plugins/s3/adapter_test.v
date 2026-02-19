@@ -212,7 +212,6 @@ fn test_log_segment_structure() {
 	assert segment.size_bytes == 1048576
 }
 
-// ============================================================
 // 실제 S3 통합 테스트 (실제 버킷에 객체 생성/조회/삭제)
 // 환경: ~/.aws/credentials 사용, ap-northeast-2, jhwang-s3
 // 주의: 테스트 후 객체가 남을 수 있음

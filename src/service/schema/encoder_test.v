@@ -1,9 +1,7 @@
 // Schema Encoder Tests
 module schema
 
-// ============================================================================
 // Avro Encoder Tests
-// ============================================================================
 
 fn test_avro_encode_int() {
 	mut encoder := new_avro_encoder() or {
@@ -166,9 +164,7 @@ fn test_avro_roundtrip_record() {
 	assert decoded_str.contains('30')
 }
 
-// ============================================================================
 // JSON Schema Encoder Tests
-// ============================================================================
 
 fn test_json_schema_validate_object() {
 	mut encoder := new_json_encoder() or {
@@ -259,9 +255,7 @@ fn test_json_schema_validate_array() {
 	assert false, 'should have failed for empty array'
 }
 
-// ============================================================================
 // Protobuf Encoder Tests
-// ============================================================================
 
 fn test_protobuf_encode_varint() {
 	mut encoder := new_protobuf_encoder() or {
@@ -347,9 +341,7 @@ fn test_protobuf_roundtrip() {
 	assert decoded_str.contains('30')
 }
 
-// ============================================================================
 // Varint Encoding Tests
-// ============================================================================
 
 fn test_zigzag_encoding() {
 	// Test zigzag encoding for various values
@@ -384,9 +376,7 @@ fn test_varint_encoding() {
 	assert encode_varint(300) == [u8(0xAC), u8(0x02)]
 }
 
-// ============================================================================
 // Encoder Interface Tests
-// ============================================================================
 
 fn test_encoder_interface_avro() {
 	mut encoder := new_avro_encoder() or {

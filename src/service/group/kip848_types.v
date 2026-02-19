@@ -19,9 +19,9 @@ pub enum MemberState {
 /// KIP848Member는 KIP-848 프로토콜을 사용하는 컨슈머 그룹 멤버를 나타냅니다.
 pub struct KIP848Member {
 pub mut:
-	member_id              string           // 멤버 ID
-	instance_id            ?string          // 정적 멤버십을 위한 인스턴스 ID
-	rack_id                ?string          // 랙 ID
+	member_id              string  // 멤버 ID
+	instance_id            ?string // 정적 멤버십을 위한 인스턴스 ID
+	rack_id                ?string
 	client_id              string           // 클라이언트 ID
 	client_host            string           // 클라이언트 호스트
 	subscribed_topic_names []string         // 구독 토픽 이름 목록
@@ -34,17 +34,17 @@ pub mut:
 	pending_partitions     []TopicPartition // 할당 예정 파티션
 	revoking_partitions    []TopicPartition // 회수 예정 파티션
 	rebalance_timeout_ms   i32              // 리밸런싱 타임아웃 (ms)
-	session_timeout_ms     i32              // 세션 타임아웃 (ms)
-	last_heartbeat         i64              // 마지막 하트비트 (Unix 타임스탬프 ms)
-	joined_at              i64              // 참가 시간
+	session_timeout_ms     i32
+	last_heartbeat         i64 // 마지막 하트비트 (Unix 타임스탬프 ms)
+	joined_at              i64 // 참가 시간
 }
 
 /// TopicPartition은 토픽-파티션 쌍을 나타냅니다.
 pub struct TopicPartition {
 pub:
-	topic_id   []u8   // UUID (16바이트)
-	topic_name string // 토픽 이름
-	partition  i32    // 파티션 번호
+	topic_id   []u8 // UUID (16바이트)
+	topic_name string
+	partition  i32
 }
 
 // KIP-848 컨슈머 그룹
@@ -52,7 +52,7 @@ pub:
 /// KIP848ConsumerGroup은 새 프로토콜을 사용하는 컨슈머 그룹을 나타냅니다.
 pub struct KIP848ConsumerGroup {
 pub mut:
-	group_id           string                      // 그룹 ID
+	group_id           string
 	group_epoch        i32                         // 그룹 에포크
 	assignment_epoch   i32                         // 할당 에포크
 	state              KIP848GroupState            // 그룹 상태
@@ -62,8 +62,8 @@ pub mut:
 	target_assignment  map[string][]TopicPartition // 대상 할당 (member_id -> 파티션)
 	current_assignment map[string][]TopicPartition // 현재 안정 할당
 	subscribed_topics  map[string]bool             // 모든 구독 토픽
-	created_at         i64                         // 생성 시간
-	updated_at         i64                         // 업데이트 시간
+	created_at         i64
+	updated_at         i64
 }
 
 /// KIP848GroupState는 KIP-848 그룹의 상태를 나타냅니다.
@@ -89,9 +89,9 @@ pub interface ServerAssignor {
 /// MemberSubscription은 할당을 위한 멤버의 구독 정보를 담습니다.
 pub struct MemberSubscription {
 pub:
-	member_id        string           // 멤버 ID
-	instance_id      ?string          // 인스턴스 ID
-	rack_id          ?string          // 랙 ID
+	member_id        string  // 멤버 ID
+	instance_id      ?string // 인스턴스 ID
+	rack_id          ?string
 	topics           []string         // 구독 토픽 목록
 	owned_partitions []TopicPartition // 현재 소유 파티션 (sticky 할당용)
 }
@@ -99,7 +99,7 @@ pub:
 /// TopicMetadata는 할당을 위한 토픽 정보를 담습니다.
 pub struct TopicMetadata {
 pub:
-	topic_id        []u8   // 토픽 ID
-	topic_name      string // 토픽 이름
-	partition_count int    // 파티션 수
+	topic_id        []u8
+	topic_name      string
+	partition_count int
 }

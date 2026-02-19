@@ -1,4 +1,3 @@
-// 서비스 레이어 - Share 세션 관리 (KIP-932)
 // Share 그룹 컨슈머를 위한 share fetch 세션을 관리합니다.
 // 세션은 컨슈머와 브로커 간의 상태를 유지하여 효율적인 fetch를 가능하게 합니다.
 module group

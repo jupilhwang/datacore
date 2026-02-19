@@ -6,9 +6,7 @@ import time
 import infra.performance.core
 import infra.performance
 
-// ============================================================================
 // 전역 성능 관리자 프록시
-// ============================================================================
 
 /// get_global_performance는 루트 모듈에서 전역 성능 관리자를 반환합니다.
 pub fn get_global_performance() &performance.PerformanceManager {
@@ -20,9 +18,7 @@ pub fn init_global_performance(config performance.PerformanceConfig) {
 	performance.init_global_performance(config)
 }
 
-// ============================================================================
 // TCP 서버 통합 - 버퍼 할당 헬퍼
-// ============================================================================
 
 /// RequestBuffer는 요청 처리를 위한 풀링된 버퍼를 래핑합니다.
 @[heap]
@@ -30,7 +26,7 @@ pub struct RequestBuffer {
 pub mut:
 	buffer     &core.Buffer                    // 내부 버퍼
 	manager    &performance.PerformanceManager // 성능 관리자 참조
-	created_at time.Time                       // 생성 시간
+	created_at time.Time
 }
 
 /// new_request_buffer는 요청 처리를 위한 버퍼를 획득합니다.
@@ -127,9 +123,7 @@ pub fn (mut r ResponseBuffer) release() {
 	r.manager.put_buffer(r.buffer)
 }
 
-// ============================================================================
 // 연결 통합 - 재사용 가능한 읽기/쓰기 버퍼
-// ============================================================================
 
 /// ConnectionBuffers는 연결을 위한 재사용 가능한 버퍼를 보유합니다.
 @[heap]
@@ -172,9 +166,7 @@ pub fn (mut c ConnectionBuffers) release() {
 	c.manager.put_buffer(c.write_buffer)
 }
 
-// ============================================================================
 // 스토리지 통합 - 풀링된 레코드
-// ============================================================================
 
 /// StorageRecordPool은 스토리지 작업을 위한 레코드 풀링을 제공합니다.
 @[heap]
@@ -210,9 +202,7 @@ pub fn (mut p StorageRecordPool) put_batch(b &core.PooledRecordBatch) {
 	p.manager.put_batch(b)
 }
 
-// ============================================================================
 // Fetch 핸들러 통합 - 제로카피 지원
-// ============================================================================
 
 /// FetchBuffer는 제로카피 지원과 함께 fetch 응답 데이터를 보유합니다.
 @[heap]
@@ -254,9 +244,7 @@ pub fn (mut f FetchBuffer) release() {
 	f.manager.put_buffer(f.buffer)
 }
 
-// ============================================================================
 // 통합 통계
-// ============================================================================
 
 /// IntegrationStats는 통합 통계를 보유합니다.
 pub struct IntegrationStats {
@@ -299,9 +287,7 @@ pub fn get_integration_stats() IntegrationStats {
 	}
 }
 
-// ============================================================================
 // 편의 함수
-// ============================================================================
 
 /// with_request_buffer는 풀링된 요청 버퍼로 함수를 실행합니다.
 pub fn with_request_buffer(size int, f fn (mut RequestBuffer)) {

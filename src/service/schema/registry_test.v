@@ -478,9 +478,7 @@ fn test_test_compatibility() {
 	assert is_compat == true, 'Adding nullable field should be backward compatible'
 }
 
-// ============================================================================
 // Avro Compatibility Tests
-// ============================================================================
 
 // Test Avro backward compatibility - adding field with default
 fn test_avro_backward_compat_add_field_with_default() {
@@ -634,9 +632,7 @@ fn test_parse_avro_schema_nullable_field() {
 	assert 'string' in schema.fields[0].union_types
 }
 
-// ============================================================================
 // Global Config Tests
-// ============================================================================
 
 fn test_global_config_get_set() {
 	storage := new_mock_storage()
@@ -658,9 +654,7 @@ fn test_global_config_get_set() {
 	assert new_global.compatibility == .full
 }
 
-// ============================================================================
 // Boot Recovery Tests
-// ============================================================================
 
 fn test_load_from_storage_empty() {
 	storage := new_mock_storage()
@@ -700,9 +694,7 @@ fn test_extract_json_string() {
 	assert name == 'test'
 }
 
-// ============================================================================
 // Full Compatibility (Backward + Forward)
-// ============================================================================
 
 fn test_full_compatibility() {
 	// Full compatibility requires both backward AND forward compatibility
@@ -721,9 +713,7 @@ fn test_full_compatibility() {
 	assert forward == true, 'Should be forward compatible (old reader ignores new field)'
 }
 
-// ============================================================================
 // JSON Schema Validation Tests
-// ============================================================================
 
 fn test_json_schema_validation_basic() {
 	storage := new_mock_storage()
@@ -809,9 +799,7 @@ fn test_json_schema_boolean_schema() {
 	}
 }
 
-// ============================================================================
 // JSON Schema Compatibility Tests
-// ============================================================================
 
 fn test_json_schema_backward_compat_add_optional_property() {
 	old_schema := '{"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}'
@@ -855,9 +843,7 @@ fn test_json_schema_forward_compat_type_narrowing() {
 	assert result == true, 'Narrowing number to integer should be forward compatible'
 }
 
-// ============================================================================
 // Protobuf Schema Validation Tests
-// ============================================================================
 
 fn test_protobuf_schema_validation_basic() {
 	storage := new_mock_storage()
@@ -934,9 +920,7 @@ fn test_protobuf_schema_validation_enum() {
 	assert schema_id > 0
 }
 
-// ============================================================================
 // Protobuf Schema Compatibility Tests
-// ============================================================================
 
 fn test_protobuf_backward_compat_add_field() {
 	old_schema := 'message User { int32 id = 1; }'
@@ -1037,9 +1021,7 @@ message User {
 	assert 'old_field' in info.reserved_names
 }
 
-// ============================================================================
 // Avro Schema Enhanced Validation Tests
-// ============================================================================
 
 fn test_avro_schema_validation_primitive_string() {
 	// Primitive type as string

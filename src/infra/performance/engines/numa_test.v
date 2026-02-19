@@ -4,9 +4,7 @@ module engines
 // NUMA 인식 메모리 할당 및 토폴로지 감지 테스트
 import time
 
-// ============================================================================
 // Topology Tests
-// ============================================================================
 
 fn test_get_numa_capabilities() {
 	caps := get_numa_capabilities()
@@ -52,9 +50,7 @@ fn test_get_current_node() {
 	assert node < topology.node_count
 }
 
-// ============================================================================
 // Memory Allocation Tests
-// ============================================================================
 
 fn test_numa_alloc_local() {
 	size := usize(4096)
@@ -140,9 +136,7 @@ fn test_numa_free_null() {
 	numa_free(mem) // Should not crash
 }
 
-// ============================================================================
 // Buffer Pool Tests
-// ============================================================================
 
 fn test_numa_buffer_pool_creation() {
 	config := NumaBufferConfig{
@@ -254,9 +248,7 @@ fn test_numa_buffer_pool_stats() {
 	assert final_stats.cache_hits >= 0 // May be hit or miss
 }
 
-// ============================================================================
 // Thread Binding Tests
-// ============================================================================
 
 fn test_bind_to_node() {
 	// Test binding to node 0 (always exists)
@@ -292,9 +284,7 @@ fn test_set_local_alloc() {
 	numa_free(mem)
 }
 
-// ============================================================================
 // NUMA Array Tests
-// ============================================================================
 
 fn test_numa_array_creation() {
 	arr := new_numa_array(100, 8) // 100 elements, 8 bytes each
@@ -336,9 +326,7 @@ fn test_numa_array_usage() {
 	}
 }
 
-// ============================================================================
 // Integration Tests
-// ============================================================================
 
 fn test_numa_full_workflow() {
 	// 1. Get topology
@@ -411,9 +399,7 @@ fn test_numa_memory_isolation() {
 	}
 }
 
-// ============================================================================
 // Performance Tests (Light)
-// ============================================================================
 
 fn test_numa_allocation_performance() {
 	iterations := 100

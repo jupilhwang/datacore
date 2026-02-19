@@ -15,9 +15,7 @@ module io
 
 import os
 
-// ============================================================================
 // C 인터롭 - 시스템 호출 정의
-// ============================================================================
 
 /// Scatter-Gather I/O를 위한 POSIX iovec 구조체
 #include <sys/uio.h>
@@ -61,9 +59,7 @@ $if linux {
 	const splice_f_more = u32(4)
 }
 
-// ============================================================================
 // 플랫폼 기능 감지
-// ============================================================================
 
 /// PlatformCapabilities는 사용 가능한 I/O 기능을 나타냅니다.
 pub struct PlatformCapabilities {
@@ -112,18 +108,16 @@ pub fn get_platform_capabilities() PlatformCapabilities {
 	}
 }
 
-// ============================================================================
 // DMA 결과 타입
-// ============================================================================
 
 /// DmaResult는 DMA 작업의 결과를 담고 있습니다.
 pub struct DmaResult {
 pub:
-	bytes_transferred i64    // 전송된 바이트 수
-	success           bool   // 성공 여부
-	error_msg         string // 에러 메시지
-	used_zero_copy    bool   // 제로카피 사용 여부
-	new_offset        i64    // 작업 후 업데이트된 오프셋
+	bytes_transferred i64  // 전송된 바이트 수
+	success           bool // 성공 여부
+	error_msg         string
+	used_zero_copy    bool // 제로카피 사용 여부
+	new_offset        i64  // 작업 후 업데이트된 오프셋
 }
 
 /// dma_success는 성공 결과를 생성합니다.
@@ -155,9 +149,7 @@ fn dma_error(msg string) DmaResult {
 	}
 }
 
-// ============================================================================
 // Scatter-Gather I/O
-// ============================================================================
 
 /// ScatterGatherBuffer는 scatter-gather 작업을 위한 버퍼를 나타냅니다.
 pub struct ScatterGatherBuffer {
@@ -291,9 +283,7 @@ fn gather_write_fallback(fd int, buffers []ScatterGatherBuffer) DmaResult {
 	}
 }
 
-// ============================================================================
 // Sendfile - 제로카피 파일-소켓 전송
-// ============================================================================
 
 /// sendfile_native는 사용자 공간으로 복사하지 않고 파일에서 소켓으로 데이터를 전송합니다.
 /// 업데이트된 오프셋 위치가 포함된 DmaResult를 반환합니다.
@@ -330,9 +320,7 @@ fn sendfile_fallback(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 	}
 }
 
-// ============================================================================
 // Splice - Linux 전용 제로카피 파이프 전송
-// ============================================================================
 
 /// splice_native는 복사 없이 파일 디스크립터 간에 데이터를 이동합니다 (Linux 전용).
 pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult {
@@ -360,9 +348,7 @@ pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult 
 	}
 }
 
-// ============================================================================
 // Copy File Range - Linux 전용 파일-파일 제로카피
-// ============================================================================
 
 /// copy_file_range_native는 사용자 공간을 거치지 않고 파일 간에 복사합니다 (Linux 4.5+).
 /// off_in과 off_out은 입력 오프셋이며, 새 오프셋은 DmaResult에 반환됩니다.
@@ -384,9 +370,7 @@ pub fn copy_file_range_native(fd_in int, off_in i64, fd_out int, off_out i64, co
 	}
 }
 
-// ============================================================================
 // 자동 폴백을 포함한 고수준 API
-// ============================================================================
 
 /// DmaTransfer는 자동 폴백을 포함한 고수준 DMA 전송을 제공합니다.
 pub struct DmaTransfer {
@@ -505,9 +489,7 @@ pub fn (d &DmaTransfer) zero_copy_ratio() f64 {
 	return f64(d.stats.zero_copy_transfers) / f64(d.stats.total_transfers)
 }
 
-// ============================================================================
 // V의 os.File을 위한 파일 디스크립터 헬퍼
-// ============================================================================
 
 /// get_fd는 os.File에서 원시 파일 디스크립터를 추출합니다.
 /// 참고: 이것은 V의 내부 구현에 의존합니다.
@@ -523,9 +505,7 @@ pub fn get_fd(file &os.File) int {
 	}
 }
 
-// ============================================================================
 // 일반적인 작업을 위한 편의 함수
-// ============================================================================
 
 /// scatter_read_file은 파일에서 여러 버퍼로 읽습니다.
 pub fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) DmaResult {

@@ -12,9 +12,7 @@ module engines
 
 import os
 
-// ============================================================================
 // C 인터롭 - NUMA 라이브러리 (Linux)
-// ============================================================================
 
 $if linux {
 	#flag -lnuma
@@ -45,14 +43,12 @@ $if linux {
 	const mpol_local = 4
 }
 
-// ============================================================================
 // NUMA 토폴로지 구조체
-// ============================================================================
 
 /// NumaNode는 NUMA 노드를 나타냅니다.
 pub struct NumaNode {
 pub:
-	id        int   // 노드 ID
+	id        int
 	total_mem i64   // 총 메모리 (바이트)
 	free_mem  i64   // 여유 메모리 (바이트)
 	cpu_count int   // CPU 수
@@ -62,11 +58,11 @@ pub:
 /// NumaTopology는 시스템의 NUMA 토폴로지를 나타냅니다.
 pub struct NumaTopology {
 pub:
-	available  bool       // NUMA 사용 가능 여부
-	node_count int        // 노드 수
-	cpu_count  int        // CPU 수
-	nodes      []NumaNode // 노드 목록
-	local_node int        // 현재 스레드가 실행 중인 노드
+	available  bool // NUMA 사용 가능 여부
+	node_count int  // 노드 수
+	cpu_count  int  // CPU 수
+	nodes      []NumaNode
+	local_node int // 현재 스레드가 실행 중인 노드
 }
 
 /// NumaCapabilities는 NUMA 지원 수준을 나타냅니다.
@@ -80,9 +76,7 @@ pub:
 	platform_name    string // 플랫폼 이름
 }
 
-// ============================================================================
 // NUMA 토폴로지 감지
-// ============================================================================
 
 /// get_numa_capabilities는 현재 플랫폼의 NUMA 기능을 반환합니다.
 pub fn get_numa_capabilities() NumaCapabilities {
@@ -195,9 +189,7 @@ pub fn get_current_node() int {
 	}
 }
 
-// ============================================================================
 // 메모리 헬퍼 (플랫폼 독립적)
-// ============================================================================
 
 /// get_total_memory는 총 메모리를 반환합니다.
 fn get_total_memory() i64 {
@@ -240,15 +232,13 @@ fn get_free_memory() i64 {
 	}
 }
 
-// ============================================================================
 // NUMA 메모리 할당
-// ============================================================================
 
 /// NumaMemory는 NUMA 할당된 메모리를 나타냅니다.
 pub struct NumaMemory {
 pub:
-	ptr     voidptr    // 메모리 포인터
-	size    usize      // 크기
+	ptr     voidptr // 메모리 포인터
+	size    usize
 	node    int        // NUMA 노드
 	policy  NumaPolicy // 할당 정책
 	is_numa bool       // 실제 NUMA 할당 여부
@@ -363,9 +353,7 @@ pub fn numa_free(mem NumaMemory) {
 	unsafe { C.free(mem.ptr) }
 }
 
-// ============================================================================
 // NUMA 인식 버퍼 풀
-// ============================================================================
 
 /// NumaBufferPool은 NUMA 인식 버퍼 할당을 제공합니다.
 pub struct NumaBufferPool {
@@ -378,7 +366,7 @@ pub mut:
 /// NodePool은 노드별 버퍼 풀입니다.
 struct NodePool {
 mut:
-	node      int          // 노드 ID
+	node      int
 	buffers   []NumaMemory // 버퍼 목록
 	available []int        // 사용 가능한 버퍼 인덱스
 	buf_size  usize        // 버퍼 크기
@@ -522,9 +510,7 @@ pub fn (mut p NumaBufferPool) close() {
 	}
 }
 
-// ============================================================================
 // NUMA 스레드 바인딩
-// ============================================================================
 
 /// bind_to_node는 현재 스레드를 NUMA 노드에 바인딩합니다.
 pub fn bind_to_node(node int) bool {
@@ -556,16 +542,14 @@ pub fn set_local_alloc() {
 	}
 }
 
-// ============================================================================
 // NUMA 인식 데이터 구조
-// ============================================================================
 
 /// NumaArray는 특정 노드에 데이터를 유지하는 NUMA 인식 배열입니다.
 pub struct NumaArray {
 pub:
 	memory NumaMemory // NUMA 메모리
-	len    int        // 길이
-	cap    int        // 용량
+	len    int
+	cap    int
 }
 
 /// new_numa_array는 로컬 노드에 NUMA 인식 배열을 생성합니다.

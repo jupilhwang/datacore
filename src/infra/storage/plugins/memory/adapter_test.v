@@ -5,9 +5,7 @@ import domain
 import time
 import sync
 
-// ============================================================
 // 토픽 테스트 (Topic Tests)
-// ============================================================
 
 fn test_create_topic() {
 	mut adapter := new_memory_adapter()
@@ -73,9 +71,7 @@ fn test_add_partitions() {
 	assert metadata.partition_count == 5
 }
 
-// ============================================================
 // 레코드 테스트 (Record Tests)
-// ============================================================
 
 fn test_append_records() {
 	mut adapter := new_memory_adapter()
@@ -165,9 +161,7 @@ fn test_delete_records() {
 	assert info.high_watermark == 10
 }
 
-// ============================================================
 // 파티션 정보 테스트 (Partition Info Tests)
-// ============================================================
 
 fn test_get_partition_info() {
 	mut adapter := new_memory_adapter()
@@ -188,9 +182,7 @@ fn test_get_partition_info() {
 	assert info.high_watermark == 5
 }
 
-// ============================================================
 // 컨슈머 그룹 테스트 (Consumer Group Tests)
-// ============================================================
 
 fn test_save_and_load_group() {
 	mut adapter := new_memory_adapter()
@@ -244,9 +236,7 @@ fn test_delete_group() {
 	}
 }
 
-// ============================================================
 // 오프셋 테스트 (Offset Tests)
-// ============================================================
 
 fn test_commit_and_fetch_offsets() {
 	mut adapter := new_memory_adapter()
@@ -305,9 +295,7 @@ fn test_fetch_offsets_unknown_group() {
 	assert results[0].offset == -1
 }
 
-// ============================================================
 // 보존 정책 테스트 (Retention Tests)
-// ============================================================
 
 fn test_max_messages_retention() {
 	config := MemoryConfig{
@@ -336,9 +324,7 @@ fn test_max_messages_retention() {
 	assert result2.records.len == 5
 }
 
-// ============================================================
 // 통계 테스트 (Stats Tests)
-// ============================================================
 
 fn test_get_stats() {
 	mut adapter := new_memory_adapter()
@@ -362,9 +348,7 @@ fn test_get_stats() {
 	assert stats.group_count == 1
 }
 
-// ============================================================
 // 초기화 테스트 (Clear Tests)
-// ============================================================
 
 fn test_clear() {
 	mut adapter := new_memory_adapter()
@@ -381,9 +365,7 @@ fn test_clear() {
 	assert groups.len == 0
 }
 
-// ============================================================
 // 헬스 체크 (Health Check)
-// ============================================================
 
 fn test_health_check() {
 	mut adapter := new_memory_adapter()
@@ -392,12 +374,10 @@ fn test_health_check() {
 	assert status == .healthy
 }
 
-// ============================================================
 // V의 spawn을 사용한 동시성 테스트
 // 참고: V 언어는 spawn + 가변 공유 상태에 제한이 있습니다.
 // 이 테스트들은 명시적 동기화를 사용하는 스레드로 내부 락킹 메커니즘이
 // 올바르게 작동하는지 검증합니다.
-// ============================================================
 
 // 스레드를 사용한 동시 추가 테스트 (안정성을 위해 낮은 동시성)
 fn test_concurrent_append() {
@@ -597,9 +577,7 @@ fn test_concurrent_offset_commits() {
 	}
 }
 
-// ============================================================
 // 순차 기준 테스트 (비교용)
-// ============================================================
 
 fn test_sequential_multi_partition_writes() {
 	// 기준 비교를 위한 순차 버전
@@ -670,9 +648,7 @@ fn test_multiple_groups_offset_commits_sequential() {
 	}
 }
 
-// ============================================================
 // 엣지 케이스 테스트 (Edge Case Tests)
-// ============================================================
 
 fn test_append_to_nonexistent_topic() {
 	mut adapter := new_memory_adapter()

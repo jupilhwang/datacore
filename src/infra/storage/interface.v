@@ -1,4 +1,3 @@
-// 어댑터 레이어 - 스토리지 인터페이스
 module storage
 
 /// StorageAdapter는 port.StoragePort를 구현합니다.

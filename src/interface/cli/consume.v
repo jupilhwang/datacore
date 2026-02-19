@@ -1,5 +1,4 @@
 // Interface Layer - CLI Consume Command
-// 인터페이스 레이어 - CLI 소비 명령어
 //
 // Kafka 프로토콜을 사용한 메시지 소비 명령어를 제공합니다.
 // 토픽에서 메시지를 읽어 콘솔에 출력합니다.
@@ -18,8 +17,8 @@ import time
 pub struct ConsumeOptions {
 pub:
 	bootstrap_server string = 'localhost:9092' // 브로커 주소
-	topic            string // 토픽 이름
-	partition        int    // 파티션 번호
+	topic            string
+	partition        int
 	group            string // 컨슈머 그룹 ID
 	offset           string = 'latest' // 시작 오프셋 (latest, earliest, 숫자)
 	max_messages     int    = -1       // 최대 메시지 수 (-1 = 무제한)
@@ -241,10 +240,10 @@ pub fn run_consume(opts ConsumeOptions) ! {
 }
 
 struct ConsumedRecord {
-	offset    i64  // 오프셋
-	key       []u8 // 키
-	value     []u8 // 값
-	timestamp i64  // 타임스탬프
+	offset    i64
+	key       []u8
+	value     []u8
+	timestamp i64
 }
 
 fn get_starting_offset(mut conn net.TcpConn, opts ConsumeOptions) !i64 {

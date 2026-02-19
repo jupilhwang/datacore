@@ -24,14 +24,14 @@ pub mut:
 	fd             int       // 파일 디스크립터
 	remote_addr    string    // 원격 주소
 	connected_at   time.Time // 연결 시간
-	last_active_at time.Time // 마지막 활동 시간
-	request_count  u64       // 요청 수
-	bytes_received u64       // 수신 바이트
-	bytes_sent     u64       // 송신 바이트
-	client_id      string    // 클라이언트 ID
-	api_version    i16       // 클라이언트 선호 API 버전
-	client_sw_name string    // 클라이언트 소프트웨어 이름
-	client_sw_ver  string    // 클라이언트 소프트웨어 버전
+	last_active_at time.Time
+	request_count  u64    // 요청 수
+	bytes_received u64    // 수신 바이트
+	bytes_sent     u64    // 송신 바이트
+	client_id      string // 클라이언트 ID
+	api_version    i16    // 클라이언트 선호 API 버전
+	client_sw_name string // 클라이언트 소프트웨어 이름
+	client_sw_ver  string // 클라이언트 소프트웨어 버전
 	// 인증 상태
 	auth_state     domain.AuthState  // 현재 인증 상태
 	principal      ?domain.Principal // 인증된 주체 (있는 경우)

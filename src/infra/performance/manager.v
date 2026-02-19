@@ -3,9 +3,7 @@ module performance
 import infra.performance.core
 import infra.performance.engines
 
-// ============================================================================
 // 성능 관리자 - 전략 파사드
-// ============================================================================
 
 /// PerformanceManager는 성능 최적화를 위한 중앙 관리자입니다.
 @[heap]
@@ -39,9 +37,7 @@ pub fn new_performance_manager(config core.PerformanceConfig) &PerformanceManage
 	}
 }
 
-// ============================================================================
 // 엔진에 프록시하는 편의 메서드
-// ============================================================================
 
 /// get_buffer는 지정된 크기의 버퍼를 획득합니다.
 pub fn (mut m PerformanceManager) get_buffer(size int) &core.Buffer {
@@ -83,9 +79,7 @@ pub fn (mut m PerformanceManager) put_request(r &core.PooledRequest) {
 	m.engine.put_request(r)
 }
 
-// ============================================================================
 // 헬퍼 함수 (원래 manager.v에서 이동)
-// ============================================================================
 
 /// with_buffer는 풀링된 버퍼로 함수를 실행합니다.
 pub fn (mut m PerformanceManager) with_buffer(min_size int, f fn (mut core.Buffer)) {
@@ -104,9 +98,7 @@ pub fn (m &PerformanceManager) compute_checksum(data []u8) u32 {
 	return core.crc32_ieee(data)
 }
 
-// ============================================================================
 // 전역 성능 관리자 (싱글톤 패턴)
-// ============================================================================
 
 // 싱글톤 인스턴스를 보유하는 구조체
 struct GlobalPerformanceHolder {

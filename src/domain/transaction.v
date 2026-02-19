@@ -1,4 +1,3 @@
-// 도메인 레이어 - 트랜잭션 도메인 모델
 // Kafka 트랜잭션 관련 데이터 구조를 정의합니다.
 // Exactly-once 시맨틱을 지원합니다.
 module domain

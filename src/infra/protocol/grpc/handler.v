@@ -1,4 +1,3 @@
-// 인프라 레이어 - gRPC 핸들러
 // HTTP/2 기반 gRPC 프로토콜 핸들러 (스트리밍 지원)
 module grpc
 

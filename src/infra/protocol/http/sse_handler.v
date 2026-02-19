@@ -1,4 +1,3 @@
-// 인프라 레이어 - SSE 핸들러
 // Server-Sent Events 스트리밍을 위한 HTTP 핸들러
 module http
 
@@ -201,7 +200,7 @@ pub fn (mut h SSEHandler) start_streaming(conn_id string, mut writer SSEResponse
 /// SSERequest는 SSE HTTP 요청을 나타냅니다.
 pub struct SSERequest {
 pub:
-	topic         string  // 토픽 이름
+	topic         string
 	partition     ?i32    // 파티션 (선택사항)
 	offset_str    string  // 오프셋 문자열 (earliest, latest, 또는 숫자)
 	group_id      ?string // 컨슈머 그룹 ID (선택사항)

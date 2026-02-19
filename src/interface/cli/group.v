@@ -1,5 +1,4 @@
 // Interface Layer - CLI Group Commands
-// 인터페이스 레이어 - CLI 그룹 명령어
 //
 // 컨슈머 그룹 관리 명령어를 제공합니다 (간소화된 구현).
 // 그룹 목록 조회 및 상세 정보 확인 기능을 지원합니다.
@@ -16,7 +15,7 @@ import time as _
 pub struct GroupOptions {
 pub:
 	bootstrap_server string = 'localhost:9092' // 브로커 주소
-	group_id         string // 그룹 ID
+	group_id         string
 }
 
 /// parse_group_options는 그룹 명령어 옵션을 파싱합니다.

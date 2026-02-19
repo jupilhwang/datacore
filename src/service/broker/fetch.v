@@ -1,4 +1,3 @@
-// 서비스 레이어 - Fetch 유스케이스
 // Kafka Fetch 요청의 비즈니스 로직을 처리합니다.
 // 컨슈머가 토픽/파티션에서 메시지를 가져올 때 사용됩니다.
 module broker
@@ -23,17 +22,17 @@ pub fn new_fetch_usecase(storage port.StoragePort) &FetchUseCase {
 /// FetchPartitionRequest는 단일 파티션에 대한 fetch 요청을 나타냅니다.
 pub struct FetchPartitionRequest {
 pub:
-	topic        string // 토픽 이름
-	partition    int    // 파티션 번호
-	fetch_offset i64    // 시작 오프셋
-	max_bytes    int    // 최대 바이트 수
+	topic        string
+	partition    int
+	fetch_offset i64 // 시작 오프셋
+	max_bytes    int // 최대 바이트 수
 }
 
 /// FetchPartitionResponse는 단일 파티션에 대한 fetch 응답을 나타냅니다.
 pub struct FetchPartitionResponse {
 pub:
-	topic              string          // 토픽 이름
-	partition          int             // 파티션 번호
+	topic              string
+	partition          int
 	error_code         i16             // 오류 코드 (0이면 성공)
 	high_watermark     i64             // 하이 워터마크 (커밋된 마지막 오프셋 + 1)
 	last_stable_offset i64             // 마지막 안정 오프셋 (트랜잭션 완료된 오프셋)
@@ -55,7 +54,7 @@ pub:
 /// FetchResponse는 fetch 응답을 나타냅니다.
 pub struct FetchResponse {
 pub:
-	throttle_time_ms i32                      // 스로틀링 시간 (ms)
+	throttle_time_ms i32
 	error_code       i16                      // 전체 오류 코드
 	partitions       []FetchPartitionResponse // 파티션별 응답 목록
 }

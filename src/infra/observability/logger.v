@@ -5,9 +5,7 @@ module observability
 import sync
 import time
 
-// ============================================================
 // 로그 레벨
-// ============================================================
 
 /// LogLevel은 로그 항목의 심각도를 나타냅니다.
 pub enum LogLevel {
@@ -44,9 +42,7 @@ pub fn log_level_from_string(s string) LogLevel {
 	}
 }
 
-// ============================================================
 // 로그 출력 대상
-// ============================================================
 
 /// LogOutput은 로그가 전송되는 위치를 결정합니다.
 pub enum LogOutput {
@@ -67,9 +63,7 @@ pub fn log_output_from_string(s string) LogOutput {
 	}
 }
 
-// ============================================================
 // 로그 필드 (구조화된 로깅)
-// ============================================================
 
 /// LogField는 구조화된 로깅을 위한 키-값 쌍을 나타냅니다.
 pub struct LogField {
@@ -160,9 +154,7 @@ pub fn field_bytes(key string, size i64) LogField {
 	}
 }
 
-// ============================================================
 // 로그 컨텍스트 (트레이스 전파)
-// ============================================================
 
 /// LogContext는 분산 트레이싱을 위한 트레이스 컨텍스트를 보유합니다.
 pub struct LogContext {
@@ -174,9 +166,7 @@ pub:
 	instance  string
 }
 
-// ============================================================
 // 로그 항목
-// ============================================================
 
 /// LogEntry는 단일 로그 항목을 나타냅니다.
 pub struct LogEntry {
@@ -189,9 +179,7 @@ pub:
 	context     LogContext
 }
 
-// ============================================================
 // 출력 형식
-// ============================================================
 
 /// OutputFormat은 로그 형식을 결정합니다.
 pub enum OutputFormat {
@@ -208,9 +196,7 @@ pub fn output_format_from_string(s string) OutputFormat {
 	}
 }
 
-// ============================================================
 // 로거 설정
-// ============================================================
 
 /// LoggerConfig는 로거 설정을 보유합니다.
 pub struct LoggerConfig {
@@ -224,9 +210,7 @@ pub:
 	otlp_endpoint string // OTLP 내보내기용 (예: "http://localhost:4317")
 }
 
-// ============================================================
 // 로거 (스레드 안전)
-// ============================================================
 
 /// Logger는 구조화된 로깅 기능을 제공합니다.
 pub struct Logger {
@@ -310,9 +294,7 @@ pub fn (l &Logger) with_fields(fields ...LogField) &Logger {
 	}
 }
 
-// ============================================================
 // 로깅 메서드 (성능을 위한 조기 종료)
-// ============================================================
 
 /// should_log는 레벨이 로깅되어야 하는지 확인합니다 (성능을 위해 인라인).
 @[inline]
@@ -437,9 +419,7 @@ pub fn (mut l Logger) flush() {
 	spawn export_logs_to_otlp(l.otlp_endpoint, l.context.service, entries)
 }
 
-// ============================================================
 // 전역 로거 (구조체 홀더를 사용한 싱글톤 패턴)
-// ============================================================
 
 /// LoggerHolder는 싱글톤 로거 인스턴스를 보유합니다.
 struct LoggerHolder {
@@ -481,9 +461,7 @@ pub fn get_named_logger(name string) &Logger {
 	return get_logger().with_name(name)
 }
 
-// ============================================================
 // 빠른 로깅 함수 (전역 로거 사용)
-// ============================================================
 
 @[inline]
 pub fn log_trace(msg string, fields ...LogField) {
@@ -526,9 +504,7 @@ pub fn log_fatal(msg string, fields ...LogField) {
 	logger.fatal(msg, ...fields)
 }
 
-// ============================================================
 // 포맷팅 함수
-// ============================================================
 
 /// JSON 문자열 이스케이프 처리
 fn escape_json_string(s string) string {
@@ -663,9 +639,7 @@ fn get_level_color(level LogLevel) string {
 	}
 }
 
-// ============================================================
 // OTLP 로그 내보내기 (OpenTelemetry Protocol)
-// ============================================================
 
 /// export_logs_to_otlp는 로그 항목을 OTLP 엔드포인트로 내보냅니다.
 fn export_logs_to_otlp(endpoint string, service_name string, entries []LogEntry) {
@@ -752,9 +726,7 @@ fn send_otlp_http(endpoint string, payload string) {
 	_ = payload
 }
 
-// ============================================================
 // 유틸리티: 로그 레벨 심각도 매핑
-// ============================================================
 
 /// severity_to_level(severity int) LogLevel - converts an OTLP severity number to a LogLevel
 pub fn severity_to_level(severity int) LogLevel {

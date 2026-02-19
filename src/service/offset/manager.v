@@ -1,4 +1,3 @@
-// 서비스 레이어 - Offset 유스케이스
 // OffsetCommit, OffsetFetch 비즈니스 로직을 처리합니다.
 // 컨슈머 그룹의 오프셋 관리를 담당합니다.
 module offset

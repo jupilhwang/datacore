@@ -4,9 +4,7 @@ module streaming
 import domain
 import service.port
 
-// ============================================================================
 // 테스트용 Mock Storage
-// ============================================================================
 
 struct MockStorage {
 mut:
@@ -147,9 +145,7 @@ fn (mut s MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 fn test_new_sse_service() {
 	storage := new_mock_storage()

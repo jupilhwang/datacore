@@ -183,9 +183,7 @@ pub fn (s Span) duration() time.Duration {
 	return time.now() - s.start_time
 }
 
-// ============================================================
 // 트레이서
-// ============================================================
 
 /// TracerConfig는 트레이서 설정을 보유합니다.
 pub struct TracerConfig {
@@ -263,9 +261,7 @@ pub fn (mut t Tracer) end_span(mut span Span) {
 	span.end()
 }
 
-// ============================================================
 // 스팬 옵션
-// ============================================================
 
 struct SpanOptions {
 mut:
@@ -341,9 +337,7 @@ fn (w WithLinks) apply(mut opts SpanOptions) {
 	opts.links = w.links
 }
 
-// ============================================================
 // 샘플러
-// ============================================================
 
 /// Sampler는 스팬이 기록되어야 하는지 결정합니다.
 pub interface Sampler {
@@ -385,9 +379,7 @@ pub fn (s RatioSampler) should_sample() bool {
 	return rand.f64() < s.ratio
 }
 
-// ============================================================
 // ID 생성
-// ============================================================
 
 /// 트레이스 ID를 생성합니다.
 fn generate_trace_id() string {
@@ -407,9 +399,7 @@ fn generate_span_id() string {
 	return id.hex()
 }
 
-// ============================================================
 // 컨텍스트 전파 (W3C Trace Context)
-// ============================================================
 
 /// extract_context는 헤더에서 트레이스 컨텍스트를 추출합니다.
 pub fn extract_context(headers map[string]string) SpanContext {
@@ -451,9 +441,7 @@ pub fn inject_context(ctx SpanContext, mut headers map[string]string) {
 	}
 }
 
-// ============================================================
 // 스팬 내보내기 (OTLP 유사 JSON 형식)
-// ============================================================
 
 /// export_span_json은 스팬을 JSON으로 내보냅니다.
 pub fn export_span_json(span &Span, tracer &Tracer) string {
@@ -532,9 +520,7 @@ fn format_span_value(v SpanValue) string {
 	}
 }
 
-// ============================================================
 // 편의 함수
-// ============================================================
 
 /// trace_operation은 동기 작업을 트레이싱합니다.
 pub fn trace_operation[T](mut tracer Tracer, name string, op fn () !T) !T {

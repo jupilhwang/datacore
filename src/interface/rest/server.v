@@ -1,5 +1,4 @@
 // Interface Layer - REST API Server
-// 인터페이스 레이어 - REST API 서버
 //
 // HTTP 기반 REST API, SSE(Server-Sent Events), WebSocket 스트리밍을
 // 제공하는 서버입니다. Kubernetes 호환 헬스체크 및 Prometheus 메트릭을

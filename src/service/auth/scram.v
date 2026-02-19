@@ -1,4 +1,3 @@
-// 서비스 레이어 - SCRAM-SHA-256 인증
 // RFC 5802 및 RFC 7677에 따른 SCRAM-SHA-256 인증을 구현합니다.
 // Salted Challenge Response Authentication Mechanism (SCRAM)
 module auth

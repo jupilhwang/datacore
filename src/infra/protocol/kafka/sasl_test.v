@@ -19,9 +19,7 @@ fn make_plain_auth(authzid string, username string, password string) []u8 {
 	return data
 }
 
-// ============================================================================
 // SaslHandshake Request/Response Tests
-// ============================================================================
 
 fn test_sasl_handshake_request_parse_v0() {
 	// Build a SaslHandshake request with mechanism "PLAIN"
@@ -90,9 +88,7 @@ fn test_sasl_handshake_response_encode_v0_unsupported() {
 	assert array_len == 1
 }
 
-// ============================================================================
 // SaslAuthenticate Request/Response Tests
-// ============================================================================
 
 fn test_sasl_authenticate_request_parse_v0() {
 	// Build PLAIN auth bytes
@@ -223,9 +219,7 @@ fn test_sasl_authenticate_response_encode_v2_flexible() {
 	assert lifetime == 7200000
 }
 
-// ============================================================================
 // Handler Integration Tests
-// ============================================================================
 
 fn create_test_handler_with_auth() kafka.Handler {
 	// Create storage mock

@@ -1,11 +1,8 @@
-// 서비스 레이어 - 파티션 할당 서비스 테스트
 module cluster
 
 import domain
 
-// ============================================================================
 // 초기 할당 테스트
-// ============================================================================
 
 fn test_assign_partitions_round_robin() {
 	// Given
@@ -122,9 +119,7 @@ fn test_assign_partitions_zero_partitions() {
 	assert failed == true, 'Should fail with zero partitions'
 }
 
-// ============================================================================
 // 리밸런싱 테스트
-// ============================================================================
 
 fn test_rebalance_partitions_new_broker_joined() {
 	// Given - 3개 파티션을 2개 브로커에 할당
@@ -243,9 +238,7 @@ fn test_rebalance_partitions_broker_left() {
 	assert new_assignments[3].preferred_broker == 2
 }
 
-// ============================================================================
 // 스티키 리밸런싱 테스트
-// ============================================================================
 
 fn test_rebalance_sticky_preserves_existing() {
 	// Given
@@ -300,9 +293,7 @@ fn test_rebalance_sticky_preserves_existing() {
 	// 단, 불균형이 심하면 일부 이동할 수 있음
 }
 
-// ============================================================================
 // 범위 기반 할당 테스트
-// ============================================================================
 
 fn test_rebalance_range_assignment() {
 	// Given
@@ -368,9 +359,7 @@ fn test_rebalance_range_assignment() {
 	assert new_assignments[4].preferred_broker == 2
 }
 
-// ============================================================================
 // 설정 변경 테스트
-// ============================================================================
 
 fn test_set_strategy() {
 	// Given
@@ -404,9 +393,7 @@ fn test_set_sticky_assign() {
 	// assert assigner.config.sticky_assign == true
 }
 
-// ============================================================================
 // 전략 문자열 변환 테스트
-// ============================================================================
 
 fn test_assignment_strategy_to_string() {
 	assert assignment_strategy_to_string(.round_robin) == 'round_robin'

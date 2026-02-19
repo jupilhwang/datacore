@@ -1,4 +1,3 @@
-// 인프라 레이어 - Parquet 인코더
 // Kafka Record를 Parquet 파일 형식으로 인코딩합니다.
 // 참고: V 언어에서는 C 라이브러리를 사용하여 Parquet 처리를 수행합니다.
 module encoding

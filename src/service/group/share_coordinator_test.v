@@ -4,9 +4,7 @@ module group
 import domain
 import service.port
 
-// ============================================================================
 // 테스트용 Mock Storage
-// ============================================================================
 
 struct MockStorage {
 mut:
@@ -121,9 +119,7 @@ fn (s &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
 
-// ============================================================================
 // ShareGroupCoordinator Tests
-// ============================================================================
 
 fn test_create_share_group() {
 	mut storage := new_mock_storage()
@@ -410,9 +406,7 @@ fn test_list_groups() {
 	assert groups.len == 3
 }
 
-// ============================================================================
 // SimpleAssignor Tests
-// ============================================================================
 
 fn test_simple_assignor_single_member() {
 	assignor := new_simple_assignor()

@@ -1,4 +1,3 @@
-// 도메인 레이어 - 토픽 도메인 모델
 // Kafka 토픽 관련 데이터 구조를 정의합니다.
 module domain
 
@@ -27,13 +26,13 @@ pub:
 /// compression_type: 압축 타입 ('none', 'gzip', 'snappy', 'lz4', 'zstd')
 pub struct TopicConfig {
 pub:
-	retention_ms        i64    = 604800000  // 7일
-	retention_bytes     i64    = -1         // 무제한
-	segment_bytes       i64    = 1073741824 // 1GB
+	retention_ms        i64    = 604800000
+	retention_bytes     i64    = -1
+	segment_bytes       i64    = 1073741824
 	cleanup_policy      string = 'delete'
 	min_insync_replicas int    = 1
-	max_message_bytes   int    = 1048576 // 1MB
-	compression_type    string = 'none'  // 압축 타입
+	max_message_bytes   int    = 1048576
+	compression_type    string = 'none'
 }
 
 /// TopicMetadata는 API 응답을 위한 토픽 메타데이터를 나타냅니다.

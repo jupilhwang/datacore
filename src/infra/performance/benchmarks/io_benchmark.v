@@ -13,9 +13,7 @@ import infra.performance.engines
 import infra.performance.io
 import infra.performance.core
 
-// ============================================================================
 // I/O 벤치마크 설정
-// ============================================================================
 
 /// IoBenchmarkConfig는 I/O 벤치마크 설정을 정의합니다.
 pub struct IoBenchmarkConfig {
@@ -46,22 +44,20 @@ pub enum OutputFormat {
 	markdown // 마크다운 형식
 }
 
-// ============================================================================
 // 벤치마크 결과
-// ============================================================================
 
 /// IoBenchmarkResults는 I/O 벤치마크 결과를 저장합니다.
 pub struct IoBenchmarkResults {
 pub mut:
 	test_name       string // 테스트 이름
 	iterations      int    // 반복 횟수
-	total_time_ns   i64    // 총 소요 시간 (나노초)
-	avg_time_ns     i64    // 평균 소요 시간 (나노초)
-	min_time_ns     i64    // 최소 소요 시간 (나노초)
-	max_time_ns     i64    // 최대 소요 시간 (나노초)
-	throughput_mbps f64    // 처리량 (MB/s)
-	ops_per_sec     f64    // 초당 작업 수
-	data_size       usize  // 데이터 크기
+	total_time_ns   i64
+	avg_time_ns     i64
+	min_time_ns     i64
+	max_time_ns     i64
+	throughput_mbps f64   // 처리량 (MB/s)
+	ops_per_sec     f64   // 초당 작업 수
+	data_size       usize // 데이터 크기
 }
 
 /// IoBenchmarkSuite는 I/O 벤치마크 스위트입니다.
@@ -84,9 +80,7 @@ pub:
 	total_memory       i64    // 총 메모리
 }
 
-// ============================================================================
 // 벤치마크 러너
-// ============================================================================
 
 /// new_io_benchmark_suite는 새로운 벤치마크 스위트를 생성합니다.
 pub fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
@@ -166,9 +160,7 @@ pub fn (mut s IoBenchmarkSuite) run_all() {
 	}
 }
 
-// ============================================================================
 // 개별 벤치마크
-// ============================================================================
 
 /// bench_regular_read는 일반 파일 읽기를 벤치마크합니다.
 fn (mut s IoBenchmarkSuite) bench_regular_read(path string) {
@@ -479,9 +471,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 	s.results << calculate_io_results('Record Pool', obj_times, s.config.data_size)
 }
 
-// ============================================================================
 // 결과 계산 및 포맷팅
-// ============================================================================
 
 /// calculate_io_results는 시간 측정값으로부터 I/O 벤치마크 결과를 계산합니다.
 fn calculate_io_results(name string, times []i64, data_size usize) IoBenchmarkResults {
@@ -649,9 +639,7 @@ fn (s &IoBenchmarkSuite) format_json() string {
 	return sb.join('\n')
 }
 
-// ============================================================================
 // 유틸리티 함수
-// ============================================================================
 
 /// create_test_file은 지정된 크기의 테스트 파일을 생성합니다.
 fn create_test_file(size i64) string {
@@ -675,9 +663,7 @@ fn pad_right(s string, width int) string {
 	return s + ' '.repeat(width - s.len)
 }
 
-// ============================================================================
 // 빠른 벤치마크 함수
-// ============================================================================
 
 /// run_quick_io_benchmark는 기본 설정으로 빠른 벤치마크를 실행합니다.
 pub fn run_quick_io_benchmark() string {

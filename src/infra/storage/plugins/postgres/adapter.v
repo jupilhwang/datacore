@@ -121,8 +121,8 @@ mut:
 pub struct PostgresConfig {
 pub:
 	host      string = 'localhost' // 호스트 주소
-	port      int    = 5432        // 포트 번호
-	user      string = 'datacore'  // 사용자 이름
+	port      int    = 5432
+	user      string = 'datacore' // 사용자 이름
 	password  string // 비밀번호
 	database  string = 'datacore' // 데이터베이스 이름
 	pool_size int    = 10         // 커넥션 풀 크기

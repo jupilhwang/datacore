@@ -1,5 +1,4 @@
 // Interface Layer - Schema Registry REST API
-// 인터페이스 레이어 - 스키마 레지스트리 REST API
 //
 // Kafka Schema Registry 호환 REST 엔드포인트를 제공합니다.
 // Avro, JSON Schema, Protobuf 스키마의 등록, 조회, 호환성 검사를

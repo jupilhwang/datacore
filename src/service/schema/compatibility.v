@@ -1,4 +1,3 @@
-// 서비스 레이어 - 스키마 호환성 검사
 // Avro, JSON Schema, Protobuf 스키마의 호환성 검사를 제공합니다.
 module schema
 

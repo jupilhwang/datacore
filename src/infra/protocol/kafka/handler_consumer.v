@@ -1,4 +1,3 @@
-// 인프라 레이어 - Kafka Consumer Group API 핸들러
 // JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat 요청 처리
 //
 // 이 모듈은 Kafka Consumer Group 관련 API들을 구현합니다.

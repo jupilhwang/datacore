@@ -1,4 +1,3 @@
-// 인프라 레이어 - Kafka Produce API 핸들러 (API Key 0)
 // Produce 요청/응답 타입, 파싱, 인코딩 및 핸들러 구현
 //
 // 이 모듈은 Kafka Produce API를 구현합니다.
@@ -10,8 +9,6 @@ import domain
 import infra.compression
 import infra.observability
 import time
-
-// Produce (API Key 0) - 메시지 전송 API
 
 /// Produce 요청 - 프로듀서가 브로커에 메시지를 전송하기 위한 요청
 ///
@@ -28,7 +25,7 @@ pub:
 /// Produce 요청 토픽 - 전송할 토픽 데이터
 pub struct ProduceRequestTopic {
 pub:
-	name           string                    // 토픽 이름
+	name           string
 	topic_id       []u8                      // 토픽 UUID (v13+, 16바이트)
 	partition_data []ProduceRequestPartition // 파티션별 데이터
 }
@@ -36,7 +33,7 @@ pub:
 /// Produce 요청 파티션 - 전송할 파티션 데이터
 pub struct ProduceRequestPartition {
 pub:
-	index   i32  // 파티션 인덱스
+	index   i32
 	records []u8 // RecordBatch 또는 MessageSet 데이터
 }
 
@@ -44,13 +41,13 @@ pub:
 pub struct ProduceResponse {
 pub:
 	topics           []ProduceResponseTopic // 토픽별 응답
-	throttle_time_ms i32                    // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 }
 
 /// Produce 응답 토픽 - 토픽별 전송 결과
 pub struct ProduceResponseTopic {
 pub:
-	name       string                     // 토픽 이름
+	name       string
 	topic_id   []u8                       // 토픽 UUID (v13+)
 	partitions []ProduceResponsePartition // 파티션별 응답
 }
@@ -58,8 +55,8 @@ pub:
 /// Produce 응답 파티션 - 파티션별 전송 결과
 pub struct ProduceResponsePartition {
 pub:
-	index            i32 // 파티션 인덱스
-	error_code       i16 // 에러 코드
+	index            i32
+	error_code       i16
 	base_offset      i64 // 첫 번째 메시지의 오프셋
 	log_append_time  i64 // 로그 추가 시간 (밀리초, -1: 사용 안 함)
 	log_start_offset i64 // 로그 시작 오프셋

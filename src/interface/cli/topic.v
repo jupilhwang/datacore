@@ -1,5 +1,4 @@
 // Interface Layer - CLI Topic Commands
-// 인터페이스 레이어 - CLI 토픽 명령어
 //
 // Kafka 프로토콜을 사용한 토픽 관리 명령어를 제공합니다.
 // 토픽 생성, 삭제, 조회, 상세 정보 확인 등의 기능을 지원합니다.
@@ -18,8 +17,8 @@ import time
 pub struct TopicOptions {
 pub:
 	bootstrap_server string = 'localhost:9092' // 브로커 주소
-	topic            string // 토픽 이름
-	partitions       int = 1     // 파티션 수
+	topic            string
+	partitions       int = 1
 	replication      int = 1     // 복제 계수
 	timeout_ms       int = 30000 // 타임아웃 (ms)
 }
@@ -211,9 +210,9 @@ pub fn run_topic_delete(opts TopicOptions) ! {
 }
 
 struct TopicInfo {
-	name        string // 토픽 이름
-	partitions  int    // 파티션 수
-	is_internal bool   // 내부 토픽 여부
+	name        string
+	partitions  int
+	is_internal bool
 }
 
 // ParseResult holds the result of parsing a single topic

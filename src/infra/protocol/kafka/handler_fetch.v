@@ -1,4 +1,3 @@
-// 인프라 레이어 - Kafka Fetch API 핸들러 (API Key 1)
 // Fetch 요청/응답 타입, 파싱, 인코딩 및 핸들러 구현
 //
 // 이 모듈은 Kafka Fetch API를 구현합니다.
@@ -11,16 +10,14 @@ import infra.observability
 import time
 import domain
 
-// Fetch (API Key 1) - 메시지 조회 API
-
 /// Fetch 요청 - 컨슈머가 브로커에서 메시지를 가져오기 위한 요청
 ///
 /// 여러 토픽과 파티션에서 동시에 데이터를 가져올 수 있으며,
 /// max_wait_ms와 min_bytes를 통해 long polling을 지원합니다.
 pub struct FetchRequest {
 pub:
-	replica_id            i32                          // 복제본 ID (-1: 컨슈머, 0+: 팔로워 브로커)
-	max_wait_ms           i32                          // 최대 대기 시간 (밀리초)
+	replica_id            i32 // 복제본 ID (-1: 컨슈머, 0+: 팔로워 브로커)
+	max_wait_ms           i32
 	min_bytes             i32                          // 최소 응답 바이트 수
 	max_bytes             i32                          // 최대 응답 바이트 수
 	isolation_level       i8                           // 격리 수준 (0: read_uncommitted, 1: read_committed)
@@ -31,15 +28,15 @@ pub:
 /// Fetch 요청에서 잊혀진 토픽 - 세션 기반 fetch에서 더 이상 필요없는 토픽
 pub struct FetchRequestForgottenTopic {
 pub:
-	name       string // 토픽 이름
-	topic_id   []u8   // 토픽 UUID (v13+)
-	partitions []i32  // 잊혀진 파티션 목록
+	name       string
+	topic_id   []u8  // 토픽 UUID (v13+)
+	partitions []i32 // 잊혀진 파티션 목록
 }
 
 /// Fetch 요청 토픽 - 조회할 토픽 정보
 pub struct FetchRequestTopic {
 pub:
-	name       string                  // 토픽 이름
+	name       string
 	topic_id   []u8                    // 토픽 UUID (v13+, 16바이트)
 	partitions []FetchRequestPartition // 조회할 파티션 목록
 }
@@ -47,7 +44,7 @@ pub:
 /// Fetch 요청 파티션 - 조회할 파티션 정보
 pub struct FetchRequestPartition {
 pub:
-	partition           i32 // 파티션 인덱스
+	partition           i32
 	fetch_offset        i64 // 조회 시작 오프셋
 	partition_max_bytes i32 // 파티션당 최대 바이트 수
 }
@@ -55,7 +52,7 @@ pub:
 /// Fetch 응답 - 조회된 메시지 데이터를 포함하는 응답
 pub struct FetchResponse {
 pub:
-	throttle_time_ms i32                  // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 	error_code       i16                  // 최상위 에러 코드
 	session_id       i32                  // 세션 ID (v7+)
 	topics           []FetchResponseTopic // 응답 토픽 목록
@@ -65,7 +62,7 @@ pub:
 /// Fetch 응답 토픽 - 토픽별 조회 결과
 pub struct FetchResponseTopic {
 pub:
-	name       string                   // 토픽 이름
+	name       string
 	topic_id   []u8                     // 토픽 UUID (v13+)
 	partitions []FetchResponsePartition // 파티션별 응답
 }
@@ -73,8 +70,8 @@ pub:
 /// Fetch 응답 파티션 - 파티션별 조회 결과
 pub struct FetchResponsePartition {
 pub:
-	partition_index    i32  // 파티션 인덱스
-	error_code         i16  // 에러 코드
+	partition_index    i32
+	error_code         i16
 	high_watermark     i64  // 하이 워터마크 (커밋된 최신 오프셋)
 	last_stable_offset i64  // 마지막 안정 오프셋 (트랜잭션 완료된 오프셋)
 	log_start_offset   i64  // 로그 시작 오프셋
@@ -84,9 +81,9 @@ pub:
 /// 노드 엔드포인트 - 브로커 노드 정보 (v16+)
 pub struct NodeEndpoint {
 pub:
-	node_id i32    // 노드 ID
-	host    string // 호스트명
-	port    i32    // 포트 번호
+	node_id i32
+	host    string
+	port    i32
 	rack    string // 랙 정보 (nullable)
 }
 
@@ -615,15 +612,15 @@ pub:
 /// SimpleFetchTopic - Fetch 요청의 토픽 데이터
 pub struct SimpleFetchTopic {
 pub:
-	topic_id   []u8                   // 토픽 UUID (v13+)
-	name       string                 // 토픽 이름
-	partitions []SimpleFetchPartition // 파티션 목록
+	topic_id   []u8 // 토픽 UUID (v13+)
+	name       string
+	partitions []SimpleFetchPartition
 }
 
 /// SimpleFetchPartition - Fetch 요청의 파티션 데이터
 pub struct SimpleFetchPartition {
 pub:
-	partition            i32 // 파티션 인덱스
+	partition            i32
 	current_leader_epoch i32 // 현재 리더 에포크 (v9+)
 	fetch_offset         i64 // 조회 시작 오프셋
 	last_fetched_epoch   i32 // 마지막 조회 에포크 (v12+)
@@ -634,9 +631,9 @@ pub:
 /// ForgottenTopic - 세션 추적용 잊혀진 토픽
 pub struct ForgottenTopic {
 pub:
-	topic_id   []u8   // 토픽 UUID
-	name       string // 토픽 이름
-	partitions []i32  // 잊혀진 파티션 목록
+	topic_id   []u8
+	name       string
+	partitions []i32 // 잊혀진 파티션 목록
 }
 
 /// 경량 Fetch 요청 파서

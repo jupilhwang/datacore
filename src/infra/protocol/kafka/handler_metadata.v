@@ -1,4 +1,3 @@
-// 인프라 레이어 - Kafka Metadata API 핸들러 (API Key 3)
 // Metadata 요청/응답 타입, 파싱, 인코딩 및 핸들러 구현
 //
 // 이 모듈은 Kafka Metadata API를 구현합니다.
@@ -10,8 +9,6 @@ import domain
 import infra.observability
 import time
 
-// Metadata (API Key 3) - 클러스터 메타데이터 조회 API
-
 /// Metadata 요청 - 클러스터 및 토픽 메타데이터 조회 요청
 ///
 /// topics가 비어있으면 모든 토픽의 메타데이터를 반환합니다.
@@ -19,9 +16,9 @@ import time
 pub struct MetadataRequest {
 pub:
 	topics                         []MetadataRequestTopic // 조회할 토픽 목록 (빈 배열: 전체)
-	allow_auto_topic_creation      bool                   // 토픽 자동 생성 허용 여부
-	include_cluster_authorized_ops bool                   // 클러스터 권한 작업 포함 여부 (v8-10)
-	include_topic_authorized_ops   bool                   // 토픽 권한 작업 포함 여부 (v8+)
+	allow_auto_topic_creation      bool
+	include_cluster_authorized_ops bool // 클러스터 권한 작업 포함 여부 (v8-10)
+	include_topic_authorized_ops   bool // 토픽 권한 작업 포함 여부 (v8+)
 }
 
 /// Metadata 요청 토픽 - 조회할 토픽 정보
@@ -34,40 +31,40 @@ pub:
 /// Metadata 응답 - 클러스터 및 토픽 메타데이터
 pub struct MetadataResponse {
 pub:
-	throttle_time_ms       i32                      // 스로틀링 시간 (밀리초)
-	brokers                []MetadataResponseBroker // 브로커 목록
-	cluster_id             ?string                  // 클러스터 ID
-	controller_id          i32                      // 컨트롤러 브로커 ID
-	topics                 []MetadataResponseTopic  // 토픽 메타데이터 목록
-	cluster_authorized_ops i32                      // 클러스터 권한 작업 비트마스크
+	throttle_time_ms       i32
+	brokers                []MetadataResponseBroker
+	cluster_id             ?string
+	controller_id          i32
+	topics                 []MetadataResponseTopic // 토픽 메타데이터 목록
+	cluster_authorized_ops i32
 }
 
 /// Metadata 응답 브로커 - 브로커 정보
 pub struct MetadataResponseBroker {
 pub:
-	node_id i32     // 브로커 노드 ID
-	host    string  // 호스트명
-	port    i32     // 포트 번호
+	node_id i32
+	host    string
+	port    i32
 	rack    ?string // 랙 ID (nullable)
 }
 
 /// Metadata 응답 토픽 - 토픽 메타데이터
 pub struct MetadataResponseTopic {
 pub:
-	error_code           i16                         // 에러 코드
-	name                 string                      // 토픽 이름
-	topic_id             []u8                        // 토픽 UUID (v10+)
-	is_internal          bool                        // 내부 토픽 여부
-	partitions           []MetadataResponsePartition // 파티션 목록
-	topic_authorized_ops i32                         // 토픽 권한 작업 비트마스크
+	error_code           i16
+	name                 string
+	topic_id             []u8 // 토픽 UUID (v10+)
+	is_internal          bool
+	partitions           []MetadataResponsePartition
+	topic_authorized_ops i32
 }
 
 /// Metadata 응답 파티션 - 파티션 메타데이터
 pub struct MetadataResponsePartition {
 pub:
-	error_code       i16   // 에러 코드
-	partition_index  i32   // 파티션 인덱스
-	leader_id        i32   // 리더 브로커 ID
+	error_code       i16
+	partition_index  i32
+	leader_id        i32
 	leader_epoch     i32   // 리더 에포크 (v7+)
 	replica_nodes    []i32 // 복제본 브로커 ID 목록
 	isr_nodes        []i32 // ISR(In-Sync Replicas) 브로커 ID 목록

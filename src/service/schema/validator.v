@@ -1,4 +1,3 @@
-// 서비스 레이어 - 스키마 유효성 검사
 // Avro, JSON Schema, Protobuf 스키마의 구문 유효성 검사를 제공합니다.
 // 스키마 등록 전 구문 오류를 검출합니다.
 module schema

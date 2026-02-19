@@ -16,17 +16,17 @@ import infra.performance.io
 /// 각 파티션은 여러 세그먼트로 구성되며, 세그먼트는 mmap으로 관리됩니다.
 pub struct MmapPartitionStore {
 pub:
-	topic_name string // 토픽 이름
-	partition  int    // 파티션 번호
+	topic_name string
+	partition  int
 	base_dir   string // 기본 디렉토리
 mut:
 	segments       []&io.LogSegmentMmap // 세그먼트 목록
 	active_segment ?&io.LogSegmentMmap  // 현재 활성 세그먼트
 	base_offset    i64                  // 기본 오프셋 (첫 세그먼트)
 	high_watermark i64                  // 최고 수위 (다음 쓰기 오프셋)
-	segment_size   i64                  // 세그먼트 최대 크기
-	sync_on_write  bool                 // 쓰기마다 sync 여부
-	index          MmapOffsetIndex      // 오프셋 인덱스
+	segment_size   i64
+	sync_on_write  bool            // 쓰기마다 sync 여부
+	index          MmapOffsetIndex // 오프셋 인덱스
 }
 
 /// MmapOffsetIndex는 오프셋 → 세그먼트/위치 매핑을 관리합니다.
@@ -53,7 +53,7 @@ pub:
 	topic_name    string
 	partition     int
 	base_dir      string
-	segment_size  i64 = 1073741824 // 1GB
+	segment_size  i64 = 1073741824
 	sync_on_write bool // 기본 false
 }
 

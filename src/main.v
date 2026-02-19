@@ -565,9 +565,7 @@ fn run_group(args []string) ! {
 	}
 }
 
-// ============================================================
 // Broker Status Implementation
-// ============================================================
 
 struct BrokerStats {
 	topics      int

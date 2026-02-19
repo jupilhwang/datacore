@@ -110,10 +110,6 @@ fn (mut p PostgresClusterMetadataPort) init_cluster_schema() ! {
 	db.exec('CREATE INDEX IF NOT EXISTS idx_distributed_locks_expires ON distributed_locks(expires_at)')!
 }
 
-// ============================================================
-// 브로커 등록
-// ============================================================
-
 /// register_broker - registers a broker in the cluster
 /// register_broker - registers a broker in the cluster
 pub fn (mut p PostgresClusterMetadataPort) register_broker(info domain.BrokerInfo) !domain.BrokerInfo {
@@ -328,10 +324,6 @@ pub fn (mut p PostgresClusterMetadataPort) list_active_brokers() ![]domain.Broke
 	return brokers
 }
 
-// ============================================================
-// 클러스터 메타데이터
-// ============================================================
-
 /// get_cluster_metadata - retrieves current cluster metadata
 /// get_cluster_metadata - retrieves current cluster metadata
 pub fn (mut p PostgresClusterMetadataPort) get_cluster_metadata() !domain.ClusterMetadata {
@@ -393,10 +385,6 @@ pub fn (mut p PostgresClusterMetadataPort) update_cluster_metadata(metadata doma
 
 	db.commit()!
 }
-
-// ============================================================
-// 파티션 할당
-// ============================================================
 
 /// get_partition_assignment - retrieves partition assignment for a topic-partition
 /// get_partition_assignment - retrieves partition assignment for a topic-partition
@@ -559,9 +547,7 @@ pub fn (mut p PostgresClusterMetadataPort) list_all_partition_assignments() ![]d
 	return assignments
 }
 
-// ============================================================
 // 분산 락 (Distributed Locking)
-// ============================================================
 
 /// try_acquire_lock - attempts to acquire a distributed lock
 /// try_acquire_lock - attempts to acquire a distributed lock
@@ -626,9 +612,7 @@ pub fn (mut p PostgresClusterMetadataPort) refresh_lock(lock_name string, holder
 	return rows.len > 0
 }
 
-// ============================================================
 // 상태 모니터링 (Health Monitoring)
-// ============================================================
 
 /// mark_broker_dead - marks a broker as dead
 /// mark_broker_dead - marks a broker as dead
@@ -639,9 +623,7 @@ pub fn (mut p PostgresClusterMetadataPort) mark_broker_dead(broker_id i32) ! {
 	db.exec_param("UPDATE brokers SET status = 'dead' WHERE broker_id = \$1", broker_id.str())!
 }
 
-// ============================================================
 // 스토리지 기능 (Capability)
-// ============================================================
 
 /// get_capability - returns PostgreSQL storage capability information
 /// get_capability - returns PostgreSQL storage capability information
@@ -649,9 +631,7 @@ pub fn (p &PostgresClusterMetadataPort) get_capability() domain.StorageCapabilit
 	return postgres_capability
 }
 
-// ============================================================
 // 헬퍼 함수 (Helper Functions)
-// ============================================================
 
 /// broker_status_to_string은 BrokerStatus를 문자열로 변환합니다.
 fn broker_status_to_string(status domain.BrokerStatus) string {

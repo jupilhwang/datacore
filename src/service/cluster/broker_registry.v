@@ -1,4 +1,3 @@
-// 서비스 레이어 - 브로커 레지스트리
 // 클러스터 내 브로커 등록, 하트비트, 상태 모니터링을 관리합니다.
 module cluster
 
@@ -19,19 +18,19 @@ pub type MetricsProvider = fn () domain.BrokerLoad
 pub struct BrokerRegistry {
 	config domain.ClusterConfig
 mut:
-	local_broker     domain.BrokerInfo         // 로컬 브로커 정보
+	local_broker     domain.BrokerInfo
 	metadata_port    ?port.ClusterMetadataPort // 클러스터 메타데이터 포트 (분산 스토리지용)
 	brokers          map[i32]domain.BrokerInfo // 브로커 인메모리 캐시 (단일 브로커 모드 또는 캐싱용)
-	lock             sync.RwMutex              // 스레드 안전성
-	running          bool                      // 백그라운드 워커 제어
-	capability       domain.StorageCapability  // 스토리지 기능 정보
-	metrics_provider ?MetricsProvider          // 메트릭 프로바이더 콜백 (v0.29.0)
-	prev_bytes_in    u64                       // 이전 입력 바이트 (속도 계산용)
-	prev_bytes_out   u64                       // 이전 출력 바이트 (속도 계산용)
-	prev_time        i64                       // 이전 시간 (속도 계산용)
+	lock             sync.RwMutex
+	running          bool
+	capability       domain.StorageCapability // 스토리지 기능 정보
+	metrics_provider ?MetricsProvider
+	prev_bytes_in    u64
+	prev_bytes_out   u64
+	prev_time        i64
 	// 파티션 할당 서비스
-	partition_assigner ?&PartitionAssigner   // 파티션 할당 서비스 (v0.40.0)
-	logger             &observability.Logger // 구조화된 로거
+	partition_assigner ?&PartitionAssigner
+	logger             &observability.Logger
 	// 브로커 변경 콜백
 	on_broker_change_cb ?fn (changes BrokerChanges) // 브로커 변경 시 호출될 콜백
 }
@@ -39,15 +38,15 @@ mut:
 /// BrokerRegistryConfig는 레지스트리 설정을 담습니다.
 pub struct BrokerRegistryConfig {
 pub:
-	broker_id  i32    // 브로커 ID
-	host       string // 호스트명
-	port       i32    // 포트
-	rack       string // 랙 정보
-	cluster_id string // 클러스터 ID
-	version    string // 버전
+	broker_id  i32
+	host       string
+	port       i32
+	rack       string
+	cluster_id string
+	version    string
 	// 타이밍 설정
-	heartbeat_interval_ms i32 = 3000  // 하트비트 간격 (ms)
-	session_timeout_ms    i32 = 10000 // 세션 타임아웃 (ms)
+	heartbeat_interval_ms i32 = 3000
+	session_timeout_ms    i32 = 10000
 }
 
 /// new_broker_registry는 새로운 브로커 레지스트리를 생성합니다.
@@ -122,8 +121,6 @@ pub fn (mut r BrokerRegistry) set_on_broker_change(callback fn (changes BrokerCh
 	r.on_broker_change_cb = callback
 }
 
-// 등록
-
 /// register는 로컬 브로커를 클러스터에 등록합니다.
 pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 	r.lock.@lock()
@@ -188,8 +185,6 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 	r.brokers.delete(r.local_broker.broker_id)
 }
 
-// 하트비트
-
 /// send_heartbeat는 로컬 브로커의 하트비트를 전송합니다.
 pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 	r.lock.@lock()
@@ -215,8 +210,6 @@ pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 	// 로컬 캐시 업데이트
 	r.brokers[r.local_broker.broker_id] = r.local_broker
 }
-
-// 조회
 
 /// get_local_broker는 로컬 브로커 정보를 반환합니다.
 pub fn (r &BrokerRegistry) get_local_broker() domain.BrokerInfo {
@@ -280,8 +273,6 @@ pub fn (mut r BrokerRegistry) list_active_brokers() ![]domain.BrokerInfo {
 	}
 	return result
 }
-
-// 상태 모니터링
 
 /// check_expired_brokers는 하트비트를 놓친 브로커를 확인합니다.
 pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
@@ -348,8 +339,6 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 	return expired
 }
 
-// 백그라운드 워커
-
 /// start_heartbeat_worker는 백그라운드 하트비트 워커를 시작합니다.
 pub fn (mut r BrokerRegistry) start_heartbeat_worker() {
 	r.running = true
@@ -385,8 +374,6 @@ fn (mut r BrokerRegistry) heartbeat_loop() {
 	}
 }
 
-// 클러스터 메타데이터
-
 /// get_cluster_metadata는 현재 클러스터 메타데이터를 반환합니다.
 pub fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
 	// 분산 스토리지 먼저 시도
@@ -417,8 +404,6 @@ pub fn (r &BrokerRegistry) is_multi_broker_enabled() bool {
 pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 	return r.capability
 }
-
-// 브로커 변경 처리 (파티션 리밸런싱 트리거)
 
 /// on_broker_change는 브로커 목록 변경 시 호출됩니다.
 /// 파티션 리밸런싱을 트리거하고 콜백을 호출합니다.

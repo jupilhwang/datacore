@@ -1,4 +1,3 @@
-// 서비스 레이어 - 컨트롤러 선출
 // 분산 락을 사용하여 컨트롤러 선출을 관리
 // v0.28.0: 멀티 브로커 클러스터를 위한 리더 선출 구현
 module cluster
@@ -197,8 +196,6 @@ pub fn (mut e ControllerElector) discover_controller() !i32 {
 	// 단일 브로커 모드
 	return e.broker_id
 }
-
-// 백그라운드 워커
 
 /// start는 컨트롤러 선출 백그라운드 워커를 시작한다
 pub fn (mut e ControllerElector) start() {

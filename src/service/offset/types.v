@@ -1,4 +1,3 @@
-// 서비스 레이어 - Offset 유스케이스 타입
 // OffsetCommit, OffsetFetch 요청/응답의 서비스 레벨 타입을 정의합니다.
 module offset
 
@@ -14,8 +13,8 @@ pub:
 /// OffsetCommitResult는 오프셋 커밋 결과를 나타냅니다.
 pub struct OffsetCommitResult {
 pub:
-	topic         string // 토픽 이름
-	partition     int    // 파티션 번호
+	topic         string
+	partition     int
 	error_code    i16    // 오류 코드 (0이면 성공)
 	error_message string // 오류 메시지 (있는 경우)
 }
@@ -37,9 +36,9 @@ pub:
 /// OffsetFetchResult는 오프셋 조회 결과를 나타냅니다.
 pub struct OffsetFetchResult {
 pub:
-	topic                  string // 토픽 이름
-	topic_id               ?[]u8  // 토픽 ID (v10+, UUID)
-	partition              int    // 파티션 번호
+	topic                  string
+	topic_id               ?[]u8 // 토픽 ID (v10+, UUID)
+	partition              int
 	committed_offset       i64    // 커밋된 오프셋
 	committed_leader_epoch i32    // 커밋된 리더 에포크
 	metadata               string // 메타데이터

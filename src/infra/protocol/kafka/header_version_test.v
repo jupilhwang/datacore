@@ -3,9 +3,7 @@ module kafka
 // Request/Response Header 버전 함수 테스트
 // KIP-511 및 Apache Kafka 공식 사양 기반
 
-// ============================================
 // Request Header 버전 테스트
-// ============================================
 
 fn test_api_versions_request_header_version() {
 	// ApiVersions Request는 항상 Header v1 사용 (KIP-511)
@@ -92,9 +90,7 @@ fn test_fetch_header_version() {
 	assert get_response_header_version(.fetch, 16) == 1
 }
 
-// ============================================
 // is_flexible_version 테스트
-// ============================================
 
 fn test_is_flexible_version_api_versions() {
 	// ApiVersions: v0-v2 non-flexible, v3+ flexible
@@ -133,9 +129,7 @@ fn test_is_flexible_version_sasl() {
 	assert is_flexible_version(.sasl_authenticate, 2) == true
 }
 
-// ============================================
 // 엣지 케이스 및 회귀 테스트
-// ============================================
 
 fn test_header_version_symmetry_exception() {
 	// ApiVersions는 특별함:

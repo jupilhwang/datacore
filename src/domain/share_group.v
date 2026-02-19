@@ -1,4 +1,3 @@
-// 도메인 레이어 - Share Group 도메인 모델 (KIP-932)
 // Share Group은 컨슈머들이 레코드 수준의 확인 및 자동 재전송을 통해
 // 협력적으로 레코드를 소비할 수 있게 합니다.
 module domain
@@ -26,7 +25,7 @@ pub mut:
 	delivery_attempt_limit  i32 = 5     // 최대 전송 시도 횟수
 	max_partition_locks     i32 = 200   // 파티션당 최대 진행 중 레코드 수
 	heartbeat_interval_ms   i32 = 5000  // Heartbeat 간격
-	session_timeout_ms      i32 = 45000 // 세션 타임아웃
+	session_timeout_ms      i32 = 45000
 	// 타임스탬프
 	created_at i64
 	updated_at i64

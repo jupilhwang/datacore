@@ -1,4 +1,3 @@
-// 인프라 레이어 - Kafka ListOffsets API 핸들러 (API Key 2)
 // ListOffsets 요청/응답 타입, 파싱, 인코딩 및 핸들러 구현
 //
 // 이 모듈은 Kafka ListOffsets API를 구현합니다.
@@ -8,8 +7,6 @@ module kafka
 
 import infra.observability
 import time
-
-// ListOffsets (API Key 2) - 오프셋 조회 API
 
 /// ListOffsets 요청 - 토픽/파티션의 오프셋 정보 조회 요청
 ///
@@ -27,37 +24,37 @@ pub:
 /// ListOffsets 요청 토픽 - 조회할 토픽 정보
 pub struct ListOffsetsRequestTopic {
 pub:
-	name       string                        // 토픽 이름
+	name       string
 	partitions []ListOffsetsRequestPartition // 조회할 파티션 목록
 }
 
 /// ListOffsets 요청 파티션 - 조회할 파티션 정보
 pub struct ListOffsetsRequestPartition {
 pub:
-	partition_index i32 // 파티션 인덱스
+	partition_index i32
 	timestamp       i64 // 타임스탬프 (-1: 최신, -2: 최초, 양수: 특정 시간)
 }
 
 /// ListOffsets 응답 - 오프셋 조회 결과
 pub struct ListOffsetsResponse {
 pub:
-	throttle_time_ms i32                        // 스로틀링 시간 (밀리초)
+	throttle_time_ms i32
 	topics           []ListOffsetsResponseTopic // 토픽별 응답
 }
 
 /// ListOffsets 응답 토픽 - 토픽별 조회 결과
 pub struct ListOffsetsResponseTopic {
 pub:
-	name       string                         // 토픽 이름
+	name       string
 	partitions []ListOffsetsResponsePartition // 파티션별 응답
 }
 
 /// ListOffsets 응답 파티션 - 파티션별 조회 결과
 pub struct ListOffsetsResponsePartition {
 pub:
-	partition_index i32 // 파티션 인덱스
-	error_code      i16 // 에러 코드
-	timestamp       i64 // 타임스탬프
+	partition_index i32
+	error_code      i16
+	timestamp       i64
 	offset          i64 // 조회된 오프셋
 	leader_epoch    i32 // 리더 에포크 (v4+)
 }

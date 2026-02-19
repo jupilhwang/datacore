@@ -137,9 +137,7 @@ fn test_websocket_action_from_str() {
 	assert websocket_action_from_str('invalid') == none
 }
 
-// ============================================================================
 // WebSocket 도메인 테스트
-// ============================================================================
 
 fn test_new_ws_message_response() {
 	resp := new_ws_message_response('test-topic', 0, 100, 1234567890, 'key1', 'value1',

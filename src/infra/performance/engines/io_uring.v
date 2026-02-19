@@ -13,9 +13,7 @@ module engines
 import os
 import net
 
-// ============================================================================
 // io_uring 상수 및 플래그
-// ============================================================================
 
 $if linux {
 	#include <linux/io_uring.h>
@@ -75,20 +73,18 @@ $if linux {
 	fn C.munmap(addr voidptr, length usize) int
 }
 
-// ============================================================================
 // io_uring 구조체
-// ============================================================================
 
 /// IoUringParams는 io_uring 설정 파라미터를 담고 있습니다.
 pub struct IoUringParams {
 pub mut:
-	sq_entries     u32           // 제출 큐 항목 수
-	cq_entries     u32           // 완료 큐 항목 수
-	flags          u32           // 플래그
-	sq_thread_cpu  u32           // SQ 스레드 CPU
-	sq_thread_idle u32           // SQ 스레드 유휴 시간
-	features       u32           // 기능 플래그
-	resv           [4]u32        // 예약됨
+	sq_entries     u32 // 제출 큐 항목 수
+	cq_entries     u32 // 완료 큐 항목 수
+	flags          u32 // 플래그
+	sq_thread_cpu  u32 // SQ 스레드 CPU
+	sq_thread_idle u32 // SQ 스레드 유휴 시간
+	features       u32 // 기능 플래그
+	resv           [4]u32
 	sq_off         SqRingOffsets // SQ 링 오프셋
 	cq_off         CqRingOffsets // CQ 링 오프셋
 }
@@ -103,8 +99,8 @@ pub:
 	flags        u32 // 플래그
 	dropped      u32 // 드롭된 수
 	array        u32 // 배열 오프셋
-	resv1        u32 // 예약됨
-	resv2        u64 // 예약됨
+	resv1        u32
+	resv2        u64
 }
 
 /// CqRingOffsets는 완료 큐 링 오프셋을 담고 있습니다.
@@ -117,26 +113,26 @@ pub:
 	overflow     u32 // 오버플로우 오프셋
 	cqes         u32 // CQE 오프셋
 	flags        u32 // 플래그
-	resv1        u32 // 예약됨
-	resv2        u64 // 예약됨
+	resv1        u32
+	resv2        u64
 }
 
 /// IoUringSqe는 제출 큐 항목입니다.
 pub struct IoUringSqe {
 pub mut:
-	opcode      u8     // 연산 코드
-	flags       u8     // 플래그
-	ioprio      u16    // I/O 우선순위
-	fd          i32    // 파일 디스크립터
-	off         u64    // 오프셋 또는 addr2
-	addr        u64    // 버퍼 주소 또는 splice_fd_in
-	len         u32    // 버퍼 길이 또는 poll 이벤트
-	rw_flags    u32    // 연산별 플래그
-	user_data   u64    // 완료를 위한 사용자 데이터
-	buf_index   u16    // 버퍼 인덱스
-	personality u16    // 퍼스널리티
-	splice_fd   i32    // splice 파일 디스크립터
-	pad2        [2]u64 // 패딩
+	opcode      u8  // 연산 코드
+	flags       u8  // 플래그
+	ioprio      u16 // I/O 우선순위
+	fd          i32 // 파일 디스크립터
+	off         u64 // 오프셋 또는 addr2
+	addr        u64 // 버퍼 주소 또는 splice_fd_in
+	len         u32 // 버퍼 길이 또는 poll 이벤트
+	rw_flags    u32 // 연산별 플래그
+	user_data   u64 // 완료를 위한 사용자 데이터
+	buf_index   u16 // 버퍼 인덱스
+	personality u16 // 퍼스널리티
+	splice_fd   i32 // splice 파일 디스크립터
+	pad2        [2]u64
 }
 
 /// IoUringCqe는 완료 큐 항목입니다.
@@ -147,9 +143,7 @@ pub:
 	flags     u32 // 플래그
 }
 
-// ============================================================================
 // io_uring 링 구조체
-// ============================================================================
 
 /// IoUring은 io_uring 인스턴스를 나타냅니다.
 pub struct IoUring {
@@ -186,29 +180,25 @@ pub:
 	sq_thread_idle u32 = 1000 // SQ 스레드 유휴 시간 (ms)
 }
 
-// ============================================================================
 // io_uring 결과 타입
-// ============================================================================
 
 /// IoUringResult는 io_uring 연산 결과를 담고 있습니다.
 pub struct IoUringResult {
 pub:
-	user_data u64  // 사용자 데이터
-	result    i32  // 결과
+	user_data u64 // 사용자 데이터
+	result    i32
 	success   bool // 성공 여부
 }
 
-// ============================================================================
 // 네트워크 관련 구조체
-// ============================================================================
 
 /// SockaddrIn은 IPv4 소켓 주소 구조체입니다.
 struct SockaddrIn {
 mut:
-	sin_family u16   // 주소 패밀리 (AF_INET)
-	sin_port   u16   // 포트 번호 (네트워크 바이트 순서)
-	sin_addr   u32   // IPv4 주소
-	sin_zero   [8]u8 // 패딩
+	sin_family u16 // 주소 패밀리 (AF_INET)
+	sin_port   u16 // 포트 번호 (네트워크 바이트 순서)
+	sin_addr   u32 // IPv4 주소
+	sin_zero   [8]u8
 }
 
 /// AcceptResult는 accept 연산 결과를 담고 있습니다.
@@ -228,9 +218,7 @@ pub:
 	pending     u64 // 대기 중인 수
 }
 
-// ============================================================================
 // io_uring 구현
-// ============================================================================
 
 /// new_io_uring은 새 io_uring 인스턴스를 생성합니다.
 pub fn new_io_uring(config IoUringConfig) !IoUring {
@@ -455,9 +443,7 @@ pub fn (r &IoUring) get_stats() IoUringStats {
 	}
 }
 
-// ============================================================================
 // 고수준 연산
-// ============================================================================
 
 /// prep_read는 읽기 연산을 준비합니다.
 pub fn (mut r IoUring) prep_read(fd int, buf []u8, offset i64, user_data u64) bool {
@@ -528,9 +514,7 @@ pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 	}
 }
 
-// ============================================================================
 // 네트워크 연산 (io_uring 기반)
-// ============================================================================
 
 /// prep_accept는 소켓에서 연결 수락을 준비합니다.
 /// listen_fd: 리스닝 소켓 파일 디스크립터
@@ -689,24 +673,22 @@ pub fn close_socket(fd int) {
 	}
 }
 
-// ============================================================================
 // 배치 연산
-// ============================================================================
 
 /// BatchOp은 배치 연산을 나타냅니다.
 pub struct BatchOp {
 pub:
 	op_type   BatchOpType // 연산 타입
 	fd        int         // 파일 디스크립터
-	buf       []u8        // 버퍼
-	offset    i64         // 오프셋
-	user_data u64         // 사용자 데이터
+	buf       []u8
+	offset    i64
+	user_data u64 // 사용자 데이터
 }
 
 /// BatchOpType은 배치 연산 타입입니다.
 pub enum BatchOpType {
-	read  // 읽기
-	write // 쓰기
+	read
+	write
 	fsync // fsync
 	nop   // no-op
 }
@@ -750,9 +732,7 @@ pub fn (mut r IoUring) wait_batch(count int) ![]IoUringResult {
 	}
 }
 
-// ============================================================================
 // 비Linux를 위한 폴백 구현
-// ============================================================================
 
 /// IoUringFallback은 비Linux 시스템을 위한 동기 폴백을 제공합니다.
 pub struct IoUringFallback {
@@ -785,9 +765,7 @@ pub fn (mut f IoUringFallback) sync_write(mut file os.File, buf []u8, offset i64
 	return bytes_written
 }
 
-// ============================================================================
 // 플랫폼 독립적 비동기 I/O 인터페이스
-// ============================================================================
 
 /// AsyncIoCapabilities는 플랫폼 지원을 나타냅니다.
 pub struct AsyncIoCapabilities {

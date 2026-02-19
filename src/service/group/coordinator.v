@@ -1,4 +1,3 @@
-// 서비스 레이어 - 컨슈머 그룹 코디네이터 유스케이스
 // 컨슈머 그룹 조정 비즈니스 로직을 처리합니다.
 // JoinGroup, SyncGroup, Heartbeat, LeaveGroup 등의 프로토콜을 구현합니다.
 module group
@@ -24,8 +23,8 @@ pub fn new_group_coordinator(storage port.StoragePort) &GroupCoordinator {
 /// JoinGroupRequest는 그룹 참가 요청을 나타냅니다.
 pub struct JoinGroupRequest {
 pub:
-	group_id             string     // 그룹 ID
-	session_timeout_ms   i32        // 세션 타임아웃 (ms)
+	group_id             string
+	session_timeout_ms   i32
 	rebalance_timeout_ms i32        // 리밸런싱 타임아웃 (ms)
 	member_id            string     // 멤버 ID (빈 문자열이면 새로 생성)
 	group_instance_id    string     // 정적 멤버십을 위한 인스턴스 ID
@@ -157,7 +156,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 /// SyncGroupRequest는 그룹 동기화 요청을 나타냅니다.
 pub struct SyncGroupRequest {
 pub:
-	group_id      string             // 그룹 ID
+	group_id      string
 	generation_id int                // 그룹 세대 ID
 	member_id     string             // 멤버 ID
 	assignments   []MemberAssignment // 멤버별 파티션 할당 (리더가 제공)
@@ -221,7 +220,7 @@ pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupRespon
 /// HeartbeatRequest는 하트비트 요청을 나타냅니다.
 pub struct HeartbeatRequest {
 pub:
-	group_id      string // 그룹 ID
+	group_id      string
 	generation_id int    // 그룹 세대 ID
 	member_id     string // 멤버 ID
 }
