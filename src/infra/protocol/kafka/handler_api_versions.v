@@ -1,15 +1,15 @@
-// Kafka 프로토콜 - ApiVersions (API Key 18)
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Kafka protocol - ApiVersions (API Key 18)
+// Request/response types, parsing, encoding, and handlers
 module kafka
 
-/// ApiVersionsRequest는 관련 데이터를 담는 구조체입니다.
+/// ApiVersionsRequest holds the request data for ApiVersions.
 pub struct ApiVersionsRequest {
 pub:
 	client_software_name    string
 	client_software_version string
 }
 
-/// ApiVersionsResponse는 관련 데이터를 담는 구조체입니다.
+/// ApiVersionsResponse holds the response data for ApiVersions.
 pub struct ApiVersionsResponse {
 pub:
 	error_code               i16
@@ -21,7 +21,7 @@ pub:
 	zk_migration_ready       bool
 }
 
-/// ApiVersionsResponseKey는 관련 데이터를 담는 구조체입니다.
+/// ApiVersionsResponseKey holds the supported version range for a single API key.
 pub struct ApiVersionsResponseKey {
 pub:
 	api_key     i16
@@ -29,7 +29,7 @@ pub:
 	max_version i16
 }
 
-/// ApiVersionsSupportedFeature는 관련 데이터를 담는 구조체입니다.
+/// ApiVersionsSupportedFeature holds a supported feature and its version range.
 pub struct ApiVersionsSupportedFeature {
 pub:
 	name        string
@@ -37,7 +37,7 @@ pub:
 	max_version i16
 }
 
-/// ApiVersionsFinalizedFeature는 관련 데이터를 담는 구조체입니다.
+/// ApiVersionsFinalizedFeature holds a finalized feature and its version levels.
 pub struct ApiVersionsFinalizedFeature {
 pub:
 	name              string
@@ -61,7 +61,7 @@ fn parse_api_versions_request(mut reader BinaryReader, version i16, is_flexible 
 	return req
 }
 
-/// encode를 수행합니다.
+/// encode serializes the ApiVersionsResponse into bytes.
 pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
@@ -94,7 +94,7 @@ pub fn (r ApiVersionsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-/// new_api_versions_response를 수행합니다.
+/// new_api_versions_response constructs a default ApiVersionsResponse with all supported API versions.
 pub fn new_api_versions_response() ApiVersionsResponse {
 	supported := get_supported_api_versions()
 	mut api_versions := []ApiVersionsResponseKey{}

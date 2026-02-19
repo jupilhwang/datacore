@@ -2,9 +2,9 @@
 // Encoding methods for JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat
 module kafka
 
-// JoinGroup 응답 인코더 (API Key 11)
+// JoinGroup response encoder (API Key 11)
 
-/// encode은 JoinGroup 응답 인코더 (API Key 11).
+/// encode encodes the JoinGroup response (API Key 11).
 pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 6
 	mut writer := new_writer()
@@ -50,7 +50,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 	for m in r.members {
 		if is_flexible {
 			writer.write_compact_string(m.member_id)
-			// v5+: 정적 멤버십 인스턴스 ID
+			// v5+: static membership instance ID
 			if version >= 5 {
 				writer.write_compact_nullable_string(m.group_instance_id)
 			}
@@ -58,7 +58,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 			writer.write_tagged_fields()
 		} else {
 			writer.write_string(m.member_id)
-			// v5+: 정적 멤버십 인스턴스 ID
+			// v5+: static membership instance ID
 			if version >= 5 {
 				writer.write_nullable_string(m.group_instance_id)
 			}
@@ -73,9 +73,9 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// SyncGroup 응답 인코더 (API Key 14)
+// SyncGroup response encoder (API Key 14)
 
-/// encode은 SyncGroup 응답 인코더 (API Key 14).
+/// encode encodes the SyncGroup response (API Key 14).
 pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -105,9 +105,9 @@ pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// Heartbeat 응답 인코더 (API Key 12)
+// Heartbeat response encoder (API Key 12)
 
-/// encode은 Heartbeat 응답 인코더 (API Key 12).
+/// encode encodes the Heartbeat response (API Key 12).
 pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -123,9 +123,9 @@ pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// LeaveGroup 응답 인코더 (API Key 13)
+// LeaveGroup response encoder (API Key 13)
 
-/// encode은 LeaveGroup 응답 인코더 (API Key 13).
+/// encode encodes the LeaveGroup response (API Key 13).
 pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -163,165 +163,165 @@ pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ConsumerGroupHeartbeat 응답 인코더 (API Key 68) - KIP-848
+// ConsumerGroupHeartbeat response encoder (API Key 68) - KIP-848
 
-/// encode은 ConsumerGroupHeartbeat 응답 인코더 (API Key 68) - KIP-848.
+/// encode encodes the ConsumerGroupHeartbeat response (API Key 68) - KIP-848.
 pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
-	// ConsumerGroupHeartbeat는 항상 flexible (v0+)
+	// ConsumerGroupHeartbeat is always flexible (v0+)
 	mut writer := new_writer()
 
-	// throttle_time_ms: INT32 - 스로틀링 시간
+	// throttle_time_ms: INT32 - throttle time
 	writer.write_i32(r.throttle_time_ms)
 
-	// error_code: INT16 - 에러 코드
+	// error_code: INT16 - error code
 	writer.write_i16(r.error_code)
 
-	// error_message: COMPACT_NULLABLE_STRING - 에러 메시지
+	// error_message: COMPACT_NULLABLE_STRING - error message
 	writer.write_compact_nullable_string(r.error_message)
 
-	// member_id: COMPACT_NULLABLE_STRING - 멤버 ID
+	// member_id: COMPACT_NULLABLE_STRING - member ID
 	writer.write_compact_nullable_string(r.member_id)
 
-	// member_epoch: INT32 - 멤버 에포크
+	// member_epoch: INT32 - member epoch
 	writer.write_i32(r.member_epoch)
 
-	// heartbeat_interval_ms: INT32 - 하트비트 간격
+	// heartbeat_interval_ms: INT32 - heartbeat interval
 	writer.write_i32(r.heartbeat_interval_ms)
 
-	// assignment: Assignment (nullable) - 파티션 할당
+	// assignment: Assignment (nullable) - partition assignment
 	if assignment := r.assignment {
-		// topic_partitions 배열 쓰기
+		// Write topic_partitions array
 		writer.write_compact_array_len(assignment.topic_partitions.len)
 
 		for tp in assignment.topic_partitions {
-			// topic_id: UUID (16바이트) - 토픽 UUID
+			// topic_id: UUID (16 bytes) - topic UUID
 			writer.write_uuid(tp.topic_id)
 
-			// partitions: COMPACT_ARRAY[INT32] - 파티션 목록
+			// partitions: COMPACT_ARRAY[INT32] - partition list
 			writer.write_compact_array_len(tp.partitions.len)
 			for p in tp.partitions {
 				writer.write_i32(p)
 			}
 
-			// 각 토픽 파티션의 태그된 필드
+			// Tagged fields for each topic partition
 			writer.write_tagged_fields()
 		}
 
-		// 할당의 태그된 필드
+		// Tagged fields for the assignment
 		writer.write_tagged_fields()
 	} else {
-		// null 할당을 나타내기 위해 -1 쓰기
-		// compact nullable 구조체의 경우 0을 사용하여 null을 나타냄 (length = 0 - 1 = -1)
+		// Write -1 to indicate null assignment
+		// For compact nullable struct, use 0 to indicate null (length = 0 - 1 = -1)
 		writer.write_uvarint(0)
 	}
 
-	// 마지막 태그된 필드
+	// Final tagged fields
 	writer.write_tagged_fields()
 
 	return writer.bytes()
 }
 
-// ConsumerGroupDescribe 응답 인코더 (API Key 69) - KIP-848
+// ConsumerGroupDescribe response encoder (API Key 69) - KIP-848
 
-/// encode은 ConsumerGroupDescribe 응답 인코더 (API Key 69) - KIP-848.
+/// encode encodes the ConsumerGroupDescribe response (API Key 69) - KIP-848.
 pub fn (r ConsumerGroupDescribeResponse) encode(version i16) []u8 {
-	// ConsumerGroupDescribe는 항상 flexible (v0+)
+	// ConsumerGroupDescribe is always flexible (v0+)
 	mut writer := new_writer()
 
-	// throttle_time_ms: INT32 - 스로틀링 시간
+	// throttle_time_ms: INT32 - throttle time
 	writer.write_i32(r.throttle_time_ms)
 
-	// groups: COMPACT_ARRAY[Group] - 그룹 목록
+	// groups: COMPACT_ARRAY[Group] - group list
 	writer.write_compact_array_len(r.groups.len)
 
 	for g in r.groups {
-		// error_code: INT16 - 에러 코드
+		// error_code: INT16 - error code
 		writer.write_i16(g.error_code)
 
-		// error_message: COMPACT_NULLABLE_STRING - 에러 메시지
+		// error_message: COMPACT_NULLABLE_STRING - error message
 		writer.write_compact_nullable_string(g.error_message)
 
-		// group_id: COMPACT_STRING - 그룹 ID
+		// group_id: COMPACT_STRING - group ID
 		writer.write_compact_string(g.group_id)
 
-		// group_state: COMPACT_STRING - 그룹 상태
+		// group_state: COMPACT_STRING - group state
 		writer.write_compact_string(g.group_state)
 
-		// group_epoch: INT32 - 그룹 에포크
+		// group_epoch: INT32 - group epoch
 		writer.write_i32(g.group_epoch)
 
-		// assignment_epoch: INT32 - 할당 에포크
+		// assignment_epoch: INT32 - assignment epoch
 		writer.write_i32(g.assignment_epoch)
 
-		// assignor_name: COMPACT_STRING - 할당자 이름
+		// assignor_name: COMPACT_STRING - assignor name
 		writer.write_compact_string(g.assignor_name)
 
-		// members: COMPACT_ARRAY[Member] - 멤버 목록
+		// members: COMPACT_ARRAY[Member] - member list
 		writer.write_compact_array_len(g.members.len)
 
 		for m in g.members {
-			// member_id: COMPACT_STRING - 멤버 ID
+			// member_id: COMPACT_STRING - member ID
 			writer.write_compact_string(m.member_id)
 
-			// instance_id: COMPACT_NULLABLE_STRING - 인스턴스 ID
+			// instance_id: COMPACT_NULLABLE_STRING - instance ID
 			writer.write_compact_nullable_string(m.instance_id)
 
-			// rack_id: COMPACT_NULLABLE_STRING - 랙 ID
+			// rack_id: COMPACT_NULLABLE_STRING - rack ID
 			writer.write_compact_nullable_string(m.rack_id)
 
-			// member_epoch: INT32 - 멤버 에포크
+			// member_epoch: INT32 - member epoch
 			writer.write_i32(m.member_epoch)
 
-			// client_id: COMPACT_STRING - 클라이언트 ID
+			// client_id: COMPACT_STRING - client ID
 			writer.write_compact_string(m.client_id)
 
-			// client_host: COMPACT_STRING - 클라이언트 호스트
+			// client_host: COMPACT_STRING - client host
 			writer.write_compact_string(m.client_host)
 
-			// subscribed_topic_ids: COMPACT_ARRAY[UUID] - 구독 토픽 ID 목록
+			// subscribed_topic_ids: COMPACT_ARRAY[UUID] - subscribed topic ID list
 			writer.write_compact_array_len(m.subscribed_topic_ids.len)
 			for topic_id in m.subscribed_topic_ids {
 				writer.write_uuid(topic_id)
 			}
 
-			// assignment: Assignment (nullable) - 현재 할당
+			// assignment: Assignment (nullable) - current assignment
 			if assignment := m.assignment {
-				// topic_partitions 배열 쓰기
+				// Write topic_partitions array
 				writer.write_compact_array_len(assignment.topic_partitions.len)
 
 				for tp in assignment.topic_partitions {
-					// topic_id: UUID (16바이트) - 토픽 UUID
+					// topic_id: UUID (16 bytes) - topic UUID
 					writer.write_uuid(tp.topic_id)
 
-					// partitions: COMPACT_ARRAY[INT32] - 파티션 목록
+					// partitions: COMPACT_ARRAY[INT32] - partition list
 					writer.write_compact_array_len(tp.partitions.len)
 					for p in tp.partitions {
 						writer.write_i32(p)
 					}
 
-					// 각 토픽 파티션의 태그된 필드
+					// Tagged fields for each topic partition
 					writer.write_tagged_fields()
 				}
 
-				// 할당의 태그된 필드
+				// Tagged fields for the assignment
 				writer.write_tagged_fields()
 			} else {
-				// null 할당
+				// null assignment
 				writer.write_uvarint(0)
 			}
 
-			// 멤버의 태그된 필드
+			// Tagged fields for the member
 			writer.write_tagged_fields()
 		}
 
-		// authorized_operations: INT32 - 권한 있는 작업
+		// authorized_operations: INT32 - authorized operations
 		writer.write_i32(g.authorized_operations)
 
-		// 그룹의 태그된 필드
+		// Tagged fields for the group
 		writer.write_tagged_fields()
 	}
 
-	// 마지막 태그된 필드
+	// Final tagged fields
 	writer.write_tagged_fields()
 
 	return writer.bytes()

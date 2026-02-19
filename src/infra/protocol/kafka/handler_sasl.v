@@ -1,30 +1,30 @@
-// Kafka 프로토콜 - SASL 작업
+// Kafka protocol - SASL operations
 // SaslHandshake, SaslAuthenticate
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Request/response types, parsing, encoding, and handlers
 //
-// 지원 메커니즘:
-// - PLAIN: 단순 사용자명/비밀번호 (TLS 권장)
-// - SCRAM-SHA-256: Challenge-Response 기반 인증
+// Supported mechanisms:
+// - PLAIN: Simple username/password (TLS recommended)
+// - SCRAM-SHA-256: Challenge-Response based authentication
 module kafka
 
 import domain
 import infra.observability
 import time
 
-// SaslHandshake 요청 (API Key 17)
+// SaslHandshake request (API Key 17)
 
-// 클라이언트와 브로커 간 SASL 메커니즘 협상에 사용
-// v0: 기본 메커니즘 협상
-// v1: 메커니즘 활성화/비활성화 플래그 추가
+// Used for SASL mechanism negotiation between client and broker
+// v0: Basic mechanism negotiation
+// v1: Added mechanism enable/disable flags
 
-/// SaslHandshakeRequest은 클라이언트와 브로커 간 SASL 메커니즘 협상에 사용 v0: 기본 메커니즘 협상 v1: 메커니즘 활성화/비활성화 플래그 추가.
+/// SaslHandshakeRequest holds the SASL mechanism name for mechanism negotiation between client and broker.
 pub struct SaslHandshakeRequest {
 pub:
 	mechanism string
 }
 
 fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexible bool) !SaslHandshakeRequest {
-	// SaslHandshake는 flexible 버전이 아님 (v0-v1만 지원)
+	// SaslHandshake is non-flexible (only v0-v1 supported)
 	mechanism := reader.read_string()!
 
 	return SaslHandshakeRequest{
@@ -32,14 +32,14 @@ fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexibl
 	}
 }
 
-// SaslAuthenticate 요청 (API Key 36)
+// SaslAuthenticate request (API Key 36)
 
-// 메커니즘 핸드셰이크 후 SASL 인증 수행에 사용
-// v0: 기본 인증
-// v1: 세션 수명 추가
-// v2: Flexible 버전
+// Used for SASL authentication after mechanism handshake
+// v0: Basic authentication
+// v1: Added session lifetime
+// v2: Flexible version
 
-/// SaslAuthenticateRequest은 메커니즘 핸드셰이크 후 SASL 인증 수행에 사용 v0: 기본 인증 v1: 세션 수명 추가 v2: Flexible 버전.
+/// SaslAuthenticateRequest holds the SASL authentication bytes for a SaslAuthenticate request.
 pub struct SaslAuthenticateRequest {
 pub:
 	auth_bytes []u8
@@ -59,20 +59,20 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 	}
 }
 
-// SaslHandshake 응답 (API Key 17)
+// SaslHandshake response (API Key 17)
 
-// 브로커가 지원하는 SASL 메커니즘 목록 반환
+// Returns the list of SASL mechanisms supported by the broker
 
-/// SaslHandshakeResponse은 브로커가 지원하는 SASL 메커니즘 목록 반환.
+/// SaslHandshakeResponse returns the list of SASL mechanisms supported by the broker.
 pub struct SaslHandshakeResponse {
 pub:
 	error_code i16
 	mechanisms []string
 }
 
-/// encode를 수행합니다.
+/// encode serializes the SaslHandshakeResponse into bytes.
 pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
-	// SaslHandshake는 flexible 버전이 아님 (v0-v1만 지원)
+	// SaslHandshake is non-flexible (only v0-v1 supported)
 	mut writer := new_writer()
 
 	// error_code: INT16
@@ -87,11 +87,11 @@ pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// SaslAuthenticate 응답 (API Key 36)
+// SaslAuthenticate response (API Key 36)
 
-// SASL 인증 결과 반환
+// Returns the SASL authentication result
 
-/// SaslAuthenticateResponse은 SASL 인증 결과 반환.
+/// SaslAuthenticateResponse holds the SASL authentication result.
 pub struct SaslAuthenticateResponse {
 pub:
 	error_code          i16
@@ -100,7 +100,7 @@ pub:
 	session_lifetime_ms i64
 }
 
-/// encode를 수행합니다.
+/// encode serializes the SaslAuthenticateResponse into bytes.
 pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -186,7 +186,7 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 
 // Handle SaslAuthenticate (API Key 36)
 // Handles SASL authentication
-// 지원 메커니즘: PLAIN, SCRAM-SHA-256
+// Supported mechanisms: PLAIN, SCRAM-SHA-256
 fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -199,9 +199,9 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 
 	// Perform authentication
 	if mut auth_mgr := h.auth_manager {
-		// 인증 데이터에서 메커니즘 감지
-		// PLAIN: [authzid]\0[authcid]\0[password] 형식
-		// SCRAM: client-first-message (n,,n=username,r=nonce) 형식
+		// Detect SASL mechanism from authentication data
+		// PLAIN: [authzid]\0[authcid]\0[password] format
+		// SCRAM: client-first-message (n,,n=username,r=nonce) format
 		mechanism := detect_sasl_mechanism(req.auth_bytes)
 
 		h.logger.debug('Detected SASL mechanism', observability.field_string('mechanism',
@@ -274,30 +274,30 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 	}
 }
 
-/// detect_sasl_mechanism은 인증 바이트에서 SASL 메커니즘을 감지합니다.
-/// PLAIN: 바이트에 null(\0)이 포함됨
-/// SCRAM: "n,," 또는 "y,," 또는 "p="로 시작 (GS2 헤더)
+/// detect_sasl_mechanism detects the SASL mechanism from authentication bytes.
+/// PLAIN: bytes contain null (\0)
+/// SCRAM: starts with "n,,", "y,,", or "p=" (GS2 header)
 fn detect_sasl_mechanism(auth_bytes []u8) domain.SaslMechanism {
 	if auth_bytes.len == 0 {
 		return .plain
 	}
 
-	// SCRAM client-first-message는 GS2 헤더로 시작
-	// n,, (채널 바인딩 없음)
-	// y,, (서버가 채널 바인딩을 지원하지 않음)
-	// p=... (채널 바인딩 사용)
+	// SCRAM client-first-message starts with a GS2 header
+	// n,, (no channel binding)
+	// y,, (server does not support channel binding)
+	// p=... (channel binding in use)
 	auth_str := auth_bytes.bytestr()
 	if auth_str.starts_with('n,,') || auth_str.starts_with('y,,') || auth_str.starts_with('p=') {
 		return .scram_sha_256
 	}
 
-	// PLAIN: null 바이트 포함 확인
+	// PLAIN: check for null bytes
 	for b in auth_bytes {
 		if b == 0 {
 			return .plain
 		}
 	}
 
-	// 기본값: PLAIN
+	// Default: PLAIN
 	return .plain
 }

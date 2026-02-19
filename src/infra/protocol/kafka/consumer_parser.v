@@ -2,7 +2,7 @@
 // Parsing functions for JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat
 module kafka
 
-// JoinGroup 요청 파서 (API Key 11)
+// JoinGroup request parser (API Key 11)
 
 fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bool) !JoinGroupRequest {
 	group_id := reader.read_flex_string(is_flexible)!
@@ -59,7 +59,7 @@ fn parse_join_group_request(mut reader BinaryReader, version i16, is_flexible bo
 	}
 }
 
-// SyncGroup 요청 파서 (API Key 14)
+// SyncGroup request parser (API Key 14)
 
 fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bool) !SyncGroupRequest {
 	group_id := reader.read_flex_string(is_flexible)!
@@ -116,7 +116,7 @@ fn parse_sync_group_request(mut reader BinaryReader, version i16, is_flexible bo
 	}
 }
 
-// Heartbeat 요청 파서 (API Key 12)
+// Heartbeat request parser (API Key 12)
 
 fn parse_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !HeartbeatRequest {
 	group_id := reader.read_flex_string(is_flexible)!
@@ -140,19 +140,19 @@ fn parse_heartbeat_request(mut reader BinaryReader, version i16, is_flexible boo
 	}
 }
 
-// LeaveGroup 요청 파서 (API Key 13)
+// LeaveGroup request parser (API Key 13)
 
 fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible bool) !LeaveGroupRequest {
 	group_id := reader.read_flex_string(is_flexible)!
 
-	// v0-v2: 단일 member_id
+	// v0-v2: single member_id
 	mut member_id := ''
 	mut members := []LeaveGroupMember{}
 
 	if version <= 2 {
 		member_id = reader.read_flex_string(is_flexible)!
 	} else {
-		// v3+: members 배열
+		// v3+: members array
 		members_len := if is_flexible {
 			int(reader.read_uvarint()! - 1)
 		} else {
@@ -168,7 +168,7 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 				?string(none)
 			}
 
-			// v5+: 탈퇴 사유 필드
+			// v5+: leave reason field
 			mut m_reason := ?string(none)
 			if version >= 5 {
 				raw_reason := reader.read_flex_nullable_string(is_flexible)!
@@ -177,7 +177,7 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 				}
 			}
 
-			// flexible 버전에서 각 멤버의 태그된 필드 건너뛰기
+			// Skip tagged fields for each member in flexible versions
 			reader.skip_flex_tagged_fields(is_flexible)!
 
 			members << LeaveGroupMember{
@@ -188,7 +188,7 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 		}
 	}
 
-	// flexible 버전의 태그된 필드 건너뛰기
+	// Skip tagged fields for flexible versions
 	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return LeaveGroupRequest{
@@ -198,39 +198,39 @@ fn parse_leave_group_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
-// ConsumerGroupHeartbeat 요청 파서 (API Key 68) - KIP-848
+// ConsumerGroupHeartbeat request parser (API Key 68) - KIP-848
 
 fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !ConsumerGroupHeartbeatRequest {
-	// ConsumerGroupHeartbeat는 항상 flexible (v0+)
+	// ConsumerGroupHeartbeat is always flexible (v0+)
 
-	// group_id: COMPACT_STRING - 그룹 ID
+	// group_id: COMPACT_STRING - group ID
 	group_id := reader.read_compact_string()!
 
-	// member_id: COMPACT_STRING - 멤버 ID
+	// member_id: COMPACT_STRING - member ID
 	member_id := reader.read_compact_string()!
 
-	// member_epoch: INT32 - 멤버 에포크
+	// member_epoch: INT32 - member epoch
 	member_epoch := reader.read_i32()!
 
-	// instance_id: COMPACT_NULLABLE_STRING - 정적 멤버십 인스턴스 ID
+	// instance_id: COMPACT_NULLABLE_STRING - static membership instance ID
 	raw_instance_id := reader.read_compact_nullable_string()!
 	instance_id := if raw_instance_id.len > 0 { ?string(raw_instance_id) } else { ?string(none) }
 
-	// rack_id: COMPACT_NULLABLE_STRING - 랙 ID
+	// rack_id: COMPACT_NULLABLE_STRING - rack ID
 	raw_rack_id := reader.read_compact_nullable_string()!
 	rack_id := if raw_rack_id.len > 0 { ?string(raw_rack_id) } else { ?string(none) }
 
-	// rebalance_timeout_ms: INT32 - 리밸런싱 타임아웃
+	// rebalance_timeout_ms: INT32 - rebalance timeout
 	rebalance_timeout_ms := reader.read_i32()!
 
-	// subscribed_topic_names: COMPACT_ARRAY[COMPACT_STRING] - 구독 토픽 목록
+	// subscribed_topic_names: COMPACT_ARRAY[COMPACT_STRING] - subscribed topic list
 	topic_count := reader.read_compact_array_len()!
 	mut subscribed_topic_names := []string{}
 	for _ in 0 .. topic_count {
 		subscribed_topic_names << reader.read_compact_string()!
 	}
 
-	// server_assignor: COMPACT_NULLABLE_STRING - 서버 할당자
+	// server_assignor: COMPACT_NULLABLE_STRING - server-side assignor
 	raw_server_assignor := reader.read_compact_nullable_string()!
 	server_assignor := if raw_server_assignor.len > 0 {
 		?string(raw_server_assignor)
@@ -238,14 +238,14 @@ fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, 
 		?string(none)
 	}
 
-	// topic_partitions: COMPACT_ARRAY[TopicPartition] - 현재 할당된 파티션
+	// topic_partitions: COMPACT_ARRAY[TopicPartition] - currently assigned partitions
 	tp_count := reader.read_compact_array_len()!
 	mut topic_partitions := []ConsumerGroupHeartbeatTopicPartition{}
 	for _ in 0 .. tp_count {
-		// topic_id: UUID (16바이트) - 토픽 UUID
+		// topic_id: UUID (16 bytes) - topic UUID
 		topic_id := reader.read_uuid()!
 
-		// partitions: COMPACT_ARRAY[INT32] - 파티션 목록
+		// partitions: COMPACT_ARRAY[INT32] - partition list
 		part_count := reader.read_compact_array_len()!
 		mut partitions := []i32{}
 		for _ in 0 .. part_count {
@@ -257,7 +257,7 @@ fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, 
 			partitions: partitions
 		}
 
-		// 각 토픽 파티션의 태그된 필드 건너뛰기
+		// Skip tagged fields for each topic partition
 		reader.skip_tagged_fields()!
 	}
 
@@ -274,22 +274,22 @@ fn parse_consumer_group_heartbeat_request(mut reader BinaryReader, version i16, 
 	}
 }
 
-// ConsumerGroupDescribe 요청 파서 (API Key 69) - KIP-848
+// ConsumerGroupDescribe request parser (API Key 69) - KIP-848
 
 fn parse_consumer_group_describe_request(mut reader BinaryReader, version i16, is_flexible bool) !ConsumerGroupDescribeRequest {
-	// ConsumerGroupDescribe는 항상 flexible (v0+)
+	// ConsumerGroupDescribe is always flexible (v0+)
 
-	// group_ids: COMPACT_ARRAY[COMPACT_STRING] - 그룹 ID 목록
+	// group_ids: COMPACT_ARRAY[COMPACT_STRING] - group ID list
 	group_count := reader.read_compact_array_len()!
 	mut group_ids := []string{}
 	for _ in 0 .. group_count {
 		group_ids << reader.read_compact_string()!
 	}
 
-	// include_authorized_operations: BOOLEAN - 권한 있는 작업 포함 여부
+	// include_authorized_operations: BOOLEAN - whether to include authorized operations
 	include_authorized_operations := reader.read_i8()! != 0
 
-	// 태그된 필드 건너뛰기
+	// Skip tagged fields
 	reader.skip_tagged_fields()!
 
 	return ConsumerGroupDescribeRequest{

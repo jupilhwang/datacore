@@ -1,11 +1,11 @@
-// Infra Layer - S3 파티션 인덱스 관리
-// 파티션 인덱스 저장 및 캐싱 처리
+// Infra Layer - S3 Partition Index Management
+// Handles partition index storage and caching
 module s3
 
 import json
 import time
 
-/// PartitionIndex는 S3에 저장되는 파티션 인덱스입니다.
+/// PartitionIndex is the partition index stored in S3.
 struct PartitionIndex {
 mut:
 	topic           string
@@ -15,7 +15,7 @@ mut:
 	log_segments    []LogSegment
 }
 
-/// LogSegment는 S3에 저장된 로그 세그먼트를 나타냅니다.
+/// LogSegment represents a log segment stored in S3.
 struct LogSegment {
 	start_offset i64
 	end_offset   i64
@@ -24,17 +24,17 @@ struct LogSegment {
 	created_at   time.Time
 }
 
-/// CachedPartitionIndex는 메타데이터와 함께 캐시된 파티션 인덱스를 담습니다.
+/// CachedPartitionIndex holds a cached partition index with metadata.
 struct CachedPartitionIndex {
 	index     PartitionIndex
 	etag      string
 	cached_at time.Time
 }
 
-/// get_partition_index는 캐시 또는 S3에서 파티션 인덱스를 조회합니다.
+/// get_partition_index retrieves a partition index from cache or S3.
 fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !PartitionIndex {
 	key := '${topic}:${partition}'
-	// 1. 캐시 확인
+	// 1. Check cache
 	a.topic_lock.rlock()
 	cached_exists := key in a.topic_index_cache
 	mut cached_index := PartitionIndex{}
@@ -50,13 +50,13 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 	}
 	a.topic_lock.runlock()
 
-	// 2. S3에서 조회
+	// 2. Fetch from S3
 	index_key := a.partition_index_key(topic, partition)
 	data, etag := a.get_object(index_key, -1, -1) or {
-		// S3에서 인덱스를 찾을 수 없음
-		// 캐시된 버전이 있으면 (오래되었더라도) 새 빈 인덱스 생성보다 선호
+		// Index not found in S3
+		// Prefer stale cached version over creating a new empty index if available
 		if cached_exists {
-			// 캐시 타임스탬프 갱신하되 데이터는 유지
+			// Refresh cache timestamp while keeping data
 			a.topic_lock.@lock()
 			a.topic_index_cache[key] = CachedPartitionIndex{
 				index:     cached_index
@@ -66,7 +66,7 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 			a.topic_lock.unlock()
 			return cached_index
 		}
-		// 캐시가 없으면 새 빈 인덱스 생성
+		// No cache: create new empty index
 		a.topic_lock.@lock()
 		a.topic_index_cache[key] = CachedPartitionIndex{
 			index:     PartitionIndex{
@@ -83,11 +83,11 @@ fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !Pa
 		return a.topic_index_cache[key].index
 	}
 
-	// 3. S3 인덱스 디코딩
+	// 3. Decode S3 index
 	s3_index := json.decode(PartitionIndex, data.bytestr())!
 
-	// 4. 캐시된 인덱스와 병합 - 더 높은 high_watermark 유지
-	// append가 캐시를 업데이트했지만 flush가 아직 S3에 쓰지 않은 경우 처리
+	// 4. Merge with cached index - preserve the higher high_watermark
+	// Handles the case where append updated the cache but flush has not yet written to S3
 	mut final_index := s3_index
 	if cached_exists && cached_index.high_watermark > s3_index.high_watermark {
 		final_index.high_watermark = cached_index.high_watermark

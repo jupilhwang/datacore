@@ -158,7 +158,7 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 			writer.write_string(t.name)
 		}
 
-		// 파티션 배열 인코딩
+		// Encode partition array
 		if is_flexible {
 			writer.write_compact_array_len(t.partitions.len)
 		} else {
@@ -169,15 +169,15 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 			writer.write_i32(p.index)
 			writer.write_i16(p.error_code)
 			writer.write_i64(p.base_offset)
-			// v2+에서 log_append_time 필드 추가
+			// log_append_time field added in v2+
 			if version >= 2 {
 				writer.write_i64(p.log_append_time)
 			}
-			// v5+에서 log_start_offset 필드 추가
+			// log_start_offset field added in v5+
 			if version >= 5 {
 				writer.write_i64(p.log_start_offset)
 			}
-			// v8+에서 record_errors 배열 추가 (빈 배열)
+			// record_errors array added in v8+ (empty array)
 			if version >= 8 {
 				if is_flexible {
 					writer.write_compact_array_len(0)
@@ -185,7 +185,7 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 					writer.write_array_len(0)
 				}
 			}
-			// v8+에서 error_message 필드 추가 (null)
+			// error_message field added in v8+ (null)
 			if version >= 8 {
 				if is_flexible {
 					writer.write_compact_nullable_string(none)
@@ -202,7 +202,7 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 		}
 	}
 
-	// v1+에서 throttle_time_ms 필드 추가
+	// throttle_time_ms field added in v1+
 	if version >= 1 {
 		writer.write_i32(r.throttle_time_ms)
 	}
@@ -214,14 +214,14 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// Produce 요청을 처리합니다 (Frame 기반).
-// 요청된 토픽/파티션에 메시지를 저장하고 결과를 응답으로 반환합니다.
+// process_produce handles a Produce request (frame-based).
+// Stores messages to the requested topic/partition and returns the result.
 fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResponse {
 	start_time := time.now()
 	mut total_records := 0
 	mut total_bytes := i64(0)
 
-	// 로깅을 위한 레코드 및 바이트 수 계산
+	// Count records and bytes for logging
 	for t in req.topic_data {
 		for p in t.partition_data {
 			total_bytes += p.records.len
@@ -232,35 +232,35 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 		observability.field_int('acks', req.acks), observability.field_bytes('total_size',
 		total_bytes))
 
-	// 트랜잭션 프로듀서인 경우 유효성 검증
+	// Validate if this is a transactional producer
 	if txn_id := req.transactional_id {
 		if txn_id.len > 0 {
 			h.logger.debug('Validating transaction', observability.field_string('txn_id',
 				txn_id))
 
 			if mut txn_coord := h.txn_coordinator {
-				// 트랜잭션 메타데이터 조회
+				// Look up transaction metadata
 				meta := txn_coord.get_transaction(txn_id) or {
 					h.logger.warn('Transaction not found', observability.field_string('txn_id',
 						txn_id))
 					return h.build_produce_error_response_typed(req, ErrorCode.transactional_id_not_found)
 				}
 
-				// 트랜잭션 상태 검증
+				// Validate transaction state
 				if meta.state != .ongoing {
 					h.logger.warn('Invalid transaction state', observability.field_string('txn_id',
 						txn_id), observability.field_string('state', meta.state.str()))
 					return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
 				}
 
-				// O(1) 조회를 위한 파티션 룩업 맵 생성
+				// Build partition lookup map for O(1) access
 				mut partition_set := map[string]bool{}
 				for tp in meta.topic_partitions {
 					key := '${tp.topic}:${tp.partition}'
 					partition_set[key] = true
 				}
 
-				// 요청된 파티션이 트랜잭션에 등록되어 있는지 확인
+				// Verify that requested partitions are registered in the transaction
 				for t in req.topic_data {
 					topic_name := if t.name.len > 0 {
 						t.name
@@ -272,7 +272,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						}
 					}
 
-					// O(n) 중첩 루프 대신 O(1) 룩업 사용
+					// Use O(1) lookup instead of O(n) nested loop
 					for p in t.partition_data {
 						key := '${topic_name}:${int(p.index)}'
 						if key !in partition_set {
@@ -281,25 +281,25 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					}
 				}
 			} else {
-				// 트랜잭션 코디네이터가 없는 경우
+				// No transaction coordinator available
 				return h.build_produce_error_response_typed(req, ErrorCode.coordinator_not_available)
 			}
 		}
 	}
 
-	// 각 토픽/파티션에 메시지 저장
+	// Store messages to each topic/partition
 	mut topics := []ProduceResponseTopic{}
 	for t in req.topic_data {
 		mut topic_name := t.name
 		mut topic_id := t.topic_id.clone()
 
-		// v13+에서는 토픽 UUID로 토픽 이름 조회
+		// v13+: resolve topic name from UUID
 		if version >= 13 && t.topic_id.len == 16 {
 			if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
 				topic_name = topic_meta.name
 				topic_id = topic_meta.topic_id.clone()
 			} else {
-				// 토픽 UUID를 찾을 수 없는 경우 에러 응답
+				// Topic UUID not found; return error response
 				mut partitions := []ProduceResponsePartition{}
 				for p in t.partition_data {
 					partitions << ProduceResponsePartition{
@@ -321,14 +321,14 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 
 		mut partitions := []ProduceResponsePartition{}
 		for p in t.partition_data {
-			// 압축 해제 및 RecordBatch 파싱
+			// Decompress and parse RecordBatch
 			records_to_parse := p.records.clone()
 			mut decompressed_data := []u8{}
 			mut was_compressed := false
 			mut outer_base_offset := i64(0)
 			mut original_compression_type := u8(0)
 
-			// Kafka RecordBatch v2 헤더 파싱 (61바이트)
+			// Parse Kafka RecordBatch v2 header (61 bytes)
 			if records_to_parse.len >= 61 {
 				mut header_reader := new_reader(records_to_parse)
 				outer_base_offset = header_reader.read_i64() or { 0 }
@@ -336,14 +336,14 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 				partition_leader_epoch := header_reader.read_i32() or { 0 }
 				magic := header_reader.read_i8() or { 0 }
 
-				// RecordBatch 헤더 파싱 상세 로깅
+				// Detailed logging for RecordBatch header parsing
 				h.logger.debug('RecordBatch header parsing', observability.field_string('topic',
 					topic_name), observability.field_int('partition', int(p.index)), observability.field_int('buffer_size',
 					records_to_parse.len), observability.field_int('base_offset', int(outer_base_offset)),
 					observability.field_int('batch_length', int(batch_length)), observability.field_int('leader_epoch',
 					int(partition_leader_epoch)), observability.field_int('magic', int(magic)))
 
-				// 원시 바이트 검사 - 헤더의 처음 32바이트를 hex로 출력
+				// Inspect raw bytes - print first 32 bytes of header as hex
 				header_preview_len := if records_to_parse.len > 32 {
 					32
 				} else {
@@ -364,7 +364,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					producer_epoch := header_reader.read_i16() or { 0 }
 					base_sequence := header_reader.read_i32() or { 0 }
 
-					// 압축 타입은 attributes의 하위 3비트에 저장됨 (0: none, 1: gzip, 2: snappy, 3: lz4, 4: zstd)
+					// Compression type is stored in the lower 3 bits of attributes (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
 					compression_type_val := attributes & 0x07
 					timestamp_type := (attributes >> 3) & 0x01
 					is_transactional := (attributes >> 4) & 0x01
@@ -384,14 +384,14 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						int(producer_epoch)), observability.field_int('base_sequence',
 						int(base_sequence)), observability.field_string('crc', int(crc).hex()))
 
-					// 압축 타입 검증 및 변환
+					// Validate and convert compression type
 					if compression_type_val > 4 {
 						h.logger.error('Invalid compression type detected', observability.field_string('topic',
 							topic_name), observability.field_int('partition', int(p.index)),
 							observability.field_int('compression_type_val', compression_type_val),
 							observability.field_string('error', 'compression type must be 0-4'))
 					} else if compression_type_val != 0 {
-						// 압축된 데이터 - 압축 해제 필요
+						// Compressed data — decompression required
 						compression_type := unsafe { compression.CompressionType(compression_type_val) }
 
 						h.logger.debug('Compression type detection', observability.field_string('topic',
@@ -399,11 +399,11 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 							observability.field_int('compression_type_val', compression_type_val),
 							observability.field_string('compression_name', compression_type.str()))
 
-						// Kafka 압축 RecordBatch: header(61 bytes) + CRC(4 bytes) + compressed_records (nested RecordBatch)
+						// Kafka compressed RecordBatch layout: header (61 bytes) + CRC (4 bytes) + compressed_records (nested RecordBatch)
 						header_size := 65
 						compressed_data := records_to_parse[header_size..]
 
-						// 압축된 데이터 상세 정보 로깅
+						// Log compressed data details
 						compressed_preview_len := if compressed_data.len > 64 {
 							64
 						} else {
@@ -418,7 +418,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 							compressed_data.len), observability.field_string('compressed_data_start',
 							compressed_hex))
 
-						// 압축 해제 시도 전 로깅
+						// Log before attempting decompression
 						h.logger.debug('Starting decompression attempt', observability.field_string('topic',
 							topic_name), observability.field_int('partition', int(p.index)),
 							observability.field_string('compression_type', compression_type.str()),
@@ -428,14 +428,14 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						decompressed_data = h.compression_service.decompress(compressed_data,
 							compression_type) or {
 							decompress_elapsed := time.since(decompress_start)
-							// 압축 해제 실패 시 상세 오류 로깅
+							// Detailed error logging on decompression failure
 							h.logger.error('Decompression failed with error', observability.field_string('topic',
 								topic_name), observability.field_int('partition', int(p.index)),
 								observability.field_string('compression_type', compression_type.str()),
 								observability.field_int('compressed_bytes', compressed_data.len),
 								observability.field_duration('decompress_time', decompress_elapsed),
 								observability.field_err_str(err.str()))
-							// 압축 해제 실패 원인 분석을 위한 추가 로깅
+							// Additional logging to diagnose decompression failure
 							first_bytes := if compressed_data.len >= 8 {
 								compressed_data[..8].hex()
 							} else {
@@ -464,7 +464,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						was_compressed = true
 						original_compression_type = u8(compression_type_val)
 
-						// 압축 해제 성공 상세 로깅
+						// Detailed logging on successful decompression
 						decompressed_preview_len := if decompressed_data.len > 32 {
 							32
 						} else {
@@ -479,7 +479,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 							observability.field_string('decompressed_start', decompressed_hex),
 							observability.field_duration('decompress_time', decompress_time))
 
-						// 압축률 메트릭 계산 및 로깅
+						// Compute and log compression ratio metrics
 						if compressed_data.len > 0 {
 							ratio := f64(decompressed_data.len) / f64(compressed_data.len)
 							savings_pct := (1.0 - (f64(compressed_data.len) / f64(decompressed_data.len))) * 100.0
@@ -493,30 +493,30 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 								decompress_time))
 						}
 					} else {
-						h.logger.debug('No compression detected (uncompressed records)',
-							observability.field_string('topic', topic_name), observability.field_int('partition',
-							int(p.index)), observability.field_int('record_size', records_to_parse.len))
+						h.logger.debug('No compression (uncompressed records)', observability.field_string('topic',
+							topic_name), observability.field_int('partition', int(p.index)),
+							observability.field_int('record_size', records_to_parse.len))
 					}
 				} else {
-					// magic != 2 인 경우 (legacy MessageSet v0/v1)
+					// magic != 2: legacy MessageSet v0/v1
 					h.logger.debug('Legacy message format detected (magic != 2)', observability.field_string('topic',
 						topic_name), observability.field_int('partition', int(p.index)),
 						observability.field_int('magic', int(magic)), observability.field_int('buffer_size',
 						records_to_parse.len))
 				}
 			} else {
-				// 61바이트 미만의 데이터 (RecordBatch 헤더보다 작음)
+				// Data smaller than 61 bytes (too small for RecordBatch header)
 				h.logger.warn('RecordBatch too small for header parsing', observability.field_string('topic',
 					topic_name), observability.field_int('partition', int(p.index)), observability.field_int('buffer_size',
 					records_to_parse.len), observability.field_int('required_min_size',
 					61))
 			}
 
-			// 압축 해제된 데이터 또는 원본 데이터로 RecordBatch 파싱
+			// Parse RecordBatch from decompressed or original data
 			mut parsed := ParsedRecordBatch{}
 			if was_compressed {
-				// 압축 해제된 데이터: 중첩 RecordBatch (Inner RecordBatch)
-				// last_offset_delta로 시작하므로 별도 파싱 필요
+				// Decompressed data is a nested (inner) RecordBatch.
+				// It starts with last_offset_delta and requires a separate parser.
 				mut nested_parsed := parse_nested_record_batch(decompressed_data) or {
 					h.logger.error('Failed to parse nested record batch', observability.field_string('topic',
 						topic_name), observability.field_int('partition', int(p.index)),
@@ -530,11 +530,11 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					}
 					continue
 				}
-				// 외부 RecordBatch의 base_offset 사용
+				// Use base_offset from the outer RecordBatch
 				nested_parsed.base_offset = outer_base_offset
 				parsed = nested_parsed
 			} else {
-				// 일반 RecordBatch 파싱
+				// Parse standard RecordBatch
 				parsed = parse_record_batch(records_to_parse) or {
 					h.logger.error('Failed to parse record batch', observability.field_string('topic',
 						topic_name), observability.field_int('partition', int(p.index)),
@@ -552,7 +552,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 
 			total_records += parsed.records.len
 
-			// 스키마 인코딩이 필요한 경우 처리
+			// Apply schema encoding if configured for this topic
 			mut records_to_store := parsed.records.clone()
 			if schema := h.get_topic_schema(topic_name) {
 				h.logger.debug('Encoding records with schema', observability.field_string('topic',
@@ -583,7 +583,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 				records_to_store = encoded_records.clone()
 			}
 
-			// 원본 압축 타입을 각 레코드에 보존 (크로스 브로커 fetch 지원)
+			// Preserve original compression type on each record (supports cross-broker fetch)
 			if original_compression_type > 0 {
 				for idx in 0 .. records_to_store.len {
 					records_to_store[idx] = domain.Record{
@@ -593,7 +593,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 				}
 			}
 
-			// 빈 레코드 배치 처리
+			// Handle empty record batch
 			if records_to_store.len == 0 {
 				partitions << ProduceResponsePartition{
 					index:            p.index
@@ -605,9 +605,9 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 				continue
 			}
 
-			// 스토리지에 레코드 저장
+			// Store records to storage
 			result := h.storage.append(topic_name, int(p.index), records_to_store, req.acks) or {
-				// 토픽이 존재하지 않으면 자동 생성 시도
+				// Topic not found — attempt auto-creation
 				if err.str().contains('not found') {
 					num_partitions := if int(p.index) >= 1 { int(p.index) + 1 } else { 1 }
 					h.storage.create_topic(topic_name, num_partitions, domain.TopicConfig{}) or {
@@ -620,7 +620,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						}
 						continue
 					}
-					// 토픽 생성 후 재시도
+					// Retry after topic creation
 					retry_result := h.storage.append(topic_name, int(p.index), records_to_store,
 						req.acks) or {
 						partitions << ProduceResponsePartition{
@@ -634,7 +634,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					}
 					retry_result
 				} else {
-					// 기타 에러 처리
+					// Handle other errors
 					error_code := if err.str().contains('out of range') {
 						i16(ErrorCode.unknown_topic_or_partition)
 					} else {
@@ -651,7 +651,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 				}
 			}
 
-			// 성공 응답
+			// Success response
 			partitions << ProduceResponsePartition{
 				index:            p.index
 				error_code:       0
@@ -678,7 +678,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 	}
 }
 
-// 레거시 핸들러 - process_produce에 위임
+// Legacy handler — delegates to process_produce.
 fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_produce_request(mut reader, version, is_flexible_version(.produce, version))!
@@ -686,7 +686,7 @@ fn (mut h Handler) handle_produce(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// 모든 파티션에 에러 코드를 설정한 ProduceResponse를 생성합니다 (타입 기반).
+// build_produce_error_response_typed builds a ProduceResponse with the given error code on all partitions (typed).
 fn (h Handler) build_produce_error_response_typed(req ProduceRequest, error_code ErrorCode) ProduceResponse {
 	mut topics := []ProduceResponseTopic{}
 	for t in req.topic_data {
@@ -712,7 +712,7 @@ fn (h Handler) build_produce_error_response_typed(req ProduceRequest, error_code
 	}
 }
 
-// 모든 파티션에 에러 코드를 설정한 ProduceResponse를 생성합니다 (레거시, 바이트 배열 반환).
+// build_produce_error_response builds a ProduceResponse with the given error code on all partitions (legacy, returns bytes).
 fn build_produce_error_response(req ProduceRequest, error_code i16, version i16) []u8 {
 	mut topics := []ProduceResponseTopic{}
 	for t in req.topic_data {
@@ -738,6 +738,6 @@ fn build_produce_error_response(req ProduceRequest, error_code i16, version i16)
 	}.encode(version)
 }
 
-// 참고: Fetch (API Key 1)는 handler_fetch.v로 이동됨
-// 참고: ListOffsets (API Key 2)는 handler_list_offsets.v로 이동됨
-// 참고: RecordBatch 인코딩 및 CRC32-C 계산은 record_batch.v로 이동됨
+// Note: Fetch (API Key 1) has been moved to handler_fetch.v
+// Note: ListOffsets (API Key 2) has been moved to handler_list_offsets.v
+// Note: RecordBatch encoding and CRC32-C calculation have been moved to record_batch.v

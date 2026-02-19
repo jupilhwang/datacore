@@ -1,13 +1,13 @@
-// Kafka 프로토콜 - Topic 작업
+// Kafka protocol - Topic operations
 // CreateTopics, DeleteTopics
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Request/response types, parsing, encoding, and handlers
 module kafka
 
 import domain
 import infra.observability
 import time
 
-/// CreateTopicsRequest는 관련 데이터를 담는 구조체입니다.
+/// CreateTopicsRequest holds the request data for CreateTopics.
 pub struct CreateTopicsRequest {
 pub:
 	topics        []CreateTopicsRequestTopic
@@ -15,7 +15,7 @@ pub:
 	validate_only bool
 }
 
-/// CreateTopicsRequestTopic는 관련 데이터를 담는 구조체입니다.
+/// CreateTopicsRequestTopic holds the configuration for a single topic to create.
 pub struct CreateTopicsRequestTopic {
 pub:
 	name               string
@@ -71,14 +71,14 @@ fn parse_create_topics_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
-/// DeleteTopicsRequest는 관련 데이터를 담는 구조체입니다.
+/// DeleteTopicsRequest holds the request data for DeleteTopics.
 pub struct DeleteTopicsRequest {
 pub:
 	topics     []DeleteTopicsRequestTopic
 	timeout_ms i32
 }
 
-/// DeleteTopicsRequestTopic는 관련 데이터를 담는 구조체입니다.
+/// DeleteTopicsRequestTopic holds the name or ID of a topic to delete.
 pub struct DeleteTopicsRequestTopic {
 pub:
 	name     string
@@ -116,14 +116,14 @@ fn parse_delete_topics_request(mut reader BinaryReader, version i16, is_flexible
 
 // CreateTopics Response (API Key 19)
 
-/// CreateTopicsResponse은 CreateTopics Response (API Key 19).
+/// CreateTopicsResponse holds the response data for CreateTopics (API Key 19).
 pub struct CreateTopicsResponse {
 pub:
 	throttle_time_ms i32
 	topics           []CreateTopicsResponseTopic
 }
 
-/// CreateTopicsResponseTopic는 관련 데이터를 담는 구조체입니다.
+/// CreateTopicsResponseTopic holds the per-topic data for a CreateTopics response.
 pub struct CreateTopicsResponseTopic {
 pub:
 	name               string
@@ -134,7 +134,7 @@ pub:
 	replication_factor i16
 }
 
-/// encode를 수행합니다.
+/// encode serializes the response to bytes.
 pub fn (r CreateTopicsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 5
 	mut writer := new_writer()
@@ -189,14 +189,14 @@ pub fn (r CreateTopicsResponse) encode(version i16) []u8 {
 
 // DeleteTopics Response (API Key 20)
 
-/// DeleteTopicsResponse은 DeleteTopics Response (API Key 20).
+/// DeleteTopicsResponse is the DeleteTopics response (API Key 20).
 pub struct DeleteTopicsResponse {
 pub:
 	throttle_time_ms i32
 	topics           []DeleteTopicsResponseTopic
 }
 
-/// DeleteTopicsResponseTopic는 관련 데이터를 담는 구조체입니다.
+/// DeleteTopicsResponseTopic holds the per-topic data for a DeleteTopics response.
 pub struct DeleteTopicsResponseTopic {
 pub:
 	name       string
@@ -204,7 +204,7 @@ pub:
 	error_code i16
 }
 
-/// encode를 수행합니다.
+/// encode serializes the response to bytes.
 pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -250,7 +250,7 @@ pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// CreateTopics 핸들러 - 스토리지에 토픽 생성
+// CreateTopics handler - creates topics in storage
 fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -336,7 +336,7 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// DeleteTopics 핸들러 - 스토리지에서 토픽 삭제
+// DeleteTopics handler - deletes topics from storage
 fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -351,7 +351,7 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	mut error_count := 0
 
 	for t in req.topics {
-		// v6+의 경우 topic_id에서 토픽 이름을 찾아야 할 수 있음
+		// For v6+, topic name may need to be resolved from topic_id
 		mut topic_name := t.name
 		mut topic_id := t.topic_id.clone()
 
@@ -420,13 +420,13 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// CreateTopics 요청 처리 (Frame 기반)
+// CreateTopics request processor (frame-based)
 fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !CreateTopicsResponse {
 	_ = version
 	mut topics := []CreateTopicsResponseTopic{}
 
 	for t in req.topics {
-		// config 맵을 domain.TopicConfig로 변환
+		// Convert config map to domain.TopicConfig
 		topic_config := domain.TopicConfig{
 			retention_ms:        parse_config_i64(t.configs, 'retention.ms', 604800000)
 			retention_bytes:     parse_config_i64(t.configs, 'retention.bytes', -1)
@@ -436,7 +436,7 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 			max_message_bytes:   parse_config_int(t.configs, 'max.message.bytes', 1048576)
 		}
 
-		// 스토리지에 토픽 생성 시도
+		// Attempt to create topic in storage
 		partitions := if t.num_partitions <= 0 { 1 } else { int(t.num_partitions) }
 
 		created_meta := h.storage.create_topic(t.name, partitions, topic_config) or {
@@ -460,15 +460,15 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 			continue
 		}
 
-		// 파티션 할당 서비스가 있으면 파티션을 브로커에 할당
+		// Assign partitions to brokers if a partition assigner is available
 		if mut assigner := h.partition_assigner {
-			// 활성 브로커 목록 조회
+			// Retrieve list of active brokers
 			mut brokers := []domain.BrokerInfo{}
 			if mut registry := h.broker_registry {
 				brokers = registry.list_active_brokers() or { []domain.BrokerInfo{} }
 			}
 
-			// 브로커가 없으면 자신을 브로커로 추가
+			// If no brokers are available, add self as the broker
 			if brokers.len == 0 {
 				brokers << domain.BrokerInfo{
 					broker_id: h.broker_id
@@ -477,7 +477,7 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 				}
 			}
 
-			// 파티션 할당 수행
+			// Perform partition assignment
 			assigner.assign_partitions(t.name, partitions, brokers) or {
 				h.logger.warn('Failed to assign partitions', observability.field_string('topic',
 					t.name), observability.field_int('partitions', partitions), observability.field_err_str(err.str()))
@@ -500,7 +500,7 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 	}
 }
 
-// DeleteTopics 요청 처리 (Frame 기반)
+// DeleteTopics request processor (frame-based)
 fn (mut h Handler) process_delete_topics(req DeleteTopicsRequest, version i16) !DeleteTopicsResponse {
 	mut topics := []DeleteTopicsResponseTopic{}
 

@@ -1,6 +1,6 @@
-// Kafka 프로토콜 - Offset 작업
+// Kafka protocol - Offset operations
 // OffsetCommit, OffsetFetch
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Request/response types, parsing, encoding, and handlers
 module kafka
 
 import domain
@@ -8,22 +8,22 @@ import infra.observability
 import service.offset
 import time
 
-// OffsetCommit 요청
-/// OffsetCommitRequest은 OffsetCommit 요청.
+// OffsetCommit request
+/// OffsetCommitRequest holds the request data for OffsetCommit.
 pub struct OffsetCommitRequest {
 pub:
 	group_id string
 	topics   []OffsetCommitRequestTopic
 }
 
-/// OffsetCommitRequestTopic는 관련 데이터를 담는 구조체입니다.
+/// OffsetCommitRequestTopic holds the topic and partitions for an OffsetCommit request.
 pub struct OffsetCommitRequestTopic {
 pub:
 	name       string
 	partitions []OffsetCommitRequestPartition
 }
 
-/// OffsetCommitRequestPartition는 관련 데이터를 담는 구조체입니다.
+/// OffsetCommitRequestPartition holds the partition offset data for an OffsetCommit request.
 pub struct OffsetCommitRequestPartition {
 pub:
 	partition_index    i32
@@ -87,7 +87,7 @@ fn parse_offset_commit_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
-/// OffsetFetchRequest는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchRequest holds the request data for OffsetFetch.
 pub struct OffsetFetchRequest {
 pub:
 	group_id       string
@@ -96,14 +96,14 @@ pub:
 	require_stable bool
 }
 
-/// OffsetFetchRequestTopic는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchRequestTopic holds the topic and partition indices to fetch offsets for.
 pub struct OffsetFetchRequestTopic {
 pub:
 	name       string
 	partitions []i32
 }
 
-/// OffsetFetchRequestGroup는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchRequestGroup holds the group and topic data for a v8+ OffsetFetch request.
 pub struct OffsetFetchRequestGroup {
 pub:
 	group_id     string
@@ -112,7 +112,7 @@ pub:
 	topics       []OffsetFetchRequestGroupTopic
 }
 
-/// OffsetFetchRequestGroupTopic는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchRequestGroupTopic holds the topic and partitions within a group-level OffsetFetch request.
 pub struct OffsetFetchRequestGroupTopic {
 pub:
 	name       string
@@ -203,28 +203,28 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 
 // OffsetCommit Response (API Key 8)
 
-/// OffsetCommitResponse은 OffsetCommit Response (API Key 8).
+/// OffsetCommitResponse holds the response data for OffsetCommit (API Key 8).
 pub struct OffsetCommitResponse {
 pub:
 	throttle_time_ms i32
 	topics           []OffsetCommitResponseTopic
 }
 
-/// OffsetCommitResponseTopic는 관련 데이터를 담는 구조체입니다.
+/// OffsetCommitResponseTopic holds the per-topic results for an OffsetCommit response.
 pub struct OffsetCommitResponseTopic {
 pub:
 	name       string
 	partitions []OffsetCommitResponsePartition
 }
 
-/// OffsetCommitResponsePartition는 관련 데이터를 담는 구조체입니다.
+/// OffsetCommitResponsePartition holds the per-partition result for an OffsetCommit response.
 pub struct OffsetCommitResponsePartition {
 pub:
 	partition_index i32
 	error_code      i16
 }
 
-/// encode를 수행합니다.
+/// encode serializes the OffsetCommitResponse into bytes.
 pub fn (r OffsetCommitResponse) encode(version i16) []u8 {
 	is_flexible := version >= 8
 	mut writer := new_writer()
@@ -268,7 +268,7 @@ pub fn (r OffsetCommitResponse) encode(version i16) []u8 {
 
 // OffsetFetch Response (API Key 9)
 
-/// OffsetFetchResponse은 OffsetFetch Response (API Key 9).
+/// OffsetFetchResponse holds the response data for OffsetFetch (API Key 9).
 pub struct OffsetFetchResponse {
 pub:
 	throttle_time_ms i32
@@ -277,14 +277,14 @@ pub:
 	groups           []OffsetFetchResponseGroup
 }
 
-/// OffsetFetchResponseTopic는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchResponseTopic holds the per-topic results for an OffsetFetch response.
 pub struct OffsetFetchResponseTopic {
 pub:
 	name       string
 	partitions []OffsetFetchResponsePartition
 }
 
-/// OffsetFetchResponsePartition는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchResponsePartition holds the per-partition committed offset for an OffsetFetch response.
 pub struct OffsetFetchResponsePartition {
 pub:
 	partition_index        i32
@@ -294,7 +294,7 @@ pub:
 	error_code             i16
 }
 
-/// OffsetFetchResponseGroup는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchResponseGroup holds the per-group results for a v8+ OffsetFetch response.
 pub struct OffsetFetchResponseGroup {
 pub:
 	group_id   string
@@ -302,14 +302,14 @@ pub:
 	error_code i16
 }
 
-/// OffsetFetchResponseGroupTopic는 관련 데이터를 담는 구조체입니다.
+/// OffsetFetchResponseGroupTopic holds the per-topic partition offsets within a group OffsetFetch response.
 pub struct OffsetFetchResponseGroupTopic {
 pub:
 	name       string
 	partitions []OffsetFetchResponsePartition
 }
 
-/// encode를 수행합니다.
+/// encode serializes the OffsetFetchResponse into bytes.
 pub fn (r OffsetFetchResponse) encode(version i16) []u8 {
 	is_flexible := version >= 6
 	mut writer := new_writer()
@@ -413,7 +413,7 @@ pub fn (r OffsetFetchResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// OffsetCommit 핸들러 - 컨슈머 그룹 오프셋 저장
+// handle_offset_commit - commits consumer group offsets
 fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -423,7 +423,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	h.logger.debug('Processing offset commit', observability.field_string('group_id',
 		req.group_id), observability.field_int('topics', req.topics.len))
 
-	// 프로토콜 요청을 서비스 요청으로 변환
+	// Convert protocol request to service request
 	mut all_offsets := []domain.PartitionOffset{cap: req.topics.len * 4}
 	mut total_partitions := 0
 	for t in req.topics {
@@ -439,7 +439,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 		}
 	}
 
-	// OffsetManager를 통해 오프셋 커밋
+	// Commit offsets via OffsetManager
 	service_resp := h.offset_manager.commit_offsets(offset.OffsetCommitRequest{
 		group_id: req.group_id
 		offsets:  all_offsets
@@ -447,7 +447,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 		h.logger.error('Offset commit failed', observability.field_string('group_id',
 			req.group_id), observability.field_string('error', err.str()))
 
-		// 에러 응답 생성
+		// Build error response
 		mut topics := []OffsetCommitResponseTopic{cap: req.topics.len}
 		for t in req.topics {
 			mut partitions := []OffsetCommitResponsePartition{cap: t.partitions.len}
@@ -468,7 +468,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 		}.encode(version)
 	}
 
-	// 서비스 응답을 프로토콜 응답으로 변환
+	// Convert service response to protocol response
 	topics := build_commit_response_from_results(service_resp.results)
 
 	resp := OffsetCommitResponse{
@@ -484,7 +484,7 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// OffsetFetch 핸들러 - 컨슈머 그룹 오프셋 조회
+// handle_offset_fetch - fetches committed consumer group offsets
 fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -516,7 +516,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}
 
 		for g in req_groups {
-			// 프로토콜 요청을 서비스 요청으로 변환
+			// Convert protocol request to service request
 			mut partitions_to_fetch := []domain.TopicPartition{cap: g.topics.len * 4}
 			for t in g.topics {
 				for p in t.partitions {
@@ -527,7 +527,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 				}
 			}
 
-			// OffsetManager를 통해 오프셋 조회
+			// Fetch offsets via OffsetManager
 			service_resp := h.offset_manager.fetch_offsets(offset.OffsetFetchRequest{
 				group_id:       g.group_id
 				partitions:     partitions_to_fetch
@@ -541,7 +541,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 				continue
 			}
 
-			// 서비스 응답을 프로토콜 응답으로 변환
+			// Convert service response to protocol response
 			topics_map := group_fetch_partitions_by_topic(service_resp.results)
 
 			mut topics := []OffsetFetchResponseGroupTopic{cap: topics_map.len}
@@ -579,7 +579,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}
 	}
 
-	// OffsetManager를 통해 오프셋 조회
+	// Fetch offsets via OffsetManager
 	service_resp := h.offset_manager.fetch_offsets(offset.OffsetFetchRequest{
 		group_id:       req.group_id
 		partitions:     partitions_to_fetch
@@ -593,7 +593,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}.encode(version)
 	}
 
-	// 서비스 응답을 프로토콜 응답으로 변환
+	// Convert service response to protocol response
 	topics_map := group_fetch_partitions_by_topic(service_resp.results)
 
 	mut topics := []OffsetFetchResponseTopic{cap: topics_map.len}
@@ -619,7 +619,7 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// 처리 함수 (Frame 기반)
+// Processing functions (frame-based)
 fn (mut h Handler) process_offset_commit(req OffsetCommitRequest, version i16) !OffsetCommitResponse {
 	_ = version
 	mut all_offsets := []domain.PartitionOffset{}
@@ -734,7 +734,7 @@ fn (mut h Handler) process_offset_fetch(req OffsetFetchRequest, version i16) !Of
 
 // Helper Functions
 
-/// build_commit_response_from_results는 서비스 응답을 OffsetCommit 프로토콜 응답으로 변환합니다.
+/// build_commit_response_from_results converts a service response into OffsetCommit protocol response topics.
 fn build_commit_response_from_results(results []offset.OffsetCommitResult) []OffsetCommitResponseTopic {
 	mut topics_map := map[string][]OffsetCommitResponsePartition{}
 	for result in results {
@@ -757,7 +757,7 @@ fn build_commit_response_from_results(results []offset.OffsetCommitResult) []Off
 	return topics
 }
 
-/// build_fetch_response_from_results는 서비스 응답을 OffsetFetch 프로토콜 응답으로 변환합니다.
+/// build_fetch_response_from_results converts a service response into OffsetFetch protocol response partitions.
 fn build_fetch_response_from_results(results []offset.OffsetFetchResult) []OffsetFetchResponsePartition {
 	mut partitions := []OffsetFetchResponsePartition{cap: results.len}
 	for result in results {
@@ -776,7 +776,7 @@ fn build_fetch_response_from_results(results []offset.OffsetFetchResult) []Offse
 	return partitions
 }
 
-/// group_fetch_partitions_by_topic는 OffsetFetch 결과를 토픽별로 그룹화합니다.
+/// group_fetch_partitions_by_topic groups OffsetFetch results by topic name.
 fn group_fetch_partitions_by_topic(results []offset.OffsetFetchResult) map[string][]OffsetFetchResponsePartition {
 	mut topics_map := map[string][]OffsetFetchResponsePartition{}
 	for result in results {

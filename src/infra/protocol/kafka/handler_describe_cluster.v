@@ -1,18 +1,18 @@
-// Kafka 프로토콜 - DescribeCluster (API Key 60)
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Kafka protocol - DescribeCluster (API Key 60)
+// Request/response types, parsing, encoding, and handlers
 module kafka
 
 import domain
 
 // DescribeCluster (API Key 60)
 
-/// DescribeClusterRequest은 DescribeCluster (API Key 60).
+/// DescribeClusterRequest holds the request data for DescribeCluster (API Key 60).
 pub struct DescribeClusterRequest {
 pub:
 	include_cluster_authorized_operations bool
 }
 
-/// DescribeClusterResponse는 관련 데이터를 담는 구조체입니다.
+/// DescribeClusterResponse holds the response data for DescribeCluster.
 pub struct DescribeClusterResponse {
 pub:
 	throttle_time_ms              i32
@@ -24,7 +24,7 @@ pub:
 	cluster_authorized_operations i32
 }
 
-/// DescribeClusterBroker는 관련 데이터를 담는 구조체입니다.
+/// DescribeClusterBroker holds broker information for a DescribeCluster response.
 pub struct DescribeClusterBroker {
 pub:
 	broker_id i32
@@ -43,7 +43,7 @@ fn parse_describe_cluster_request(mut reader BinaryReader, version i16, is_flexi
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the DescribeClusterResponse into bytes.
 pub fn (r DescribeClusterResponse) encode(version i16) []u8 {
 	is_flexible := version >= 0
 	mut writer := new_writer()

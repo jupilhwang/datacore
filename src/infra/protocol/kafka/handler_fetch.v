@@ -1,8 +1,8 @@
-// Fetch 요청/응답 타입, 파싱, 인코딩 및 핸들러 구현
+// Fetch request/response types, parsing, encoding, and handler implementation
 //
-// 이 모듈은 Kafka Fetch API를 구현합니다.
-// 컨슈머가 브로커로부터 메시지를 가져올 때 사용되며,
-// 토픽/파티션별 오프셋 기반 데이터 조회를 지원합니다.
+// This module implements the Kafka Fetch API.
+// Used by consumers to pull messages from the broker.
+// Supports offset-based data retrieval per topic/partition.
 module kafka
 
 import infra.compression
@@ -10,10 +10,10 @@ import infra.observability
 import time
 import domain
 
-/// Fetch 요청 - 컨슈머가 브로커에서 메시지를 가져오기 위한 요청
+/// FetchRequest is sent by a consumer to pull messages from the broker.
 ///
-/// 여러 토픽과 파티션에서 동시에 데이터를 가져올 수 있으며,
-/// max_wait_ms와 min_bytes를 통해 long polling을 지원합니다.
+/// Supports fetching from multiple topics and partitions simultaneously.
+/// Supports long polling via max_wait_ms and min_bytes.
 pub struct FetchRequest {
 pub:
 	replica_id            i32
@@ -25,23 +25,23 @@ pub:
 	forgotten_topics_data []FetchRequestForgottenTopic
 }
 
-/// Fetch 요청에서 잊혀진 토픽 - 세션 기반 fetch에서 더 이상 필요없는 토픽
+/// FetchRequestForgottenTopic represents topics no longer needed in a session-based fetch.
 pub struct FetchRequestForgottenTopic {
 pub:
 	name       string
-	topic_id   []u8 // 토픽 UUID (v13+)
+	topic_id   []u8 // Topic UUID (v13+)
 	partitions []i32
 }
 
-/// Fetch 요청 토픽 - 조회할 토픽 정보
+/// FetchRequestTopic identifies a topic to fetch from.
 pub struct FetchRequestTopic {
 pub:
 	name       string
-	topic_id   []u8 // 토픽 UUID (v13+, 16바이트)
+	topic_id   []u8 // Topic UUID (v13+, 16 bytes)
 	partitions []FetchRequestPartition
 }
 
-/// Fetch 요청 파티션 - 조회할 파티션 정보
+/// FetchRequestPartition identifies a partition to fetch from.
 pub struct FetchRequestPartition {
 pub:
 	partition           i32
@@ -49,7 +49,7 @@ pub:
 	partition_max_bytes i32
 }
 
-/// Fetch 응답 - 조회된 메시지 데이터를 포함하는 응답
+/// FetchResponse contains the fetched message data.
 pub struct FetchResponse {
 pub:
 	throttle_time_ms i32
@@ -59,15 +59,15 @@ pub:
 	node_endpoints   []NodeEndpoint
 }
 
-/// Fetch 응답 토픽 - 토픽별 조회 결과
+/// FetchResponseTopic contains per-topic fetch results.
 pub struct FetchResponseTopic {
 pub:
 	name       string
-	topic_id   []u8 // 토픽 UUID (v13+)
+	topic_id   []u8 // Topic UUID (v13+)
 	partitions []FetchResponsePartition
 }
 
-/// Fetch 응답 파티션 - 파티션별 조회 결과
+/// FetchResponsePartition contains per-partition fetch results.
 pub struct FetchResponsePartition {
 pub:
 	partition_index    i32
@@ -78,7 +78,7 @@ pub:
 	records            []u8
 }
 
-/// 노드 엔드포인트 - 브로커 노드 정보 (v16+)
+/// NodeEndpoint holds broker node information (v16+).
 pub struct NodeEndpoint {
 pub:
 	node_id i32
@@ -87,11 +87,11 @@ pub:
 	rack    string
 }
 
-// Fetch 요청을 파싱합니다.
-// 버전에 따라 다른 필드들을 읽어 FetchRequest 구조체를 생성합니다.
+// parse_fetch_request parses a Fetch request.
+// Reads different fields depending on the version to build the FetchRequest struct.
 fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequest {
 	mut replica_id := i32(-1)
-	// v15+에서는 replica_id가 본문에서 제거되고 tagged field로 이동
+	// v15+: replica_id removed from body and moved to a tagged field
 	if version < 15 {
 		replica_id = reader.read_i32()!
 	}
@@ -99,25 +99,25 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 	max_wait_ms := reader.read_i32()!
 	min_bytes := reader.read_i32()!
 
-	// v3+에서 max_bytes 필드 추가
+	// max_bytes field added in v3+
 	mut max_bytes := i32(0x7fffffff)
 	if version >= 3 {
 		max_bytes = reader.read_i32()!
 	}
 
-	// v4+에서 isolation_level 필드 추가
+	// isolation_level field added in v4+
 	mut isolation_level := i8(0)
 	if version >= 4 {
 		isolation_level = reader.read_i8()!
 	}
 
-	// v7+에서 세션 기반 fetch 지원
+	// Session-based fetch fields added in v7+
 	if version >= 7 {
 		_ = reader.read_i32()!
 		_ = reader.read_i32()!
 	}
 
-	// 토픽 배열 파싱
+	// Parse topic array
 	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	mut topics := []FetchRequestTopic{}
@@ -125,7 +125,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 		mut name := ''
 		mut topic_id := []u8{}
 
-		// v13+에서는 토픽 이름 대신 UUID 사용
+		// v13+ uses topic UUID instead of topic name
 		if version >= 13 {
 			topic_id = reader.read_uuid()!
 		} else if is_flexible {
@@ -134,21 +134,21 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 			name = reader.read_string()!
 		}
 
-		// 파티션 배열 파싱
+		// Parse partition array
 		partition_count := reader.read_flex_array_len(is_flexible)!
 
 		mut partitions := []FetchRequestPartition{}
 		for _ in 0 .. partition_count {
 			partition := reader.read_i32()!
 
-			// v9+에서 current_leader_epoch 필드 추가 (무시)
+			// current_leader_epoch field added in v9+ (ignored)
 			if version >= 9 {
 				_ = reader.read_i32()!
 			}
 
 			fetch_offset := reader.read_i64()!
 
-			// v5+에서 log_start_offset 필드 추가 (무시)
+			// log_start_offset field added in v5+ (ignored)
 			if version >= 5 {
 				_ = reader.read_i64()!
 			}
@@ -173,7 +173,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 		reader.skip_flex_tagged_fields(is_flexible)!
 	}
 
-	// v7+에서 잊혀진 토픽 데이터 파싱 (세션 기반 fetch용)
+	// Parse forgotten topics data in v7+ (for session-based fetch)
 	mut forgotten_topics_data := []FetchRequestForgottenTopic{}
 	if version >= 7 {
 		forgotten_count := reader.read_flex_array_len(is_flexible)!
@@ -201,7 +201,7 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 		}
 	}
 
-	// v11+에서 rack_id 필드 추가 (무시)
+	// rack_id field added in v11+ (ignored)
 	if version >= 11 {
 		_ = reader.read_flex_string(is_flexible)!
 	}
@@ -217,23 +217,23 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 	}
 }
 
-/// Fetch 응답을 바이트 배열로 인코딩합니다.
-/// 버전에 따라 flexible 또는 non-flexible 형식으로 인코딩합니다.
+/// encode serializes the FetchResponse to bytes.
+/// Uses flexible or non-flexible format depending on the version.
 pub fn (r FetchResponse) encode(version i16) []u8 {
 	is_flexible := version >= 12
 	mut writer := new_writer()
 
-	// v1+에서 throttle_time_ms 필드 추가
+	// throttle_time_ms field added in v1+
 	if version >= 1 {
 		writer.write_i32(r.throttle_time_ms)
 	}
-	// v7+에서 최상위 에러 코드와 세션 ID 추가
+	// Top-level error code and session ID added in v7+
 	if version >= 7 {
 		writer.write_i16(r.error_code)
 		writer.write_i32(r.session_id)
 	}
 
-	// 토픽 배열 인코딩
+	// Encode topic array
 	if is_flexible {
 		writer.write_compact_array_len(r.topics.len)
 	} else {
@@ -241,7 +241,7 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 	}
 
 	for t in r.topics {
-		// v13+에서는 토픽 이름 대신 UUID 사용
+		// v13+ uses topic UUID instead of topic name
 		if version >= 13 {
 			writer.write_uuid(t.topic_id)
 		} else if is_flexible {
@@ -250,7 +250,7 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 			writer.write_string(t.name)
 		}
 
-		// 파티션 배열 인코딩
+		// Encode partition array
 		if is_flexible {
 			writer.write_compact_array_len(t.partitions.len)
 		} else {
@@ -261,15 +261,15 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 			writer.write_i32(p.partition_index)
 			writer.write_i16(p.error_code)
 			writer.write_i64(p.high_watermark)
-			// v4+에서 last_stable_offset 필드 추가
+			// last_stable_offset field added in v4+
 			if version >= 4 {
 				writer.write_i64(p.last_stable_offset)
 			}
-			// v5+에서 log_start_offset 필드 추가
+			// log_start_offset field added in v5+
 			if version >= 5 {
 				writer.write_i64(p.log_start_offset)
 			}
-			// v4+에서 aborted_transactions 배열 추가 (빈 배열)
+			// aborted_transactions array added in v4+ (empty array)
 			if version >= 4 {
 				if is_flexible {
 					writer.write_uvarint(1)
@@ -277,11 +277,11 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 					writer.write_array_len(0)
 				}
 			}
-			// v11+에서 preferred_read_replica 필드 추가
+			// preferred_read_replica field added in v11+
 			if version >= 11 {
 				writer.write_i32(-1)
 			}
-			// 레코드 배치 데이터 인코딩
+			// Encode record batch data
 			if is_flexible {
 				writer.write_compact_bytes(p.records)
 			} else {
@@ -308,9 +308,9 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// Fetch 요청을 처리합니다 (Frame 기반).
-// 요청된 토픽/파티션에서 메시지를 조회하여 응답을 생성합니다.
-// 압축 지원: 토픽 설정에 따라 레코드를 압축하여 전송합니다.
+// process_fetch handles a Fetch request (frame-based).
+// Retrieves messages from the requested topic/partition and builds the response.
+// Compression support: compresses records according to topic configuration before sending.
 fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	start_time := time.now()
 
@@ -326,7 +326,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	for t in req.topics {
 		mut topic_name := t.name
 		mut topic_id := t.topic_id.clone()
-		// v13+에서는 토픽 UUID로 토픽 이름을 조회
+		// v13+: resolve topic name from UUID
 		if version >= 13 && t.topic_id.len == 16 {
 			if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
 				topic_name = topic_meta.name
@@ -334,15 +334,15 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			}
 		}
 
-		// 토픽 설정에서 압축 타입 조회
+		// Look up preferred compression type from topic configuration
 		mut preferred_compression := h.get_topic_compression_type(topic_name)
 
-		// 각 파티션에서 데이터 조회
+		// Fetch data from each partition
 		mut partitions := []FetchResponsePartition{}
 		for p in t.partitions {
-			// 스토리지에서 메시지 조회
+			// Fetch messages from storage
 			result := h.storage.fetch(topic_name, int(p.partition), p.fetch_offset, p.partition_max_bytes) or {
-				// 에러 발생 시 적절한 에러 코드 설정
+				// Map storage error to an appropriate error code
 				error_code := if err.str().contains('not found') {
 					i16(ErrorCode.unknown_topic_or_partition)
 				} else if err.str().contains('out of range') {
@@ -366,17 +366,17 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 				continue
 			}
 
-			// 조회된 레코드를 RecordBatch 형식으로 인코딩
-			// first_offset: 실제 반환되는 첫 번째 레코드의 오프셋 사용
+			// Encode fetched records into RecordBatch format.
+			// first_offset: use the actual offset of the first record returned.
 			records_data := encode_record_batch_zerocopy(result.records, result.first_offset)
 			total_records += result.records.len
 
-			// Record에 보존된 원본 압축 타입이 있으면 토픽 설정보다 우선 사용
+			// If the record carries a preserved compression type, it takes priority over topic config
 			if result.records.len > 0 && result.records[0].compression_type > 0 {
 				preferred_compression = unsafe { compression.CompressionType(result.records[0].compression_type) }
 			}
 
-			// 스키마 디코딩이 필요한 경우 처리
+			// Apply schema decoding if configured for this topic
 			mut records_for_compression := records_data.clone()
 			if schema := h.get_topic_schema(topic_name) {
 				h.logger.debug('Decoding records with schema', observability.field_string('topic',
@@ -387,7 +387,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 					decoded_value := h.decode_record_with_schema(record.value, &schema) or {
 						h.logger.warn('Failed to decode record with schema, returning raw data',
 							observability.field_string('topic', topic_name), observability.field_err_str(err.str()))
-						// 디코딩 실패 시 원본 데이터 반환
+						// Return raw data on decode failure
 						decoded_records << record
 						continue
 					}
@@ -398,12 +398,12 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 						headers:   record.headers
 					}
 				}
-				// 디코딩된 레코드를 RecordBatch로 재인코딩
+				// Re-encode decoded records as RecordBatch
 				records_for_compression = encode_record_batch_zerocopy(decoded_records,
 					result.first_offset)
 			}
 
-			// 압축 처리
+			// Apply compression
 			compressed_result := h.compress_records_for_fetch(records_for_compression,
 				preferred_compression, topic_name, p.partition)
 			final_records_data := compressed_result.data
@@ -446,15 +446,15 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	}
 }
 
-// get_topic_compression_type은 토픽의 압축 타입을 조회합니다.
-// 토픽 설정에서 compression.type을 읽어 CompressionType으로 변환합니다.
+// get_topic_compression_type retrieves the compression type for a topic.
+// Reads compression.type from topic configuration and converts it to CompressionType.
 fn (mut h Handler) get_topic_compression_type(topic_name string) compression.CompressionType {
-	// 기본값은 none
+	// Default is no compression
 	mut compression_type := compression.CompressionType.none
 
-	// 토픽 메타데이터에서 설정 조회 (TopicMetadata.config는 map[string]string)
+	// Look up configuration from topic metadata (TopicMetadata.config is map[string]string)
 	if topic_meta := h.storage.get_topic(topic_name) {
-		// Kafka 표준 설정 키: compression.type
+		// Standard Kafka configuration key: compression.type
 		compression_str := topic_meta.config['compression.type']
 		if compression_str.len > 0 && compression_str != 'none' {
 			if ct := compression.compression_type_from_string(compression_str) {
@@ -466,17 +466,17 @@ fn (mut h Handler) get_topic_compression_type(topic_name string) compression.Com
 	return compression_type
 }
 
-// CompressionResult는 압축 결과를 나타냅니다.
+// CompressionResult holds the result of a compression operation.
 struct CompressionResult {
 pub:
 	data        []u8
 	bytes_saved i64
 }
 
-// compress_records_for_fetch는 Fetch 응답용으로 레코드를 압축합니다.
-// 압축이 유효하지 않은 경우(크기 증가) 원본 데이터를 반환합니다.
+// compress_records_for_fetch compresses records for a Fetch response.
+// Returns the original data if compression would increase the size.
 fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_type compression.CompressionType, topic_name string, partition i32) CompressionResult {
-	// 압축이 필요 없는 경우
+	// No compression needed
 	if compression_type == .none || records_data.len == 0 {
 		return CompressionResult{
 			data:        records_data
@@ -484,7 +484,7 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 		}
 	}
 
-	// 작은 데이터는 압축하지 않음 (임계값: 256바이트)
+	// Skip compression for small payloads (threshold: 256 bytes)
 	if records_data.len < 256 {
 		return CompressionResult{
 			data:        records_data
@@ -492,7 +492,7 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 		}
 	}
 
-	// 압축 수행
+	// Perform compression
 	compressed := h.compression_service.compress(records_data, compression_type) or {
 		h.logger.warn('Compression failed, returning uncompressed data', observability.field_string('topic',
 			topic_name), observability.field_int('partition', partition), observability.field_string('compression_type',
@@ -503,7 +503,7 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 		}
 	}
 
-	// 압축이 크기를 증가시키는 경우 원본 반환
+	// Return original data if compression increased the size
 	if compressed.len >= records_data.len {
 		h.logger.debug('Compression increased size, using uncompressed data', observability.field_string('topic',
 			topic_name), observability.field_int('partition', partition), observability.field_int('original_size',
@@ -514,7 +514,7 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 		}
 	}
 
-	// 압축 성공 - 바이트 절약량 계산
+	// Compression successful — compute bytes saved
 	bytes_saved := records_data.len - compressed.len
 
 	h.logger.debug('Records compressed for fetch', observability.field_string('topic',
@@ -529,17 +529,17 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 	}
 }
 
-// 레거시 핸들러 - SimpleFetchRequest를 사용하여 zerocopy_fetch.v와 호환성 유지
+// Legacy handler — uses SimpleFetchRequest to maintain compatibility with zerocopy_fetch.v.
 fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
 	flexible := is_flexible_version(.fetch, version)
 	simple_req := parse_fetch_request_simple(body, version, flexible)!
 
-	// SimpleFetchRequest를 FetchRequest로 변환
+	// Convert SimpleFetchRequest to FetchRequest
 	req := simple_fetch_to_fetch_request(simple_req)
 	resp := h.process_fetch(req, version)!
 
 	encoded := resp.encode(version)
-	// 디버그용 응답 정보 출력
+	// Print response info for debugging
 	eprintln('[Fetch] Response version=${version}, size=${encoded.len} bytes')
 	if encoded.len > 0 && encoded.len < 200 {
 		eprintln('[Fetch] First 100 bytes: ${encoded[..if encoded.len > 100 {
@@ -552,7 +552,7 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
 	return encoded
 }
 
-// SimpleFetchRequest를 FetchRequest로 변환합니다.
+// simple_fetch_to_fetch_request converts a SimpleFetchRequest to a FetchRequest.
 fn simple_fetch_to_fetch_request(simple SimpleFetchRequest) FetchRequest {
 	mut topics := []FetchRequestTopic{}
 	for t in simple.topics {
@@ -591,10 +591,10 @@ fn simple_fetch_to_fetch_request(simple SimpleFetchRequest) FetchRequest {
 	}
 }
 
-// SimpleFetchRequest 파서 (Fetch 요청 파싱용)
+// SimpleFetchRequest parser
 
-/// SimpleFetchRequest - 경량 Fetch 요청 구조체
-/// zerocopy_fetch.v와의 호환성을 위해 사용됩니다.
+/// SimpleFetchRequest is a lightweight Fetch request struct
+/// used for compatibility with zerocopy_fetch.v.
 pub struct SimpleFetchRequest {
 pub:
 	replica_id       i32
@@ -609,15 +609,15 @@ pub:
 	rack_id          string
 }
 
-/// SimpleFetchTopic - Fetch 요청의 토픽 데이터
+/// SimpleFetchTopic holds topic data for a Fetch request.
 pub struct SimpleFetchTopic {
 pub:
-	topic_id   []u8 // 토픽 UUID (v13+)
+	topic_id   []u8 // Topic UUID (v13+)
 	name       string
 	partitions []SimpleFetchPartition
 }
 
-/// SimpleFetchPartition - Fetch 요청의 파티션 데이터
+/// SimpleFetchPartition holds partition data for a Fetch request.
 pub struct SimpleFetchPartition {
 pub:
 	partition            i32
@@ -628,7 +628,7 @@ pub:
 	partition_max_bytes  i32
 }
 
-/// ForgottenTopic - 세션 추적용 잊혀진 토픽
+/// ForgottenTopic holds a topic no longer tracked in a session.
 pub struct ForgottenTopic {
 pub:
 	topic_id   []u8
@@ -636,14 +636,13 @@ pub:
 	partitions []i32
 }
 
-/// 경량 Fetch 요청 파서
-/// SimpleFetchRequest 구조체로 파싱하여 반환합니다.
+/// parse_fetch_request_simple is a lightweight Fetch request parser.
+/// Returns the parsed request as a SimpleFetchRequest.
 pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !SimpleFetchRequest {
 	mut reader := new_reader(data)
 
-	// v15+에서는 replica_id가 본문에서 제거되고 tagged field의 replica_state로 대체됨
-	// v0-14: replica_id (INT32)가 첫 번째 필드
-	// v15+: replica_id가 본문에 없음 (tagged field에 replica_state로 존재)
+	// v0–14: replica_id (INT32) is the first field.
+	// v15+: replica_id removed from body; replaced by replica_state in tagged fields.
 	mut replica_id := i32(-1)
 	if version < 15 {
 		replica_id = reader.read_i32()!
@@ -652,17 +651,17 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 	max_wait_ms := reader.read_i32()!
 	min_bytes := reader.read_i32()!
 
-	// v3+에서 max_bytes 필드 추가
+	// max_bytes field added in v3+
 	max_bytes := if version >= 3 { reader.read_i32()! } else { i32(0x7FFFFFFF) }
 
-	// v4+에서 isolation_level 필드 추가
+	// isolation_level field added in v4+
 	isolation_level := if version >= 4 { reader.read_i8()! } else { i8(0) }
 
-	// v7+에서 session_id와 session_epoch 필드 추가
+	// session_id and session_epoch fields added in v7+
 	session_id := if version >= 7 { reader.read_i32()! } else { i32(0) }
 	session_epoch := if version >= 7 { reader.read_i32()! } else { i32(-1) }
 
-	// 토픽 배열 파싱
+	// Parse topic array
 	mut topics := []SimpleFetchTopic{}
 	topic_count := if flexible {
 		reader.read_compact_array_len()!
@@ -671,7 +670,7 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 	}
 
 	for _ in 0 .. topic_count {
-		// v13+에서는 토픽 UUID 사용
+		// v13+ uses topic UUID
 		mut topic_id := []u8{}
 		mut topic_name := ''
 
@@ -682,7 +681,7 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 			topic_name = if flexible { reader.read_compact_string()! } else { reader.read_string()! }
 		}
 
-		// 파티션 배열 파싱
+		// Parse partition array
 		mut partitions := []SimpleFetchPartition{}
 		partition_count := if flexible {
 			reader.read_compact_array_len()!
@@ -693,15 +692,15 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 		for _ in 0 .. partition_count {
 			partition := reader.read_i32()!
 
-			// v9+에서 current_leader_epoch 필드 추가
+			// current_leader_epoch field added in v9+
 			current_leader_epoch := if version >= 9 { reader.read_i32()! } else { i32(-1) }
 
 			fetch_offset := reader.read_i64()!
 
-			// v12+에서 last_fetched_epoch 필드 추가
+			// last_fetched_epoch field added in v12+
 			last_fetched_epoch := if version >= 12 { reader.read_i32()! } else { i32(-1) }
 
-			// v5+에서 log_start_offset 필드 추가
+			// log_start_offset field added in v5+
 			log_start_offset := if version >= 5 { reader.read_i64()! } else { i64(-1) }
 
 			partition_max_bytes := reader.read_i32()!
@@ -731,7 +730,7 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 		}
 	}
 
-	// v7+에서 잊혀진 토픽 배열 파싱
+	// Parse forgotten topics array in v7+
 	mut forgotten_topics := []ForgottenTopic{}
 	if version >= 7 {
 		forgotten_count := if flexible {
@@ -774,7 +773,7 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 		}
 	}
 
-	// v11+에서 rack_id 필드 추가
+	// rack_id field added in v11+
 	rack_id := if version >= 11 {
 		if flexible { reader.read_compact_string()! } else { reader.read_string()! }
 	} else {

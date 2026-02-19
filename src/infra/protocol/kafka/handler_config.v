@@ -1,6 +1,6 @@
-// Kafka 프로토콜 - Config 작업
+// Kafka protocol - Config operations
 // DescribeConfigs
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Request/response types, parsing, encoding, and handlers
 module kafka
 
 import infra.observability
@@ -8,14 +8,14 @@ import time
 
 // DescribeConfigs (API Key 32)
 
-/// DescribeConfigsRequest은 DescribeConfigs (API Key 32).
+/// DescribeConfigsRequest holds the request data for DescribeConfigs (API Key 32).
 pub struct DescribeConfigsRequest {
 pub:
 	resources        []DescribeConfigsResource
 	include_synonyms bool
 }
 
-/// DescribeConfigsResource는 관련 데이터를 담는 구조체입니다.
+/// DescribeConfigsResource holds a resource entry for DescribeConfigs.
 pub struct DescribeConfigsResource {
 pub:
 	resource_type i8
@@ -23,14 +23,14 @@ pub:
 	config_names  ?[]string
 }
 
-/// DescribeConfigsResponse는 관련 데이터를 담는 구조체입니다.
+/// DescribeConfigsResponse holds the response data for DescribeConfigs.
 pub struct DescribeConfigsResponse {
 pub:
 	throttle_time_ms i32
 	results          []DescribeConfigsResult
 }
 
-/// DescribeConfigsResult는 관련 데이터를 담는 구조체입니다.
+/// DescribeConfigsResult holds the config result for a single resource.
 pub struct DescribeConfigsResult {
 pub:
 	error_code    i16
@@ -40,7 +40,7 @@ pub:
 	configs       []DescribeConfigsEntry
 }
 
-/// DescribeConfigsEntry는 관련 데이터를 담는 구조체입니다.
+/// DescribeConfigsEntry holds a single config entry in a DescribeConfigs result.
 pub struct DescribeConfigsEntry {
 pub:
 	name          string
@@ -54,7 +54,7 @@ pub:
 	documentation ?string
 }
 
-/// DescribeConfigsSynonym는 관련 데이터를 담는 구조체입니다.
+/// DescribeConfigsSynonym holds a synonym config entry with its source.
 pub struct DescribeConfigsSynonym {
 pub:
 	name          string
@@ -104,7 +104,7 @@ fn parse_describe_configs_request(mut reader BinaryReader, version i16, is_flexi
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the DescribeConfigsResponse into bytes.
 pub fn (r DescribeConfigsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -200,9 +200,9 @@ pub fn (r DescribeConfigsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// DescribeConfigs 핸들러
+// DescribeConfigs handler
 
-// DescribeConfigs 핸들러
+// DescribeConfigs handler function
 fn (mut h Handler) handle_describe_configs(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)

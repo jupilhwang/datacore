@@ -245,9 +245,9 @@ fn test_parse_create_topics_request() {
 	assert req.timeout_ms == 30000
 }
 
-// DeleteTopics 요청 파싱 테스트
+// Test parsing DeleteTopics request
 fn test_parse_delete_topics_request() {
-	// 최소한의 DeleteTopics 요청 빌드 (v0)
+	// Build minimal DeleteTopics request (v0)
 	mut writer := new_writer()
 
 	// Array length: 2
@@ -272,7 +272,7 @@ fn test_parse_delete_topics_request() {
 	assert req.timeout_ms == 15000
 }
 
-// CreateTopicsResponse 인코딩 테스트
+// Test CreateTopicsResponse encoding
 fn test_create_topics_response_encoding() {
 	resp := CreateTopicsResponse{
 		throttle_time_ms: 100
@@ -290,15 +290,15 @@ fn test_create_topics_response_encoding() {
 	encoded := resp.encode(0)
 	assert encoded.len > 0
 
-	// 기본 구조 확인
+	// Verify basic structure
 	mut reader := new_reader(encoded)
 
-	// 배열 길이
+	// Array length
 	array_len := reader.read_i32() or { 0 }
 	assert array_len == 1
 }
 
-// DeleteTopicsResponse 인코딩 테스트
+// Test DeleteTopicsResponse encoding
 fn test_delete_topics_response_encoding() {
 	resp := DeleteTopicsResponse{
 		throttle_time_ms: 50
@@ -313,15 +313,15 @@ fn test_delete_topics_response_encoding() {
 	encoded := resp.encode(0)
 	assert encoded.len > 0
 
-	// 기본 구조 확인
+	// Verify basic structure
 	mut reader := new_reader(encoded)
 
-	// 배열 길이
+	// Array length
 	array_len := reader.read_i32() or { 0 }
 	assert array_len == 1
 }
 
-// Handler CreateTopics 성공 테스트
+// Test handler CreateTopics success
 fn test_handler_create_topics_success() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
@@ -347,12 +347,12 @@ fn test_handler_create_topics_success() {
 	assert 'new-topic' in storage.topics
 }
 
-// Handler CreateTopics - 토픽 이미 존재 테스트
+// Test handler CreateTopics - topic already exists
 fn test_handler_create_topics_already_exists() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 
-	// 토픽 미리 생성
+	// Pre-create topic
 	storage.topics['existing-topic'] = domain.TopicMetadata{
 		name:            'existing-topic'
 		partition_count: 1
@@ -360,7 +360,7 @@ fn test_handler_create_topics_already_exists() {
 
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// 기존 토픽에 대한 요청 빌드
+	// Build request for existing topic
 	mut writer := new_writer()
 	writer.write_i32(1)
 	writer.write_string('existing-topic')
@@ -375,10 +375,10 @@ fn test_handler_create_topics_already_exists() {
 		return
 	}
 
-	// 에러 코드가 포함된 응답 반환해야 함
+	// Should return response with error code
 	assert result.len > 0
 
-	// 응답 파싱하여 에러 코드 확인
+	// Parse response and verify error code
 	mut reader := new_reader(result)
 	_ := reader.read_i32() or { 0 }
 	_ := reader.read_string() or { '' }
@@ -387,12 +387,12 @@ fn test_handler_create_topics_already_exists() {
 	assert error_code == i16(ErrorCode.topic_already_exists)
 }
 
-// Handler DeleteTopics 성공 테스트
+// Test handler DeleteTopics success
 fn test_handler_delete_topics_success() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 
-	// 토픽 미리 생성
+	// Pre-create topic
 	storage.topics['to-delete'] = domain.TopicMetadata{
 		name:            'to-delete'
 		partition_count: 1
@@ -415,13 +415,13 @@ fn test_handler_delete_topics_success() {
 	assert 'to-delete' !in storage.topics
 }
 
-// Handler DeleteTopics - 토픽 없음 테스트
+// Test handler DeleteTopics - topic not found
 fn test_handler_delete_topics_not_found() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// 존재하지 않는 토픽에 대한 요청 빌드
+	// Build request for non-existent topic
 	mut writer := new_writer()
 	writer.write_i32(1)
 	writer.write_string('nonexistent')
@@ -432,7 +432,7 @@ fn test_handler_delete_topics_not_found() {
 		return
 	}
 
-	// 응답 파싱하여 에러 코드 확인
+	// Parse response and verify error code
 	mut reader := new_reader(result)
 	_ := reader.read_i32() or { 0 }
 	_ := reader.read_string() or { '' }
@@ -441,13 +441,13 @@ fn test_handler_delete_topics_not_found() {
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
 }
 
-// 단일 요청에 여러 토픽 테스트
+// Test creating multiple topics in a single request
 fn test_handler_create_multiple_topics() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// 3개 토픽으로 요청 빌드
+	// Build request with 3 topics
 	mut writer := new_writer()
 	writer.write_i32(3)
 
@@ -472,7 +472,7 @@ fn test_handler_create_multiple_topics() {
 	assert 'topic-c' in storage.topics
 }
 
-// Config 파싱 헬퍼 테스트
+// Test config parsing helpers
 fn test_parse_config_i64() {
 	configs := {
 		'retention.ms':  '86400000'
@@ -495,11 +495,11 @@ fn test_parse_config_int() {
 	assert parse_config_int(configs, 'nonexistent', 42) == 42
 }
 
-// ListGroups 요청 파싱 테스트
+// Test parsing ListGroups request
 fn test_parse_list_groups_request() {
-	// 최소한의 ListGroups 요청 빌드 (v0)
+	// Build minimal ListGroups request (v0)
 	mut writer := new_writer()
-	// v0에는 필드 없음
+	// v0 has no fields
 
 	mut reader := new_reader(writer.bytes())
 	req := parse_list_groups_request(mut reader, 0, false) or {
@@ -510,13 +510,13 @@ fn test_parse_list_groups_request() {
 	assert req.states_filter.len == 0
 }
 
-// ListGroups Handler 테스트
+// Test ListGroups handler
 fn test_handler_list_groups() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// 요청 빌드 (v0에는 본문 없음)
+	// Build request (v0 has no body)
 	mut writer := new_writer()
 
 	result := handler.handle_list_groups(writer.bytes(), 0) or {
@@ -535,9 +535,9 @@ fn test_handler_list_groups() {
 	assert groups_len == 2
 }
 
-// DescribeGroups 요청 파싱 테스트
+// Test parsing DescribeGroups request
 fn test_parse_describe_groups_request() {
-	// DescribeGroups 요청 빌드 (v0)
+	// Build DescribeGroups request (v0)
 	mut writer := new_writer()
 
 	// Array length: 2
@@ -558,13 +558,13 @@ fn test_parse_describe_groups_request() {
 	assert req.groups[1] == 'group-2'
 }
 
-// DescribeGroups Handler - 그룹 찾음 테스트
+// Test DescribeGroups handler - group found
 fn test_handler_describe_groups_found() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// 기존 그룹에 대한 요청 빌드
+	// Build request for existing group
 	mut writer := new_writer()
 	writer.write_i32(1)
 	writer.write_string('test-group-1')
@@ -576,7 +576,7 @@ fn test_handler_describe_groups_found() {
 
 	assert result.len > 0
 
-	// 응답 파싱
+	// Parse response
 	mut reader := new_reader(result)
 	groups_len := reader.read_i32() or { 0 }
 	assert groups_len == 1
@@ -591,13 +591,13 @@ fn test_handler_describe_groups_found() {
 	assert group_state == 'Stable'
 }
 
-// DescribeGroups Handler - 그룹 없음 테스트
+// Test DescribeGroups handler - group not found
 fn test_handler_describe_groups_not_found() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// 존재하지 않는 그룹에 대한 요청 빌드
+	// Build request for non-existent group
 	mut writer := new_writer()
 	writer.write_i32(1)
 	writer.write_string('nonexistent-group')
@@ -607,7 +607,7 @@ fn test_handler_describe_groups_not_found() {
 		return
 	}
 
-	// 응답 파싱
+	// Parse response
 	mut reader := new_reader(result)
 	groups_len := reader.read_i32() or { 0 }
 	assert groups_len == 1
@@ -616,7 +616,7 @@ fn test_handler_describe_groups_not_found() {
 	assert error_code == i16(ErrorCode.group_id_not_found)
 }
 
-// ListGroupsResponse 인코딩 테스트
+// Test ListGroupsResponse encoding
 fn test_list_groups_response_encoding() {
 	resp := ListGroupsResponse{
 		throttle_time_ms: 0
@@ -639,7 +639,7 @@ fn test_list_groups_response_encoding() {
 	assert error_code == 0
 }
 
-// DescribeGroupsResponse 인코딩 테스트
+// Test DescribeGroupsResponse encoding
 fn test_describe_groups_response_encoding() {
 	resp := DescribeGroupsResponse{
 		throttle_time_ms: 0
@@ -1130,9 +1130,9 @@ fn test_parse_delete_groups_request_v0() {
 }
 
 fn test_parse_delete_groups_request_v2_flexible() {
-	// v2 flexible 형식 테스트 - compact array와 compact string 사용
-	// 이 테스트는 handler를 통해 간접적으로 검증됨
-	// 직접 파싱 테스트는 v0 형식으로 충분
+	// Test v2 flexible format - uses compact array and compact string
+	// Validated indirectly through the handler
+	// v0 format is sufficient for direct parsing tests
 	assert true
 }
 
@@ -1206,7 +1206,7 @@ fn test_handler_delete_groups_success_empty_group() {
 	compression_service := get_test_compression_service()
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// empty-group은 Empty 상태이므로 삭제 가능
+	// empty-group is in Empty state, so it can be deleted
 	assert 'empty-group' in storage.groups
 
 	// Build request (v0)
@@ -1244,7 +1244,7 @@ fn test_handler_delete_groups_non_empty_group() {
 	compression_service := get_test_compression_service()
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
-	// test-group-1은 Stable 상태이고 멤버가 있으므로 삭제 불가
+	// test-group-1 is in Stable state with members, so it cannot be deleted
 	assert 'test-group-1' in storage.groups
 	group := storage.groups['test-group-1']
 	assert group.members.len > 0
@@ -1326,7 +1326,7 @@ fn test_handler_delete_groups_multiple() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()
 
-	// dead-group 추가 (삭제 가능)
+	// Add dead-group (deletable)
 	storage.groups['dead-group'] = domain.ConsumerGroup{
 		group_id:      'dead-group'
 		generation_id: 0
@@ -1340,10 +1340,10 @@ fn test_handler_delete_groups_multiple() {
 	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
 
 	// Build request with multiple groups
-	// empty-group: 삭제 가능 (Empty 상태)
-	// test-group-1: 삭제 불가 (Stable + 멤버 있음)
-	// dead-group: 삭제 가능 (Dead 상태)
-	// nonexistent: 에러 (존재하지 않음)
+	// empty-group: deletable (Empty state)
+	// test-group-1: not deletable (Stable + has members)
+	// dead-group: deletable (Dead state)
+	// nonexistent: error (does not exist)
 	mut writer := new_writer()
 	writer.write_i32(4)
 	writer.write_string('empty-group')
@@ -1364,7 +1364,7 @@ fn test_handler_delete_groups_multiple() {
 	results_len := reader.read_i32() or { 0 }
 	assert results_len == 4
 
-	// Result 1: empty-group - 성공
+	// Result 1: empty-group - success
 	g1 := reader.read_string() or { '' }
 	assert g1 == 'empty-group'
 	e1 := reader.read_i16() or { -999 }
@@ -1376,7 +1376,7 @@ fn test_handler_delete_groups_multiple() {
 	e2 := reader.read_i16() or { -999 }
 	assert e2 == i16(ErrorCode.non_empty_group)
 
-	// Result 3: dead-group - 성공
+	// Result 3: dead-group - success
 	g3 := reader.read_string() or { '' }
 	assert g3 == 'dead-group'
 	e3 := reader.read_i16() or { -999 }

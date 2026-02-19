@@ -1,12 +1,12 @@
-// Kafka 프로토콜 - Group 작업
+// Kafka protocol - Group operations
 // ListGroups, DescribeGroups
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Request/response types, parsing, encoding, and handlers
 module kafka
 
 import infra.observability
 import time
 
-/// ListGroupsRequest는 관련 데이터를 담는 구조체입니다.
+/// ListGroupsRequest holds the filter criteria for ListGroups.
 pub struct ListGroupsRequest {
 pub:
 	states_filter []string
@@ -25,7 +25,7 @@ fn parse_list_groups_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
-/// DescribeGroupsRequest는 관련 데이터를 담는 구조체입니다.
+/// DescribeGroupsRequest holds the group IDs to describe.
 pub struct DescribeGroupsRequest {
 pub:
 	groups                        []string
@@ -50,7 +50,7 @@ fn parse_describe_groups_request(mut reader BinaryReader, version i16, is_flexib
 
 // ListGroups Response (API Key 16)
 
-/// ListGroupsResponse은 ListGroups Response (API Key 16).
+/// ListGroupsResponse holds the response data for ListGroups (API Key 16).
 pub struct ListGroupsResponse {
 pub:
 	throttle_time_ms i32
@@ -58,7 +58,7 @@ pub:
 	groups           []ListGroupsResponseGroup
 }
 
-/// ListGroupsResponseGroup는 관련 데이터를 담는 구조체입니다.
+/// ListGroupsResponseGroup holds a single group entry in a ListGroups response.
 pub struct ListGroupsResponseGroup {
 pub:
 	group_id      string
@@ -66,7 +66,7 @@ pub:
 	group_state   string
 }
 
-/// encode를 수행합니다.
+/// encode serializes the ListGroupsResponse into bytes.
 pub fn (r ListGroupsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
@@ -111,14 +111,14 @@ pub fn (r ListGroupsResponse) encode(version i16) []u8 {
 
 // DescribeGroups Response (API Key 15)
 
-/// DescribeGroupsResponse은 DescribeGroups Response (API Key 15).
+/// DescribeGroupsResponse holds the response data for DescribeGroups (API Key 15).
 pub struct DescribeGroupsResponse {
 pub:
 	throttle_time_ms i32
 	groups           []DescribeGroupsResponseGroup
 }
 
-/// DescribeGroupsResponseGroup는 관련 데이터를 담는 구조체입니다.
+/// DescribeGroupsResponseGroup holds a single group description in a DescribeGroups response.
 pub struct DescribeGroupsResponseGroup {
 pub:
 	error_code    i16
@@ -129,7 +129,7 @@ pub:
 	members       []DescribeGroupsResponseMember
 }
 
-/// DescribeGroupsResponseMember는 관련 데이터를 담는 구조체입니다.
+/// DescribeGroupsResponseMember holds a single member's details in a DescribeGroups response.
 pub struct DescribeGroupsResponseMember {
 pub:
 	member_id         string
@@ -139,7 +139,7 @@ pub:
 	member_assignment []u8
 }
 
-/// encode를 수행합니다.
+/// encode serializes the DescribeGroupsResponse into bytes.
 pub fn (r DescribeGroupsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 5
 	mut writer := new_writer()
@@ -199,7 +199,7 @@ pub fn (r DescribeGroupsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ListGroups 핸들러 - 컨슈머 그룹 목록 조회
+// handle_list_groups - lists consumer groups
 fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -209,7 +209,7 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	h.logger.debug('Processing list groups request', observability.field_int('states_filter',
 		req.states_filter.len))
 
-	// 스토리지에서 그룹 조회
+	// Fetch groups from storage
 	groups_info := h.storage.list_groups() or {
 		h.logger.error('List groups failed', observability.field_string('error', err.str()))
 		resp := ListGroupsResponse{
@@ -242,7 +242,7 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// DescribeGroups 핸들러 - 컨슈머 그룹 상세 조회
+// handle_describe_groups - fetches detailed info for one or more consumer groups
 fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -258,7 +258,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 
 	for group_id in req.groups {
 		group := h.storage.load_group(group_id) or {
-			// 그룹을 찾을 수 없음
+			// Group not found
 			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
 			not_found_count += 1
 			groups << DescribeGroupsResponseGroup{
@@ -321,7 +321,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// ListGroups 요청 처리 (Frame 기반)
+// process_list_groups handles a ListGroups request (frame-based)
 fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !ListGroupsResponse {
 	_ = version
 	groups_info := h.storage.list_groups() or {
@@ -348,7 +348,7 @@ fn (mut h Handler) process_list_groups(req ListGroupsRequest, version i16) !List
 	}
 }
 
-// DescribeGroups 요청 처리 (Frame 기반)
+// process_describe_groups handles a DescribeGroups request (frame-based)
 fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i16) !DescribeGroupsResponse {
 	_ = version
 	mut groups := []DescribeGroupsResponseGroup{}
@@ -403,13 +403,13 @@ fn (mut h Handler) process_describe_groups(req DescribeGroupsRequest, version i1
 
 // DeleteGroups Request/Response (API Key 42) v0-v2
 
-/// DeleteGroups 요청
+/// DeleteGroupsRequest holds the group names to delete for DeleteGroups.
 pub struct DeleteGroupsRequest {
 pub:
 	groups_names []string
 }
 
-/// DeleteGroups 요청 파싱
+/// parse_delete_groups_request parses a DeleteGroups request from the binary reader.
 fn parse_delete_groups_request(mut reader BinaryReader, version i16, is_flexible bool) !DeleteGroupsRequest {
 	count := reader.read_flex_array_len(is_flexible)!
 	mut groups_names := []string{}
@@ -426,21 +426,21 @@ fn parse_delete_groups_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
-/// DeleteGroups 응답
+/// DeleteGroupsResponse holds the response data for DeleteGroups.
 pub struct DeleteGroupsResponse {
 pub:
 	throttle_time_ms i32
 	results          []DeletableGroupResult
 }
 
-/// 개별 그룹 삭제 결과
+/// DeletableGroupResult holds the deletion result for a single consumer group.
 pub struct DeletableGroupResult {
 pub:
 	group_id   string
 	error_code i16
 }
 
-/// DeleteGroups 응답 인코딩
+/// encode serializes the DeleteGroupsResponse into bytes.
 pub fn (r DeleteGroupsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -448,7 +448,7 @@ pub fn (r DeleteGroupsResponse) encode(version i16) []u8 {
 	// throttle_time_ms (v0+)
 	writer.write_i32(r.throttle_time_ms)
 
-	// results 배열
+	// results array
 	if is_flexible {
 		writer.write_compact_array_len(r.results.len)
 	} else {
@@ -475,7 +475,7 @@ pub fn (r DeleteGroupsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-/// DeleteGroups 핸들러 - 컨슈머 그룹 삭제
+// handle_delete_groups - deletes consumer groups
 fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -490,7 +490,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 	mut error_count := 0
 
 	for group_id in req.groups_names {
-		// 그룹 ID 유효성 검사
+		// Validate group ID
 		if group_id.len == 0 {
 			h.logger.trace('Invalid group id (empty)', observability.field_string('group_id',
 				group_id))
@@ -502,7 +502,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 			continue
 		}
 
-		// 그룹 존재 여부 확인
+		// Check if group exists
 		group := h.storage.load_group(group_id) or {
 			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
 			error_count += 1
@@ -513,13 +513,13 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 			continue
 		}
 
-		// 그룹 상태 확인 - Empty 또는 Dead 상태만 삭제 가능
+		// Check group state - only Empty or Dead groups can be deleted
 		match group.state {
 			.empty, .dead {
-				// 삭제 가능
+				// Deletable
 			}
 			else {
-				// 활성 멤버가 있는 그룹은 삭제 불가
+				// Cannot delete a group with active members
 				h.logger.trace('Cannot delete non-empty group', observability.field_string('group_id',
 					group_id), observability.field_int('members', group.members.len))
 				error_count += 1
@@ -531,7 +531,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 			}
 		}
 
-		// 그룹 삭제
+		// Delete group
 		h.storage.delete_group(group_id) or {
 			h.logger.error('Failed to delete group', observability.field_string('group_id',
 				group_id), observability.field_string('error', err.str()))
@@ -564,13 +564,13 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-/// DeleteGroups 요청 처리 (Frame 기반)
+/// process_delete_groups handles a DeleteGroups request (frame-based).
 fn (mut h Handler) process_delete_groups(req DeleteGroupsRequest, version i16) !DeleteGroupsResponse {
 	_ = version
 	mut results := []DeletableGroupResult{}
 
 	for group_id in req.groups_names {
-		// 그룹 ID 유효성 검사
+		// Validate group ID
 		if group_id.len == 0 {
 			results << DeletableGroupResult{
 				group_id:   group_id
@@ -579,7 +579,7 @@ fn (mut h Handler) process_delete_groups(req DeleteGroupsRequest, version i16) !
 			continue
 		}
 
-		// 그룹 존재 여부 확인
+		// Check if group exists
 		group := h.storage.load_group(group_id) or {
 			results << DeletableGroupResult{
 				group_id:   group_id
@@ -588,10 +588,10 @@ fn (mut h Handler) process_delete_groups(req DeleteGroupsRequest, version i16) !
 			continue
 		}
 
-		// 그룹 상태 확인 - Empty 또는 Dead 상태만 삭제 가능
+		// Check group state - only Empty or Dead groups can be deleted
 		match group.state {
 			.empty, .dead {
-				// 삭제 가능
+				// Deletable
 			}
 			else {
 				results << DeletableGroupResult{
@@ -602,7 +602,7 @@ fn (mut h Handler) process_delete_groups(req DeleteGroupsRequest, version i16) !
 			}
 		}
 
-		// 그룹 삭제
+		// Delete group
 		h.storage.delete_group(group_id) or {
 			results << DeletableGroupResult{
 				group_id:   group_id

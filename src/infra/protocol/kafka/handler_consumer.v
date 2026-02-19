@@ -1,8 +1,8 @@
-// JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat 요청 처리
+// Handles JoinGroup, SyncGroup, Heartbeat, LeaveGroup, and ConsumerGroupHeartbeat requests.
 //
-// 이 모듈은 Kafka Consumer Group 관련 API들을 구현합니다.
-// 컨슈머 그룹의 조인, 동기화, 하트비트, 탈퇴 등의 기능을 제공하며,
-// KIP-848 기반의 새로운 ConsumerGroupHeartbeat API도 지원합니다.
+// This module implements the Kafka Consumer Group APIs.
+// Provides join, sync, heartbeat, and leave operations for consumer groups,
+// and also supports the new ConsumerGroupHeartbeat API based on KIP-848.
 module kafka
 
 import domain
@@ -10,10 +10,10 @@ import infra.observability
 import rand
 import time
 
-// 핸들러 함수 - 바이트 배열 기반 요청 처리 (레거시)
+// Handler functions - byte-array-based request processing (legacy)
 
-/// JoinGroup 핸들러 - 컨슈머 그룹 조인 요청을 처리합니다.
-/// 새로운 멤버가 그룹에 참여하거나 기존 멤버가 재조인할 때 사용됩니다.
+/// JoinGroup handler - processes consumer group join requests.
+/// Used when a new member joins a group or an existing member rejoins.
 fn (mut h Handler) handle_join_group(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_join_group_request(mut reader, version, is_flexible_version(.join_group,
@@ -22,8 +22,8 @@ fn (mut h Handler) handle_join_group(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-/// SyncGroup 핸들러 - 그룹 동기화 요청을 처리합니다.
-/// 리더가 파티션 할당을 배포하고 멤버들이 할당을 받을 때 사용됩니다.
+/// SyncGroup handler - processes group sync requests.
+/// Used when the leader distributes partition assignments and members receive them.
 fn (mut h Handler) handle_sync_group(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_sync_group_request(mut reader, version, is_flexible_version(.sync_group,
@@ -32,8 +32,8 @@ fn (mut h Handler) handle_sync_group(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-/// Heartbeat 핸들러 - 컨슈머 하트비트 요청을 처리합니다.
-/// 멤버가 그룹에 여전히 활성 상태임을 알리고 리밸런스 상태를 확인합니다.
+/// Heartbeat handler - processes consumer heartbeat requests.
+/// Members signal that they are still active and check rebalance status.
 fn (mut h Handler) handle_heartbeat(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_heartbeat_request(mut reader, version, is_flexible_version(.heartbeat,
@@ -42,8 +42,8 @@ fn (mut h Handler) handle_heartbeat(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-/// LeaveGroup 핸들러 - 그룹 탈퇴 요청을 처리합니다.
-/// 멤버가 그룹을 떠날 때 사용되며, 리밸런스를 트리거합니다.
+/// LeaveGroup handler - processes group leave requests.
+/// Used when a member leaves a group, triggering a rebalance.
 fn (mut h Handler) handle_leave_group(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_leave_group_request(mut reader, version, is_flexible_version(.leave_group,
@@ -52,8 +52,8 @@ fn (mut h Handler) handle_leave_group(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-/// ConsumerGroupHeartbeat 핸들러 (KIP-848) - 새로운 컨슈머 그룹 프로토콜의 하트비트를 처리합니다.
-/// 기존 JoinGroup/SyncGroup/Heartbeat를 단일 API로 통합한 새로운 프로토콜입니다.
+/// ConsumerGroupHeartbeat handler (KIP-848) - processes heartbeats for the new consumer group protocol.
+/// A new protocol that consolidates JoinGroup/SyncGroup/Heartbeat into a single API.
 fn (mut h Handler) handle_consumer_group_heartbeat(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_consumer_group_heartbeat_request(mut reader, version, true)!
@@ -62,7 +62,7 @@ fn (mut h Handler) handle_consumer_group_heartbeat(body []u8, version i16) ![]u8
 	return resp.encode(version)
 }
 
-/// ConsumerGroupDescribe 핸들러 (KIP-848) - 컨슈머 그룹 상세 정보를 조회합니다.
+/// ConsumerGroupDescribe handler (KIP-848) - retrieves detailed consumer group information.
 fn (mut h Handler) handle_consumer_group_describe(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_consumer_group_describe_request(mut reader, version, true)!
@@ -71,10 +71,10 @@ fn (mut h Handler) handle_consumer_group_describe(body []u8, version i16) ![]u8 
 	return resp.encode(version)
 }
 
-// 프로세스 함수 - 비즈니스 로직 처리
+// Process functions - business logic
 
-/// ConsumerGroupHeartbeat 요청을 처리합니다 (KIP-848).
-/// 새로운 멤버 등록, 기존 멤버 하트비트, 멤버 탈퇴를 모두 처리합니다.
+/// Processes ConsumerGroupHeartbeat requests (KIP-848).
+/// Handles new member registration, existing member heartbeats, and member leaves.
 fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRequest, version i16) !ConsumerGroupHeartbeatResponse {
 	_ = version
 	start_time := time.now()
@@ -90,7 +90,7 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 	mut heartbeat_interval_ms := i32(3000)
 	mut assignment := ?ConsumerGroupHeartbeatAssignment(none)
 
-	// 그룹 ID 유효성 검사
+	// Validate group ID
 	if req.group_id.len == 0 {
 		h.logger.warn('Consumer group heartbeat failed: empty group ID')
 		return ConsumerGroupHeartbeatResponse{
@@ -104,16 +104,16 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 		}
 	}
 
-	// 새로운 멤버 등록 (epoch=0, member_id 없음)
+	// Register new member (epoch=0, no member_id)
 	if req.member_epoch == 0 && req.member_id.len == 0 {
-		// 새로운 멤버 ID 생성
+		// Generate new member ID
 		member_id = 'member-${h.broker_id}-${rand.i64()}'
 		member_epoch = 1
 
 		h.logger.info('New consumer group member joined', observability.field_string('group_id',
 			req.group_id), observability.field_string('member_id', member_id))
 
-		// 구독 토픽에 대한 파티션 할당 생성
+		// Create partition assignment for subscribed topics
 		mut topic_partitions := []ConsumerGroupHeartbeatResponseTopicPartition{}
 
 		for topic_name in req.subscribed_topic_names {
@@ -135,18 +135,18 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 			}
 		}
 	} else if req.member_epoch == -1 {
-		// 멤버 탈퇴 요청 (epoch=-1)
+		// Member leave request (epoch=-1)
 		h.logger.info('Consumer leaving group', observability.field_string('group_id',
 			req.group_id), observability.field_string('member_id', req.member_id))
 		member_epoch = -1
 		assignment = none
 	} else if req.member_epoch > 0 {
-		// 일반 하트비트 - 상태 변경 없음
+		// Regular heartbeat - no state change
 		h.logger.trace('Consumer heartbeat', observability.field_string('group_id', req.group_id),
 			observability.field_string('member_id', req.member_id), observability.field_int('epoch',
 			req.member_epoch))
 	} else {
-		// 잘못된 epoch 값
+		// Invalid epoch value
 		h.logger.warn('Invalid consumer heartbeat', observability.field_string('group_id',
 			req.group_id), observability.field_string('member_id', req.member_id), observability.field_int('epoch',
 			req.member_epoch))
@@ -171,9 +171,9 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 	}
 }
 
-/// JoinGroup 요청을 처리합니다.
-/// 컨슈머가 그룹에 조인하고 리밸런스에 참여합니다.
-/// 첫 번째 조인 시 member_id가 생성되어 반환됩니다.
+/// Processes JoinGroup requests.
+/// Consumer joins the group and participates in rebalancing.
+/// On first join, a member_id is generated and returned.
 fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGroupResponse {
 	_ = version
 	start_time := time.now()
@@ -182,7 +182,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		req.group_id), observability.field_string('member_id', req.member_id), observability.field_string('protocol_type',
 		req.protocol_type), observability.field_int('protocols', req.protocols.len))
 
-	// 첫 번째 조인 시 member_id 생성 필요 (v4+에서 MEMBER_ID_REQUIRED 에러 반환)
+	// Need to generate member_id on first join (return MEMBER_ID_REQUIRED error in v4+)
 	if req.member_id.len == 0 && req.group_instance_id == none {
 		new_member_id := 'member-${h.broker_id}-${rand.i64n(1000000) or { 0 }}'
 		h.logger.info('Member ID required, generated new ID', observability.field_string('group_id',
@@ -200,17 +200,17 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		}
 	}
 
-	// 멤버 ID 결정 (기존 또는 새로 생성)
+	// Determine member ID (existing or newly generated)
 	member_id := if req.member_id.len > 0 {
 		req.member_id
 	} else {
 		'member-${h.broker_id}-${rand.i64n(1000000) or { 0 }}'
 	}
 
-	// 선택된 프로토콜 이름 (첫 번째 프로토콜 사용)
+	// Selected protocol name (use the first protocol)
 	protocol_name := if req.protocols.len > 0 { req.protocols[0].name } else { '' }
 
-	// 그룹 로드 또는 새로 생성
+	// Load existing group or create a new one
 	mut group := h.storage.load_group(req.group_id) or {
 		domain.ConsumerGroup{
 			group_id:      req.group_id
@@ -223,7 +223,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		}
 	}
 
-	// 멤버 정보 생성/업데이트
+	// Create/update member information
 	member := domain.GroupMember{
 		member_id:         member_id
 		group_instance_id: req.group_instance_id or { '' }
@@ -233,7 +233,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		assignment:        []u8{}
 	}
 
-	// 멤버 목록 업데이트 (기존 멤버 갱신 또는 새 멤버 추가)
+	// Update member list (refresh existing member or add new one)
 	mut found := false
 	mut new_members := []domain.GroupMember{}
 	for m in group.members {
@@ -248,11 +248,11 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		new_members << member
 	}
 
-	// 새로운 세대(generation) 번호와 리더 결정
+	// Determine new generation number and leader
 	new_gen := group.generation_id + 1
 	leader := if new_members.len > 0 { new_members[0].member_id } else { member_id }
 
-	// 업데이트된 그룹 정보 생성
+	// Create updated group information
 	new_group := domain.ConsumerGroup{
 		group_id:      req.group_id
 		generation_id: new_gen
@@ -263,7 +263,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		leader:        leader
 	}
 
-	// 그룹 상태 저장
+	// Save group state
 	h.storage.save_group(new_group) or {
 		h.logger.error('Failed to save group', observability.field_string('group_id',
 			req.group_id), observability.field_string('error', err.str()))
@@ -276,7 +276,7 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 		new_gen), observability.field_string('leader', leader), observability.field_int('members',
 		new_members.len), observability.field_duration('latency', elapsed))
 
-	// 리더에게만 멤버 목록 반환 (파티션 할당을 위해)
+	// Return member list only to the leader (for partition assignment)
 	response_members := if member_id == leader {
 		new_members.map(fn (m domain.GroupMember) JoinGroupResponseMember {
 			return JoinGroupResponseMember{
@@ -306,8 +306,8 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 	}
 }
 
-/// SyncGroup 요청을 처리합니다.
-/// 리더가 파티션 할당을 제출하고, 모든 멤버가 자신의 할당을 받습니다.
+/// Processes SyncGroup requests.
+/// The leader submits partition assignments and all members receive their assignments.
 fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGroupResponse {
 	_ = version
 	start_time := time.now()
@@ -316,7 +316,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 		req.group_id), observability.field_string('member_id', req.member_id), observability.field_int('generation',
 		req.generation_id), observability.field_int('assignments', req.assignments.len))
 
-	// 그룹 로드
+	// Load group
 	mut group := h.storage.load_group(req.group_id) or {
 		h.logger.warn('Sync group failed: group not found', observability.field_string('group_id',
 			req.group_id))
@@ -329,7 +329,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 		}
 	}
 
-	// 세대 번호 검증
+	// Validate generation number
 	if group.generation_id != req.generation_id {
 		h.logger.warn('Sync group failed: illegal generation', observability.field_string('group_id',
 			req.group_id), observability.field_int('expected', group.generation_id), observability.field_int('received',
@@ -343,7 +343,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 		}
 	}
 
-	// 리더가 할당을 제출한 경우 그룹 멤버 업데이트
+	// Update group members if the leader submitted assignments
 	if req.assignments.len > 0 {
 		mut updated_members := []domain.GroupMember{}
 		for m in group.members {
@@ -379,7 +379,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 		}
 	}
 
-	// 이 멤버의 할당 찾기
+	// Find this member's assignment
 	mut assignment := []u8{}
 	for m in group.members {
 		if m.member_id == req.member_id {
@@ -388,7 +388,7 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 		}
 	}
 
-	// 할당이 없으면 빈 컨슈머 할당 사용
+	// Use empty consumer assignment if no assignment found
 	if assignment.len == 0 {
 		assignment = empty_consumer_assignment()
 	}
@@ -407,15 +407,15 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 	}
 }
 
-/// Heartbeat 요청을 처리합니다.
-/// 멤버가 그룹에 활성 상태임을 알리고 리밸런스 상태를 확인합니다.
+/// Processes Heartbeat requests.
+/// Members signal they are active in the group and check rebalance status.
 fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !HeartbeatResponse {
 	_ = version
 	h.logger.trace('Processing heartbeat', observability.field_string('group_id', req.group_id),
 		observability.field_string('member_id', req.member_id), observability.field_int('generation',
 		req.generation_id))
 
-	// 그룹 존재 여부 및 세대 번호 검증
+	// Validate group existence and generation number
 	group := h.storage.load_group(req.group_id) or {
 		h.logger.debug('Heartbeat failed: group not found', observability.field_string('group_id',
 			req.group_id))
@@ -425,7 +425,7 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 		}
 	}
 
-	// 세대 번호 검증
+	// Validate generation number
 	if group.generation_id != req.generation_id {
 		h.logger.debug('Heartbeat failed: illegal generation', observability.field_string('group_id',
 			req.group_id), observability.field_int('expected', group.generation_id), observability.field_int('received',
@@ -436,7 +436,7 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 		}
 	}
 
-	// 멤버가 그룹에 존재하는지 확인
+	// Check if the member exists in the group
 	mut member_found := false
 	for m in group.members {
 		if m.member_id == req.member_id {
@@ -460,8 +460,8 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 	}
 }
 
-/// LeaveGroup 요청을 처리합니다.
-/// 멤버가 그룹을 떠나면 리밸런스가 트리거됩니다.
+/// Processes LeaveGroup requests.
+/// When a member leaves the group, a rebalance is triggered.
 fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !LeaveGroupResponse {
 	_ = version
 	start_time := time.now()
@@ -470,7 +470,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		req.group_id), observability.field_string('member_id', req.member_id), observability.field_int('members',
 		req.members.len))
 
-	// 그룹 로드
+	// Load group
 	mut group := h.storage.load_group(req.group_id) or {
 		h.logger.warn('Leave group failed: group not found', observability.field_string('group_id',
 			req.group_id))
@@ -481,14 +481,14 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		}
 	}
 
-	// 그룹에서 멤버 제거
+	// Remove members from the group
 	mut removed_members := []LeaveGroupResponseMember{}
 	mut remaining_members := []domain.GroupMember{}
 
 	for m in group.members {
 		mut should_remove := false
 
-		// 제거할 멤버인지 확인 (v3+에서는 members 배열 사용)
+		// Check if this member should be removed (v3+ uses the members array)
 		if req.members.len > 0 {
 			for leave_member in req.members {
 				if m.member_id == leave_member.member_id {
@@ -506,7 +506,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 				}
 			}
 		} else if m.member_id == req.member_id {
-			// v0-v2: 단일 member_id 필드 사용
+			// v0-v2: use single member_id field
 			should_remove = true
 			removed_members << LeaveGroupResponseMember{
 				member_id:         m.member_id
@@ -520,7 +520,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		}
 	}
 
-	// 제거된 멤버가 없으면 unknown_member_id 에러 반환
+	// Return unknown_member_id error if no members were removed
 	if removed_members.len == 0 {
 		h.logger.warn('Leave group failed: no members removed', observability.field_string('group_id',
 			req.group_id))
@@ -531,21 +531,21 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 		}
 	}
 
-	// 그룹 상태 업데이트 (멤버가 없으면 empty, 있으면 리밸런스 준비)
+	// Update group state (empty if no members, otherwise preparing for rebalance)
 	new_state := if remaining_members.len == 0 {
 		domain.GroupState.empty
 	} else {
 		domain.GroupState.preparing_rebalance
 	}
 
-	// 새로운 리더 결정 (남은 멤버 중 첫 번째)
+	// Determine new leader (first of remaining members)
 	new_leader := if remaining_members.len > 0 {
 		remaining_members[0].member_id
 	} else {
 		''
 	}
 
-	// 업데이트된 그룹 정보 생성 및 저장
+	// Create and save updated group information
 	new_group := domain.ConsumerGroup{
 		group_id:      group.group_id
 		generation_id: group.generation_id + 1
@@ -574,8 +574,8 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 	}
 }
 
-/// ConsumerGroupDescribe 요청을 처리합니다 (KIP-848).
-/// 컨슈머 그룹의 상세 정보를 조회합니다.
+/// Processes ConsumerGroupDescribe requests (KIP-848).
+/// Retrieves detailed consumer group information.
 fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequest, version i16) !ConsumerGroupDescribeResponse {
 	_ = version
 	start_time := time.now()
@@ -586,9 +586,9 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 	mut groups := []ConsumerGroupDescribeResponseGroup{}
 
 	for group_id in req.group_ids {
-		// 그룹 로드 시도
+		// Attempt to load the group
 		group := h.storage.load_group(group_id) or {
-			// 그룹을 찾을 수 없음
+			// Group not found
 			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
 			groups << ConsumerGroupDescribeResponseGroup{
 				error_code:            i16(ErrorCode.group_id_not_found)
@@ -604,7 +604,7 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 			continue
 		}
 
-		// 그룹 상태 문자열 변환
+		// Convert group state to string
 		state_str := match group.state {
 			.empty { 'Empty' }
 			.stable { 'Stable' }
@@ -613,7 +613,7 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 			.dead { 'Dead' }
 		}
 
-		// 멤버 목록 생성
+		// Build member list
 		mut response_members := []ConsumerGroupDescribeResponseMember{}
 		for m in group.members {
 			response_members << ConsumerGroupDescribeResponseMember{

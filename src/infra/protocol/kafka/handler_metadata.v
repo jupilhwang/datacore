@@ -1,18 +1,18 @@
-// Metadata 요청/응답 타입, 파싱, 인코딩 및 핸들러 구현
+// Metadata request/response types, parsing, encoding, and handler implementation
 //
-// 이 모듈은 Kafka Metadata API를 구현합니다.
-// 클라이언트가 클러스터의 브로커 정보, 토픽 메타데이터,
-// 파티션 리더 정보 등을 조회할 때 사용됩니다.
+// This module implements the Kafka Metadata API.
+// Used by clients to query broker information, topic metadata,
+// and partition leader information from the cluster.
 module kafka
 
 import domain
 import infra.observability
 import time
 
-/// Metadata 요청 - 클러스터 및 토픽 메타데이터 조회 요청
+/// MetadataRequest queries cluster and topic metadata.
 ///
-/// topics가 비어있으면 모든 토픽의 메타데이터를 반환합니다.
-/// allow_auto_topic_creation이 true이면 존재하지 않는 토픽을 자동 생성합니다.
+/// If topics is empty, metadata for all topics is returned.
+/// If allow_auto_topic_creation is true, non-existent topics are created automatically.
 pub struct MetadataRequest {
 pub:
 	topics                         []MetadataRequestTopic
@@ -21,14 +21,14 @@ pub:
 	include_topic_authorized_ops   bool
 }
 
-/// Metadata 요청 토픽 - 조회할 토픽 정보
+/// MetadataRequestTopic identifies a topic to query.
 pub struct MetadataRequestTopic {
 pub:
-	topic_id []u8 // 토픽 UUID (v10+)
+	topic_id []u8 // Topic UUID (v10+)
 	name     ?string
 }
 
-/// Metadata 응답 - 클러스터 및 토픽 메타데이터
+/// MetadataResponse contains cluster and topic metadata.
 pub struct MetadataResponse {
 pub:
 	throttle_time_ms       i32
@@ -39,7 +39,7 @@ pub:
 	cluster_authorized_ops i32
 }
 
-/// Metadata 응답 브로커 - 브로커 정보
+/// MetadataResponseBroker holds broker information.
 pub struct MetadataResponseBroker {
 pub:
 	node_id i32
@@ -48,18 +48,18 @@ pub:
 	rack    ?string
 }
 
-/// Metadata 응답 토픽 - 토픽 메타데이터
+/// MetadataResponseTopic holds topic metadata.
 pub struct MetadataResponseTopic {
 pub:
 	error_code           i16
 	name                 string
-	topic_id             []u8 // 토픽 UUID (v10+)
+	topic_id             []u8 // Topic UUID (v10+)
 	is_internal          bool
 	partitions           []MetadataResponsePartition
 	topic_authorized_ops i32
 }
 
-/// Metadata 응답 파티션 - 파티션 메타데이터
+/// MetadataResponsePartition holds partition metadata.
 pub struct MetadataResponsePartition {
 pub:
 	error_code       i16
@@ -71,18 +71,18 @@ pub:
 	offline_replicas []i32
 }
 
-// Metadata 요청을 파싱합니다.
-// 버전에 따라 다른 필드들을 읽어 MetadataRequest 구조체를 생성합니다.
+// parse_metadata_request parses a Metadata request.
+// Reads different fields depending on the version to build the MetadataRequest struct.
 fn parse_metadata_request(mut reader BinaryReader, version i16, is_flexible bool) !MetadataRequest {
 	mut topics := []MetadataRequestTopic{}
 
-	// 토픽 배열 파싱
+	// Parse topics array
 	topic_count := reader.read_flex_array_len(is_flexible)!
 
-	// topic_count >= 0: 특정 토픽 조회, -1: 모든 토픽 조회
+	// topic_count >= 0: query specific topics; -1: query all topics
 	if topic_count >= 0 {
 		for _ in 0 .. topic_count {
-			// v10+에서 토픽 UUID 지원
+			// Topic UUID supported in v10+
 			mut topic_id := []u8{}
 			if version >= 10 {
 				topic_id = reader.read_uuid()!
@@ -101,7 +101,7 @@ fn parse_metadata_request(mut reader BinaryReader, version i16, is_flexible bool
 				}
 			}
 
-			// flexible 버전에서 tagged fields 건너뛰기
+			// Skip tagged fields in flexible versions
 			if is_flexible && reader.remaining() > 0 {
 				reader.skip_tagged_fields()!
 			}
@@ -110,14 +110,14 @@ fn parse_metadata_request(mut reader BinaryReader, version i16, is_flexible bool
 		}
 	}
 
-	// v4+에서 allow_auto_topic_creation 필드 추가
+	// allow_auto_topic_creation field added in v4+
 	mut allow_auto_topic_creation := true
 	if version >= 4 {
 		allow_auto_topic_creation = reader.read_i8()! != 0
 	}
 
-	// v8-10에서 include_cluster_authorized_ops, include_topic_authorized_ops 필드
-	// v11+에서는 include_topic_authorized_ops만 존재
+	// v8–10: include_cluster_authorized_ops and include_topic_authorized_ops fields
+	// v11+: only include_topic_authorized_ops exists
 	mut include_cluster_authorized_ops := false
 	mut include_topic_authorized_ops := false
 	if version >= 8 && version <= 10 {
@@ -135,18 +135,18 @@ fn parse_metadata_request(mut reader BinaryReader, version i16, is_flexible bool
 	}
 }
 
-/// Metadata 응답을 바이트 배열로 인코딩합니다.
-/// 버전에 따라 flexible 또는 non-flexible 형식으로 인코딩합니다.
+/// encode serializes the MetadataResponse to bytes.
+/// Uses flexible or non-flexible format depending on the version.
 pub fn (r MetadataResponse) encode(version i16) []u8 {
 	is_flexible := version >= 9
 	mut writer := new_writer()
 
-	// v3+에서 throttle_time_ms 필드 추가
+	// throttle_time_ms field added in v3+
 	if version >= 3 {
 		writer.write_i32(r.throttle_time_ms)
 	}
 
-	// 브로커 배열 인코딩
+	// Encode broker array
 	if is_flexible {
 		writer.write_compact_array_len(r.brokers.len)
 	} else {
@@ -161,7 +161,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 			writer.write_string(b.host)
 		}
 		writer.write_i32(b.port)
-		// v1+에서 rack 필드 추가
+		// rack field added in v1+
 		if version >= 1 {
 			if is_flexible {
 				writer.write_compact_nullable_string(b.rack)
@@ -174,7 +174,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 		}
 	}
 
-	// v2+에서 cluster_id 필드 추가
+	// cluster_id field added in v2+
 	if version >= 2 {
 		if is_flexible {
 			writer.write_compact_nullable_string(r.cluster_id)
@@ -183,12 +183,12 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 		}
 	}
 
-	// v1+에서 controller_id 필드 추가
+	// controller_id field added in v1+
 	if version >= 1 {
 		writer.write_i32(r.controller_id)
 	}
 
-	// 토픽 배열 인코딩
+	// Encode topic array
 	if is_flexible {
 		writer.write_compact_array_len(r.topics.len)
 	} else {
@@ -203,17 +203,17 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 			writer.write_string(t.name)
 		}
 
-		// v10+에서 topic_id (UUID) 필드 추가
+		// topic_id (UUID) field added in v10+
 		if version >= 10 {
 			writer.write_uuid(t.topic_id)
 		}
 
-		// v1+에서 is_internal 필드 추가
+		// is_internal field added in v1+
 		if version >= 1 {
 			writer.write_i8(if t.is_internal { i8(1) } else { i8(0) })
 		}
 
-		// 파티션 배열 인코딩
+		// Encode partition array
 		if is_flexible {
 			writer.write_compact_array_len(t.partitions.len)
 		} else {
@@ -224,12 +224,12 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 			writer.write_i16(p.error_code)
 			writer.write_i32(p.partition_index)
 			writer.write_i32(p.leader_id)
-			// v7+에서 leader_epoch 필드 추가
+			// leader_epoch field added in v7+
 			if version >= 7 {
 				writer.write_i32(p.leader_epoch)
 			}
 
-			// 복제본 노드 배열 인코딩
+			// Encode replica nodes array
 			if is_flexible {
 				writer.write_compact_array_len(p.replica_nodes.len)
 			} else {
@@ -239,7 +239,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 				writer.write_i32(n)
 			}
 
-			// ISR 노드 배열 인코딩
+			// Encode ISR nodes array
 			if is_flexible {
 				writer.write_compact_array_len(p.isr_nodes.len)
 			} else {
@@ -249,7 +249,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 				writer.write_i32(n)
 			}
 
-			// v5+에서 offline_replicas 배열 추가
+			// offline_replicas array added in v5+
 			if version >= 5 {
 				if is_flexible {
 					writer.write_compact_array_len(p.offline_replicas.len)
@@ -266,7 +266,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 			}
 		}
 
-		// v8+에서 topic_authorized_ops 필드 추가
+		// topic_authorized_ops field added in v8+
 		if version >= 8 {
 			writer.write_i32(t.topic_authorized_ops)
 		}
@@ -276,7 +276,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 		}
 	}
 
-	// v8-10에서 cluster_authorized_ops 필드 추가
+	// cluster_authorized_ops field added in v8–10
 	if version >= 8 && version <= 10 {
 		writer.write_i32(r.cluster_authorized_ops)
 	}
@@ -289,7 +289,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 	return resp_bytes
 }
 
-// 레거시 핸들러 - 바이트 배열 기반 요청 처리
+// Legacy handler — byte-array based request processing.
 fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_metadata_request(mut reader, version, is_flexible_version(.metadata,
@@ -298,8 +298,8 @@ fn (mut h Handler) handle_metadata(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// Metadata 요청을 처리합니다.
-// 클러스터의 브로커 정보와 요청된 토픽들의 메타데이터를 조회하여 응답을 생성합니다.
+// process_metadata handles a Metadata request.
+// Looks up broker information and metadata for the requested topics and builds the response.
 fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataResponse {
 	_ = version
 	start_time := time.now()
@@ -309,12 +309,12 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 
 	mut resp_topics := []MetadataResponseTopic{}
 
-	// 멀티 브로커 모드에서 활성 브로커 목록 조회
+	// Retrieve active broker list in multi-broker mode
 	mut brokers := []MetadataResponseBroker{}
 	mut active_broker_ids := []i32{}
 
 	if mut registry := h.broker_registry {
-		// 멀티 브로커 모드: 레지스트리에서 모든 활성 브로커 조회
+		// Multi-broker mode: retrieve all active brokers from the registry
 		active_brokers := registry.list_active_brokers() or { []domain.BrokerInfo{} }
 		for broker in active_brokers {
 			brokers << MetadataResponseBroker{
@@ -327,7 +327,7 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		}
 	}
 
-	// 브로커가 없거나 싱글 브로커 모드인 경우 자신을 브로커로 추가
+	// If no brokers found or in single-broker mode, add self as broker
 	if brokers.len == 0 {
 		if h.broker_registry == none {
 			h.logger.debug('Metadata response: broker_registry not available, returning local broker only',
@@ -346,7 +346,7 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		active_broker_ids << h.broker_id
 	}
 
-	// 특정 토픽이 요청된 경우
+	// Specific topics requested
 	if req.topics.len > 0 {
 		for req_topic in req.topics {
 			topic_name := req_topic.name or { '' }
@@ -354,10 +354,10 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 				continue
 			}
 
-			// 토픽 조회 또는 자동 생성
+			// Look up topic or auto-create
 			topic := h.storage.get_topic(topic_name) or {
 				if req.allow_auto_topic_creation {
-					// 토픽 자동 생성 시도
+					// Attempt auto-creation of the topic
 					h.storage.create_topic(topic_name, 1, domain.TopicConfig{}) or {
 						resp_topics << MetadataResponseTopic{
 							error_code:           i16(ErrorCode.unknown_topic_or_partition)
@@ -381,7 +381,7 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 						continue
 					}
 				} else {
-					// 토픽이 존재하지 않고 자동 생성이 비활성화된 경우
+					// Topic does not exist and auto-creation is disabled
 					resp_topics << MetadataResponseTopic{
 						error_code:           i16(ErrorCode.unknown_topic_or_partition)
 						name:                 topic_name
@@ -394,19 +394,19 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 				}
 			}
 
-			// 파티션 메타데이터 생성
+			// Build partition metadata
 			mut partitions := []MetadataResponsePartition{}
 			for p in 0 .. topic.partition_count {
-				// 파티션 할당 서비스에서 리더 브로커 조회 (동적 할당)
+				// Look up partition leader from partition assigner service (dynamic assignment)
 				mut leader_id := h.broker_id
 				if mut assigner := h.partition_assigner {
-					// 할당 서비스에서 파티션 리더 조회
+					// Query partition leader from assignment service
 					assigned_leader := assigner.get_partition_leader(topic.name, i32(p)) or {
 						h.broker_id
 					}
 					leader_id = assigned_leader
 				} else if active_broker_ids.len > 1 {
-					// 할당 서비스가 없는 경우 라운드 로빈 사용 (backward compatibility)
+					// Fall back to round-robin when no assigner is available (backward compatibility)
 					leader_id = active_broker_ids[p % active_broker_ids.len]
 				}
 				partitions << MetadataResponsePartition{
@@ -429,22 +429,22 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 			}
 		}
 	} else {
-		// 모든 토픽 조회
+		// Query all topics
 		topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
 
 		for topic in topic_list {
 			mut partitions := []MetadataResponsePartition{}
 			for p in 0 .. topic.partition_count {
-				// 파티션 할당 서비스에서 리더 브로커 조회 (동적 할당)
+				// Look up partition leader from partition assigner service (dynamic assignment)
 				mut leader_id := h.broker_id
 				if mut assigner := h.partition_assigner {
-					// 할당 서비스에서 파티션 리더 조회
+					// Query partition leader from assignment service
 					assigned_leader := assigner.get_partition_leader(topic.name, i32(p)) or {
 						h.broker_id
 					}
 					leader_id = assigned_leader
 				} else if active_broker_ids.len > 1 {
-					// 할당 서비스가 없는 경우 라운드 로빈 사용 (backward compatibility)
+					// Fall back to round-robin when no assigner is available (backward compatibility)
 					leader_id = active_broker_ids[p % active_broker_ids.len]
 				}
 				partitions << MetadataResponsePartition{
@@ -468,7 +468,7 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		}
 	}
 
-	// 컨트롤러는 멀티 브로커 모드에서 첫 번째 활성 브로커, 싱글 브로커 모드에서는 자신
+	// In multi-broker mode, controller is the first active broker; in single-broker mode, it is self
 	controller_id := if active_broker_ids.len > 0 { active_broker_ids[0] } else { h.broker_id }
 
 	elapsed := time.since(start_time)

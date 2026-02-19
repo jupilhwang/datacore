@@ -1,14 +1,14 @@
-// Kafka 프로토콜 - FindCoordinator (API Key 10)
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Kafka protocol - FindCoordinator (API Key 10)
+// Request/response types, parsing, encoding, and handlers
 //
-// 버전 히스토리:
-// - v0: 기본 FindCoordinator
-// - v1: KeyType 추가 (GROUP=0, TRANSACTION=1)
-// - v2: v1과 동일
-// - v3: Flexible 버전
-// - v4: 배치 조회 지원 (CoordinatorKeys, KIP-699)
-// - v5: TRANSACTION_ABORTABLE 에러 코드 지원 (KIP-890)
-// - v6: Share Groups 지원 (KeyType=2, KIP-932)
+// Version history:
+// - v0: Basic FindCoordinator
+// - v1: Added KeyType (GROUP=0, TRANSACTION=1)
+// - v2: Same as v1
+// - v3: Flexible version
+// - v4: Batch lookup support (CoordinatorKeys, KIP-699)
+// - v5: Added TRANSACTION_ABORTABLE error code (KIP-890)
+// - v6: Share Groups support (KeyType=2, KIP-932)
 module kafka
 
 import domain
@@ -17,15 +17,15 @@ import time
 
 // FindCoordinator (API Key 10)
 
-/// CoordinatorKeyType은 코디네이터 키 타입을 정의합니다.
-/// v1부터 지원되며, v6에서 SHARE 타입이 추가되었습니다.
+/// CoordinatorKeyType defines coordinator key types.
+/// Supported since v1; SHARE type was added in v6.
 pub enum CoordinatorKeyType as i8 {
 	group       = 0
 	transaction = 1
 	share       = 2
 }
 
-/// FindCoordinatorRequest는 관련 데이터를 담는 구조체입니다.
+/// FindCoordinatorRequest holds the request data for FindCoordinator.
 pub struct FindCoordinatorRequest {
 pub:
 	key              string
@@ -33,7 +33,7 @@ pub:
 	coordinator_keys []string
 }
 
-/// FindCoordinatorResponse는 관련 데이터를 담는 구조체입니다.
+/// FindCoordinatorResponse holds the response data for FindCoordinator.
 pub struct FindCoordinatorResponse {
 pub:
 	throttle_time_ms i32
@@ -45,7 +45,7 @@ pub:
 	coordinators     []FindCoordinatorResponseNode
 }
 
-/// FindCoordinatorResponseNode는 관련 데이터를 담는 구조체입니다.
+/// FindCoordinatorResponseNode holds coordinator information for a single key in a batch response.
 pub struct FindCoordinatorResponseNode {
 pub:
 	key           string
@@ -88,7 +88,7 @@ fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexi
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the FindCoordinatorResponse into bytes.
 pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
@@ -152,7 +152,7 @@ pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-/// coordinator_key_type_str은 코디네이터 키 타입을 문자열로 변환합니다.
+/// coordinator_key_type_str converts a coordinator key type to its string representation.
 fn coordinator_key_type_str(key_type i8) string {
 	return match key_type {
 		0 { 'GROUP' }
@@ -182,37 +182,37 @@ fn (mut h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// compute_coordinator_broker는 group_id를 기반으로 코디네이터 브로커를 결정합니다.
-// 파티션 할당 서비스가 있으면 사용하고, 없으면 해시 기반으로 브로커를 선택합니다.
+// compute_coordinator_broker determines the coordinator broker based on the group_id.
+// Uses the partition assignment service if available; otherwise falls back to hash-based selection.
 fn (mut h Handler) compute_coordinator_broker(key string, key_type i8) (i32, string, i32) {
-	// 멀티 브로커 모드에서 활성 브로커 목록 조회
+	// Get active broker list in multi-broker mode
 	mut active_brokers := []domain.BrokerInfo{}
 	if mut registry := h.broker_registry {
 		active_brokers = registry.list_active_brokers() or { []domain.BrokerInfo{} }
 	}
 
-	// 브로커가 없거나 싱글 브로커 모드인 경우 자신을 반환
+	// Return self if no brokers or in single-broker mode
 	if active_brokers.len == 0 {
 		return h.broker_id, h.host, h.broker_port
 	}
 
-	// 파티션 할당 서비스가 있고 GROUP 타입인 경우 할당 기반 코디네이터 선택
+	// Use assignment-based coordinator selection for GROUP type if partition assigner is available
 	if key_type == i8(CoordinatorKeyType.group) {
 		if mut assigner := h.partition_assigner {
-			// group_id를 해시하여 파티션 번호 결정 (0-999 범위)
+			// Hash group_id to determine partition number (range 0-999)
 			mut hash := i32(0)
 			for c in key.bytes() {
 				hash = (hash * 31 + i32(c)) & 0x7FFFFFFF
 			}
 			partition := hash % 1000
 
-			// 할당 서비스에서 해당 파티션의 리더 브로커 조회
+			// Look up the leader broker for this partition from the assignment service
 			coordinator_id := assigner.get_partition_leader('__consumer_offsets', partition) or {
-				// 할당이 없으면 해시 기반으로 브로커 선택
+				// Fall back to hash-based broker selection if no assignment exists
 				active_brokers[hash % active_brokers.len].broker_id
 			}
 
-			// 선택된 브로커 정보 찾기
+			// Find the selected broker's information
 			for broker in active_brokers {
 				if broker.broker_id == coordinator_id {
 					return broker.broker_id, broker.host, broker.port
@@ -221,7 +221,7 @@ fn (mut h Handler) compute_coordinator_broker(key string, key_type i8) (i32, str
 		}
 	}
 
-	// 기본: 해시 기반 브로커 선택 (라운드 로빈)
+	// Default: hash-based broker selection (round-robin)
 	mut hash := i32(0)
 	for c in key.bytes() {
 		hash = (hash * 31 + i32(c)) & 0x7FFFFFFF
@@ -232,9 +232,9 @@ fn (mut h Handler) compute_coordinator_broker(key string, key_type i8) (i32, str
 }
 
 fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version i16) !FindCoordinatorResponse {
-	// v4+: 배치 조회 응답 (v5, v6 포함)
-	// v5는 TRANSACTION_ABORTABLE 에러 코드 지원 추가 (KIP-890)
-	// v6는 Share Groups 지원 추가 (KIP-932)
+	// v4+: batch lookup response (including v5 and v6)
+	// v5 adds TRANSACTION_ABORTABLE error code support (KIP-890)
+	// v6 adds Share Groups support (KIP-932)
 	if version >= 4 {
 		mut keys := req.coordinator_keys.clone()
 		if keys.len == 0 && req.key.len > 0 {
@@ -243,9 +243,9 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 
 		mut coordinators := []FindCoordinatorResponseNode{}
 		for key in keys {
-			// Share Group (v6)의 경우 키 형식 검증: "groupId:topicId:partition"
+			// Validate key format for Share Group (v6): "groupId:topicId:partition"
 			if version >= 6 && req.key_type == i8(CoordinatorKeyType.share) {
-				// Share Group 키 형식 검증
+				// Validate Share Group key format
 				parts := key.split(':')
 				if parts.len != 3 {
 					coordinators << FindCoordinatorResponseNode{
@@ -260,7 +260,7 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 				}
 			}
 
-			// 코디네이터 브로커 결정 (할당 기반 또는 해시 기반)
+			// Determine coordinator broker (assignment-based or hash-based)
 			node_id, host, port := h.compute_coordinator_broker(key, req.key_type)
 
 			coordinators << FindCoordinatorResponseNode{
@@ -279,8 +279,8 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 		}
 	}
 
-	// v0-v3: 단일 응답
-	// 코디네이터 브로커 결정 (할당 기반 또는 해시 기반)
+	// v0-v3: single response
+	// Determine coordinator broker (assignment-based or hash-based)
 	node_id, host, port := h.compute_coordinator_broker(req.key, req.key_type)
 
 	return FindCoordinatorResponse{

@@ -1,0 +1,57 @@
+# DataCore Configuration - Broker 1 (Memory Storage)
+
+[broker]
+broker_id = 1
+cluster_id = "datacore-cluster"
+host = "0.0.0.0"
+advertised_host = "127.0.0.1"
+port = 9092
+max_connections = 10000
+max_request_size = 104857600
+request_timeout_ms = 30000
+idle_timeout_ms = 600000
+cluster_brokers = ["127.0.0.1:9092", "127.0.0.1:9094"]
+
+[rest]
+enabled = true
+host = "0.0.0.0"
+port = 8080
+max_connections = 1000
+
+[storage]
+engine = "memory"
+
+[storage.memory]
+max_memory_mb = 2048
+segment_size_bytes = 1073741824
+
+[replication]
+enabled = true
+replication_port = 9093
+replica_count = 2
+replica_timeout_ms = 5000
+heartbeat_interval_ms = 3000
+reassignment_interval_ms = 30000
+orphan_cleanup_interval_ms = 60000
+
+[schema_registry]
+enabled = true
+topic = "__schemas"
+
+[observability.otel]
+enabled = true
+service_name = "datacore-broker1"
+service_version = "0.44.0"
+environment = "development"
+
+[observability.metrics]
+enabled = true
+exporter = "prometheus"
+prometheus_endpoint = "/metrics"
+collection_interval = 15
+
+[observability.logging]
+enabled = true
+level = "debug"
+format = "json"
+console_output = true

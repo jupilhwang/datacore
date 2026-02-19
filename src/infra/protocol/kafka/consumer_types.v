@@ -1,15 +1,15 @@
-// JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat의
-// 요청/응답 구조체 정의
+// Request/response struct definitions for
+// JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat
 //
-// 컨슈머 그룹 조인, 동기화, 하트비트, 탈퇴 등의 작업에 사용됩니다.
+// Used for consumer group join, sync, heartbeat, leave, and related operations.
 module kafka
 
-// JoinGroup 요청/응답 타입 (API Key 11) - 그룹 조인
+// JoinGroup request/response types (API Key 11) - group join
 
-/// JoinGroup 요청 - 컨슈머가 그룹에 참여하기 위한 요청
+/// JoinGroup request - request for a consumer to join a group
 ///
-/// 컨슈머가 그룹에 처음 참여하거나 리밸런싱 시 사용됩니다.
-/// 리더로 선출되면 파티션 할당을 담당합니다.
+/// Used when a consumer first joins a group or rejoins during rebalancing.
+/// The leader is responsible for partition assignment.
 pub struct JoinGroupRequest {
 pub:
 	group_id             string
@@ -21,14 +21,14 @@ pub:
 	protocols            []JoinGroupRequestProtocol
 }
 
-/// JoinGroup 요청 프로토콜 - 컨슈머가 지원하는 할당 프로토콜
+/// JoinGroup request protocol - assignment protocols supported by the consumer
 pub struct JoinGroupRequestProtocol {
 pub:
 	name     string
 	metadata []u8
 }
 
-/// JoinGroup 응답 - 그룹 조인 결과
+/// JoinGroup response - result of joining a group
 pub struct JoinGroupResponse {
 pub:
 	throttle_time_ms i32
@@ -42,7 +42,7 @@ pub:
 	members          []JoinGroupResponseMember
 }
 
-/// JoinGroup 응답 멤버 - 그룹 멤버 정보
+/// JoinGroup response member - group member information
 pub struct JoinGroupResponseMember {
 pub:
 	member_id         string
@@ -50,12 +50,12 @@ pub:
 	metadata          []u8
 }
 
-// SyncGroup 요청/응답 타입 (API Key 14) - 그룹 동기화
+// SyncGroup request/response types (API Key 14) - group sync
 
-/// SyncGroup 요청 - 파티션 할당 동기화 요청
+/// SyncGroup request - partition assignment sync request
 ///
-/// 리더가 파티션 할당을 완료한 후 모든 멤버에게 할당을 전파합니다.
-/// 리더만 assignments를 포함하고, 팔로워는 빈 배열을 전송합니다.
+/// After the leader completes partition assignment, propagates assignments to all members.
+/// Only the leader includes assignments; followers send an empty array.
 pub struct SyncGroupRequest {
 pub:
 	group_id          string
@@ -67,14 +67,14 @@ pub:
 	assignments       []SyncGroupRequestAssignment
 }
 
-/// SyncGroup 요청 할당 - 멤버별 파티션 할당
+/// SyncGroup request assignment - partition assignment per member
 pub struct SyncGroupRequestAssignment {
 pub:
 	member_id  string
 	assignment []u8
 }
 
-/// SyncGroup 응답 - 파티션 할당 결과
+/// SyncGroup response - partition assignment result
 pub struct SyncGroupResponse {
 pub:
 	throttle_time_ms i32
@@ -84,12 +84,12 @@ pub:
 	assignment       []u8
 }
 
-// Heartbeat 요청/응답 타입 (API Key 12) - 하트비트
+// Heartbeat request/response types (API Key 12) - heartbeat
 
-/// Heartbeat 요청 - 그룹 멤버십 유지를 위한 하트비트
+/// Heartbeat request - heartbeat to maintain group membership
 ///
-/// 컨슈머가 주기적으로 전송하여 그룹 멤버십을 유지합니다.
-/// 세션 타임아웃 내에 하트비트가 없으면 멤버가 제거됩니다.
+/// Sent periodically by consumers to maintain group membership.
+/// If no heartbeat is received within the session timeout, the member is removed.
 pub struct HeartbeatRequest {
 pub:
 	group_id          string
@@ -98,19 +98,19 @@ pub:
 	group_instance_id ?string
 }
 
-/// Heartbeat 응답 - 하트비트 결과
+/// Heartbeat response - heartbeat result
 pub struct HeartbeatResponse {
 pub:
 	throttle_time_ms i32
 	error_code       i16
 }
 
-// LeaveGroup 요청/응답 타입 (API Key 13) - 그룹 탈퇴
+// LeaveGroup request/response types (API Key 13) - group leave
 
-/// LeaveGroup 요청 - 그룹에서 탈퇴하기 위한 요청
+/// LeaveGroup request - request to leave a group
 ///
-/// 컨슈머가 정상적으로 종료될 때 그룹에서 탈퇴합니다.
-/// v3+에서는 여러 멤버를 한 번에 탈퇴시킬 수 있습니다.
+/// Used when a consumer shuts down gracefully to leave the group.
+/// v3+ supports batch leaving of multiple members at once.
 pub struct LeaveGroupRequest {
 pub:
 	group_id  string
@@ -118,7 +118,7 @@ pub:
 	members   []LeaveGroupMember
 }
 
-/// LeaveGroup 멤버 - v3+ 배치 탈퇴용 멤버 정보
+/// LeaveGroup member - member info for v3+ batch leave
 pub struct LeaveGroupMember {
 pub:
 	member_id         string
@@ -126,7 +126,7 @@ pub:
 	reason            ?string
 }
 
-/// LeaveGroup 응답 - 그룹 탈퇴 결과
+/// LeaveGroup response - group leave result
 pub struct LeaveGroupResponse {
 pub:
 	throttle_time_ms i32
@@ -134,7 +134,7 @@ pub:
 	members          []LeaveGroupResponseMember
 }
 
-/// LeaveGroup 응답 멤버 - 멤버별 탈퇴 결과
+/// LeaveGroup response member - leave result per member
 pub struct LeaveGroupResponseMember {
 pub:
 	member_id         string
@@ -142,14 +142,14 @@ pub:
 	error_code        i16
 }
 
-// ConsumerGroupHeartbeat 요청/응답 타입 (API Key 68) - KIP-848
+// ConsumerGroupHeartbeat request/response types (API Key 68) - KIP-848
 
-// 새로운 컨슈머 리밸런스 프로토콜에서 사용됩니다.
+// Used in the new consumer rebalance protocol.
 
-/// ConsumerGroupHeartbeat 요청 - 새로운 컨슈머 프로토콜 하트비트 (KIP-848)
+/// ConsumerGroupHeartbeat request - new consumer protocol heartbeat (KIP-848)
 ///
-/// 기존 JoinGroup/SyncGroup/Heartbeat를 대체하는 단일 API입니다.
-/// 서버 측 할당(server-side assignment)을 지원합니다.
+/// A single API that replaces JoinGroup/SyncGroup/Heartbeat.
+/// Supports server-side assignment.
 pub struct ConsumerGroupHeartbeatRequest {
 pub:
 	group_id               string
@@ -163,14 +163,14 @@ pub:
 	topic_partitions       []ConsumerGroupHeartbeatTopicPartition
 }
 
-/// ConsumerGroupHeartbeat 토픽 파티션 - 현재 할당된 파티션
+/// ConsumerGroupHeartbeat topic partition - currently assigned partitions
 pub struct ConsumerGroupHeartbeatTopicPartition {
 pub:
-	topic_id   []u8 // 토픽 UUID (16바이트)
+	topic_id   []u8 // topic UUID (16 bytes)
 	partitions []i32
 }
 
-/// ConsumerGroupHeartbeat 응답 - 새로운 컨슈머 프로토콜 하트비트 응답
+/// ConsumerGroupHeartbeat response - new consumer protocol heartbeat response
 pub struct ConsumerGroupHeartbeatResponse {
 pub:
 	throttle_time_ms      i32
@@ -182,38 +182,38 @@ pub:
 	assignment            ?ConsumerGroupHeartbeatAssignment
 }
 
-/// ConsumerGroupHeartbeat 할당 - 파티션 할당 정보
+/// ConsumerGroupHeartbeat assignment - partition assignment information
 pub struct ConsumerGroupHeartbeatAssignment {
 pub:
 	topic_partitions []ConsumerGroupHeartbeatResponseTopicPartition
 }
 
-/// ConsumerGroupHeartbeat 응답 토픽 파티션 - 할당된 파티션
+/// ConsumerGroupHeartbeat response topic partition - assigned partitions
 pub struct ConsumerGroupHeartbeatResponseTopicPartition {
 pub:
-	topic_id   []u8 // 토픽 UUID (16바이트)
+	topic_id   []u8 // topic UUID (16 bytes)
 	partitions []i32
 }
 
-// ConsumerGroupDescribe 요청/응답 타입 (API Key 69) - KIP-848
+// ConsumerGroupDescribe request/response types (API Key 69) - KIP-848
 
-// 컨슈머 그룹의 상세 정보를 조회합니다.
+// Retrieves detailed information about consumer groups.
 
-/// ConsumerGroupDescribe 요청 - 컨슈머 그룹 상세 정보 조회 요청 (KIP-848)
+/// ConsumerGroupDescribe request - request to describe consumer groups (KIP-848)
 pub struct ConsumerGroupDescribeRequest {
 pub:
 	group_ids                     []string
 	include_authorized_operations bool
 }
 
-/// ConsumerGroupDescribe 응답 - 컨슈머 그룹 상세 정보
+/// ConsumerGroupDescribe response - consumer group detailed information
 pub struct ConsumerGroupDescribeResponse {
 pub:
 	throttle_time_ms i32
 	groups           []ConsumerGroupDescribeResponseGroup
 }
 
-/// ConsumerGroupDescribe 응답 그룹 - 개별 그룹 정보
+/// ConsumerGroupDescribe response group - individual group information
 pub struct ConsumerGroupDescribeResponseGroup {
 pub:
 	error_code            i16
@@ -227,7 +227,7 @@ pub:
 	authorized_operations i32
 }
 
-/// ConsumerGroupDescribe 응답 멤버 - 멤버 정보
+/// ConsumerGroupDescribe response member - member information
 pub struct ConsumerGroupDescribeResponseMember {
 pub:
 	member_id            string
@@ -236,19 +236,19 @@ pub:
 	member_epoch         i32
 	client_id            string
 	client_host          string
-	subscribed_topic_ids [][]u8 // 구독 토픽 ID 목록 (UUID)
+	subscribed_topic_ids [][]u8 // subscribed topic ID list (UUID)
 	assignment           ?ConsumerGroupDescribeResponseMemberAssignment
 }
 
-/// ConsumerGroupDescribe 응답 멤버 할당 - 멤버의 파티션 할당
+/// ConsumerGroupDescribe response member assignment - member's partition assignment
 pub struct ConsumerGroupDescribeResponseMemberAssignment {
 pub:
 	topic_partitions []ConsumerGroupDescribeTopicPartition
 }
 
-/// ConsumerGroupDescribe 토픽 파티션 - 할당된 파티션
+/// ConsumerGroupDescribe topic partition - assigned partitions
 pub struct ConsumerGroupDescribeTopicPartition {
 pub:
-	topic_id   []u8 // 토픽 UUID (16바이트)
+	topic_id   []u8 // topic UUID (16 bytes)
 	partitions []i32
 }

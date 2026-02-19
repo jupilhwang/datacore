@@ -1,5 +1,5 @@
-// Kafka 프로토콜 - Transaction 핸들러
-// 트랜잭션 관련 작업을 위한 핸들러 메서드:
+// Kafka protocol - Transaction handlers
+// Handler methods for transaction-related operations:
 // InitProducerId, AddPartitionsToTxn, AddOffsetsToTxn, EndTxn, TxnOffsetCommit, WriteTxnMarkers
 module kafka
 
@@ -8,8 +8,8 @@ import infra.observability
 import rand
 import time
 
-// InitProducerId 처리 (API Key 22)
-// 멱등성/트랜잭션 프로듀서를 위한 프로듀서 ID 반환
+// handle_init_producer_id - handles InitProducerId (API Key 22)
+// Returns a producer ID for idempotent/transactional producers
 fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	is_flexible := is_flexible_version(.init_producer_id, version)
@@ -88,7 +88,7 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// AddPartitionsToTxn 처리 (API Key 24)
+// handle_add_partitions_to_txn - handles AddPartitionsToTxn (API Key 24)
 fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	is_flexible := is_flexible_version(.add_partitions_to_txn, version)
@@ -100,7 +100,7 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 		observability.field_int('topics', req.topics.len))
 
 	if mut txn_coord := h.txn_coordinator {
-		// 요청 토픽을 TopicPartition 리스트로 변환
+		// Convert request topics to a TopicPartition list
 		mut partitions := []domain.TopicPartition{}
 		for t in req.topics {
 			for p in t.partitions {
@@ -181,7 +181,7 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 	}.encode(version)
 }
 
-// EndTxn 처리 (API Key 26)
+// handle_end_txn - handles EndTxn (API Key 26)
 fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	is_flexible := is_flexible_version(.end_txn, version)
@@ -222,7 +222,7 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 	}.encode(version)
 }
 
-// AddOffsetsToTxn 처리 (API Key 25)
+// handle_add_offsets_to_txn - handles AddOffsetsToTxn (API Key 25)
 fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	is_flexible := is_flexible_version(.add_offsets_to_txn, version)
@@ -258,9 +258,9 @@ fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 	}.encode(version)
 }
 
-// WriteTxnMarkers 처리 (API Key 27)
-// 이 API는 트랜잭션 코디네이터가 파티션 리더에 commit/abort 마커를 쓰는 데 사용됩니다.
-// 브로커 간 통신 API입니다.
+// WriteTxnMarkers handler (API Key 27)
+// Used by the transaction coordinator to write commit/abort markers to partition leaders.
+// This is an inter-broker communication API.
 fn (mut h Handler) handle_write_txn_markers(body []u8, version i16) ![]u8 {
 	is_flexible := is_flexible_version(.write_txn_markers, version)
 	mut reader := new_reader(body)
@@ -275,7 +275,7 @@ fn (mut h Handler) handle_write_txn_markers(body []u8, version i16) ![]u8 {
 			mut partition_results := []WriteTxnMarkerPartitionResult{}
 
 			for partition_index in topic.partition_indexes {
-				// 파티션에 트랜잭션 마커 (commit/abort) 쓰기
+				// Write transaction marker (commit/abort) to the partition
 				error_code := h.write_txn_marker_to_partition(topic.name, partition_index,
 					marker.producer_id, marker.producer_epoch, marker.transaction_result,
 					marker.coordinator_epoch)
@@ -325,12 +325,12 @@ fn (mut h Handler) write_txn_marker_to_partition(topic string, partition_index i
 	return i16(ErrorCode.none)
 }
 
-// build_txn_control_records는 트랜잭션 commit/abort를 위한 컨트롤 레코드를 생성합니다.
-// Kafka 컨트롤 레코드 형식:
-// - Key: version (INT16) + type (INT16), type은 0=ABORT, 1=COMMIT
+// build_txn_control_records builds control records for a transaction commit/abort.
+// Kafka control record format:
+// - Key: version (INT16) + type (INT16), where type is 0=ABORT, 1=COMMIT
 // - Value: version (INT16) + type (INT16) + coordinator_epoch (INT32)
-// - 레코드는 is_control_record=true와 적절한 control_type으로 표시됨
-// - producer_id와 producer_epoch는 RecordBatch attributes를 위해 Record 메타데이터에 저장됨
+// - Records are marked with is_control_record=true and the appropriate control_type
+// - producer_id and producer_epoch are stored in Record metadata for RecordBatch attributes
 fn build_txn_control_records(producer_id i64, producer_epoch i16, committed bool) []domain.Record {
 	control_type := if committed {
 		domain.ControlRecordType.commit
@@ -339,17 +339,17 @@ fn build_txn_control_records(producer_id i64, producer_epoch i16, committed bool
 	}
 	marker_type := if committed { i16(1) } else { i16(0) }
 
-	// 컨트롤 레코드 키 형식 (Kafka 표준):
+	// Control record key format (Kafka standard):
 	// - version: INT16 (0)
 	// - type: INT16 (0=ABORT, 1=COMMIT)
 	mut key_writer := new_writer()
 	key_writer.write_i16(0)
 	key_writer.write_i16(marker_type)
 
-	// 컨트롤 레코드 값 형식 (Kafka 표준):
+	// Control record value format (Kafka standard):
 	// - version: INT16 (0)
 	// - type: INT16 (0=ABORT, 1=COMMIT)
-	// - coordinator_epoch: INT32 (선택사항, 0으로 설정)
+	// - coordinator_epoch: INT32 (optional, set to 0)
 	mut value_writer := new_writer()
 	value_writer.write_i16(0)
 	value_writer.write_i16(marker_type)
@@ -369,22 +369,22 @@ fn build_txn_control_records(producer_id i64, producer_epoch i16, committed bool
 	]
 }
 
-// TxnOffsetCommit 처리 (API Key 28)
+// TxnOffsetCommit handler (API Key 28)
 fn (mut h Handler) handle_txn_offset_commit(body []u8, version i16) ![]u8 {
 	is_flexible := is_flexible_version(.txn_offset_commit, version)
 	mut reader := new_reader(body)
 	req := parse_txn_offset_commit_request(mut reader, version, is_flexible)!
 
-	// 트랜잭션 코디네이터 존재 확인
+	// Check if transaction coordinator is present
 	if mut txn_coord := h.txn_coordinator {
-		// 트랜잭션 존재 및 유효성 확인
+		// Verify transaction existence and validity
 		meta := txn_coord.get_transaction(req.transactional_id) or {
-			// 트랜잭션을 찾을 수 없음
+			// Transaction not found
 			return build_txn_offset_commit_error_response(req, i16(ErrorCode.transactional_id_not_found),
 				version)
 		}
 
-		// 프로듀서 ID 및 epoch 유효성 검사
+		// Validate producer ID and epoch
 		if meta.producer_id != req.producer_id {
 			return build_txn_offset_commit_error_response(req, i16(ErrorCode.invalid_producer_id_mapping),
 				version)
@@ -474,9 +474,9 @@ fn build_txn_offset_commit_success_response(req TxnOffsetCommitRequest, version 
 	}.encode(version)
 }
 
-// InitProducerId 요청 처리 (Frame 기반)
+// InitProducerId request processor (frame-based)
 fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i16) !InitProducerIdResponse {
-	// 가능하면 TransactionCoordinator 사용
+	// Use TransactionCoordinator if available
 	if mut txn_coord := h.txn_coordinator {
 		result := txn_coord.init_producer_id(req.transactional_id, req.transaction_timeout_ms,
 			req.producer_id, req.producer_epoch) or {

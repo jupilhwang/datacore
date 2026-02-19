@@ -1,6 +1,6 @@
-// Kafka 프로토콜 - ACL 작업
+// Kafka protocol - ACL operations
 // DescribeAcls, CreateAcls, DeleteAcls
-// 요청/응답 타입, 파싱, 인코딩 및 핸들러
+// Request/response types, parsing, encoding, and handlers
 module kafka
 
 import domain
@@ -9,7 +9,7 @@ import time
 
 // DescribeAcls (API Key 29)
 
-/// DescribeAclsRequest은 DescribeAcls (API Key 29).
+/// DescribeAclsRequest holds the filter criteria for DescribeAcls (API Key 29).
 pub struct DescribeAclsRequest {
 pub:
 	resource_type   i8
@@ -21,7 +21,7 @@ pub:
 	permission_type i8
 }
 
-/// DescribeAclsResponse는 관련 데이터를 담는 구조체입니다.
+/// DescribeAclsResponse holds the response data for DescribeAcls.
 pub struct DescribeAclsResponse {
 pub:
 	throttle_time_ms i32
@@ -30,7 +30,7 @@ pub:
 	resources        []DescribeAclsResource
 }
 
-/// DescribeAclsResource는 관련 데이터를 담는 구조체입니다.
+/// DescribeAclsResource holds a resource and its associated ACLs in a DescribeAcls response.
 pub struct DescribeAclsResource {
 pub:
 	resource_type i8
@@ -39,7 +39,7 @@ pub:
 	acls          []DescribeAclsAcl
 }
 
-/// DescribeAclsAcl는 관련 데이터를 담는 구조체입니다.
+/// DescribeAclsAcl holds a single ACL entry in a DescribeAcls resource.
 pub struct DescribeAclsAcl {
 pub:
 	principal       string
@@ -72,7 +72,7 @@ fn parse_describe_acls_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the DescribeAclsResponse into bytes.
 pub fn (r DescribeAclsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -139,13 +139,13 @@ pub fn (r DescribeAclsResponse) encode(version i16) []u8 {
 
 // CreateAcls (API Key 30)
 
-/// CreateAclsRequest은 CreateAcls (API Key 30).
+/// CreateAclsRequest holds the ACL entries to create for CreateAcls (API Key 30).
 pub struct CreateAclsRequest {
 pub:
 	creations []CreateAclsCreation
 }
 
-/// CreateAclsCreation는 관련 데이터를 담는 구조체입니다.
+/// CreateAclsCreation holds the details for a single ACL to create.
 pub struct CreateAclsCreation {
 pub:
 	resource_type   i8
@@ -157,14 +157,14 @@ pub:
 	permission_type i8
 }
 
-/// CreateAclsResponse는 관련 데이터를 담는 구조체입니다.
+/// CreateAclsResponse holds the response data for CreateAcls.
 pub struct CreateAclsResponse {
 pub:
 	throttle_time_ms i32
 	results          []CreateAclsResult
 }
 
-/// CreateAclsResult는 관련 데이터를 담는 구조체입니다.
+/// CreateAclsResult holds the result for a single ACL creation.
 pub struct CreateAclsResult {
 pub:
 	error_code    i16
@@ -206,7 +206,7 @@ fn parse_create_acls_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the CreateAclsResponse into bytes.
 pub fn (r CreateAclsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -238,13 +238,13 @@ pub fn (r CreateAclsResponse) encode(version i16) []u8 {
 
 // DeleteAcls (API Key 31)
 
-/// DeleteAclsRequest은 DeleteAcls (API Key 31).
+/// DeleteAclsRequest holds the filters for DeleteAcls (API Key 31).
 pub struct DeleteAclsRequest {
 pub:
 	filters []DeleteAclsFilter
 }
 
-/// DeleteAclsFilter는 관련 데이터를 담는 구조체입니다.
+/// DeleteAclsFilter holds a single filter for matching ACLs to delete.
 pub struct DeleteAclsFilter {
 pub:
 	resource_type   i8
@@ -256,14 +256,14 @@ pub:
 	permission_type i8
 }
 
-/// DeleteAclsResponse는 관련 데이터를 담는 구조체입니다.
+/// DeleteAclsResponse holds the response data for DeleteAcls.
 pub struct DeleteAclsResponse {
 pub:
 	throttle_time_ms i32
 	results          []DeleteAclsResult
 }
 
-/// DeleteAclsResult는 관련 데이터를 담는 구조체입니다.
+/// DeleteAclsResult holds the result for a single filter in DeleteAcls.
 pub struct DeleteAclsResult {
 pub:
 	error_code    i16
@@ -271,7 +271,7 @@ pub:
 	matching_acls []DeleteAclsMatchingAcl
 }
 
-/// DeleteAclsMatchingAcl는 관련 데이터를 담는 구조체입니다.
+/// DeleteAclsMatchingAcl holds a single ACL entry that matched and was deleted.
 pub struct DeleteAclsMatchingAcl {
 pub:
 	error_code      i16
@@ -320,7 +320,7 @@ fn parse_delete_acls_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the DeleteAclsResponse into bytes.
 pub fn (r DeleteAclsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -387,9 +387,9 @@ pub fn (r DeleteAclsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// ACL 핸들러
+// ACL handlers
 
-// DescribeAcls 핸들러
+// DescribeAcls handler
 fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -399,7 +399,7 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 	h.logger.debug('Processing describe ACLs', observability.field_int('resource_type',
 		req.resource_type), observability.field_int('operation', req.operation))
 
-	// ACL 매니저가 설정되어 있는지 확인
+	// Check if the ACL manager is configured
 	if mut acl_mgr := h.acl_manager {
 		filter := domain.AclBindingFilter{
 			pattern_filter: domain.ResourcePatternFilter{
@@ -416,7 +416,7 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 		}
 
 		acls := acl_mgr.describe_acls(filter) or {
-			// Failed to describe ACLs
+			// Failed to describe ACLs - return error response
 			resp := DescribeAclsResponse{
 				throttle_time_ms: default_throttle_time_ms
 				error_code:       i16(ErrorCode.unknown_server_error)
@@ -426,7 +426,7 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 			return resp.encode(version)
 		}
 
-		// Group ACLs by resource for response
+		// Group ACLs by resource for the response
 		mut resources := []DescribeAclsResource{}
 		mut resource_map := map[string][]DescribeAclsAcl{}
 		mut resource_patterns := map[string]domain.ResourcePattern{}
@@ -483,7 +483,7 @@ fn (mut h Handler) handle_describe_acls(body []u8, version i16) ![]u8 {
 	return resp.encode(version)
 }
 
-// CreateAcls 핸들러
+// CreateAcls handler
 fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -511,7 +511,7 @@ fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 		}
 
 		create_results := acl_mgr.create_acls(bindings) or {
-			// Global failure
+			// Global failure - return error for all creations
 			mut results := []CreateAclsResult{}
 			for _ in req.creations {
 				results << CreateAclsResult{
@@ -557,7 +557,7 @@ fn (mut h Handler) handle_create_acls(body []u8, version i16) ![]u8 {
 	}.encode(version)
 }
 
-// DeleteAcls 핸들러
+// DeleteAcls handler
 fn (mut h Handler) handle_delete_acls(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
@@ -585,7 +585,7 @@ fn (mut h Handler) handle_delete_acls(body []u8, version i16) ![]u8 {
 		}
 
 		delete_results := acl_mgr.delete_acls(filters) or {
-			// Global failure
+			// Global failure - return error for all filters
 			mut results := []DeleteAclsResult{}
 			for _ in req.filters {
 				results << DeleteAclsResult{

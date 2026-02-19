@@ -1,6 +1,6 @@
 // Admin API - AlterConfigs, CreatePartitions, DeleteRecords
-// Task #31, #32: Admin API 구현
-// admin_api.v에서 handlers/admin.v로 이동하여 구조 개선
+// Task #31, #32: Admin API implementation
+// Moved from admin_api.v to handlers/admin.v for better structure
 module kafka
 
 import infra.observability
@@ -8,14 +8,14 @@ import time
 
 // AlterConfigs Request/Response (API Key 33)
 
-/// AlterConfigsRequest은 AlterConfigs Request/Response (API Key 33).
+/// AlterConfigsRequest holds the request data for AlterConfigs (API Key 33).
 pub struct AlterConfigsRequest {
 pub:
 	resources     []AlterConfigsResource
 	validate_only bool
 }
 
-/// AlterConfigsResource는 관련 데이터를 담는 구조체입니다.
+/// AlterConfigsResource holds a resource entry for AlterConfigs.
 pub struct AlterConfigsResource {
 pub:
 	resource_type i8
@@ -23,21 +23,21 @@ pub:
 	configs       []AlterConfigsEntry
 }
 
-/// AlterConfigsEntry는 관련 데이터를 담는 구조체입니다.
+/// AlterConfigsEntry holds a single config name/value pair for AlterConfigs.
 pub struct AlterConfigsEntry {
 pub:
 	name  string
 	value ?string
 }
 
-/// AlterConfigsResponse는 관련 데이터를 담는 구조체입니다.
+/// AlterConfigsResponse holds the response data for AlterConfigs.
 pub struct AlterConfigsResponse {
 pub:
 	throttle_time_ms i32
 	results          []AlterConfigsResult
 }
 
-/// AlterConfigsResult는 관련 데이터를 담는 구조체입니다.
+/// AlterConfigsResult holds the result for a single resource in AlterConfigs.
 pub struct AlterConfigsResult {
 pub:
 	error_code    i16
@@ -88,7 +88,7 @@ fn parse_alter_configs_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the AlterConfigsResponse into bytes.
 pub fn (r AlterConfigsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -131,7 +131,7 @@ pub fn (r AlterConfigsResponse) encode(version i16) []u8 {
 
 // CreatePartitions Request/Response (API Key 37)
 
-/// CreatePartitionsRequest은 CreatePartitions Request/Response (API Key 37).
+/// CreatePartitionsRequest holds the request data for CreatePartitions (API Key 37).
 pub struct CreatePartitionsRequest {
 pub:
 	topics        []CreatePartitionsTopic
@@ -139,7 +139,7 @@ pub:
 	validate_only bool
 }
 
-/// CreatePartitionsTopic는 관련 데이터를 담는 구조체입니다.
+/// CreatePartitionsTopic holds the topic config for CreatePartitions.
 pub struct CreatePartitionsTopic {
 pub:
 	name        string
@@ -147,20 +147,20 @@ pub:
 	assignments ?[]CreatePartitionsAssignment
 }
 
-/// CreatePartitionsAssignment는 관련 데이터를 담는 구조체입니다.
+/// CreatePartitionsAssignment holds broker assignments for a new partition.
 pub struct CreatePartitionsAssignment {
 pub:
 	broker_ids []i32
 }
 
-/// CreatePartitionsResponse는 관련 데이터를 담는 구조체입니다.
+/// CreatePartitionsResponse holds the response data for CreatePartitions.
 pub struct CreatePartitionsResponse {
 pub:
 	throttle_time_ms i32
 	results          []CreatePartitionsResult
 }
 
-/// CreatePartitionsResult는 관련 데이터를 담는 구조체입니다.
+/// CreatePartitionsResult holds the result for a single topic in CreatePartitions.
 pub struct CreatePartitionsResult {
 pub:
 	name          string
@@ -217,7 +217,7 @@ fn parse_create_partitions_request(mut reader BinaryReader, version i16, is_flex
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the CreatePartitionsResponse into bytes.
 pub fn (r CreatePartitionsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -258,42 +258,42 @@ pub fn (r CreatePartitionsResponse) encode(version i16) []u8 {
 
 // DeleteRecords Request/Response (API Key 21)
 
-/// DeleteRecordsRequest은 DeleteRecords Request/Response (API Key 21).
+/// DeleteRecordsRequest holds the request data for DeleteRecords (API Key 21).
 pub struct DeleteRecordsRequest {
 pub:
 	topics     []DeleteRecordsTopic
 	timeout_ms i32
 }
 
-/// DeleteRecordsTopic는 관련 데이터를 담는 구조체입니다.
+/// DeleteRecordsTopic holds the topic and partition offsets for DeleteRecords.
 pub struct DeleteRecordsTopic {
 pub:
 	name       string
 	partitions []DeleteRecordsPartition
 }
 
-/// DeleteRecordsPartition는 관련 데이터를 담는 구조체입니다.
+/// DeleteRecordsPartition holds the partition index and offset for a DeleteRecords request.
 pub struct DeleteRecordsPartition {
 pub:
 	partition_index i32
 	offset          i64
 }
 
-/// DeleteRecordsResponse는 관련 데이터를 담는 구조체입니다.
+/// DeleteRecordsResponse holds the response data for DeleteRecords.
 pub struct DeleteRecordsResponse {
 pub:
 	throttle_time_ms i32
 	topics           []DeleteRecordsResponseTopic
 }
 
-/// DeleteRecordsResponseTopic는 관련 데이터를 담는 구조체입니다.
+/// DeleteRecordsResponseTopic holds the per-topic results for DeleteRecords.
 pub struct DeleteRecordsResponseTopic {
 pub:
 	name       string
 	partitions []DeleteRecordsResponsePartition
 }
 
-/// DeleteRecordsResponsePartition는 관련 데이터를 담는 구조체입니다.
+/// DeleteRecordsResponsePartition holds the per-partition result for DeleteRecords.
 pub struct DeleteRecordsResponsePartition {
 pub:
 	partition_index i32
@@ -341,7 +341,7 @@ fn parse_delete_records_request(mut reader BinaryReader, version i16, is_flexibl
 	}
 }
 
-/// encode를 수행합니다.
+/// encode serializes the DeleteRecordsResponse into bytes.
 pub fn (r DeleteRecordsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -392,10 +392,10 @@ pub fn (r DeleteRecordsResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
-// 핸들러 함수
+// Handler functions
 
-// handle_alter_configs - AlterConfigs API (Key 33) 처리
-/// handle_alter_configs은 handle_alter_configs - AlterConfigs API (Key 33) 처리.
+// handle_alter_configs - handles AlterConfigs API (Key 33)
+/// handle_alter_configs handles the AlterConfigs API (Key 33).
 pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	is_flexible := version >= 2
@@ -411,8 +411,8 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 		// Resource type: 2 = TOPIC, 4 = BROKER
 		match res.resource_type {
 			2 {
-				// TOPIC config - currently we don't persist topic configs
-				// Just validate the topic exists and return success
+				// TOPIC config - configs are accepted but not persisted
+				// Validate that the topic exists and return success
 				_ := h.storage.get_topic(res.resource_name) or {
 					results << AlterConfigsResult{
 						error_code:    i16(ErrorCode.unknown_topic_or_partition)
@@ -487,7 +487,7 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 }
 
 // handle_create_partitions - handles CreatePartitions API (Key 37)
-/// handle_create_partitions은 handle_create_partitions - handles CreatePartitions API (Key 37).
+/// handle_create_partitions handles the CreatePartitions API (Key 37).
 pub fn (mut h Handler) handle_create_partitions(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	is_flexible := version >= 2
@@ -560,7 +560,7 @@ pub fn (mut h Handler) handle_create_partitions(body []u8, version i16) ![]u8 {
 }
 
 // handle_delete_records - handles DeleteRecords API (Key 21)
-/// handle_delete_records은 handle_delete_records - handles DeleteRecords API (Key 21).
+/// handle_delete_records handles the DeleteRecords API (Key 21).
 pub fn (mut h Handler) handle_delete_records(body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	is_flexible := version >= 2

@@ -1,19 +1,19 @@
-// Kafka 프로토콜 - Share Group 핸들러 (KIP-932)
+// Kafka protocol - Share Group handlers (KIP-932)
 // ShareGroupHeartbeat (API Key 76), ShareFetch (API Key 78), ShareAcknowledge (API Key 79)
 module kafka
 
 import domain
 import service.group
 
-// 핸들러
+// Handler
 
-// handle_share_group_heartbeat는 ShareGroupHeartbeat 요청을 처리합니다 (API Key 76)
+// handle_share_group_heartbeat handles the ShareGroupHeartbeat request (API Key 76)
 fn (mut h Handler) handle_share_group_heartbeat(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	is_flexible := true
 	req := parse_share_group_heartbeat_request(mut reader, version, is_flexible)!
 
-	// Share Group 코디네이터 조회
+	// Get Share Group coordinator
 	mut coordinator := h.get_share_group_coordinator() or {
 		resp := ShareGroupHeartbeatResponse{
 			throttle_time_ms:      0
