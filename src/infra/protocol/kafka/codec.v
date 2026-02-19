@@ -1,12 +1,12 @@
-// 빅 엔디안 형식의 바이너리 리더/라이터 (Kafka 와이어 프로토콜)
+// Big-endian binary reader/writer (Kafka wire protocol)
 module kafka
 
 import domain
 import time
 import infra.protocol.kafka.crc32c
 
-/// ByteView - 바이트 배열에 대한 Zero-copy 뷰 (경량 대안)
-/// 메모리 할당 없이 고성능 파싱을 위해 내부적으로 사용됩니다.
+/// ByteView - Zero-copy view over a byte slice (lightweight alternative)
+/// Used internally for high-performance parsing without memory allocation.
 pub struct ByteView {
 pub:
 	data   []u8
@@ -14,7 +14,7 @@ pub:
 	length int
 }
 
-/// new는 바이트 배열로부터 새로운 ByteView를 생성합니다.
+/// new creates a new ByteView from a byte slice.
 pub fn ByteView.new(data []u8) ByteView {
 	return ByteView{
 		data:   data
@@ -23,8 +23,7 @@ pub fn ByteView.new(data []u8) ByteView {
 	}
 }
 
-// 데이터 복사 없이 서브 뷰를 생성합니다.
-/// slice는 데이터 복사 없이 서브 뷰를 생성합니다.
+/// slice creates a sub-view without copying data.
 pub fn (v ByteView) slice(start int, end int) !ByteView {
 	if start < 0 || end > v.length || start > end {
 		return error('slice bounds out of range')
@@ -36,8 +35,7 @@ pub fn (v ByteView) slice(start int, end int) !ByteView {
 	}
 }
 
-// 실제 바이트를 반환합니다 (오프셋이 0일 때 zero-copy).
-/// bytes는 작성된 바이트를 반환합니다.
+/// bytes returns the underlying bytes (zero-copy when offset is 0).
 pub fn (v ByteView) bytes() []u8 {
 	if v.length == 0 {
 		return []u8{}
@@ -45,8 +43,7 @@ pub fn (v ByteView) bytes() []u8 {
 	return v.data[v.offset..v.offset + v.length]
 }
 
-// 데이터의 복사본을 반환합니다 (소유권이 필요할 때).
-/// to_owned는 데이터의 복사본을 반환합니다.
+/// to_owned returns an owned copy of the data.
 pub fn (v ByteView) to_owned() []u8 {
 	if v.length == 0 {
 		return []u8{}
@@ -54,8 +51,7 @@ pub fn (v ByteView) to_owned() []u8 {
 	return v.data[v.offset..v.offset + v.length].clone()
 }
 
-// 문자열로 변환합니다 (가능하면 zero-copy).
-/// to_string은 뷰를 문자열로 변환합니다.
+/// to_string converts the view to a string (zero-copy when possible).
 pub fn (v ByteView) to_string() string {
 	if v.length == 0 {
 		return ''
@@ -63,26 +59,24 @@ pub fn (v ByteView) to_string() string {
 	return v.data[v.offset..v.offset + v.length].bytestr()
 }
 
-// 뷰의 길이를 반환합니다.
-/// len은 길이를 반환합니다.
+/// len returns the length of the view.
 pub fn (v ByteView) len() int {
 	return v.length
 }
 
-// 뷰가 비어있는지 확인합니다.
-/// is_empty는 비어있는지 확인합니다.
+/// is_empty returns true if the view has zero length.
 pub fn (v ByteView) is_empty() bool {
 	return v.length == 0
 }
 
-/// BinaryReader - Kafka 바이너리 프로토콜을 파싱하기 위한 리더
+/// BinaryReader - Reader for parsing the Kafka binary protocol
 pub struct BinaryReader {
 pub mut:
 	data []u8
 	pos  int
 }
 
-/// new_reader는 바이트 배열로부터 새로운 BinaryReader를 생성합니다.
+/// new_reader creates a new BinaryReader from a byte slice.
 pub fn new_reader(data []u8) BinaryReader {
 	return BinaryReader{
 		data: data
@@ -90,15 +84,17 @@ pub fn new_reader(data []u8) BinaryReader {
 	}
 }
 
+/// remaining returns the number of unread bytes.
 pub fn (r &BinaryReader) remaining() int {
 	return r.data.len - r.pos
 }
 
+/// position returns the current read position.
 pub fn (r &BinaryReader) position() int {
 	return r.pos
 }
 
-/// read_i8은 버퍼에서 부호 있는 8비트 정수를 읽습니다.
+/// read_i8 reads a signed 8-bit integer from the buffer.
 pub fn (mut r BinaryReader) read_i8() !i8 {
 	if r.remaining() < 1 {
 		return error('not enough data for i8')
@@ -108,7 +104,7 @@ pub fn (mut r BinaryReader) read_i8() !i8 {
 	return val
 }
 
-/// read_i16은 빅 엔디안 형식의 부호 있는 16비트 정수를 읽습니다.
+/// read_i16 reads a signed 16-bit integer in big-endian format.
 pub fn (mut r BinaryReader) read_i16() !i16 {
 	if r.remaining() < 2 {
 		return error('not enough data for i16')
@@ -118,7 +114,7 @@ pub fn (mut r BinaryReader) read_i16() !i16 {
 	return val
 }
 
-/// read_i32는 빅 엔디안 형식의 부호 있는 32비트 정수를 읽습니다.
+/// read_i32 reads a signed 32-bit integer in big-endian format.
 pub fn (mut r BinaryReader) read_i32() !i32 {
 	if r.remaining() < 4 {
 		return error('not enough data for i32')
@@ -129,7 +125,7 @@ pub fn (mut r BinaryReader) read_i32() !i32 {
 	return val
 }
 
-/// read_i64는 빅 엔디안 형식의 부호 있는 64비트 정수를 읽습니다.
+/// read_i64 reads a signed 64-bit integer in big-endian format.
 pub fn (mut r BinaryReader) read_i64() !i64 {
 	if r.remaining() < 8 {
 		return error('not enough data for i64')
@@ -141,7 +137,7 @@ pub fn (mut r BinaryReader) read_i64() !i64 {
 	return val
 }
 
-/// read_uvarint는 부호 없는 가변 길이 정수를 읽습니다 (zigzag 인코딩).
+/// read_uvarint reads an unsigned variable-length integer.
 pub fn (mut r BinaryReader) read_uvarint() !u64 {
 	mut result := u64(0)
 	mut shift := u32(0)
@@ -165,13 +161,13 @@ pub fn (mut r BinaryReader) read_uvarint() !u64 {
 	return result
 }
 
-/// read_varint는 부호 있는 가변 길이 정수를 읽습니다 (zigzag 인코딩).
+/// read_varint reads a signed variable-length integer (zigzag encoded).
 pub fn (mut r BinaryReader) read_varint() !i64 {
 	uval := r.read_uvarint()!
 	return i64((uval >> 1) ^ (-(uval & 1)))
 }
 
-/// read_string은 길이 접두사가 있는 문자열을 읽습니다 (i16 길이).
+/// read_string reads a length-prefixed string (i16 length).
 pub fn (mut r BinaryReader) read_string() !string {
 	len := r.read_i16()!
 	if len < 0 {
@@ -185,7 +181,7 @@ pub fn (mut r BinaryReader) read_string() !string {
 	return str
 }
 
-/// read_nullable_string은 nullable 길이 접두사 문자열을 읽습니다 (i16 길이, null은 -1).
+/// read_nullable_string reads a nullable length-prefixed string (i16 length; -1 means null).
 pub fn (mut r BinaryReader) read_nullable_string() !string {
 	len := r.read_i16()!
 	if len < 0 {
@@ -199,7 +195,7 @@ pub fn (mut r BinaryReader) read_nullable_string() !string {
 	return str
 }
 
-/// read_compact_string은 compact 문자열을 읽습니다 (부호 없는 varint 길이 + 1).
+/// read_compact_string reads a compact string (unsigned varint length + 1).
 pub fn (mut r BinaryReader) read_compact_string() !string {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -214,9 +210,9 @@ pub fn (mut r BinaryReader) read_compact_string() !string {
 	return str
 }
 
-/// read_compact_nullable_string은 compact nullable 문자열을 읽습니다 (부호 없는 varint 길이, null은 0).
+/// read_compact_nullable_string reads a compact nullable string (unsigned varint length; 0 means null).
 pub fn (mut r BinaryReader) read_compact_nullable_string() !string {
-	// Compact nullable string: 길이 0은 null, 길이 N은 N-1 바이트를 의미
+	// Compact nullable string: length 0 means null; length N means N-1 bytes of content
 	len := r.read_uvarint()!
 	if len == 0 {
 		return ''
@@ -233,8 +229,7 @@ pub fn (mut r BinaryReader) read_compact_nullable_string() !string {
 	return str
 }
 
-// 지정된 길이만큼 바이트를 읽습니다.
-/// read_bytes_len은 버퍼에서 정확히 n바이트를 읽습니다.
+/// read_bytes_len reads exactly n bytes from the buffer.
 pub fn (mut r BinaryReader) read_bytes_len(len int) ![]u8 {
 	if len < 0 {
 		return []u8{}
@@ -247,15 +242,13 @@ pub fn (mut r BinaryReader) read_bytes_len(len int) ![]u8 {
 	return bytes
 }
 
-// i32 길이 접두사가 있는 바이트를 읽습니다.
-/// read_bytes는 길이 접두사(i32)가 있는 바이트 배열을 읽습니다.
+/// read_bytes reads a byte slice prefixed with an i32 length.
 pub fn (mut r BinaryReader) read_bytes() ![]u8 {
 	len := r.read_i32()!
 	return r.read_bytes_len(int(len))!
 }
 
-// UUID를 읽습니다 (16바이트, 고정 길이).
-/// read_uuid는 16바이트 UUID를 읽습니다.
+/// read_uuid reads a 16-byte fixed-length UUID.
 pub fn (mut r BinaryReader) read_uuid() ![]u8 {
 	if r.remaining() < 16 {
 		return error('not enough data for UUID')
@@ -265,7 +258,7 @@ pub fn (mut r BinaryReader) read_uuid() ![]u8 {
 	return uuid
 }
 
-/// read_compact_bytes는 compact 바이트 배열을 읽습니다 (부호 없는 varint 길이 + 1).
+/// read_compact_bytes reads a compact byte slice (unsigned varint length + 1).
 pub fn (mut r BinaryReader) read_compact_bytes() ![]u8 {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -280,13 +273,13 @@ pub fn (mut r BinaryReader) read_compact_bytes() ![]u8 {
 	return bytes
 }
 
-/// read_array_len은 배열 길이를 읽습니다 (i32, null 배열은 -1).
+/// read_array_len reads an array length (i32; -1 for null array).
 pub fn (mut r BinaryReader) read_array_len() !int {
 	len := r.read_i32()!
 	return int(len)
 }
 
-/// read_compact_array_len은 compact 배열 길이를 읽습니다 (부호 없는 varint, null은 0).
+/// read_compact_array_len reads a compact array length (unsigned varint; 0 means null).
 pub fn (mut r BinaryReader) read_compact_array_len() !int {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -295,7 +288,7 @@ pub fn (mut r BinaryReader) read_compact_array_len() !int {
 	return int(len) - 1
 }
 
-/// skip은 읽기 위치를 n바이트 앞으로 이동합니다.
+/// skip advances the read position by n bytes.
 pub fn (mut r BinaryReader) skip(n int) ! {
 	if r.remaining() < n {
 		return error('not enough data to skip')
@@ -303,7 +296,7 @@ pub fn (mut r BinaryReader) skip(n int) ! {
 	r.pos += n
 }
 
-/// read_bytes_view는 n바이트를 zero-copy ByteView로 읽습니다.
+/// read_bytes_view reads n bytes as a zero-copy ByteView.
 pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
 	if len < 0 {
 		return ByteView{}
@@ -320,15 +313,13 @@ pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
 	return view
 }
 
-// i32 길이 접두사가 있는 바이트를 zero-copy 뷰로 읽습니다.
-/// read_bytes_as_view는 길이 접두사가 있는 바이트 배열을 ByteView로 읽습니다.
+/// read_bytes_as_view reads an i32-length-prefixed byte slice as a zero-copy ByteView.
 pub fn (mut r BinaryReader) read_bytes_as_view() !ByteView {
 	len := r.read_i32()!
 	return r.read_bytes_view(int(len))!
 }
 
-// compact 바이트를 zero-copy 뷰로 읽습니다.
-/// read_compact_bytes_view는 compact 바이트를 ByteView로 읽습니다.
+/// read_compact_bytes_view reads compact bytes as a zero-copy ByteView.
 pub fn (mut r BinaryReader) read_compact_bytes_view() !ByteView {
 	len := r.read_uvarint()!
 	if len == 0 {
@@ -338,7 +329,7 @@ pub fn (mut r BinaryReader) read_compact_bytes_view() !ByteView {
 	return r.read_bytes_view(actual_len)!
 }
 
-// 위치를 이동하지 않고 다음 바이트를 미리 봅니다 (zero-copy).
+/// peek_bytes_view returns the next n bytes as a zero-copy ByteView without advancing the position.
 pub fn (r &BinaryReader) peek_bytes_view(len int) !ByteView {
 	if r.remaining() < len {
 		return error('not enough data to peek')
@@ -350,7 +341,7 @@ pub fn (r &BinaryReader) peek_bytes_view(len int) !ByteView {
 	}
 }
 
-// 남은 데이터를 뷰로 반환합니다.
+/// remaining_view returns the remaining unread data as a ByteView.
 pub fn (r &BinaryReader) remaining_view() ByteView {
 	return ByteView{
 		data:   r.data
@@ -359,13 +350,13 @@ pub fn (r &BinaryReader) remaining_view() ByteView {
 	}
 }
 
-/// read_i32는 빅 엔디안 형식의 부호 있는 32비트 정수를 읽습니다.
+/// read_i32_bytes reads an i32-length-prefixed byte slice.
 pub fn (mut r BinaryReader) read_i32_bytes() ![]u8 {
 	length := r.read_i32()!
 	return r.read_bytes_len(int(length))!
 }
 
-/// skip_tagged_fields는 Kafka 태그 필드를 건너뜁니다 (flexible 메시지 형식).
+/// skip_tagged_fields skips Kafka tagged fields (flexible message format).
 pub fn (mut r BinaryReader) skip_tagged_fields() ! {
 	num_fields := r.read_uvarint()!
 	for _ in 0 .. num_fields {
@@ -378,95 +369,97 @@ pub fn (mut r BinaryReader) skip_tagged_fields() ! {
 	}
 }
 
-// Flexible 버전 헬퍼
+// Flexible version helpers
+// These reduce code duplication when parsing flexible vs. non-flexible messages.
 
-// 이 헬퍼들은 flexible/non-flexible 메시지 파싱 시 코드 중복을 줄여줍니다.
-
-/// read_flex_string은 flexible이면 compact 형식, 아니면 표준 형식으로 문자열을 읽습니다.
+/// read_flex_string reads a string in compact format if flexible, otherwise in standard format.
 pub fn (mut r BinaryReader) read_flex_string(flexible bool) !string {
 	return if flexible { r.read_compact_string()! } else { r.read_string()! }
 }
 
-/// read_flex_nullable_string은 flexible이면 compact 형식으로 nullable 문자열을 읽습니다.
+/// read_flex_nullable_string reads a nullable string in compact format if flexible.
 pub fn (mut r BinaryReader) read_flex_nullable_string(flexible bool) !string {
 	return if flexible { r.read_compact_nullable_string()! } else { r.read_nullable_string()! }
 }
 
-/// read_flex_bytes는 flexible이면 compact 형식, 아니면 표준 형식으로 바이트를 읽습니다.
+/// read_flex_bytes reads bytes in compact format if flexible, otherwise in standard format.
 pub fn (mut r BinaryReader) read_flex_bytes(flexible bool) ![]u8 {
 	return if flexible { r.read_compact_bytes()! } else { r.read_bytes()! }
 }
 
-/// read_flex_array_len은 flexible이면 compact 형식으로 배열 길이를 읽습니다.
+/// read_flex_array_len reads an array length in compact format if flexible.
 pub fn (mut r BinaryReader) read_flex_array_len(flexible bool) !int {
 	return if flexible { r.read_compact_array_len()! } else { r.read_array_len()! }
 }
 
-/// skip_flex_tagged_fields는 flexible 형식일 때만 태그 필드를 건너뜁니다.
+/// skip_flex_tagged_fields skips tagged fields only when in flexible format.
 pub fn (mut r BinaryReader) skip_flex_tagged_fields(flexible bool) ! {
 	if flexible {
 		r.skip_tagged_fields()!
 	}
 }
 
-/// BinaryWriter - Kafka 바이너리 프로토콜을 인코딩하기 위한 라이터
+/// BinaryWriter - Writer for encoding the Kafka binary protocol
 pub struct BinaryWriter {
 pub mut:
 	data []u8
 }
 
-/// new_writer는 새로운 BinaryWriter를 생성합니다.
+/// new_writer creates a new BinaryWriter.
 pub fn new_writer() BinaryWriter {
 	return BinaryWriter{
 		data: []u8{}
 	}
 }
 
-/// new_writer_with_capacity는 지정된 용량으로 새로운 BinaryWriter를 생성합니다.
+/// new_writer_with_capacity creates a new BinaryWriter with the given initial capacity.
 pub fn new_writer_with_capacity(capacity int) BinaryWriter {
 	return BinaryWriter{
 		data: []u8{cap: capacity}
 	}
 }
 
+/// bytes returns the written bytes.
 pub fn (w &BinaryWriter) bytes() []u8 {
 	return w.data
 }
 
+/// len returns the number of bytes written.
 pub fn (w &BinaryWriter) len() int {
 	return w.data.len
 }
 
-/// write_i8은 부호 있는 8비트 정수를 씁니다.
+/// write_i8 writes a signed 8-bit integer.
 pub fn (mut w BinaryWriter) write_i8(val i8) {
 	w.data << u8(val)
 }
 
-/// write_i16은 빅 엔디안 형식의 부호 있는 16비트 정수를 씁니다.
+/// write_i16 writes a signed 16-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_i16(val i16) {
-	// bulk 쓰기로 최적화 (2번의 << 대신 1번)
+	// Optimized as a single bulk append instead of two separate appends
 	w.data << [u8(val >> 8), u8(val)]
 }
 
-/// write_i32는 빅 엔디안 형식의 부호 있는 32비트 정수를 씁니다.
+/// write_i32 writes a signed 32-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_i32(val i32) {
-	// bulk 쓰기로 최적화 (4번의 << 대신 1번)
+	// Optimized as a single bulk append instead of four separate appends
 	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
+/// write_u32 writes an unsigned 32-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_u32(val u32) {
-	// bulk 쓰기로 최적화 (4번의 << 대신 1번)
+	// Optimized as a single bulk append instead of four separate appends
 	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
-/// write_i64는 빅 엔디안 형식의 부호 있는 64비트 정수를 씁니다.
+/// write_i64 writes a signed 64-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_i64(val i64) {
-	// bulk 쓰기로 최적화 (8번의 << 대신 1번)
+	// Optimized as a single bulk append instead of eight separate appends
 	w.data << [u8(val >> 56), u8(val >> 48), u8(val >> 40), u8(val >> 32), u8(val >> 24),
 		u8(val >> 16), u8(val >> 8), u8(val)]
 }
 
-/// write_uvarint는 부호 없는 가변 길이 정수를 씁니다.
+/// write_uvarint writes an unsigned variable-length integer.
 pub fn (mut w BinaryWriter) write_uvarint(val u64) {
 	mut v := val
 	for v >= 0x80 {
@@ -476,22 +469,22 @@ pub fn (mut w BinaryWriter) write_uvarint(val u64) {
 	w.data << u8(v)
 }
 
-/// write_varint는 부호 있는 가변 길이 정수를 씁니다 (zigzag 인코딩).
+/// write_varint writes a signed variable-length integer (zigzag encoded).
 pub fn (mut w BinaryWriter) write_varint(val i64) {
-	// ZigZag 인코딩: 부호 있는 값을 부호 없는 값으로 변환
-	// 음수를 홀수 양수로, 양수를 짝수로 매핑
-	// -1 -> 1, 1 -> 2, -2 -> 3, 2 -> 4, 등
+	// ZigZag encoding: maps signed values to unsigned values
+	// Negative numbers map to odd positives; non-negative to even positives
+	// e.g. -1 -> 1, 1 -> 2, -2 -> 3, 2 -> 4
 	uval := (u64(val) << 1) ^ u64(val >> 63)
 	w.write_uvarint(uval)
 }
 
-/// write_string은 길이 접두사가 있는 문자열을 씁니다 (i16 길이).
+/// write_string writes a length-prefixed string (i16 length).
 pub fn (mut w BinaryWriter) write_string(s string) {
 	w.write_i16(i16(s.len))
 	w.data << s.bytes()
 }
 
-/// write_nullable_string은 nullable 문자열을 씁니다 (i16 길이, null은 -1).
+/// write_nullable_string writes a nullable string (i16 length; -1 for null).
 pub fn (mut w BinaryWriter) write_nullable_string(s ?string) {
 	if str := s {
 		w.write_i16(i16(str.len))
@@ -501,13 +494,13 @@ pub fn (mut w BinaryWriter) write_nullable_string(s ?string) {
 	}
 }
 
-/// write_compact_string은 compact 문자열을 씁니다 (부호 없는 varint 길이 + 1).
+/// write_compact_string writes a compact string (unsigned varint length + 1).
 pub fn (mut w BinaryWriter) write_compact_string(s string) {
 	w.write_uvarint(u64(s.len) + 1)
 	w.data << s.bytes()
 }
 
-/// write_compact_nullable_string은 compact nullable 문자열을 씁니다.
+/// write_compact_nullable_string writes a compact nullable string.
 pub fn (mut w BinaryWriter) write_compact_nullable_string(s ?string) {
 	if str := s {
 		w.write_uvarint(u64(str.len) + 1)
@@ -517,36 +510,35 @@ pub fn (mut w BinaryWriter) write_compact_nullable_string(s ?string) {
 	}
 }
 
-/// write_bytes는 길이 접두사가 있는 바이트 배열을 씁니다 (i32 길이).
+/// write_bytes writes a byte slice prefixed with an i32 length.
 pub fn (mut w BinaryWriter) write_bytes(b []u8) {
 	w.write_i32(i32(b.len))
 	w.data << b
 }
 
-/// write_compact_bytes는 compact 바이트 배열을 씁니다.
+/// write_compact_bytes writes a compact byte slice.
 pub fn (mut w BinaryWriter) write_compact_bytes(b []u8) {
 	w.write_uvarint(u64(b.len) + 1)
 	w.data << b
 }
 
-// UUID를 씁니다 (16바이트, 고정 길이).
-// uuid가 비어있거나 16바이트 미만이면 zero UUID를 씁니다.
-/// write_uuid는 16바이트 UUID를 씁니다.
+/// write_uuid writes a 16-byte fixed-length UUID.
+/// Writes a zero UUID if the slice is empty or shorter than 16 bytes.
 pub fn (mut w BinaryWriter) write_uuid(uuid []u8) {
 	if uuid.len >= 16 {
 		w.data << uuid[0..16]
 	} else {
-		// zero UUID 쓰기 (16바이트의 0) - 배열 한 번에 추가
+		// Write zero UUID (16 zero bytes) in a single append
 		w.data << []u8{len: 16, init: 0}
 	}
 }
 
-/// write_array_len은 배열 길이를 씁니다 (i32).
+/// write_array_len writes an array length as i32.
 pub fn (mut w BinaryWriter) write_array_len(len int) {
 	w.write_i32(i32(len))
 }
 
-/// write_compact_array_len은 compact 배열 길이를 씁니다.
+/// write_compact_array_len writes a compact array length.
 pub fn (mut w BinaryWriter) write_compact_array_len(len int) {
 	if len < 0 {
 		w.write_uvarint(0)
@@ -555,22 +547,23 @@ pub fn (mut w BinaryWriter) write_compact_array_len(len int) {
 	}
 }
 
-/// write_tagged_fields는 빈 태그 필드 섹션을 씁니다.
+/// write_tagged_fields writes an empty tagged fields section.
 pub fn (mut w BinaryWriter) write_tagged_fields() {
 	w.write_uvarint(0)
 }
 
-/// write_tagged_field_header는 태그 필드 헤더를 씁니다 (tag와 size).
+/// write_tagged_field_header writes a tagged field header (tag and size).
 pub fn (mut w BinaryWriter) write_tagged_field_header(tag int, size int) {
 	w.write_uvarint(u64(tag))
 	w.write_uvarint(u64(size))
 }
 
+/// write_raw appends raw bytes without any length prefix.
 pub fn (mut w BinaryWriter) write_raw(b []u8) {
 	w.data << b
 }
 
-/// ParsedRecordBatch는 파싱된 Kafka RecordBatch를 나타냅니다.
+/// ParsedRecordBatch represents a parsed Kafka RecordBatch.
 pub struct ParsedRecordBatch {
 pub mut:
 	base_offset            i64
@@ -586,8 +579,8 @@ pub mut:
 	records                []domain.Record
 }
 
-/// parse_record_batch는 Kafka RecordBatch(v2 형식, magic=2)를 파싱합니다.
-/// 파싱된 레코드를 반환하거나, 파싱 실패 시 빈 배열을 반환합니다.
+/// parse_record_batch parses a Kafka RecordBatch (v2 format, magic=2).
+/// Returns the parsed records, or an empty slice on failure.
 pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	if data.len < 12 {
 		return error('data too small')
@@ -595,7 +588,7 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 
 	mut reader := new_reader(data)
 
-	// RecordBatch header
+	// RecordBatch header fields
 	base_offset := reader.read_i64()!
 	batch_length := reader.read_i32()!
 
@@ -607,20 +600,19 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	magic := reader.read_i8()!
 
 	if magic != 2 {
-		// MessageSet v0, v1 (magic 0, 1) 지원
-		// 레거시 MessageSet 형식으로 파싱
+		// Fall back to legacy MessageSet format for magic 0 or 1
 		reader.pos = 0
 		return parse_message_set(data)!
 	}
 
-	// CRC32-C 검증: RecordBatch의 무결성을 확인
-	// CRC는 attributes 필드부터 배치 끝까지의 데이터를 커버
+	// CRC32-C validation: verifies RecordBatch integrity.
+	// CRC covers from the attributes field to the end of the batch.
 	stored_crc := u32(reader.read_i32()!)
 	crc_start_pos := reader.pos
 	crc_data := data[crc_start_pos..12 + int(batch_length)]
 	calculated_crc := crc32c_checksum(crc_data)
 	if stored_crc != calculated_crc {
-		return error('CRC32-C 검증 실패: 저장된 값=${stored_crc}, 계산된 값=${calculated_crc}')
+		return error('CRC32-C validation failed: stored=${stored_crc}, calculated=${calculated_crc}')
 	}
 
 	attributes := reader.read_i16()!
@@ -632,7 +624,7 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	base_sequence := reader.read_i32()!
 	record_count := reader.read_i32()!
 
-	// 레코드 파싱
+	// Parse records
 	mut records := []domain.Record{cap: int(record_count)}
 
 	for _ in 0 .. record_count {
@@ -655,23 +647,23 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	}
 }
 
-/// parse_nested_record_batch은 압축 해제 후 중첩 RecordBatch(Inner RecordBatch)를 파싱합니다.
+/// parse_nested_record_batch parses a nested (inner) RecordBatch after decompression.
 ///
-/// Kafka RecordBatch 압축 구조:
+/// Kafka RecordBatch compression structure:
 /// ┌────────────────────────────────────────────────────────┐
-/// │ Outer RecordBatch Header (61 bytes)                 │
+/// │ Outer RecordBatch Header (61 bytes)                    │
 /// ├────────────────────────────────────────────────────────┤
-/// │ Compressed Inner RecordBatch                         │
-/// │ - last_offset_delta (relative offset)                │
-/// │ - batch_length                                     │
-/// │ - attributes (압축 없음)                          │
-/// │ - timestamps                                      │
+/// │ Compressed Inner RecordBatch                           │
+/// │ - last_offset_delta (relative offset)                  │
+/// │ - batch_length                                         │
+/// │ - attributes (no compression flag)                     │
+/// │ - timestamps                                           │
 /// ├────────────────────────────────────────────────────────┤
-/// │ Records                                            │
+/// │ Records                                                │
 /// └────────────────────────────────────────────────────────┘
 ///
-/// 압축 해제된 데이터는 중첩 RecordBatch 형식이므로,
-/// base_offset 없이 last_offset_delta로 시작합니다.
+/// The decompressed data is in nested RecordBatch format,
+/// starting with last_offset_delta instead of base_offset.
 pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
 	if data.len < 20 {
 		return error('nested record batch too small')
@@ -679,13 +671,13 @@ pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
 
 	mut reader := new_reader(data)
 
-	// 중첩 RecordBatch 헤더 (Kafka RecordBatch와 다름)
-	// 1. last_offset_delta (4 bytes): 외부 RecordBatch base_offset에 더할 오프셋
-	// 2. batch_length (4 bytes): 레코드 데이터 길이 (헤더 포함)
-	// 3. partition_leader_epoch (4 bytes): 파티션 리더 에폭
+	// Nested RecordBatch header layout (differs from outer RecordBatch):
+	// 1. last_offset_delta (4 bytes): offset to add to outer RecordBatch base_offset
+	// 2. batch_length (4 bytes): length of record data including header
+	// 3. partition_leader_epoch (4 bytes): partition leader epoch
 	// 4. magic (1 byte): 2 (RecordBatch v2)
-	// 5. CRC (4 bytes): CRC32-C (선택사항, 일부 클라이언트는 생략)
-	// 나머지는 일반 RecordBatch와 동일
+	// 5. CRC (4 bytes): CRC32-C (optional; some clients omit this)
+	// Remaining fields are identical to a standard RecordBatch
 
 	last_offset_delta := reader.read_i32()!
 	batch_length := reader.read_i32()!
@@ -696,21 +688,20 @@ pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
 		return error('nested record batch has invalid magic: ${magic}')
 	}
 
-	// CRC32-C 검증 (선택사항)
-	// Kafka는 중첩 RecordBatch CRC를 항상 포함하지 않음
-	// CRC가 있다면 attributes부터 batch_length까지
+	// CRC32-C validation (optional)
+	// Kafka does not always include a CRC in nested RecordBatches.
+	// When present, it covers from attributes to the end of the batch.
 	stored_crc := u32(reader.read_i32()!)
 	crc_start_pos := reader.pos
 	crc_data := data[crc_start_pos..20 + int(batch_length)]
 
-	// CRC 검증 실패해도 계속 진행 (일부 클라이언트 호환성)
+	// Continue even if CRC validation fails (compatibility with some clients)
 	calculated_crc := crc32c_checksum(crc_data)
 	if stored_crc != calculated_crc {
-		// CRC 검증 실패 시 로그만 남기고 계속 진행
-		// (Kafka 호환성을 위해)
+		// Log-only on CRC mismatch; continue for Kafka client compatibility
 	}
 
-	// 나머지 헤더 필드 (일반 RecordBatch와 동일)
+	// Remaining header fields are the same as a standard RecordBatch
 	attributes := reader.read_i16()!
 	first_timestamp := reader.read_i64()!
 	max_timestamp := reader.read_i64()!
@@ -719,14 +710,14 @@ pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
 	base_sequence := reader.read_i32()!
 	record_count := reader.read_i32()!
 
-	// 레코드 파싱
+	// Parse records
 	mut records := []domain.Record{cap: int(record_count)}
 	for _ in 0 .. record_count {
 		record := parse_record(mut reader, first_timestamp) or { break }
 		records << record
 	}
 
-	// base_offset은 외부 RecordBatch에서 옴 (0으로 초기화)
+	// base_offset comes from the outer RecordBatch (initialized to 0)
 	return ParsedRecordBatch{
 		base_offset:            0
 		partition_leader_epoch: partition_leader_epoch
@@ -742,12 +733,12 @@ pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
 	}
 }
 
-/// parse_message_set은 레거시 MessageSet 형식(v0, v1 - magic 0, 1)을 파싱합니다.
+/// parse_message_set parses the legacy MessageSet format (v0/v1, magic 0 or 1).
 fn parse_message_set(data []u8) !ParsedRecordBatch {
 	mut reader := new_reader(data)
 	mut records := []domain.Record{}
 
-	// MessageSet은 [offset, size, message]의 배열
+	// MessageSet is an array of [offset, size, message] entries
 	for reader.remaining() > 12 {
 		_ := reader.read_i64() or { break }
 		message_size := reader.read_i32() or { break }
@@ -756,22 +747,22 @@ fn parse_message_set(data []u8) !ParsedRecordBatch {
 			break
 		}
 
-		// 메시지 파싱: [crc, magic, attributes, key, value]
+		// Parse message: [crc, magic, attributes, key, value]
 		start_pos := reader.pos
 		_ = reader.read_i32() or { break }
 		magic := reader.read_i8() or { break }
 		_ = reader.read_i8() or { break }
 
-		// v1은 timestamp 추가
+		// v1 adds a timestamp field
 		mut timestamp := time.now()
 		if magic >= 1 {
 			ts_millis := reader.read_i64() or { break }
 			timestamp = time.unix(ts_millis / 1000)
 		}
 
-		// 키
+		// Key
 		key := reader.read_bytes() or { break }
-		// 값
+		// Value
 		value := reader.read_bytes() or { break }
 
 		records << domain.Record{
@@ -781,7 +772,7 @@ fn parse_message_set(data []u8) !ParsedRecordBatch {
 			timestamp: timestamp
 		}
 
-		// 정확히 message_size 바이트를 소비했는지 확인
+		// Advance by exactly message_size bytes
 		reader.pos = start_pos + int(message_size)
 	}
 
@@ -800,15 +791,15 @@ fn parse_message_set(data []u8) !ParsedRecordBatch {
 	}
 }
 
-/// parse_record는 RecordBatch v2에서 단일 Record를 파싱합니다.
-/// 최적화: 가능한 경우 zero-copy를 위해 ByteView를 사용합니다.
+/// parse_record parses a single Record from a RecordBatch v2.
+/// Uses ByteView for zero-copy reads where possible.
 fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 	_ = reader.read_varint()!
 	_ = reader.read_i8()!
 	timestamp_delta := reader.read_varint()!
 	_ = reader.read_varint()!
 
-	// 키 - 뷰를 사용하고 저장할 때만 소유권 복사로 변환
+	// Key - use a view and copy to owned only when storing
 	key_length := reader.read_varint()!
 	mut key := []u8{}
 	if key_length > 0 {
@@ -816,7 +807,7 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 		key = key_view.to_owned()
 	}
 
-	// 값 - 뷰를 사용하고 저장할 때만 소유권 복사로 변환
+	// Value - use a view and copy to owned only when storing
 	value_length := reader.read_varint()!
 	mut value := []u8{}
 	if value_length > 0 {
@@ -824,7 +815,7 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 		value = value_view.to_owned()
 	}
 
-	// 헤더
+	// Headers
 	headers_count := reader.read_varint()!
 	mut headers := map[string][]u8{}
 
@@ -848,7 +839,7 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 		}
 	}
 
-	// 타임스탬프 계산
+	// Compute timestamp
 	ts_millis := base_timestamp + timestamp_delta
 	ts := time.unix(ts_millis / 1000)
 
@@ -860,13 +851,12 @@ fn parse_record(mut reader BinaryReader, base_timestamp i64) !domain.Record {
 	}
 }
 
-/// crc32c_checksum은 CRC-32C (Castagnoli) 체크섬을 계산합니다.
-/// 최적화된 crc32c 모듈을 사용합니다.
+/// crc32c_checksum computes a CRC-32C (Castagnoli) checksum using the optimized crc32c module.
 fn crc32c_checksum(data []u8) u32 {
 	return crc32c.calculate(data)
 }
 
-/// encode_record_batch는 레코드들을 Kafka RecordBatch v2 형식으로 인코딩합니다.
+/// encode_record_batch encodes records into the Kafka RecordBatch v2 format.
 pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 	if records.len == 0 {
 		return []u8{}
@@ -874,15 +864,15 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 
 	mut writer := new_writer()
 
-	// 레코드에서 타임스탬프 계산
-	// 첫 번째 레코드의 타임스탬프를 기준으로 사용 (타임스탬프가 없으면 현재 시간)
+	// Compute timestamps from records.
+	// Use the first record's timestamp as the base; fall back to now if unset.
 	first_timestamp := if records[0].timestamp.unix() > 0 {
 		records[0].timestamp.unix() * 1000
 	} else {
 		time.now().unix() * 1000
 	}
 
-	// 최대 타임스탬프 찾기
+	// Find the maximum timestamp across all records
 	mut max_timestamp := first_timestamp
 	for record in records {
 		ts := record.timestamp.unix() * 1000
@@ -891,7 +881,7 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 		}
 	}
 
-	// 배치 크기 계산을 위해 먼저 레코드 인코딩
+	// Encode records first to determine batch size
 	mut records_data := new_writer()
 	for i, record in records {
 		encode_record(mut records_data, record, i, first_timestamp)
@@ -899,9 +889,10 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 
 	records_bytes := records_data.bytes()
 
-	// CRC 계산을 위한 데이터 구성
-	// 중요: CRC-32C는 attributes부터 배치 끝까지 커버 (partitionLeaderEpoch부터가 아님!)
-	// Kafka 스펙에 따라: CRC = crc32c(attributes...end_of_batch)
+	// Build the data covered by the CRC.
+	// Per the Kafka spec, CRC-32C covers from attributes to the end of the batch
+	// (not from partitionLeaderEpoch).
+	// CRC = crc32c(attributes...end_of_batch)
 	mut crc_data := new_writer()
 	crc_data.write_i16(0)
 	crc_data.write_i32(i32(records.len - 1))
@@ -911,17 +902,17 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 	crc_data.write_i16(-1)
 	crc_data.write_i32(-1)
 	crc_data.write_i32(i32(records.len))
-	// 참고: delete_horizon_ms가 지원되면 (attributes bit 5가 control batch인 경우),
-	// baseSequence 이후, recordCount 이전에 삽입되어야 함.
-	// 현재는 delete_horizon_ms를 지원하지 않음.
+	// Note: if delete_horizon_ms is supported (attributes bit 5 = control batch),
+	// it must be inserted after baseSequence and before recordCount.
+	// delete_horizon_ms is not supported at this time.
 	crc_data.write_raw(records_bytes)
 
 	crc_bytes := crc_data.bytes()
-	// crc_data에 대한 CRC-32C (Castagnoli)
+	// Compute CRC-32C (Castagnoli) over crc_data
 	crc := crc32c_checksum(crc_bytes)
 
-	// RecordBatch 헤더 필드
-	// batchLength = partitionLeaderEpoch부터 끝까지
+	// RecordBatch header fields
+	// batchLength covers from partitionLeaderEpoch to the end of the batch
 	batch_length := 4 + 1 + 4 + crc_bytes.len
 
 	writer.write_i64(base_offset)
@@ -934,21 +925,21 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 	return writer.bytes()
 }
 
-/// encode_record는 단일 레코드를 RecordBatch v2 형식으로 인코딩합니다.
+/// encode_record encodes a single record in RecordBatch v2 format.
 fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int, base_timestamp i64) {
-	// 길이 계산을 위해 먼저 레코드 본문 구성
+	// Build the record body first to compute its length
 	mut body := new_writer()
 
 	body.write_i8(0)
 
-	// 타임스탬프 델타
+	// Timestamp delta
 	ts_millis := record.timestamp.unix() * 1000
 	body.write_varint(ts_millis - base_timestamp)
 
-	// 오프셋 델타
+	// Offset delta
 	body.write_varint(i64(offset_delta))
 
-	// 키
+	// Key
 	if record.key.len > 0 {
 		body.write_varint(i64(record.key.len))
 		body.write_raw(record.key)
@@ -956,7 +947,7 @@ fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int
 		body.write_varint(-1)
 	}
 
-	// 값
+	// Value
 	if record.value.len > 0 {
 		body.write_varint(i64(record.value.len))
 		body.write_raw(record.value)
@@ -964,21 +955,22 @@ fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int
 		body.write_varint(-1)
 	}
 
-	// 레코드 헤더 (키-값 쌍)
-	// 참고: 헤더 키와 값 모두 VARINT 길이 접두사가 있는 원시 바이트로 처리됨
-	// 헤더 키 형식: VARINT(key_length) + BYTES(key)
-	// 헤더 값 형식: VARINT(value_length) + BYTES(value)
+	// Record headers (key-value pairs)
+	// Both header key and value are encoded as raw bytes with a VARINT length prefix
+	// (not as STRING type — no null marker).
+	// Header key format:   VARINT(key_length)   + BYTES(key)
+	// Header value format: VARINT(value_length) + BYTES(value)
 	body.write_varint(i64(record.headers.len))
 	for key, value in record.headers {
-		// 헤더 키를 바이트로 (STRING 타입이 아님 - null 마커 없음)
+		// Header key as bytes (not STRING type — no null marker)
 		body.write_varint(i64(key.len))
 		body.write_raw(key.bytes())
-		// 헤더 값을 바이트로
+		// Header value as bytes
 		body.write_varint(i64(value.len))
 		body.write_raw(value)
 	}
 
-	// 길이 + 본문 쓰기
+	// Write length prefix followed by the record body
 	body_bytes := body.bytes()
 	writer.write_varint(i64(body_bytes.len))
 	writer.write_raw(body_bytes)

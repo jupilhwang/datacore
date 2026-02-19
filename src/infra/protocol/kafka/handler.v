@@ -1,8 +1,8 @@
-// 메인 핸들러 구조체 및 요청 라우팅
+// Main handler struct and request routing
 //
-// 이 모듈은 Kafka 프로토콜의 핵심 핸들러를 구현합니다.
-// 클라이언트 요청을 파싱하고 적절한 API 핸들러로 라우팅하여
-// 응답을 생성합니다.
+// This module implements the core Kafka protocol handler.
+// It parses client requests, routes them to the appropriate API handler,
+// and produces responses.
 module kafka
 
 import infra.compression
@@ -17,14 +17,14 @@ import service.transaction
 import time
 import domain
 
-// PartitionAssigner는 파티션 할당 서비스를 위한 포인터 타입입니다.
-// service.cluster 모듈의 PartitionAssigner를 참조합니다.
+/// PartitionAssignerPtr is a pointer type for the partition assignment service,
+/// referencing PartitionAssigner from the service.cluster module.
 pub type PartitionAssignerPtr = &cluster.PartitionAssigner
 
-/// 프로토콜 핸들러 - Kafka 요청을 처리하고 응답을 생성하는 핵심 구조체
+/// Handler is the core protocol handler that processes Kafka requests and produces responses.
 ///
-/// Handler는 브로커의 모든 Kafka API 요청을 처리합니다.
-/// 스토리지, 인증, ACL, 트랜잭션 코디네이터 등 다양한 컴포넌트와 연동됩니다.
+/// It handles all Kafka API requests for the broker and integrates with
+/// storage, authentication, ACL, transaction coordinator, and other components.
 pub struct Handler {
 	broker_id   i32
 	host        string
@@ -45,10 +45,10 @@ mut:
 	compression_service     &compression.CompressionService
 }
 
-/// 스토리지와 함께 새로운 Kafka 프로토콜 핸들러를 생성합니다.
+/// new_handler creates a new Kafka protocol handler with storage only.
 ///
-/// 기본 핸들러로, 인증이나 ACL 없이 스토리지만 사용합니다.
-/// 개발/테스트 환경에 적합합니다.
+/// This is the basic handler with no authentication or ACL.
+/// Suitable for development and testing environments.
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
@@ -73,9 +73,9 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 	}
 }
 
-/// 스토리지와 인증 매니저를 포함한 새로운 Kafka 프로토콜 핸들러를 생성합니다.
+/// new_handler_with_auth creates a new Kafka protocol handler with storage and an auth manager.
 ///
-/// SASL 인증이 필요한 환경에서 사용합니다.
+/// Use this in environments that require SASL authentication.
 pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
@@ -100,9 +100,9 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 	}
 }
 
-/// 모든 컴포넌트를 포함한 완전한 Kafka 프로토콜 핸들러를 생성합니다.
+/// new_handler_full creates a fully configured Kafka protocol handler with all components.
 ///
-/// 프로덕션 환경에서 인증, ACL, 트랜잭션을 모두 지원할 때 사용합니다.
+/// Use this in production when authentication, ACL, and transactions are all required.
 pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
@@ -127,9 +127,9 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 	}
 }
 
-/// Share Group 지원을 포함한 Kafka 프로토콜 핸들러를 생성합니다 (KIP-932).
+/// new_handler_with_share_groups creates a Kafka protocol handler with Share Group support (KIP-932).
 ///
-/// 큐 기반 메시지 소비 패턴을 지원합니다.
+/// Supports queue-based message consumption patterns.
 pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator, compression_service &compression.CompressionService) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	offset_mgr := offset.new_offset_manager(storage, logger)
@@ -154,77 +154,77 @@ pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32
 	}
 }
 
-/// 멀티 브로커 모드를 위한 브로커 레지스트리를 설정합니다.
+/// set_broker_registry sets the broker registry for multi-broker mode.
 ///
-/// 클러스터 환경에서 브로커 간 조정을 위해 사용됩니다.
+/// Used for broker-to-broker coordination in a cluster environment.
 pub fn (mut h Handler) set_broker_registry(registry &cluster.BrokerRegistry) {
 	h.broker_registry = registry
 }
 
-/// 핸들러에 Share Group 코디네이터를 설정합니다.
+/// set_share_group_coordinator sets the Share Group coordinator on the handler.
 pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroupCoordinator) {
 	h.share_group_coordinator = coordinator
 }
 
-/// 핸들러에 스키마 레지스트리를 설정합니다.
+/// set_schema_registry sets the schema registry on the handler.
 pub fn (mut h Handler) set_schema_registry(registry &schema.SchemaRegistry) {
 	h.schema_registry = registry
 }
 
-/// get_topic_schema는 토픽의 스키마 설정을 조회합니다.
+/// get_topic_schema retrieves the schema configuration for a topic.
 fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 	if mut registry := h.schema_registry {
-		// 토픽 메타데이터에서 스키마 설정 조회
+		// Look up schema configuration from topic metadata
 		if topic_meta := h.storage.get_topic(topic_name) {
 			schema_subject := topic_meta.config['schema.subject'] or { return none }
 			schema_version_str := topic_meta.config['schema.version'] or { '1' }
 			schema_version := schema_version_str.int()
 
-			// 스키마 조회 (version -1은 최신 버전)
+			// Retrieve schema (version -1 means latest)
 			return registry.get_schema_by_subject(schema_subject, schema_version) or { return none }
 		}
 	}
 	return none
 }
 
-/// encode_record_with_schema는 레코드를 스키마에 따라 인코딩합니다.
-/// 현재는 스키마 구성을 확인하고 로깅만 수행합니다.
-/// 실제 인코딩은 encoder 모듈이 수정된 후 활성화됩니다.
+/// encode_record_with_schema encodes a record according to a schema.
+/// Currently only validates schema configuration and logs.
+/// Actual encoding will be activated after the encoder module is updated.
 fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema_obj &domain.Schema) ![]u8 {
-	// 스키마 로깅 (인코딩은 encoder 모듈 수정 후 구현)
+	// Log schema info; encoding will be implemented after encoder module update
 	h.logger.debug('Schema encoding configured', observability.field_string('schema_type',
 		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
-	// 현재는 원본 레코드 값을 반환 (encoder 모듈 수정 후 실제 인코딩 구현)
+	// Return original value for now; real encoding will be added after encoder module update
 	return record.value
 }
 
-/// decode_record_with_schema는 스키마에 따라 레코드를 디코딩합니다.
-/// 현재는 스키마 구성을 확인하고 로깅만 수행합니다.
-/// 실제 디코딩은 encoder 모듈이 수정된 후 활성화됩니다.
+/// decode_record_with_schema decodes a record according to a schema.
+/// Currently only validates schema configuration and logs.
+/// Actual decoding will be activated after the encoder module is updated.
 fn (mut h Handler) decode_record_with_schema(record_data []u8, schema_obj &domain.Schema) ![]u8 {
-	// 스키마 로깅 (디코딩은 encoder 모듈 수정 후 구현)
+	// Log schema info; decoding will be implemented after encoder module update
 	h.logger.debug('Schema decoding configured', observability.field_string('schema_type',
 		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
-	// 현재는 원본 데이터를 반환 (encoder 모듈 수정 후 실제 디코딩 구현)
+	// Return original data for now; real decoding will be added after encoder module update
 	return record_data
 }
 
-/// 핸들러에 파티션 할당 서비스를 설정합니다.
-/// 동적 파티션 할당을 위해 사용됩니다.
+/// set_partition_assigner sets the partition assignment service on the handler.
+/// Used for dynamic partition assignment.
 pub fn (mut h Handler) set_partition_assigner(assigner PartitionAssignerPtr) {
 	h.partition_assigner = assigner
 }
 
-/// 수신된 요청을 처리하고 응답 바이트를 반환합니다 (레거시 메서드).
+/// handle_request processes a received request and returns response bytes (legacy method).
 ///
-/// 이 메서드는 원시 바이트 데이터를 받아 파싱하고,
-/// 적절한 API 핸들러로 라우팅한 후 응답을 생성합니다.
+/// Accepts raw byte data, parses it, routes it to the appropriate API handler,
+/// and produces a response.
 pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 	start_time := time.now()
 
-	// 요청 파싱
+	// Parse request
 	req := parse_request(data) or {
 		h.logger.error('Failed to parse request', observability.field_err_str(err.str()),
 			observability.field_bytes('request_size', data.len))
@@ -239,7 +239,7 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 		observability.field_int('version', version), observability.field_int('correlation_id',
 		correlation_id), observability.field_bytes('request_size', data.len))
 
-	// API 키에 따라 처리
+	// Dispatch based on API key
 	mut response_body := []u8{}
 	mut success := true
 
@@ -449,16 +449,16 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 	elapsed := time.since(start_time)
 	latency_ms := elapsed.milliseconds()
 
-	// 메트릭 기록
+	// Record metrics
 	h.metrics.record_request(api_key.str(), latency_ms, success, data.len, response_body.len)
 
 	h.logger.debug('Request completed', observability.field_string('api', api_key.str()),
 		observability.field_int('correlation_id', correlation_id), observability.field_bytes('response_size',
 		response_body.len), observability.field_duration('latency', elapsed))
 
-	// 헤더와 함께 응답 빌드
-	// 참고: ApiVersions는 특별함 - v3+에서도 항상 non-flexible 헤더 사용
-	// 클라이언트가 아직 서버 기능을 모르기 때문
+	// Build response with header.
+	// Note: ApiVersions always uses a non-flexible header, even for v3+,
+	// because the client does not yet know the server capabilities.
 	if api_key == .api_versions {
 		return build_response(correlation_id, response_body)
 	}
@@ -470,12 +470,12 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 	return build_response(correlation_id, response_body)
 }
 
-/// 수신된 Frame을 처리하고 응답 Frame을 반환합니다.
+/// handle_frame processes a received Frame and returns a response Frame.
 ///
-/// 이것이 요청을 처리하는 권장 방법입니다.
-/// Frame 기반 처리는 더 나은 타입 안전성과 구조화된 처리를 제공합니다.
+/// This is the preferred way to handle requests.
+/// Frame-based processing provides better type safety and structured handling.
 pub fn (mut h Handler) handle_frame(frame Frame) !Frame {
-	// 요청 헤더 정보 추출
+	// Extract request header information
 	req_header := match frame.header {
 		FrameRequestHeader { frame.header as FrameRequestHeader }
 		else { return error('expected request header') }
@@ -485,14 +485,14 @@ pub fn (mut h Handler) handle_frame(frame Frame) !Frame {
 	version := req_header.api_version
 	correlation_id := req_header.correlation_id
 
-	// 타입에 따라 본문 처리 후 응답 본문 반환
+	// Process body by type and return the response body
 	response_body := h.process_body(frame.body, api_key, version)!
 
-	// 응답 프레임 빌드
+	// Build response frame
 	return frame_response(correlation_id, api_key, version, response_body)
 }
 
-// 본문을 처리하고 응답 본문을 반환합니다.
+// process_body dispatches the body to the appropriate handler and returns the response body.
 fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
 	return match body {
 		ApiVersionsRequest {
@@ -561,51 +561,51 @@ fn (mut h Handler) process_body(body Body, api_key ApiKey, version i16) !Body {
 	}
 }
 
-// 최소한의 (빈) 컨슈머 그룹 할당 페이로드를 빌드합니다.
+// empty_consumer_assignment builds a minimal (empty) consumer group assignment payload.
 fn empty_consumer_assignment() []u8 {
 	mut writer := new_writer()
-	// 컨슈머 프로토콜 버전
+	// Consumer protocol version
 	writer.write_i16(0)
-	// 할당 배열 길이 (0개 토픽)
+	// Assignment array length (0 topics)
 	writer.write_i32(0)
-	// 사용자 데이터 길이 (0)
+	// User data length (0)
 	writer.write_i32(0)
 	return writer.bytes()
 }
 
-// 설정값을 i64로 파싱하는 헬퍼 함수
+// parse_config_i64 parses a configuration value as i64.
 fn parse_config_i64(configs map[string]string, key string, default_val i64) i64 {
 	val := configs[key] or { return default_val }
 	return val.i64()
 }
 
-// 설정값을 int로 파싱하는 헬퍼 함수
+// parse_config_int parses a configuration value as int.
 fn parse_config_int(configs map[string]string, key string, default_val int) int {
 	val := configs[key] or { return default_val }
 	return val.int()
 }
 
-// 랜덤 UUID v4를 생성합니다 (16바이트).
+// generate_uuid generates a random UUID v4 (16 bytes).
 fn generate_uuid() []u8 {
-	// 배열 초기화와 함께 랜덤 값 생성 최적화
+	// Initialize array with random values
 	mut uuid := []u8{len: 16, init: u8(rand.int_in_range(0, 256) or { 0 })}
-	// 버전 (4) 및 변형 (RFC 4122) 설정
+	// Set version (4) and variant (RFC 4122) bits
 	uuid[6] = (uuid[6] & 0x0f) | 0x40
 	uuid[8] = (uuid[8] & 0x3f) | 0x80
 	return uuid
 }
 
-/// get_metrics_summary는 프로토콜 메트릭 요약을 반환합니다.
+/// get_metrics_summary returns a summary of protocol metrics.
 pub fn (mut h Handler) get_metrics_summary() string {
 	return h.metrics.get_summary()
 }
 
-/// get_metrics는 프로토콜 메트릭 구조체를 반환합니다.
+/// get_metrics returns the protocol metrics struct.
 pub fn (mut h Handler) get_metrics() &observability.ProtocolMetrics {
 	return h.metrics
 }
 
-/// reset_metrics는 모든 프로토콜 메트릭을 초기화합니다.
+/// reset_metrics resets all protocol metrics.
 pub fn (mut h Handler) reset_metrics() {
 	h.metrics.reset()
 }

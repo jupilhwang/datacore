@@ -1,12 +1,12 @@
-// Kafka Record를 Parquet 파일 형식으로 인코딩합니다.
-// 참고: V 언어에서는 C 라이브러리를 사용하여 Parquet 처리를 수행합니다.
+// Encodes Kafka Records to Parquet file format.
+// Note: In V language, Parquet processing is performed using C libraries.
 module encoding
 
 import domain
 import time
 import json
 
-/// ParquetCompression은 Parquet 파일 압축 방식을 나타냅니다.
+/// ParquetCompression represents the compression method for Parquet files.
 pub enum ParquetCompression {
 	uncompressed
 	snappy
@@ -17,7 +17,7 @@ pub enum ParquetCompression {
 	zstd
 }
 
-/// ParquetCompression을 문자열로 변환합니다.
+/// Converts ParquetCompression to a string.
 pub fn (pc ParquetCompression) str() string {
 	return match pc {
 		.uncompressed { 'UNCOMPRESSED' }
@@ -30,7 +30,7 @@ pub fn (pc ParquetCompression) str() string {
 	}
 }
 
-/// 문자열에서 ParquetCompression을 파싱합니다.
+/// Parses ParquetCompression from a string.
 pub fn parquet_compression_from_string(s string) !ParquetCompression {
 	return match s.to_lower() {
 		'uncompressed', 'none' { ParquetCompression.uncompressed }
@@ -44,13 +44,13 @@ pub fn parquet_compression_from_string(s string) !ParquetCompression {
 	}
 }
 
-/// ParquetSchema는 Parquet 파일의 스키마를 나타냅니다.
+/// ParquetSchema represents the schema of a Parquet file.
 pub struct ParquetSchema {
 pub mut:
 	columns []ParquetColumn
 }
 
-/// ParquetColumn은 Parquet 컬럼 정의를 나타냅니다.
+/// ParquetColumn represents a Parquet column definition.
 pub struct ParquetColumn {
 pub mut:
 	name     string
@@ -58,7 +58,7 @@ pub mut:
 	required bool
 }
 
-/// ParquetDataType은 Parquet 데이터 타입을 나타냅니다.
+/// ParquetDataType represents a Parquet data type.
 pub enum ParquetDataType {
 	boolean
 	int32
@@ -71,15 +71,15 @@ pub enum ParquetDataType {
 	timestamp_micros
 }
 
-/// ParquetRowGroup는 Parquet 파일의 Row Group을 나타냅니다.
-/// Parquet 파일은 여러 Row Group으로 구성됩니다.
+/// ParquetRowGroup represents a Row Group in a Parquet file.
+/// A Parquet file is composed of multiple Row Groups.
 pub struct ParquetRowGroup {
 pub mut:
 	row_count int
 	columns   []ParquetColumnChunk
 }
 
-/// ParquetColumnChunk는 컬럼 청크를 나타냅니다.
+/// ParquetColumnChunk represents a column chunk.
 pub struct ParquetColumnChunk {
 pub mut:
 	column_name string
@@ -92,7 +92,7 @@ pub mut:
 	compression ParquetCompression
 }
 
-/// ParquetMetadata는 Parquet 파일 메타데이터를 나타냅니다.
+/// ParquetMetadata represents Parquet file metadata.
 pub struct ParquetMetadata {
 pub mut:
 	schema      ParquetSchema
@@ -103,8 +103,8 @@ pub mut:
 	file_size   i64
 }
 
-/// ParquetRecord는 Parquet 파일에 쓸 레코드를 나타냅니다.
-/// Kafka Record에서 변환된 형식입니다.
+/// ParquetRecord represents a record to be written to a Parquet file.
+/// This is a format converted from a Kafka Record.
 pub struct ParquetRecord {
 pub mut:
 	offset    i64
@@ -116,7 +116,7 @@ pub mut:
 	headers   string
 }
 
-/// ParquetEncoder는 Kafka Record를 Parquet 형식으로 인코딩합니다.
+/// ParquetEncoder encodes Kafka Records to Parquet format.
 pub struct ParquetEncoder {
 pub mut:
 	compression   ParquetCompression
@@ -126,7 +126,7 @@ pub mut:
 	max_file_size i64
 }
 
-/// new_parquet_encoder는 새로운 Parquet 인코더를 생성합니다.
+/// new_parquet_encoder creates a new Parquet encoder.
 pub fn new_parquet_encoder(compression string, max_file_size_mb int) !&ParquetEncoder {
 	comp := parquet_compression_from_string(compression)!
 
@@ -139,7 +139,7 @@ pub fn new_parquet_encoder(compression string, max_file_size_mb int) !&ParquetEn
 	}
 }
 
-/// default_parquet_schema는 기본 Kafka 레코드 Parquet 스키마를 반환합니다.
+/// default_parquet_schema returns the default Kafka record Parquet schema.
 pub fn default_parquet_schema() ParquetSchema {
 	return ParquetSchema{
 		columns: [
@@ -182,9 +182,9 @@ pub fn default_parquet_schema() ParquetSchema {
 	}
 }
 
-/// add_record은 Kafka Record를 Parquet 레코드로 변환하여 추가합니다.
+/// add_record converts a Kafka Record to a Parquet record and adds it.
 pub fn (mut e ParquetEncoder) add_record(topic string, partition int, record domain.Record, offset i64) ! {
-	// 헤더를 JSON 문자열로 변환
+	// Convert headers to JSON string
 	mut headers_json := '{}'
 	if record.headers.len > 0 {
 		mut headers_map := map[string]string{}
@@ -205,43 +205,43 @@ pub fn (mut e ParquetEncoder) add_record(topic string, partition int, record dom
 	}
 
 	e.records << prec
-	// 레코드 크기 추정 (실제 Parquet 인코딩은 더 복잡함)
+	// Estimate record size (actual Parquet encoding is more complex)
 	e.current_size += i64(record.key.len + record.value.len + 100)
 }
 
-/// add_records은 여러 Kafka Record를 한번에 추가합니다.
+/// add_records adds multiple Kafka Records at once.
 pub fn (mut e ParquetEncoder) add_records(topic string, partition int, records []domain.Record, start_offset i64) ! {
 	for i, record in records {
 		e.add_record(topic, partition, record, start_offset + i64(i))!
 	}
 }
 
-/// should_flush는 플러시가 필요한지 확인합니다.
+/// should_flush checks whether a flush is needed.
 pub fn (e &ParquetEncoder) should_flush(max_rows int) bool {
 	return e.records.len >= max_rows || e.current_size >= e.max_file_size
 }
 
-/// record_count은 현재 버퍼에 있는 레코드 수를 반환합니다.
+/// record_count returns the number of records currently in the buffer.
 pub fn (e &ParquetEncoder) record_count() int {
 	return e.records.len
 }
 
-/// reset은 인코더를 초기화합니다.
+/// reset resets the encoder.
 pub fn (mut e ParquetEncoder) reset() {
 	e.records = []
 	e.buffer = []
 	e.current_size = 0
 }
 
-/// encode는 현재 버퍼의 모든 레코드를 Parquet 형식으로 인코딩합니다.
-/// 반환값: (Parquet 파일 데이터, 메타데이터)
-/// 참고: 실제 Parquet 인코딩은 복잡하므로 여기서는 간략화된 구조만 제공합니다.
+/// encode encodes all records in the current buffer to Parquet format.
+/// Returns: (Parquet file data, metadata)
+/// Note: Actual Parquet encoding is complex; only a simplified structure is provided here.
 pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	if e.records.len == 0 {
 		return error('no records to encode')
 	}
 
-	// Parquet 메타데이터 생성
+	// Create Parquet metadata
 	mut metadata := ParquetMetadata{
 		schema:      default_parquet_schema()
 		row_groups:  []
@@ -251,13 +251,13 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 		file_size:   e.current_size
 	}
 
-	// Row Group 생성 (단일 Row Group으로 단순화)
+	// Create Row Group (simplified to a single Row Group)
 	mut row_group := ParquetRowGroup{
 		row_count: e.records.len
 		columns:   []
 	}
 
-	// 각 컬럼의 통계 정보 수집
+	// Collect statistics for each column
 	mut min_offset := i64(0)
 	mut max_offset := i64(0)
 	mut min_timestamp := i64(0)
@@ -285,7 +285,7 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 		}
 	}
 
-	// 컬럼 청크 메타데이터
+	// Column chunk metadata
 	row_group.columns << ParquetColumnChunk{
 		column_name: 'offset'
 		data_offset: 0
@@ -310,9 +310,9 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 
 	metadata.row_groups << row_group
 
-	// 참고: 실제 Parquet 파일 인코딩은 Apache Arrow C++ 라이브러리 필요
-	// 여기서는 메타데이터만 반환하고 실제 데이터는 모킹
-	// 실제 구현에서는 C 바인딩이나 외부 프로세스 호출 필요
+	// Note: Actual Parquet file encoding requires the Apache Arrow C++ library
+	// Here only metadata is returned and actual data is mocked
+	// Real implementation requires C bindings or external process calls
 	mut mock_data := []u8{}
 	mock_data << 'PAR1'.bytes()
 	mock_data << json.encode(e.records).bytes()
@@ -321,8 +321,8 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	return mock_data, metadata
 }
 
-/// encode_batch는 레코드 배치를 Parquet로 인코딩합니다.
-/// 실제 Parquet 인코딩을 수행하지는 않고 메타데이터와 모킹 데이터 반환
+/// encode_batch encodes a batch of records to Parquet.
+/// Does not perform actual Parquet encoding; returns metadata and mocked data.
 pub fn encode_batch(records []ParquetRecord, compression ParquetCompression) !([]u8, ParquetMetadata) {
 	mut encoder := ParquetEncoder{
 		compression:   compression
@@ -335,7 +335,7 @@ pub fn encode_batch(records []ParquetRecord, compression ParquetCompression) !([
 	return encoder.encode()!
 }
 
-/// ParquetFileInfo는 Parquet 파일 정보를 나타냅니다.
+/// ParquetFileInfo represents Parquet file information.
 pub struct ParquetFileInfo {
 pub:
 	file_path     string
@@ -348,10 +348,10 @@ pub:
 	compression   string
 }
 
-/// extract_parquet_info는 Parquet 파일에서 정보를 추출합니다.
-/// 참고: 실제 구현에서는 Parquet 파일을 파싱해야 함
+/// extract_parquet_info extracts information from a Parquet file.
+/// Note: Real implementation must parse the Parquet file.
 pub fn extract_parquet_info(data []u8, file_path string) ParquetFileInfo {
-	// 모킹 구현 - 실제로는 Parquet 메타데이터 파싱 필요
+	// Mock implementation - real implementation requires Parquet metadata parsing
 	return ParquetFileInfo{
 		file_path:     file_path
 		record_count:  0

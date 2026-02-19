@@ -1,12 +1,12 @@
-/// 인프라 레이어 - 버퍼 풀
-/// GC 압력을 줄이기 위한 고성능 재사용 가능한 버퍼 풀
+/// Infrastructure layer - Buffer pool
+/// High-performance reusable buffer pool to reduce GC pressure
 module core
 
 import sync
 
-// Buffer - 재사용 가능한 바이트 버퍼 래퍼
+// Buffer - reusable byte buffer wrapper
 
-/// Buffer는 풀에서 가져온 재사용 가능한 바이트 버퍼를 나타냅니다.
+/// Buffer represents a reusable byte buffer obtained from the pool.
 @[heap]
 pub struct Buffer {
 pub mut:
@@ -16,7 +16,7 @@ pub mut:
 	size_class SizeClass
 }
 
-/// write는 버퍼에 바이트를 추가합니다.
+/// write appends bytes to the buffer.
 pub fn (mut b Buffer) write(data []u8) int {
 	needed := b.len + data.len
 	if needed > b.cap {
@@ -24,7 +24,7 @@ pub fn (mut b Buffer) write(data []u8) int {
 		if available <= 0 {
 			return 0
 		}
-		// 배열 슬라이스 복사로 최적화 (바이트 단위 루프 대신)
+		// Optimized with array slice copy (instead of byte-by-byte loop)
 		unsafe {
 			C.memcpy(&b.data[b.len], data.data, usize(available))
 		}
@@ -32,7 +32,7 @@ pub fn (mut b Buffer) write(data []u8) int {
 		return available
 	}
 
-	// 배열 슬라이스 복사로 최적화 (바이트 단위 루프 대신)
+	// Optimized with array slice copy (instead of byte-by-byte loop)
 	unsafe {
 		C.memcpy(&b.data[b.len], data.data, usize(data.len))
 	}
@@ -40,7 +40,7 @@ pub fn (mut b Buffer) write(data []u8) int {
 	return data.len
 }
 
-/// write_byte는 단일 바이트를 추가합니다.
+/// write_byte appends a single byte.
 pub fn (mut b Buffer) write_byte(byte u8) bool {
 	if b.len >= b.cap {
 		return false
@@ -50,7 +50,7 @@ pub fn (mut b Buffer) write_byte(byte u8) bool {
 	return true
 }
 
-/// write_i32_be는 32비트 정수를 빅엔디안으로 씁니다.
+/// write_i32_be writes a 32-bit integer in big-endian order.
 pub fn (mut b Buffer) write_i32_be(val i32) bool {
 	if b.len + 4 > b.cap {
 		return false
@@ -63,7 +63,7 @@ pub fn (mut b Buffer) write_i32_be(val i32) bool {
 	return true
 }
 
-/// write_i64_be는 64비트 정수를 빅엔디안으로 씁니다.
+/// write_i64_be writes a 64-bit integer in big-endian order.
 pub fn (mut b Buffer) write_i64_be(val i64) bool {
 	if b.len + 8 > b.cap {
 		return false
@@ -80,24 +80,24 @@ pub fn (mut b Buffer) write_i64_be(val i64) bool {
 	return true
 }
 
-/// bytes는 버퍼의 사용된 부분을 반환합니다.
+/// bytes returns the used portion of the buffer.
 pub fn (b &Buffer) bytes() []u8 {
 	return b.data[..b.len]
 }
 
-/// reset은 버퍼를 재사용을 위해 초기화합니다.
+/// reset resets the buffer for reuse.
 pub fn (mut b Buffer) reset() {
 	b.len = 0
 }
 
-/// remaining은 사용 가능한 바이트 수를 반환합니다.
+/// remaining returns the number of available bytes.
 pub fn (b &Buffer) remaining() int {
 	return b.cap - b.len
 }
 
-// 크기 클래스
+// Size classes
 
-/// SizeClass는 버퍼 크기 분류를 나타냅니다.
+/// SizeClass represents buffer size classification.
 pub enum SizeClass {
 	tiny
 	small
@@ -106,7 +106,7 @@ pub enum SizeClass {
 	huge
 }
 
-/// size_class_bytes는 크기 클래스에 해당하는 바이트 수를 반환합니다.
+/// size_class_bytes returns the byte count for a size class.
 fn size_class_bytes(sc SizeClass) int {
 	return match sc {
 		.tiny { 256 }
@@ -117,7 +117,7 @@ fn size_class_bytes(sc SizeClass) int {
 	}
 }
 
-/// get_size_class는 주어진 크기에 적합한 크기 클래스를 반환합니다.
+/// get_size_class returns the appropriate size class for the given size.
 fn get_size_class(size int) SizeClass {
 	if size <= 256 {
 		return .tiny
@@ -132,9 +132,9 @@ fn get_size_class(size int) SizeClass {
 	}
 }
 
-// BufferPool - 버퍼 풀
+// BufferPool - buffer pool
 
-/// PoolConfig는 버퍼 풀 설정을 담고 있습니다.
+/// PoolConfig holds buffer pool configuration.
 pub struct PoolConfig {
 pub:
 	max_tiny       int = 1000
@@ -148,7 +148,7 @@ pub:
 	prewarm_large  int = 2
 }
 
-/// PoolStats는 버퍼 풀 통계를 담고 있습니다.
+/// PoolStats holds buffer pool statistics.
 pub struct PoolStats {
 pub mut:
 	hits_tiny        u64
@@ -170,17 +170,17 @@ pub mut:
 	bytes_reused     u64
 }
 
-/// total_hits는 모든 크기 클래스의 총 히트 수를 반환합니다.
+/// total_hits returns the total hit count across all size classes.
 pub fn (s &PoolStats) total_hits() u64 {
 	return s.hits_tiny + s.hits_small + s.hits_medium + s.hits_large + s.hits_huge
 }
 
-/// total_misses는 모든 크기 클래스의 총 미스 수를 반환합니다.
+/// total_misses returns the total miss count across all size classes.
 pub fn (s &PoolStats) total_misses() u64 {
 	return s.misses_tiny + s.misses_small + s.misses_medium + s.misses_large + s.misses_huge
 }
 
-/// hit_rate는 캐시 히트율을 반환합니다.
+/// hit_rate returns the cache hit rate.
 pub fn (s &PoolStats) hit_rate() f64 {
 	total := s.total_hits() + s.total_misses()
 	if total == 0 {
@@ -189,7 +189,7 @@ pub fn (s &PoolStats) hit_rate() f64 {
 	return f64(s.total_hits()) / f64(total)
 }
 
-/// BufferPool은 크기 클래스별로 버퍼를 관리하는 풀입니다.
+/// BufferPool manages buffers by size class.
 @[heap]
 pub struct BufferPool {
 mut:
@@ -203,7 +203,7 @@ mut:
 	lock        sync.Mutex
 }
 
-/// new_buffer_pool은 주어진 설정으로 새 버퍼 풀을 생성합니다.
+/// new_buffer_pool creates a new buffer pool with the given configuration.
 pub fn new_buffer_pool(config PoolConfig) &BufferPool {
 	mut pool := &BufferPool{
 		config:      config
@@ -217,12 +217,12 @@ pub fn new_buffer_pool(config PoolConfig) &BufferPool {
 	return pool
 }
 
-/// new_default_pool은 기본 설정으로 새 버퍼 풀을 생성합니다.
+/// new_default_pool creates a new buffer pool with default configuration.
 pub fn new_default_pool() &BufferPool {
 	return new_buffer_pool(PoolConfig{})
 }
 
-/// prewarm은 풀을 사전에 버퍼로 채웁니다.
+/// prewarm pre-fills the pool with buffers.
 fn (mut p BufferPool) prewarm() {
 	for _ in 0 .. p.config.prewarm_tiny {
 		p.tiny_pool << p.allocate_buffer(.tiny)
@@ -238,7 +238,7 @@ fn (mut p BufferPool) prewarm() {
 	}
 }
 
-/// allocate_buffer는 지정된 크기 클래스의 새 버퍼를 할당합니다.
+/// allocate_buffer allocates a new buffer of the specified size class.
 fn (mut p BufferPool) allocate_buffer(sc SizeClass) &Buffer {
 	size := size_class_bytes(sc)
 	p.stats.bytes_allocated += u64(size)
@@ -251,13 +251,13 @@ fn (mut p BufferPool) allocate_buffer(sc SizeClass) &Buffer {
 	}
 }
 
-/// get은 최소 크기를 만족하는 버퍼를 풀에서 가져옵니다.
+/// get retrieves a buffer from the pool satisfying the minimum size.
 pub fn (mut p BufferPool) get(min_size int) &Buffer {
 	sc := get_size_class(min_size)
 	return p.get_by_class(sc)
 }
 
-/// get_by_class는 지정된 크기 클래스의 버퍼를 풀에서 가져옵니다.
+/// get_by_class retrieves a buffer of the specified size class from the pool.
 pub fn (mut p BufferPool) get_by_class(sc SizeClass) &Buffer {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -318,7 +318,7 @@ pub fn (mut p BufferPool) get_by_class(sc SizeClass) &Buffer {
 	return p.allocate_buffer(sc)
 }
 
-/// put은 버퍼를 풀에 반환합니다.
+/// put returns a buffer to the pool.
 pub fn (mut p BufferPool) put(buf &Buffer) {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -352,7 +352,7 @@ pub fn (mut p BufferPool) put(buf &Buffer) {
 	}
 }
 
-/// get_stats는 현재 풀 통계를 반환합니다.
+/// get_stats returns the current pool statistics.
 pub fn (mut p BufferPool) get_stats() PoolStats {
 	p.lock.@lock()
 	defer { p.lock.unlock() }

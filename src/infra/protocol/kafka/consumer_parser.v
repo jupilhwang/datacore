@@ -1,5 +1,5 @@
-// Kafka 프로토콜 - 컨슈머 그룹 요청 파서
-// JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat 파싱 함수
+// Kafka protocol - Consumer group request parser
+// Parsing functions for JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat
 module kafka
 
 // JoinGroup 요청 파서 (API Key 11)

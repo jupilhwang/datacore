@@ -7,6 +7,7 @@ import os
 import time
 
 // ProduceOptions holds produce command options
+/// ProduceOptions holds produce command options.
 pub struct ProduceOptions {
 pub:
 	bootstrap_server string = 'localhost:9092'
@@ -117,6 +118,7 @@ fn set_produce_positional_topic(opts ProduceOptions, arg string) ProduceOptions 
 }
 
 // parse_produce_options parses produce command options
+/// parse_produce_options parses produce command options.
 pub fn parse_produce_options(args []string) ProduceOptions {
 	mut opts := ProduceOptions{}
 
@@ -224,6 +226,7 @@ fn send_produce_request(mut conn net.TcpConn, topic string, partition int, messa
 }
 
 // run_produce produces messages to a topic
+/// run_produce produces messages to a topic.
 pub fn run_produce(opts ProduceOptions) ! {
 	if opts.topic == '' {
 		return error('Topic name is required. Use --topic <name>')
@@ -404,8 +407,8 @@ fn build_record_batch(messages []ProduceMessage) []u8 {
 	batch[batch_len_pos + 2] = u8((batch_len >> 8) & 0xff)
 	batch[batch_len_pos + 3] = u8(batch_len & 0xff)
 
-	// CRC32-C 계산: attributes 필드부터 배치 끝까지
-	// CRC 필드 위치: batch_len_pos(4) + partition_leader_epoch(4) + magic(1) = 17 (0-indexed)
+	// CRC32-C calculation: from the attributes field to the end of the batch
+	// CRC field position: batch_len_pos(4) + partition_leader_epoch(4) + magic(1) = 17 (0-indexed)
 	crc_pos := batch_len_pos + 4 + 4 + 1
 	crc_data_start := crc_pos + 4
 	crc := calculate_crc32c_cli(batch[crc_data_start..])
@@ -493,7 +496,7 @@ fn parse_produce_response(response []u8) !ProduceResult {
 	}
 }
 
-/// print_produce_help는 produce 명령어 도움말을 출력합니다.
+/// print_produce_help prints produce command help.
 /// print_produce_help - prints produce command help
 pub fn print_produce_help() {
 	println('\x1b[33mProduce Command:\x1b[0m')
@@ -551,8 +554,8 @@ const crc32c_table_cli = [u32(0x00000000), u32(0x00000000), 0xF26B8303, 0xE13B70
 	0x34F4F86A, 0xC69F7B69, 0xD5CF889D, 0x27A40B9E, 0x79B737BA, 0x8BDCB4B9, 0x988C474D, 0x6AE7C44E,
 	0xBE2DA0A5, 0x4C4623A6, 0x5F16D052, 0xAD7D5351]
 
-/// calculate_crc32c_cli는 Castagnoli 다항식을 사용하여 CRC32-C 체크섬을 계산합니다.
-/// CLI 모듈 내부에서 RecordBatch 인코딩 시 사용됩니다.
+/// calculate_crc32c_cli calculates a CRC32-C checksum using the Castagnoli polynomial.
+/// Used internally within the CLI module during RecordBatch encoding.
 fn calculate_crc32c_cli(data []u8) u32 {
 	mut crc := u32(0xFFFFFFFF)
 	for b in data {

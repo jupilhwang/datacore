@@ -6,6 +6,7 @@ import time
 import log
 
 // Client sends replication messages to remote brokers
+/// Client sends replication messages to remote brokers.
 pub struct Client {
 mut:
 	protocol   Protocol
@@ -14,6 +15,7 @@ mut:
 }
 
 // Client.new creates a new replication Client with the given timeout in milliseconds.
+/// Client.
 pub fn Client.new(timeout_ms int) Client {
 	return Client{
 		protocol:   Protocol.new()
@@ -35,6 +37,7 @@ pub fn Client.new(timeout_ms int) Client {
 // - Connection failure if the broker is unreachable
 // - Timeout if no response within Client.timeout_ms
 // - Protocol error if message serialization/deserialization fails
+/// send sends a replication message to a remote broker and waits for response.
 pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage) !domain.ReplicationMessage {
 	// Connect to broker
 	mut conn := net.dial_tcp(broker_address) or {
@@ -71,6 +74,7 @@ pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage)
 // Parameters:
 // - broker_address: target broker address in "host:port" format
 // - msg: ReplicationMessage to send
+/// send_async sends a replication message without waiting for response.
 pub fn (mut c Client) send_async(broker_address string, msg domain.ReplicationMessage) {
 	spawn c.send_fire_forget(broker_address, msg)
 }
@@ -100,6 +104,7 @@ fn (mut c Client) send_fire_forget(broker_address string, msg domain.Replication
 //
 // Errors:
 // - All retry attempts exhausted (includes last error message)
+/// send_with_retry sends a replication message with exponential backoff retry logic.
 pub fn (mut c Client) send_with_retry(broker_address string, msg domain.ReplicationMessage, max_retries int) !domain.ReplicationMessage {
 	mut last_error := ''
 
@@ -126,6 +131,7 @@ pub fn (mut c Client) send_with_retry(broker_address string, msg domain.Replicat
 // close releases any resources held by the Client.
 // Currently a no-op since each send() creates its own connection,
 // but kept for interface compatibility and future connection pooling.
+/// close releases any resources held by the Client.
 pub fn (mut c Client) close() {
 	// No persistent connections to close
 }

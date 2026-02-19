@@ -9,6 +9,7 @@ import rand
 // Manager coordinates all replication operations.
 // Concurrency: all shared mutable state is protected by dedicated sync.Mutex locks.
 // Lock ordering (to prevent deadlocks): assignments_lock -> broker_health_lock -> replica_buffers_lock -> stats_lock
+/// Manager coordinates all replication operations.
 pub struct Manager {
 pub mut:
 	broker_id string
@@ -33,6 +34,7 @@ pub mut:
 }
 
 // Manager.new creates a new replication Manager with the given broker ID, config, and cluster broker addresses.
+/// Manager.
 pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_brokers []string) &Manager {
 	mut m := &Manager{
 		broker_id:       broker_id
@@ -56,6 +58,7 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 }
 
 // start initializes and starts all replication components
+/// start initializes and starts all replication components.
 pub fn (mut m Manager) start() ! {
 	if m.running {
 		return error('manager already running')
@@ -76,6 +79,7 @@ pub fn (mut m Manager) start() ! {
 }
 
 // stop shuts down all components
+/// stop shuts down all components.
 pub fn (mut m Manager) stop() ! {
 	if !m.running {
 		return
@@ -102,6 +106,7 @@ pub fn (mut m Manager) stop() ! {
 // Errors:
 // - Assignment creation failure if no available replica brokers
 // - Replication disabled (returns silently)
+/// send_replicate sends record data to all assigned replica brokers for a given topic-partition.
 pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, records_data []u8) ! {
 	if !m.config.enabled {
 		return
@@ -182,6 +187,7 @@ fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.Replicati
 // Errors:
 // - No assignment exists for the given topic:partition
 // - Replication disabled (returns silently)
+/// send_flush_ack notifies all replica brokers that data up to the given offset has been flushed.
 pub fn (mut m Manager) send_flush_ack(topic string, partition i32, offset i64) ! {
 	if !m.config.enabled {
 		return
@@ -288,6 +294,7 @@ fn (mut m Manager) assign_replicas(topic string, partition i32) ! {
 //
 // Parameters:
 // - buffer: ReplicaBuffer containing the replicated data to store
+/// store_replica_buffer stores replicated record data in the in-memory buffer.
 pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 	key := '${buffer.topic}:${buffer.partition}'
 
@@ -309,6 +316,7 @@ pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 // - topic: topic name
 // - partition: partition index
 // - offset: flush offset; buffers with offset <= this value are removed
+/// delete_replica_buffer removes all buffered replicas with offset <= the given offset.
 pub fn (mut m Manager) delete_replica_buffer(topic string, partition i32, offset i64) ! {
 	key := '${topic}:${partition}'
 
@@ -333,6 +341,7 @@ pub fn (mut m Manager) delete_replica_buffer(topic string, partition i32, offset
 // Thread-safe; uses replica_buffers_lock internally.
 //
 // Returns: list of all ReplicaBuffer entries currently held in memory
+/// get_all_replica_buffers returns a flat list of all in-memory replica buffers.
 pub fn (mut m Manager) get_all_replica_buffers() ![]domain.ReplicaBuffer {
 	m.replica_buffers_lock.@lock()
 	mut all_buffers := []domain.ReplicaBuffer{}
@@ -348,6 +357,7 @@ pub fn (mut m Manager) get_all_replica_buffers() ![]domain.ReplicaBuffer {
 // Thread-safe; uses stats_lock internally.
 //
 // Returns: copy of the current ReplicationStats (replicated/ack/flush counts, heartbeat time)
+/// get_stats returns a snapshot of the current replication statistics.
 pub fn (mut m Manager) get_stats() domain.ReplicationStats {
 	m.stats_lock.@lock()
 	stats := m.stats
@@ -361,6 +371,7 @@ pub fn (mut m Manager) get_stats() domain.ReplicationStats {
 // Parameters:
 // - broker_id: identifier of the broker to update
 // - health: new ReplicationHealth status
+/// update_broker_health updates the health status for a given broker.
 pub fn (mut m Manager) update_broker_health(broker_id string, health domain.ReplicationHealth) {
 	m.broker_health_lock.@lock()
 	m.broker_health[broker_id] = health

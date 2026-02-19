@@ -3,10 +3,10 @@ module s3
 import time
 import crypto.md5
 
-/// IcebergSchema는 Iceberg 테이블 스키마를 나타냅니다.
-/// Fields: 스키마 필드 목록
-/// SchemaId: 스키마 고유 ID
-/// IdentifierFieldIds: 식별자 필드 ID 목록
+/// IcebergSchema represents an Iceberg table schema.
+/// Fields: list of schema fields
+/// SchemaId: unique schema ID
+/// IdentifierFieldIds: list of identifier field IDs
 pub struct IcebergSchema {
 pub mut:
 	schema_id            int
@@ -14,12 +14,12 @@ pub mut:
 	identifier_field_ids []int
 }
 
-/// IcebergField는 Iceberg 스키마 필드를 나타냅니다.
-/// Id: 필드 ID
-/// Name: 필드 이름
-/// Type: 필드 타입 (string, int, long, double, boolean, binary, timestamp, timestamp_ns, unknown, variant, geometry, geography)
-/// Required: 필수 여부
-/// DefaultValue: 기본값 (v3 지원)
+/// IcebergField represents an Iceberg schema field.
+/// Id: field ID
+/// Name: field name
+/// Type: field type (string, int, long, double, boolean, binary, timestamp, timestamp_ns, unknown, variant, geometry, geography)
+/// Required: whether the field is required
+/// DefaultValue: default value (v3 support)
 pub struct IcebergField {
 pub mut:
 	id            int
@@ -29,21 +29,21 @@ pub mut:
 	default_value string
 }
 
-/// IcebergPartitionSpec은 파티션 사양을 나타냅니다.
-/// SpecId: 사양 ID
-/// Fields: 파티션 필드 목록
+/// IcebergPartitionSpec represents a partition specification.
+/// SpecId: specification ID
+/// Fields: list of partition fields
 pub struct IcebergPartitionSpec {
 pub mut:
 	spec_id int
 	fields  []IcebergPartitionField
 }
 
-/// IcebergPartitionField는 파티션 필드를 나타냅니다.
-/// SourceId: 소스 컬럼 ID
-/// FieldId: 파티션 필드 ID
-/// Name: 파티션 이름
-/// Transform: 변환 함수 (identity, bucket[N], truncate[N], year, month, day, hour)
-/// TransformArgs: 변환 인자 목록 (v3: multi-argument transforms 지원)
+/// IcebergPartitionField represents a partition field.
+/// SourceId: source column ID
+/// FieldId: partition field ID
+/// Name: partition name
+/// Transform: transform function (identity, bucket[N], truncate[N], year, month, day, hour)
+/// TransformArgs: list of transform arguments (v3: multi-argument transforms support)
 pub struct IcebergPartitionField {
 pub mut:
 	source_id      int
@@ -53,12 +53,12 @@ pub mut:
 	transform_args []string
 }
 
-/// IcebergSnapshot은 테이블 스냅샷을 나타냅니다.
-/// SnapshotId: 스냅샷 고유 ID
-/// TimestampMs: 스냅샷 생성 시간 (밀리초)
-/// ManifestList: 매니페스트 목록 파일 경로
-/// SchemaId: 스키마 ID
-/// Summary: 스냅샷 요약 정보
+/// IcebergSnapshot represents a table snapshot.
+/// SnapshotId: unique snapshot ID
+/// TimestampMs: snapshot creation time (milliseconds)
+/// ManifestList: manifest list file path
+/// SchemaId: schema ID
+/// Summary: snapshot summary information
 pub struct IcebergSnapshot {
 pub mut:
 	snapshot_id   i64
@@ -68,11 +68,11 @@ pub mut:
 	summary       map[string]string
 }
 
-/// IcebergManifest는 데이터 파일 목록을 포함하는 매니페스트를 나타냅니다.
-/// ManifestPath: 매니페스트 파일 경로
-/// SnapshotId: 소속 스냅샷 ID
-/// AddedFiles: 추가된 파일 수
-/// DeletedFiles: 삭제된 파일 수
+/// IcebergManifest represents a manifest containing a list of data files.
+/// ManifestPath: manifest file path
+/// SnapshotId: owning snapshot ID
+/// AddedFiles: number of added files
+/// DeletedFiles: number of deleted files
 pub struct IcebergManifest {
 pub mut:
 	manifest_path string
@@ -83,17 +83,17 @@ pub mut:
 	deleted_rows  i64
 }
 
-/// IcebergDataFile은 실제 데이터 파일을 나타냅니다.
-/// FilePath: S3 파일 경로
-/// FileFormat: 파일 형식 (PARQUET, ORC, AVRO)
-/// RecordCount: 레코드 수
-/// FileSizeInBytes: 파일 크기 (바이트)
-/// ColumnSizes: 컬럼별 크기 정보
-/// ValueCounts: 컬럼별 값 개수
-/// NullValueCounts: 컬럼별 NULL 개수
-/// LowerBounds: 컬럼별 최소값
-/// UpperBounds: 컬럼별 최대값
-/// Partition: 파티션 값
+/// IcebergDataFile represents an actual data file.
+/// FilePath: S3 file path
+/// FileFormat: file format (PARQUET, ORC, AVRO)
+/// RecordCount: number of records
+/// FileSizeInBytes: file size in bytes
+/// ColumnSizes: per-column size information
+/// ValueCounts: per-column value counts
+/// NullValueCounts: per-column NULL counts
+/// LowerBounds: per-column minimum values
+/// UpperBounds: per-column maximum values
+/// Partition: partition values
 pub struct IcebergDataFile {
 pub mut:
 	file_path          string
@@ -106,23 +106,23 @@ pub mut:
 	lower_bounds       map[string]string
 	upper_bounds       map[string]string
 	partition          map[string]string
-	// v3 Row Lineage 지원
+	// v3 Row Lineage support
 	row_lineage_first i64
 	row_lineage_last  i64
 }
 
-/// IcebergMetadata는 테이블 메타데이터를 나타냅니다.
-/// FormatVersion: Iceberg 포맷 버전 (1, 2 또는 3)
-/// TableUuid: 테이블 UUID
-/// Location: 테이블 위치 (S3 경로)
-/// LastUpdatedMs: 마지막 업데이트 시간 (밀리초)
-/// Schemas: 스키마 목록
-/// CurrentSchemaId: 현재 스키마 ID
-/// PartitionSpecs: 파티션 사양 목록
-/// DefaultSpecId: 기본 파티션 사양 ID
-/// Snapshots: 스냅샷 목록
-/// CurrentSnapshotId: 현재 스냅샷 ID
-/// Properties: 테이블 속성
+/// IcebergMetadata represents table metadata.
+/// FormatVersion: Iceberg format version (1, 2, or 3)
+/// TableUuid: table UUID
+/// Location: table location (S3 path)
+/// LastUpdatedMs: last update time (milliseconds)
+/// Schemas: list of schemas
+/// CurrentSchemaId: current schema ID
+/// PartitionSpecs: list of partition specifications
+/// DefaultSpecId: default partition specification ID
+/// Snapshots: list of snapshots
+/// CurrentSnapshotId: current snapshot ID
+/// Properties: table properties
 pub struct IcebergMetadata {
 pub mut:
 	format_version      int = 3
@@ -138,21 +138,21 @@ pub mut:
 	properties          map[string]string
 }
 
-/// IcebergTableIdentifier는 테이블 식별자를 나타냅니다.
-/// Namespace: 네임스페이스 (데이터베이스)
-/// Name: 테이블 이름
+/// IcebergTableIdentifier represents a table identifier.
+/// Namespace: namespace (database)
+/// Name: table name
 pub struct IcebergTableIdentifier {
 pub:
 	namespace []string
 	name      string
 }
 
-/// IcebergCatalogConfig는 카탈로그 설정을 나타냅니다.
-/// CatalogType: 카탈로그 유형 (glue, hive, rest, hadoop)
-/// Warehouse: 기본 S3 위치
-/// Region: AWS 리전
-/// Endpoint: REST 카탈로그 엔드포인트 (선택사항)
-/// FormatVersion: 테이블 포맷 버전 (1, 2, 3)
+/// IcebergCatalogConfig represents catalog configuration.
+/// CatalogType: catalog type (glue, hive, rest, hadoop)
+/// Warehouse: default S3 location
+/// Region: AWS region
+/// Endpoint: REST catalog endpoint (optional)
+/// FormatVersion: table format version (1, 2, 3)
 pub struct IcebergCatalogConfig {
 pub:
 	catalog_type   string = 'hadoop'
@@ -162,19 +162,19 @@ pub:
 	format_version int = 3
 }
 
-/// generate_table_uuid는 새로운 테이블 UUID를 생성합니다.
+/// generate_table_uuid generates a new table UUID.
 pub fn generate_table_uuid() string {
 	now := time.now()
 	hash := md5.sum(now.str().bytes())
 	return '${hash[0..8].hex()}-${hash[8..12].hex()}-${hash[12..16].hex()}-${hash[16..20].hex()}-${hash[20..32].hex()}'
 }
 
-/// generate_snapshot_id는 새로운 스냅샷 ID를 생성합니다.
+/// generate_snapshot_id generates a new snapshot ID.
 pub fn generate_snapshot_id() i64 {
 	return time.now().unix_milli()
 }
 
-/// create_default_schema는 기본 Kafka 레코드 스키마를 생성합니다.
+/// create_default_schema creates the default Kafka record schema.
 pub fn create_default_schema() IcebergSchema {
 	return IcebergSchema{
 		schema_id:            0
@@ -226,7 +226,7 @@ pub fn create_default_schema() IcebergSchema {
 	}
 }
 
-/// create_default_partition_spec은 기본 파티션 사양을 생성합니다.
+/// create_default_partition_spec creates the default partition specification.
 pub fn create_default_partition_spec() IcebergPartitionSpec {
 	return IcebergPartitionSpec{
 		spec_id: 0
@@ -247,7 +247,7 @@ pub fn create_default_partition_spec() IcebergPartitionSpec {
 	}
 }
 
-/// IcebergConfig는 Iceberg Writer 설정을 나타냅니다.
+/// IcebergConfig represents Iceberg Writer configuration.
 pub struct IcebergConfig {
 pub mut:
 	enabled           bool
@@ -260,7 +260,7 @@ pub mut:
 	schema_evolution  bool
 }
 
-/// create_partition_spec_from_config는 설정에서 파티션 사양을 생성합니다.
+/// create_partition_spec_from_config creates a partition specification from config.
 pub fn create_partition_spec_from_config(partition_by []string) IcebergPartitionSpec {
 	mut fields := []IcebergPartitionField{}
 	mut field_id := 1000

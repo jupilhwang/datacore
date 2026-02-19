@@ -1,4 +1,4 @@
-// RFC 5802 및 RFC 7677에 따른 SCRAM-SHA-256 인증을 구현합니다.
+// Implements SCRAM-SHA-256 authentication per RFC 5802 and RFC 7677.
 // Salted Challenge Response Authentication Mechanism (SCRAM)
 module auth
 
@@ -11,15 +11,15 @@ import rand
 
 // SCRAM-SHA-256 Constants
 
-/// SCRAM 인증에 사용되는 기본 iteration 횟수
+/// Default number of iterations used in SCRAM authentication
 const default_iterations = 4096
 
-/// SCRAM nonce 길이 (바이트)
+/// SCRAM nonce length (bytes)
 const nonce_length = 24
 
 // SCRAM-SHA-256 Authenticator
 
-/// ScramState는 SCRAM 인증의 현재 상태를 나타냅니다.
+/// ScramState represents the current state of SCRAM authentication.
 pub enum ScramState {
 	initial
 	client_first_sent
@@ -28,8 +28,8 @@ pub enum ScramState {
 	failed
 }
 
-/// ScramSha256Authenticator는 SCRAM-SHA-256 인증을 구현합니다.
-/// RFC 5802 및 RFC 7677을 준수합니다.
+/// ScramSha256Authenticator implements SCRAM-SHA-256 authentication.
+/// Complies with RFC 5802 and RFC 7677.
 pub struct ScramSha256Authenticator {
 mut:
 	user_store      port.UserStore
@@ -69,7 +69,7 @@ pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.Au
 		return domain.auth_failure(.illegal_sasl_state, 'SCRAM authenticator already in use')
 	}
 
-	// client-first-message 파싱
+	// Parse client-first-message
 	client_first := parse_client_first_message(auth_bytes.bytestr()) or {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Invalid client-first-message format')
@@ -78,32 +78,32 @@ pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.Au
 	a.username = client_first.username
 	a.client_nonce = client_first.nonce
 
-	// 사용자 조회
+	// Look up user
 	user := a.user_store.get_user(a.username) or {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
 
-	// SCRAM 자격 증명: 사용자 기반 일관된 salt 생성
-	// 프로덕션에서는 ScramCredentials 테이블에서 로드해야 함
-	// 여기서는 사용자명 기반으로 결정적 salt를 생성하여 일관성 유지
+	// SCRAM credentials: generate consistent salt based on username
+	// In production, should be loaded from ScramCredentials table
+	// Here we generate a deterministic salt based on username for consistency
 	a.salt = generate_user_salt(a.username)
 	a.iterations = default_iterations
 
-	// 비밀번호에서 키 파생
+	// Derive keys from password
 	salted_password := pbkdf2_sha256(user.password_hash.bytes(), a.salt, a.iterations)
 	a.salted_password = salted_password
 	a.stored_key = compute_stored_key(salted_password)
 	a.server_key = compute_server_key(salted_password)
 
-	// 서버 nonce 생성
+	// Generate server nonce
 	a.server_nonce = generate_nonce()
 	a.combined_nonce = a.client_nonce + a.server_nonce
 
-	// server-first-message 생성
+	// Build server-first-message
 	server_first := build_server_first_message(a.combined_nonce, a.salt, a.iterations)
 
-	// auth_message 구성 (나중에 서명 검증에 사용)
+	// Construct auth_message (used later for signature verification)
 	// auth_message = client-first-message-bare + "," + server-first-message + "," + client-final-message-without-proof
 	a.auth_message = client_first.bare + ',' + server_first
 
@@ -123,51 +123,51 @@ pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 		return domain.auth_failure(.illegal_sasl_state, 'Invalid SCRAM state for step')
 	}
 
-	// client-final-message 파싱
+	// Parse client-final-message
 	client_final := parse_client_final_message(response.bytestr()) or {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Invalid client-final-message format')
 	}
 
-	// nonce 검증
+	// Verify nonce
 	if client_final.nonce != a.combined_nonce {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Nonce mismatch')
 	}
 
-	// auth_message 완성
+	// Complete auth_message
 	a.auth_message = a.auth_message + ',' + client_final.without_proof
 
-	// ClientKey 계산 (salted_password에서 파생)
+	// Compute ClientKey (derived from salted_password)
 	client_key := compute_client_key_from_salted(a.salted_password)
 
-	// 클라이언트 서명 검증
+	// Verify client signature
 	// ClientSignature = HMAC(StoredKey, AuthMessage)
 	client_signature := hmac_sha256(a.stored_key, a.auth_message.bytes())
 
 	// ClientProof = ClientKey XOR ClientSignature
-	// 따라서 ClientKey = ClientProof XOR ClientSignature
-	// 검증: 수신된 ClientProof XOR ClientSignature == ClientKey
+	// Therefore ClientKey = ClientProof XOR ClientSignature
+	// Verify: received ClientProof XOR ClientSignature == ClientKey
 
-	// base64 디코딩된 클라이언트 proof
-	// V의 base64.decode는 오류를 반환하지 않으므로 결과 길이로 검증
+	// Base64-decoded client proof
+	// V's base64.decode doesn't return errors, so validate by result length
 	client_proof := base64.decode(client_final.proof)
 	if client_proof.len == 0 && client_final.proof.len > 0 {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Invalid proof encoding')
 	}
 
-	// 클라이언트가 보낸 proof로부터 ClientKey 복원
+	// Recover ClientKey from the proof sent by client
 	// RecoveredClientKey = ClientProof XOR ClientSignature
 	recovered_client_key := xor_bytes(client_proof, client_signature)
 
-	// 복원된 ClientKey와 계산된 ClientKey 비교
+	// Compare recovered ClientKey with computed ClientKey
 	if !constant_time_compare(recovered_client_key, client_key) {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
 
-	// 서버 서명 계산 및 server-final-message 생성
+	// Compute server signature and build server-final-message
 	server_signature := hmac_sha256(a.server_key, a.auth_message.bytes())
 	server_final := 'v=' + base64.encode(server_signature)
 
@@ -183,7 +183,7 @@ pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 
 // SCRAM Message Parsing
 
-/// ClientFirstMessage는 파싱된 client-first-message를 나타냅니다.
+/// ClientFirstMessage represents a parsed client-first-message.
 struct ClientFirstMessage {
 	gs2_header string
 	username   string
@@ -191,17 +191,17 @@ struct ClientFirstMessage {
 	bare       string
 }
 
-/// parse_client_first_message는 client-first-message를 파싱합니다.
-/// 형식: gs2-header + client-first-message-bare
-/// gs2-header: n,, 또는 y,, 또는 p=... (채널 바인딩)
+/// parse_client_first_message parses a client-first-message.
+/// Format: gs2-header + client-first-message-bare
+/// gs2-header: n,, or y,, or p=... (channel binding)
 /// client-first-message-bare: n=username,r=nonce
 fn parse_client_first_message(msg string) ?ClientFirstMessage {
 	if msg == '' {
 		return none
 	}
 
-	// GS2 헤더 찾기 (첫 번째 ',' 이후의 두 번째 ',')
-	// n,,n=user,r=nonce 형식에서 n,,가 gs2-header
+	// Find GS2 header (after the second ',')
+	// In format n,,n=user,r=nonce, n,, is the gs2-header
 	mut comma_count := 0
 	mut gs2_end := 0
 
@@ -222,7 +222,7 @@ fn parse_client_first_message(msg string) ?ClientFirstMessage {
 	gs2_header := msg[0..gs2_end]
 	bare := msg[gs2_end..]
 
-	// bare 메시지 파싱: n=username,r=nonce[,extensions...]
+	// Parse bare message: n=username,r=nonce[,extensions...]
 	mut username := ''
 	mut nonce := ''
 
@@ -246,7 +246,7 @@ fn parse_client_first_message(msg string) ?ClientFirstMessage {
 	}
 }
 
-/// ClientFinalMessage는 파싱된 client-final-message를 나타냅니다.
+/// ClientFinalMessage represents a parsed client-final-message.
 struct ClientFinalMessage {
 	channel_binding string
 	nonce           string
@@ -254,8 +254,8 @@ struct ClientFinalMessage {
 	without_proof   string
 }
 
-/// parse_client_final_message는 client-final-message를 파싱합니다.
-/// 형식: c=channel-binding,r=nonce,p=proof
+/// parse_client_final_message parses a client-final-message.
+/// Format: c=channel-binding,r=nonce,p=proof
 fn parse_client_final_message(msg string) ?ClientFinalMessage {
 	if msg == '' {
 		return none
@@ -290,8 +290,8 @@ fn parse_client_final_message(msg string) ?ClientFinalMessage {
 	}
 }
 
-/// build_server_first_message는 server-first-message를 생성합니다.
-/// 형식: r=combined-nonce,s=salt,i=iterations
+/// build_server_first_message builds a server-first-message.
+/// Format: r=combined-nonce,s=salt,i=iterations
 fn build_server_first_message(combined_nonce string, salt []u8, iterations int) string {
 	salt_b64 := base64.encode(salt)
 	return 'r=${combined_nonce},s=${salt_b64},i=${iterations}'
@@ -299,7 +299,7 @@ fn build_server_first_message(combined_nonce string, salt []u8, iterations int) 
 
 // Cryptographic Functions
 
-/// generate_nonce는 SCRAM 인증을 위한 랜덤 nonce를 생성합니다.
+/// generate_nonce generates a random nonce for SCRAM authentication.
 fn generate_nonce() string {
 	mut bytes := []u8{len: nonce_length}
 	for i in 0 .. nonce_length {
@@ -308,7 +308,7 @@ fn generate_nonce() string {
 	return base64.encode(bytes)
 }
 
-/// generate_salt는 SCRAM 인증을 위한 랜덤 salt를 생성합니다.
+/// generate_salt generates a random salt for SCRAM authentication.
 fn generate_salt() []u8 {
 	mut bytes := []u8{len: 16}
 	for i in 0 .. 16 {
@@ -317,18 +317,18 @@ fn generate_salt() []u8 {
 	return bytes
 }
 
-/// generate_user_salt는 사용자명 기반으로 결정적 salt를 생성합니다.
-/// 같은 사용자명에 대해 항상 같은 salt를 반환하여 인증 일관성 보장
-/// 프로덕션에서는 사용자 생성 시 랜덤 salt를 생성하고 저장해야 합니다.
+/// generate_user_salt generates a deterministic salt based on username.
+/// Always returns the same salt for the same username to ensure authentication consistency.
+/// In production, a random salt should be generated at user creation time and stored.
 fn generate_user_salt(username string) []u8 {
-	// 사용자명을 SHA-256 해시하여 결정적 salt 생성
-	// 이는 임시 해결책이며, 실제 프로덕션에서는 DB에 저장된 salt 사용
+	// Generate deterministic salt by SHA-256 hashing the username
+	// This is a temporary solution; production code should use salts stored in DB
 	hash := sha256.sum256(username.bytes())
 	return hash[0..16].clone()
 }
 
-/// pbkdf2_sha256는 PBKDF2-SHA-256 키 파생 함수를 구현합니다.
-/// RFC 8018에 따른 구현
+/// pbkdf2_sha256 implements the PBKDF2-SHA-256 key derivation function.
+/// Implementation per RFC 8018
 fn pbkdf2_sha256(password []u8, salt []u8, iterations int) []u8 {
 	// PBKDF2 with SHA-256
 	// DK = T1 || T2 || ... || Tdklen/hlen
@@ -339,7 +339,7 @@ fn pbkdf2_sha256(password []u8, salt []u8, iterations int) []u8 {
 	// ...
 	// Uc = PRF(Password, Uc-1)
 
-	// 블록 번호 1 추가 (big-endian)
+	// Append block number 1 (big-endian)
 	mut salt_with_int := salt.clone()
 	salt_with_int << u8(0)
 	salt_with_int << u8(0)
@@ -361,12 +361,12 @@ fn pbkdf2_sha256(password []u8, salt []u8, iterations int) []u8 {
 	return result
 }
 
-/// hmac_sha256는 HMAC-SHA-256을 계산합니다.
+/// hmac_sha256 computes HMAC-SHA-256.
 fn hmac_sha256(key []u8, message []u8) []u8 {
 	return hmac.new(key, message, sha256.sum256, sha256.block_size).bytestr().bytes()
 }
 
-/// compute_stored_key는 SCRAM StoredKey를 계산합니다.
+/// compute_stored_key computes the SCRAM StoredKey.
 /// StoredKey = H(ClientKey)
 fn compute_stored_key(salted_password []u8) []u8 {
 	client_key := hmac_sha256(salted_password, 'Client Key'.bytes())
@@ -374,19 +374,19 @@ fn compute_stored_key(salted_password []u8) []u8 {
 	return sum[..].clone()
 }
 
-/// compute_server_key는 SCRAM ServerKey를 계산합니다.
+/// compute_server_key computes the SCRAM ServerKey.
 /// ServerKey = HMAC(SaltedPassword, "Server Key")
 fn compute_server_key(salted_password []u8) []u8 {
 	return hmac_sha256(salted_password, 'Server Key'.bytes())
 }
 
-/// compute_client_key_from_salted는 SaltedPassword에서 ClientKey를 계산합니다.
+/// compute_client_key_from_salted computes ClientKey from SaltedPassword.
 /// ClientKey = HMAC(SaltedPassword, "Client Key")
 fn compute_client_key_from_salted(salted_password []u8) []u8 {
 	return hmac_sha256(salted_password, 'Client Key'.bytes())
 }
 
-/// xor_bytes는 두 바이트 배열을 XOR합니다.
+/// xor_bytes XORs two byte arrays.
 fn xor_bytes(a []u8, b []u8) []u8 {
 	if a.len != b.len {
 		return []u8{}
@@ -398,19 +398,19 @@ fn xor_bytes(a []u8, b []u8) []u8 {
 	return result
 }
 
-/// constant_time_compare는 두 바이트 배열을 상수 시간에 비교합니다.
-/// 타이밍 공격 방지를 위해 사용
+/// constant_time_compare compares two byte arrays in constant time.
+/// Used to prevent timing attacks
 fn constant_time_compare(a []u8, b []u8) bool {
-	// 길이 차이도 상수 시간에 처리
-	// 길이가 다르면 더 긴 배열 길이만큼 비교하여 타이밍 일정하게 유지
+	// Handle length difference in constant time
+	// If lengths differ, still compare up to shorter length to keep timing consistent
 	mut result := u8(0)
 
-	// 길이 차이를 결과에 반영 (길이가 다르면 0이 아닌 값)
+	// Reflect length difference in result (non-zero if lengths differ)
 	if a.len != b.len {
 		result = 1
 	}
 
-	// 더 짧은 길이만큼 비교 (둘 다 빈 배열이면 0)
+	// Compare up to shorter length (0 if both empty)
 	min_len := if a.len < b.len { a.len } else { b.len }
 	for i in 0 .. min_len {
 		result |= a[i] ^ b[i]

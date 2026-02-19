@@ -7,7 +7,7 @@ import infra.transaction as infra_txn
 import service.transaction
 import service.port
 
-// 헬퍼: 트랜잭션 핸들러 생성
+// helper: create transaction handler
 fn create_test_handler_with_transaction() kafka.Handler {
 	storage := TransactionMockStorage{}
 	txn_store := infra_txn.new_memory_transaction_store()
@@ -433,7 +433,7 @@ fn test_write_txn_markers_unknown_topic() {
 	assert error_code == 3
 }
 
-// 헬퍼: WriteTxnMarkers 지원 mock storage로 핸들러 생성
+// helper: create handler with WriteTxnMarkers-capable mock storage
 fn create_test_handler_with_write_txn_markers_storage() !kafka.Handler {
 	storage := WriteTxnMarkersMockStorage{}
 	txn_store := infra_txn.new_memory_transaction_store()
@@ -443,7 +443,7 @@ fn create_test_handler_with_write_txn_markers_storage() !kafka.Handler {
 		none, *txn_coordinator, compression_service)
 }
 
-// WriteTxnMarkers 테스트용 토픽 지원 Mock storage
+// Mock storage with topic support for WriteTxnMarkers tests
 struct WriteTxnMarkersMockStorage {}
 
 fn (m WriteTxnMarkersMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {

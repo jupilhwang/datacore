@@ -1,5 +1,5 @@
-/// 인프라 레이어 - 성능 테스트
-/// 버퍼 풀, 객체 풀, 벤치마크 기능 단위 테스트
+/// Infrastructure layer - Performance tests
+/// Unit tests for buffer pool, object pool, and benchmark functionality
 module benchmarks
 
 import infra.performance
@@ -7,7 +7,7 @@ import infra.performance.core
 
 // Buffer Pool Tests
 
-/// 버퍼 쓰기 및 읽기 테스트
+/// Tests buffer write and read
 fn test_buffer_write_and_read() {
 	mut buf := core.Buffer{
 		data:       []u8{len: 256}
@@ -24,7 +24,7 @@ fn test_buffer_write_and_read() {
 	assert buf.bytes() == data
 }
 
-/// 버퍼 바이트 쓰기 테스트
+/// Tests buffer byte write
 fn test_buffer_write_byte() {
 	mut buf := core.Buffer{
 		data:       []u8{len: 10}
@@ -41,7 +41,7 @@ fn test_buffer_write_byte() {
 	assert buf.bytes() == [u8(0x41), 0x42, 0x43]
 }
 
-/// 버퍼 빅엔디안 i32 쓰기 테스트
+/// Tests buffer big-endian i32 write
 fn test_buffer_write_i32_be() {
 	mut buf := core.Buffer{
 		data:       []u8{len: 10}
@@ -55,7 +55,7 @@ fn test_buffer_write_i32_be() {
 	assert buf.bytes() == [u8(0x12), 0x34, 0x56, 0x78]
 }
 
-/// 버퍼 오버플로우 테스트
+/// Tests buffer overflow
 fn test_buffer_overflow() {
 	mut buf := core.Buffer{
 		data:       []u8{len: 4}
@@ -73,7 +73,7 @@ fn test_buffer_overflow() {
 
 // Buffer Pool Integration Tests
 
-/// 버퍼 풀 획득/반환 테스트
+/// Tests buffer pool get/put
 fn test_buffer_pool_get_put() {
 	performance.init_global_performance(performance.PerformanceConfig{
 		buffer_pool_prewarm: true
@@ -92,7 +92,7 @@ fn test_buffer_pool_get_put() {
 	assert stats.buffer_hits >= 0 || stats.buffer_misses >= 0
 }
 
-/// 크기 클래스 선택 테스트
+/// Tests size class selection
 fn test_size_class_selection() {
 	assert core.get_size_class(100) == .tiny
 	assert core.get_size_class(256) == .tiny
@@ -107,7 +107,7 @@ fn test_size_class_selection() {
 
 // Hash Function Tests
 
-/// Murmur3 기본 테스트
+/// Tests Murmur3 basic operation
 fn test_murmur3_basic() {
 	data := 'test'.bytes()
 	hash := core.murmur3_32(data, 0)
@@ -121,7 +121,7 @@ fn test_murmur3_basic() {
 	assert core.murmur3_32(other, 0) != hash
 }
 
-/// Murmur3 빈 입력 테스트
+/// Tests Murmur3 with empty input
 fn test_murmur3_empty() {
 	empty := []u8{}
 	hash := core.murmur3_32(empty, 0)
@@ -129,7 +129,7 @@ fn test_murmur3_empty() {
 	assert hash == core.murmur3_32(empty, 0)
 }
 
-/// Kafka 파티션 계산 테스트
+/// Tests Kafka partition calculation
 fn test_kafka_partition() {
 	key := 'my-key'.bytes()
 
@@ -141,7 +141,7 @@ fn test_kafka_partition() {
 	assert core.kafka_partition(key, 10) == partition
 }
 
-/// Kafka 파티션 빈 키 테스트
+/// Tests Kafka partition with empty key
 fn test_kafka_partition_empty_key() {
 	empty := []u8{}
 	assert core.kafka_partition(empty, 10) == 0
@@ -149,7 +149,7 @@ fn test_kafka_partition_empty_key() {
 
 // CRC32 Tests
 
-/// CRC32 기본 테스트
+/// Tests CRC32 basic operation
 fn test_crc32_basic() {
 	data := 'Hello, World!'.bytes()
 	crc := core.crc32_ieee(data)
@@ -162,7 +162,7 @@ fn test_crc32_basic() {
 	assert core.crc32_ieee(other) != crc
 }
 
-/// CRC32 알려진 값 테스트
+/// Tests CRC32 with known value
 fn test_crc32_known_value() {
 	// Test with known CRC32 value
 	data := 'test'.bytes()
@@ -172,7 +172,7 @@ fn test_crc32_known_value() {
 
 // Varint Tests
 
-/// Varint 왕복 테스트
+/// Tests varint roundtrip encoding/decoding
 fn test_varint_roundtrip() {
 	values := [i64(0), 1, -1, 127, -128, 255, 300, -300, 1000000, -1000000]
 
@@ -185,7 +185,7 @@ fn test_varint_roundtrip() {
 	}
 }
 
-/// Uvarint 왕복 테스트
+/// Tests uvarint roundtrip encoding/decoding
 fn test_uvarint_roundtrip() {
 	values := [u64(0), 1, 127, 128, 255, 16383, 16384, 2097151]
 
@@ -198,7 +198,7 @@ fn test_uvarint_roundtrip() {
 	}
 }
 
-/// Varint 크기 테스트
+/// Tests varint size calculation
 fn test_varint_size() {
 	assert core.varint_size(0) == 1
 	assert core.varint_size(1) == 1
@@ -211,7 +211,7 @@ fn test_varint_size() {
 
 // Ring Buffer Tests
 
-/// 링 버퍼 기본 테스트
+/// Tests ring buffer basic operation
 fn test_ring_buffer_basic() {
 	mut rb := core.new_ring_buffer(16)
 
@@ -226,7 +226,7 @@ fn test_ring_buffer_basic() {
 	assert !rb.is_empty()
 }
 
-/// 링 버퍼 읽기/쓰기 테스트
+/// Tests ring buffer read/write
 fn test_ring_buffer_read_write() {
 	mut rb := core.new_ring_buffer(16)
 
@@ -241,7 +241,7 @@ fn test_ring_buffer_read_write() {
 	assert rb.is_empty()
 }
 
-/// 링 버퍼 랩어라운드 테스트
+/// Tests ring buffer wrap-around
 fn test_ring_buffer_wrap_around() {
 	mut rb := core.new_ring_buffer(8)
 
@@ -265,7 +265,7 @@ fn test_ring_buffer_wrap_around() {
 
 // Object Pool Tests
 
-/// 레코드 풀 테스트
+/// Tests record pool
 fn test_record_pool() {
 	mut pool := core.new_record_pool(10)
 
@@ -285,7 +285,7 @@ fn test_record_pool() {
 	assert r2.value.len == 0
 }
 
-/// 레코드 배치 풀 테스트
+/// Tests record batch pool
 fn test_record_batch_pool() {
 	mut pool := core.new_record_batch_pool(10)
 
@@ -301,7 +301,7 @@ fn test_record_batch_pool() {
 	assert stats.returns == 1
 }
 
-/// 요청 풀 테스트
+/// Tests request pool
 fn test_request_pool() {
 	mut pool := core.new_request_pool(10)
 
@@ -320,7 +320,7 @@ fn test_request_pool() {
 
 // Bit Operation Tests
 
-/// 비트 연산 테스트
+/// Tests bit operations
 fn test_bit_operations() {
 	// Leading zeros
 	assert core.count_leading_zeros(0) == 64
@@ -341,7 +341,7 @@ fn test_bit_operations() {
 
 // Pool Stats Tests
 
-/// 풀 통계 적중률 테스트
+/// Tests pool stats hit rate
 fn test_pool_stats_hit_rate() {
 	stats := core.PoolStats{
 		hits_tiny:   80
@@ -353,7 +353,7 @@ fn test_pool_stats_hit_rate() {
 	assert stats.hit_rate() == 0.8
 }
 
-/// 객체 풀 통계 적중률 테스트
+/// Tests object pool stats hit rate
 fn test_object_pool_stats_hit_rate() {
 	stats := core.ObjectPoolStats{
 		hits:   90
@@ -365,7 +365,7 @@ fn test_object_pool_stats_hit_rate() {
 
 // Pooled Record Tests
 
-/// 풀링된 레코드 헤더 테스트
+/// Tests pooled record headers
 fn test_pooled_record_headers() {
 	mut r := core.PooledRecord{}
 
@@ -377,7 +377,7 @@ fn test_pooled_record_headers() {
 	assert r.headers[1].key == 'key2'
 }
 
-/// 풀링된 레코드 배치 테스트
+/// Tests pooled record batch
 fn test_pooled_record_batch() {
 	mut batch := core.PooledRecordBatch{}
 
@@ -398,7 +398,7 @@ fn test_pooled_record_batch() {
 
 // Benchmark Suite Tests
 
-/// 벤치마크 스위트 생성 테스트
+/// Tests benchmark suite creation
 fn test_benchmark_suite_creation() {
 	performance.init_global_performance(performance.PerformanceConfig{})
 
@@ -411,7 +411,7 @@ fn test_benchmark_suite_creation() {
 	assert suite.config.benchmark_iterations == 100
 }
 
-/// 벤치마크 버퍼 할당 테스트
+/// Tests benchmark buffer allocation
 fn test_benchmark_buffer_allocation() {
 	performance.init_global_performance(performance.PerformanceConfig{
 		buffer_pool_prewarm: true
@@ -428,7 +428,7 @@ fn test_benchmark_buffer_allocation() {
 	assert result.ops_per_second > 0
 }
 
-/// 벤치마크 레코드 풀 테스트
+/// Tests benchmark record pool
 fn test_benchmark_record_pool() {
 	performance.init_global_performance(performance.PerformanceConfig{})
 
@@ -442,7 +442,7 @@ fn test_benchmark_record_pool() {
 	assert result.avg_time_ns > 0
 }
 
-/// 벤치마크 요청/응답 사이클 테스트
+/// Tests benchmark request/response cycle
 fn test_benchmark_request_response_cycle() {
 	performance.init_global_performance(performance.PerformanceConfig{})
 

@@ -4,19 +4,23 @@
 module schema
 
 // AvroEncoder provides binary encoding and decoding for Avro data
+/// AvroEncoder provides binary encoding and decoding for Avro data.
 pub struct AvroEncoder {}
 
 // new_avro_encoder creates a new Avro encoder
+/// new_avro_encoder creates a new Avro encoder.
 pub fn new_avro_encoder() !AvroEncoder {
 	return AvroEncoder{}
 }
 
 // format returns the encoding format
+/// format returns the encoding format.
 pub fn (mut e AvroEncoder) format() Format {
 	return Format.avro
 }
 
 // encode encodes JSON data to Avro binary format
+/// encode encodes JSON data to Avro binary format.
 pub fn (mut e AvroEncoder) encode(data []u8, schema_str string) ![]u8 {
 	// Parse the schema
 	schema := parse_avro_schema(schema_str) or {
@@ -75,6 +79,7 @@ pub fn (mut e AvroEncoder) encode(data []u8, schema_str string) ![]u8 {
 }
 
 // decode decodes Avro binary data to JSON
+/// decode decodes Avro binary data to JSON.
 pub fn (mut e AvroEncoder) decode(data []u8, schema_str string) ![]u8 {
 	// Parse the schema
 	schema := parse_avro_schema(schema_str) or {

@@ -7,6 +7,7 @@ import domain
 import infra.observability
 import time
 
+/// CreateTopicsRequest는 관련 데이터를 담는 구조체입니다.
 pub struct CreateTopicsRequest {
 pub:
 	topics        []CreateTopicsRequestTopic
@@ -14,6 +15,7 @@ pub:
 	validate_only bool
 }
 
+/// CreateTopicsRequestTopic는 관련 데이터를 담는 구조체입니다.
 pub struct CreateTopicsRequestTopic {
 pub:
 	name               string
@@ -69,12 +71,14 @@ fn parse_create_topics_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
+/// DeleteTopicsRequest는 관련 데이터를 담는 구조체입니다.
 pub struct DeleteTopicsRequest {
 pub:
 	topics     []DeleteTopicsRequestTopic
 	timeout_ms i32
 }
 
+/// DeleteTopicsRequestTopic는 관련 데이터를 담는 구조체입니다.
 pub struct DeleteTopicsRequestTopic {
 pub:
 	name     string
@@ -112,12 +116,14 @@ fn parse_delete_topics_request(mut reader BinaryReader, version i16, is_flexible
 
 // CreateTopics Response (API Key 19)
 
+/// CreateTopicsResponse은 CreateTopics Response (API Key 19).
 pub struct CreateTopicsResponse {
 pub:
 	throttle_time_ms i32
 	topics           []CreateTopicsResponseTopic
 }
 
+/// CreateTopicsResponseTopic는 관련 데이터를 담는 구조체입니다.
 pub struct CreateTopicsResponseTopic {
 pub:
 	name               string
@@ -128,6 +134,7 @@ pub:
 	replication_factor i16
 }
 
+/// encode를 수행합니다.
 pub fn (r CreateTopicsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 5
 	mut writer := new_writer()
@@ -182,12 +189,14 @@ pub fn (r CreateTopicsResponse) encode(version i16) []u8 {
 
 // DeleteTopics Response (API Key 20)
 
+/// DeleteTopicsResponse은 DeleteTopics Response (API Key 20).
 pub struct DeleteTopicsResponse {
 pub:
 	throttle_time_ms i32
 	topics           []DeleteTopicsResponseTopic
 }
 
+/// DeleteTopicsResponseTopic는 관련 데이터를 담는 구조체입니다.
 pub struct DeleteTopicsResponseTopic {
 pub:
 	name       string
@@ -195,6 +204,7 @@ pub:
 	error_code i16
 }
 
+/// encode를 수행합니다.
 pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()

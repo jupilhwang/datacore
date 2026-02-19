@@ -1,11 +1,11 @@
-// Avro, JSON Schema, Protobuf 스키마의 호환성 검사를 제공합니다.
+// Provides compatibility checks for Avro, JSON Schema, and Protobuf schemas.
 module schema
 
 import domain
 
-// 메인 호환성 검사 함수
+// Main compatibility check functions
 
-/// check_backward_compatible는 새 스키마가 이전 스키마로 작성된 데이터를 읽을 수 있는지 검사합니다.
+/// check_backward_compatible checks whether the new schema can read data written by the old schema.
 fn check_backward_compatible(old_schema string, new_schema string, schema_type domain.SchemaType) bool {
 	match schema_type {
 		.avro {
@@ -20,7 +20,7 @@ fn check_backward_compatible(old_schema string, new_schema string, schema_type d
 	}
 }
 
-/// check_forward_compatible는 이전 스키마가 새 스키마로 작성된 데이터를 읽을 수 있는지 검사합니다.
+/// check_forward_compatible checks whether the old schema can read data written by the new schema.
 fn check_forward_compatible(old_schema string, new_schema string, schema_type domain.SchemaType) bool {
 	match schema_type {
 		.avro {

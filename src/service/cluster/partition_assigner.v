@@ -1,4 +1,4 @@
-// 파티션-브로커 할당 관리 및 리밸런싱 알고리즘 구현
+// Manages partition-broker assignment and implements rebalancing algorithms
 module cluster
 
 import domain
@@ -8,10 +8,10 @@ import sync
 import time
 import rand
 
-// 파티션 할당 서비스
+// Partition Assignment Service
 
-/// PartitionAssigner는 파티션-브로커 할당을 관리하는 서비스입니다.
-/// 라운드로빈 및 스티키 할당 전략을 지원하며, 브로커 변화 시 재할당을 처리합니다.
+/// PartitionAssigner is a service that manages partition-broker assignment.
+/// Supports round-robin and sticky assignment strategies, and handles reassignment on broker changes.
 @[heap]
 pub struct PartitionAssigner {
 	broker_id  i32
@@ -21,14 +21,14 @@ mut:
 	metadata_port ?port.ClusterMetadataPort
 	lock          sync.RwMutex
 	logger        &observability.Logger
-	// 메트릭
+	// Metrics
 	assignments_total        &observability.Metric
 	rebalance_total          &observability.Metric
 	rebalance_duration_ms    &observability.Metric
 	assignment_changes_total &observability.Metric
 }
 
-/// PartitionAssignerConfig는 파티션 할당 서비스 설정을 담습니다.
+/// PartitionAssignerConfig holds partition assignment service configuration.
 pub struct PartitionAssignerServiceConfig {
 pub:
 	broker_id                 i32
@@ -39,7 +39,7 @@ pub:
 	cluster_id                string
 }
 
-/// new_partition_assigner는 새로운 파티션 할당 서비스를 생성합니다.
+/// new_partition_assigner creates a new partition assignment service.
 pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_port ?port.ClusterMetadataPort) &PartitionAssigner {
 	logger := observability.get_named_logger('partition_assigner')
 	mut reg := observability.get_registry()
@@ -65,12 +65,12 @@ pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_po
 	}
 }
 
-// 초기 할당
+// Initial Assignment
 
-/// assign_partitions는 새로운 토픽의 파티션을 브로커에 초기 할당합니다.
-/// topic_name: 토픽 이름
-/// partition_count: 파티션 수
-/// brokers: 사용 가능한 브로커 목록
+/// assign_partitions performs initial partition assignment for a new topic to brokers.
+/// topic_name: topic name
+/// partition_count: partition count
+/// brokers: list of available brokers
 pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_count int, brokers []domain.BrokerInfo) ![]domain.PartitionAssignment {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
@@ -89,7 +89,7 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 
 	mut assignments := []domain.PartitionAssignment{}
 
-	// 라운드로빈 할당
+	// Round-robin assignment
 	for i in 0 .. partition_count {
 		broker_idx := i % brokers.len
 		broker := brokers[broker_idx]
@@ -106,7 +106,7 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 		assignments << assignment
 		a.assignments_total.inc()
 
-		// 분산 스토리지에 저장
+		// Store to distributed storage
 		if mut mp := a.metadata_port {
 			mp.update_partition_assignment(assignment) or {
 				a.logger.warn('Failed to store partition assignment', observability.field_string('topic',
@@ -121,11 +121,11 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 	return assignments
 }
 
-// 리밸런싱
+// Rebalancing
 
-/// rebalance_partitions는 브로커 변화에 따라 파티션을 재할당합니다.
-/// topic_name: 토픽 이름
-/// active_brokers: 현재 활성 브로커 목록
+/// rebalance_partitions reassigns partitions based on broker changes.
+/// topic_name: topic name
+/// active_brokers: list of currently active brokers
 pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_brokers []domain.BrokerInfo) ![]domain.PartitionAssignment {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
@@ -140,7 +140,7 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 	a.logger.info('Starting partition rebalance', observability.field_string('topic',
 		topic_name), observability.field_int('active_brokers', i64(active_brokers.len)))
 
-	// 현재 할당 조회
+	// Get current assignments
 	mut current_assignments := []domain.PartitionAssignment{}
 	if mut mp := a.metadata_port {
 		current_assignments = mp.list_partition_assignments(topic_name) or {
@@ -154,13 +154,13 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 		return []domain.PartitionAssignment{}
 	}
 
-	// 리밸런싱 수행
+	// Perform rebalancing
 	mut new_assignments := a.do_rebalance(topic_name, current_assignments, active_brokers)
 
-	// 변경된 할당 저장
+	// Store changed assignments
 	mut changes_count := 0
 	for mut assignment in new_assignments {
-		// 이전 할당과 비교하여 변경 여부 확인
+		// Compare with previous assignment to detect changes
 		mut found := false
 		for current in current_assignments {
 			if current.partition == assignment.partition {
@@ -174,19 +174,19 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 						observability.field_int('old_broker', i64(current.preferred_broker)),
 						observability.field_int('new_broker', i64(assignment.preferred_broker)))
 				} else {
-					// 변경 없음, 기존 에포크 유지
+					// No change, keep existing epoch
 					assignment.partition_epoch = current.partition_epoch
 				}
 				break
 			}
 		}
 		if !found {
-			// 새로운 파티션
+			// New partition
 			changes_count++
 			assignment.partition_epoch = 1
 		}
 
-		// 저장
+		// Store
 		if mut mp := a.metadata_port {
 			mp.update_partition_assignment(assignment) or {
 				a.logger.warn('Failed to update partition assignment', observability.field_string('topic',
@@ -206,7 +206,7 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 	return new_assignments
 }
 
-/// do_rebalance는 실제 리밸런싱 알고리즘을 수행합니다.
+/// do_rebalance performs the actual rebalancing algorithm.
 fn (mut a PartitionAssigner) do_rebalance(topic_name string, current []domain.PartitionAssignment, brokers []domain.BrokerInfo) []domain.PartitionAssignment {
 	match a.config.strategy {
 		.round_robin { return a.rebalance_round_robin(topic_name, current, brokers) }
@@ -215,12 +215,12 @@ fn (mut a PartitionAssigner) do_rebalance(topic_name string, current []domain.Pa
 	}
 }
 
-/// rebalance_round_robin는 라운드로빈 방식으로 파티션을 재할당합니다.
+/// rebalance_round_robin reassigns partitions using round-robin strategy.
 fn (mut a PartitionAssigner) rebalance_round_robin(topic_name string, current []domain.PartitionAssignment, brokers []domain.BrokerInfo) []domain.PartitionAssignment {
 	mut new_assignments := []domain.PartitionAssignment{}
 	broker_count := brokers.len
 
-	// 파티션을 정렬하여 일관된 할당 보장
+	// Sort partitions to ensure consistent assignment
 	mut sorted_partitions := current.clone()
 	sorted_partitions.sort(a.partition < b.partition)
 
@@ -241,23 +241,23 @@ fn (mut a PartitionAssigner) rebalance_round_robin(topic_name string, current []
 	return new_assignments
 }
 
-/// rebalance_range는 범위 기반 방식으로 파티션을 재할당합니다.
+/// rebalance_range reassigns partitions using range-based strategy.
 fn (mut a PartitionAssigner) rebalance_range(topic_name string, current []domain.PartitionAssignment, brokers []domain.BrokerInfo) []domain.PartitionAssignment {
 	mut new_assignments := []domain.PartitionAssignment{}
 	broker_count := brokers.len
 	partition_count := current.len
 
-	// 각 브로커당 할당할 파티션 수 계산
+	// Calculate number of partitions to assign per broker
 	partitions_per_broker := partition_count / broker_count
 	extra_partitions := partition_count % broker_count
 
-	// 파티션을 정렬
+	// Sort partitions
 	mut sorted_partitions := current.clone()
 	sorted_partitions.sort(a.partition < b.partition)
 
 	mut partition_idx := 0
 	for broker_idx, broker in brokers {
-		// 이 브로커에 할당할 파티션 수
+		// Number of partitions to assign to this broker
 		count := partitions_per_broker + if broker_idx < extra_partitions { 1 } else { 0 }
 
 		for _ in 0 .. count {
@@ -280,24 +280,24 @@ fn (mut a PartitionAssigner) rebalance_range(topic_name string, current []domain
 	return new_assignments
 }
 
-/// rebalance_sticky는 스티키 방식으로 파티션을 재할당합니다.
-/// 기존 할당을 최대한 유지하면서 불균형만 수정합니다.
+/// rebalance_sticky reassigns partitions using sticky strategy.
+/// Preserves existing assignments as much as possible and only corrects imbalances.
 fn (mut a PartitionAssigner) rebalance_sticky(topic_name string, current []domain.PartitionAssignment, brokers []domain.BrokerInfo) []domain.PartitionAssignment {
 	mut new_assignments := []domain.PartitionAssignment{}
 
-	// 활성 브로커 ID 집합 생성
+	// Build set of active broker IDs
 	mut active_broker_ids := map[i32]bool{}
 	for broker in brokers {
 		active_broker_ids[broker.broker_id] = true
 	}
 
-	// 각 브로커당 현재 할당된 파티션 수 계산
+	// Count currently assigned partitions per broker
 	mut broker_partition_count := map[i32]int{}
 	for broker in brokers {
 		broker_partition_count[broker.broker_id] = 0
 	}
 
-	// 1단계: 살아있는 브로커에 할당된 파티션은 유지
+	// Step 1: Keep partitions assigned to alive brokers
 	for assignment in current {
 		if assignment.preferred_broker in active_broker_ids {
 			new_assignments << domain.PartitionAssignment{
@@ -312,13 +312,13 @@ fn (mut a PartitionAssigner) rebalance_sticky(topic_name string, current []domai
 		}
 	}
 
-	// 2단계: 죽은 브로커의 파티션을 재할당
+	// Step 2: Reassign partitions from dead brokers
 	target_partitions_per_broker := current.len / brokers.len
 	mut extra_partitions := current.len % brokers.len
 
 	for assignment in current {
 		if assignment.preferred_broker !in active_broker_ids {
-			// 가장 적은 파티션을 가진 브로커 찾기
+			// Find broker with fewest partitions
 			mut min_broker_id := brokers[0].broker_id
 			mut min_count := broker_partition_count[min_broker_id]
 
@@ -330,7 +330,7 @@ fn (mut a PartitionAssigner) rebalance_sticky(topic_name string, current []domai
 				}
 			}
 
-			// 해당 브로커에 할당
+			// Assign to that broker
 			new_assignments << domain.PartitionAssignment{
 				topic_name:       topic_name
 				partition:        assignment.partition
@@ -343,7 +343,7 @@ fn (mut a PartitionAssigner) rebalance_sticky(topic_name string, current []domai
 		}
 	}
 
-	// 3단계: 불균형 수정 (선택적)
+	// Step 3: Correct imbalance (optional)
 	if a.config.sticky_assign {
 		new_assignments = a.rebalance_even_distribution(new_assignments, brokers, target_partitions_per_broker,
 			extra_partitions)
@@ -352,11 +352,11 @@ fn (mut a PartitionAssigner) rebalance_sticky(topic_name string, current []domai
 	return new_assignments
 }
 
-/// rebalance_even_distribution은 파티션을 균등하게 분배합니다.
+/// rebalance_even_distribution distributes partitions evenly.
 fn (mut a PartitionAssigner) rebalance_even_distribution(current []domain.PartitionAssignment, brokers []domain.BrokerInfo, target int, extra int) []domain.PartitionAssignment {
 	mut result := current.clone()
 
-	// 각 브로커당 현재 파티션 수 계산
+	// Calculate current partition count per broker
 	mut broker_partition_count := map[i32]int{}
 	for broker in brokers {
 		broker_partition_count[broker.broker_id] = 0
@@ -369,19 +369,19 @@ fn (mut a PartitionAssigner) rebalance_even_distribution(current []domain.Partit
 
 	mut remaining_extra := extra
 
-	// 과부하된 브로커에서 파티션 이동
+	// Move partitions from overloaded brokers
 	for broker in brokers {
 		broker_id := broker.broker_id
 		count := broker_partition_count[broker_id]
 		max_allowed := target + if remaining_extra > 0 { 1 } else { 0 }
 
 		if count > max_allowed {
-			// 이 브로커에서 파티션 이동 필요
+			// Need to move partitions from this broker
 			mut to_move := count - max_allowed
 
 			for i := 0; i < result.len && to_move > 0; i++ {
 				if result[i].preferred_broker == broker_id {
-					// 가장 적은 파티션을 가진 브로커 찾기
+					// Find broker with fewest partitions
 					mut min_broker_id := brokers[0].broker_id
 					mut min_count := broker_partition_count[min_broker_id]
 
@@ -396,7 +396,7 @@ fn (mut a PartitionAssigner) rebalance_even_distribution(current []domain.Partit
 						}
 					}
 
-					// 최소 부하 브로커가 여유가 있으면 이동
+					// Move if least-loaded broker has capacity
 					if min_count < target {
 						result[i].preferred_broker = min_broker_id
 						result[i].replica_brokers = [min_broker_id]
@@ -417,9 +417,9 @@ fn (mut a PartitionAssigner) rebalance_even_distribution(current []domain.Partit
 	return result
 }
 
-// 조회 메서드
+// Query Methods
 
-/// get_partition_leader는 특정 파티션의 현재 리더 브로커 ID를 반환합니다.
+/// get_partition_leader returns the current leader broker ID for a specific partition.
 pub fn (mut a PartitionAssigner) get_partition_leader(topic_name string, partition i32) !i32 {
 	a.lock.rlock()
 	defer { a.lock.runlock() }
@@ -434,7 +434,7 @@ pub fn (mut a PartitionAssigner) get_partition_leader(topic_name string, partiti
 	return error('metadata port not available')
 }
 
-/// get_partition_assignment는 특정 파티션의 할당 정보를 반환합니다.
+/// get_partition_assignment returns assignment information for a specific partition.
 pub fn (mut a PartitionAssigner) get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment {
 	a.lock.rlock()
 	defer { a.lock.runlock() }
@@ -446,7 +446,7 @@ pub fn (mut a PartitionAssigner) get_partition_assignment(topic_name string, par
 	return error('metadata port not available')
 }
 
-/// list_partition_assignments는 토픽의 모든 파티션 할당을 반환합니다.
+/// list_partition_assignments returns all partition assignments for a topic.
 pub fn (mut a PartitionAssigner) list_partition_assignments(topic_name string) ![]domain.PartitionAssignment {
 	a.lock.rlock()
 	defer { a.lock.runlock() }
@@ -458,10 +458,10 @@ pub fn (mut a PartitionAssigner) list_partition_assignments(topic_name string) !
 	return []domain.PartitionAssignment{}
 }
 
-// 재할당 계획
+// Reassignment Plan
 
-/// generate_reassignment_plan은 브로커 변화에 따른 재할당 계획을 생성합니다.
-/// changes: 브로커 변화 정보 (추가/제거된 브로커)
+/// generate_reassignment_plan generates a reassignment plan based on broker changes.
+/// changes: broker change information (added/removed brokers)
 pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChanges) !domain.ReassignmentPlan {
 	a.lock.rlock()
 	defer { a.lock.runlock() }
@@ -479,9 +479,9 @@ pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChange
 		status:         .pending
 	}
 
-	// 모든 토픽의 할당을 검사하여 변경 필요한 파티션 식별
-	// TODO: 토픽 목록을 가져오는 메서드 필요
-	// 현재는 빈 계획 반환
+	// Inspect assignments for all topics to identify partitions needing change
+	// TODO: Need method to get topic list
+	// Currently returning empty plan
 
 	a.logger.info('Generated reassignment plan', observability.field_string('plan_id',
 		plan_id), observability.field_string('reason', changes.reason), observability.field_int('added_brokers',
@@ -490,7 +490,7 @@ pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChange
 	return plan
 }
 
-/// BrokerChanges는 브로커 변화 정보를 담습니다.
+/// BrokerChanges holds broker change information.
 pub struct BrokerChanges {
 pub:
 	reason  string
@@ -498,9 +498,9 @@ pub:
 	removed []domain.BrokerInfo
 }
 
-// 설정 변경
+// Configuration Changes
 
-/// set_strategy는 할당 전략을 변경합니다.
+/// set_strategy changes the assignment strategy.
 pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy) {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
@@ -513,7 +513,7 @@ pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy
 		assignment_strategy_to_string(strategy)))
 }
 
-/// set_sticky_assign은 스티키 할당 모드를 설정합니다.
+/// set_sticky_assign sets the sticky assignment mode.
 pub fn (mut a PartitionAssigner) set_sticky_assign(enabled bool) {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
@@ -526,7 +526,7 @@ pub fn (mut a PartitionAssigner) set_sticky_assign(enabled bool) {
 		enabled))
 }
 
-/// assignment_strategy_to_string는 AssignmentStrategy를 문자열로 변환합니다.
+/// assignment_strategy_to_string converts AssignmentStrategy to a string.
 fn assignment_strategy_to_string(s domain.AssignmentStrategy) string {
 	return match s {
 		.round_robin { 'round_robin' }

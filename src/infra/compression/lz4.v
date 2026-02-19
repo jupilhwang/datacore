@@ -1,57 +1,57 @@
-/// 인프라 레이어 - LZ4 압축
-/// DEPRECATED: Pure V LZ4 구현체는 더 이상 권장되지 않습니다.
-/// C 라이브러리 버전(lz4_c.v)이 Kafka 프레임 호환성을 제공합니다.
-/// 테스트 목적으로만 사용하세요.
-/// Pure V 구현의 LZ4 프레임 형식 압축 알고리즘
-/// Kafka와 호환되는 LZ4 프레임 형식 지원
-/// 참조: https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
+/// Infrastructure layer - LZ4 compression
+/// DEPRECATED: The pure V LZ4 implementation is no longer recommended.
+/// The C library version (lz4_c.v) provides Kafka frame compatibility.
+/// For testing purposes only.
+/// LZ4 frame format compression algorithm in pure V
+/// Supports LZ4 frame format compatible with Kafka
+/// Reference: https://github.com/lz4/lz4/blob/dev/doc/lz4_Frame_format.md
 module compression
 
 import infra.observability
 
-/// LZ4 압축 알고리즘 구현.
+/// LZ4 compression algorithm implementation.
 pub struct Lz4Compressor {
 }
 
-/// LZ4 매직 넘버
+/// LZ4 magic number
 const lz4_magic_number = [u8(0x04), 0x22, 0x4d, 0x18]
 
-/// LZ4 프레임 헤더 플래그
+/// LZ4 frame header flags
 const lz4_frame_version = u8(0x40)
 const lz4_block_default = u8(0x40)
 
-/// new_lz4_compressor는 새 Lz4Compressor를 생성합니다.
+/// new_lz4_compressor creates a new Lz4Compressor.
 pub fn new_lz4_compressor() &Lz4Compressor {
 	return &Lz4Compressor{}
 }
 
-/// compress는 데이터를 LZ4 프레임 형식으로 압축합니다.
+/// compress compresses data into LZ4 frame format.
 pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// LZ4 프레임 형식:
-	// 매직 넘버 (4 bytes) + 프레임 헤더 + 블록들 + 종료 마커 + 체크섬
+	// LZ4 frame format:
+	// Magic number (4 bytes) + frame header + blocks + end marker + checksum
 	mut result := []u8{cap: data.len + 32}
 
-	// 매직 넘버
+	// Magic number
 	result << lz4_magic_number
 
-	// 프레임 헤더
+	// Frame header
 	flg := lz4_frame_version | 0x00
 	bd := lz4_block_default
 
 	result << flg
 	result << bd
 
-	// 헤더 체크섬 (xxh32의 상위 8비트)
+	// Header checksum (upper 8 bits of xxh32)
 	header_checksum := calculate_header_checksum([flg, bd])
 	result << header_checksum
 
-	// 데이터를 단일 블록으로 저장 (간단한 구현)
+	// Store data as a single block (simple implementation)
 	if data.len <= 65536 {
-		// 비압축 블록 (최상위 비트가 1)
+		// Uncompressed block (MSB set to 1)
 		block_size := u32(data.len) | 0x80000000
 		result << u8(block_size & 0xff)
 		result << u8((block_size >> 8) & 0xff)
@@ -59,13 +59,13 @@ pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 		result << u8((block_size >> 24) & 0xff)
 		result << data
 	} else {
-		// 여러 블록으로 분할 (간단한 구현)
+		// Split into multiple blocks (simple implementation)
 		mut offset := 0
 		for offset < data.len {
 			remaining := data.len - offset
 			block_len := if remaining > 65536 { 65536 } else { remaining }
 
-			// 비압축 블록
+			// Uncompressed block
 			block_size := u32(block_len) | 0x80000000
 			result << u8(block_size & 0xff)
 			result << u8((block_size >> 8) & 0xff)
@@ -77,7 +77,7 @@ pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 		}
 	}
 
-	// 종료 마커 (빈 블록)
+	// End marker (empty block)
 	result << [u8(0x00), 0x00, 0x00, 0x00]
 
 	mut logger := observability.get_named_logger('lz4_compressor')
@@ -87,26 +87,26 @@ pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 	return result
 }
 
-/// decompress는 LZ4 프레임 형식의 데이터를 해제합니다.
-/// Kafka 호환: LZ4 프레임 형식 지원
+/// decompress decompresses LZ4 frame format data.
+/// Kafka compatible: supports LZ4 frame format
 pub fn (c &Lz4Compressor) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 매직 넘버 확인 (리틀 엔디안)
+	// Verify magic number (little-endian)
 	expected_magic := u32(0x04) | (u32(0x22) << 8) | (u32(0x4d) << 16) | (u32(0x18) << 24)
 	actual_magic := u32(data[0]) | (u32(data[1]) << 8) | (u32(data[2]) << 16) | (u32(data[3]) << 24)
 
 	if actual_magic != expected_magic {
-		// 매직 넘버가 없으면 raw 데이터로 처리
+		// If magic number is absent, treat as raw data
 		return data.clone()
 	}
 
 	mut pos := 4
 	mut result := []u8{}
 
-	// 프레임 헤더 파싱
+	// Parse frame header
 	if pos >= data.len {
 		return error('incomplete LZ4 frame header')
 	}
@@ -119,29 +119,29 @@ pub fn (c &Lz4Compressor) decompress(data []u8) ![]u8 {
 	_ := data[pos]
 	pos++
 
-	// 헤더 체크섬 스킵
+	// Skip header checksum
 	if pos >= data.len {
 		return error('incomplete LZ4 frame header')
 	}
 	pos++
 
-	// 블록 파싱
+	// Parse blocks
 	for pos < data.len {
 		if pos + 4 > data.len {
 			break
 		}
 
-		// 블록 크기 읽기 (리틀 엔디안)
+		// Read block size (little-endian)
 		block_size := u32(data[pos]) | (u32(data[pos + 1]) << 8) | (u32(data[pos + 2]) << 16) | (u32(data[
 			pos + 3]) << 24)
 		pos += 4
 
-		// 종료 마커 확인
+		// Check end marker
 		if block_size == 0 {
 			break
 		}
 
-		// 비압축 블록 여부 확인 (최상위 비트)
+		// Check if block is uncompressed (MSB)
 		is_uncompressed := (block_size & 0x80000000) != 0
 		size := int(block_size & 0x7fffffff)
 
@@ -150,17 +150,17 @@ pub fn (c &Lz4Compressor) decompress(data []u8) ![]u8 {
 		}
 
 		if is_uncompressed {
-			// 비압축 블록
+			// Uncompressed block
 			result << data[pos..pos + size]
 		} else {
-			// 압축 블록: LZ4 압축 해제 실행
+			// Compressed block: run LZ4 decompression
 			decompressed_block := lz4_decompress_block(data[pos..pos + size])!
 			result << decompressed_block
 		}
 
 		pos += size
 
-		// 블록 체크섬 스킵 (있는 경우)
+		// Skip block checksum (if present)
 		if (flg & 0x04) != 0 {
 			if pos + 4 > data.len {
 				return error('incomplete LZ4 block checksum')
@@ -176,8 +176,8 @@ pub fn (c &Lz4Compressor) decompress(data []u8) ![]u8 {
 	return result
 }
 
-/// lz4_decompress_block은 단일 LZ4 압축 블록을 해제합니다.
-/// 간단한 LZ77 복사 구현
+/// lz4_decompress_block decompresses a single LZ4 compressed block.
+/// Simple LZ77 copy implementation
 fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 	mut result := []u8{cap: compressed_data.len * 4}
 	mut ip := 0
@@ -187,7 +187,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 		ip++
 
 		if b < 0x20 {
-			// 리터럴 길이: 0-31
+			// Literal length: 0-31
 			lit_len := int(b) + 1
 
 			if ip + lit_len > compressed_data.len {
@@ -197,7 +197,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 			result << compressed_data[ip..ip + lit_len]
 			ip += lit_len
 		} else if b < 0x40 {
-			// 2바이트 매치
+			// 2-byte match
 			mut lit_len := int(b & 0x1f)
 			if lit_len == 0 {
 				lit_len = 1
@@ -221,7 +221,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 			result << compressed_data[ip..ip + lit_len]
 			ip += lit_len
 
-			// 매치 복사
+			// Copy match
 			for match_len > 0 {
 				if offset == 0 || offset > result.len {
 					return error('invalid offset')
@@ -230,7 +230,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 				match_len--
 			}
 		} else {
-			// 3바이트 이상 매치
+			// 3+ byte match
 			lit_len := int(b) - 0x20
 
 			if ip + 2 >= compressed_data.len {
@@ -251,7 +251,7 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 			result << compressed_data[ip..ip + lit_len]
 			ip += lit_len
 
-			// 매치 복사
+			// Copy match
 			for match_len > 0 {
 				if offset == 0 || offset > result.len {
 					return error('invalid offset in 3+ match')
@@ -265,12 +265,12 @@ fn lz4_decompress_block(compressed_data []u8) ![]u8 {
 	return result
 }
 
-/// compression_type은 압축 타입을 반환합니다.
+/// compression_type returns the compression type.
 pub fn (c &Lz4Compressor) compression_type() CompressionType {
 	return CompressionType.lz4
 }
 
-/// LZ4 프레임 헤더의 체크섬 계산.
+/// Calculates the checksum for the LZ4 frame header.
 fn calculate_header_checksum(header []u8) u8 {
 	mut sum := u32(0)
 	for b in header {

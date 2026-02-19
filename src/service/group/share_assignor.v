@@ -1,12 +1,12 @@
-// Share 그룹을 위한 파티션 할당 전략을 구현합니다.
-// 전통적인 컨슈머 그룹과 달리 동일한 파티션을 여러 멤버에게 할당할 수 있습니다.
+// Implements partition assignment strategies for share groups.
+// Unlike traditional consumer groups, the same partition can be assigned to multiple members.
 module group
 
 import domain
 
 // SimpleAssignor (KIP-932)
 
-/// ShareMemberSubscription은 멤버의 구독 정보를 담습니다.
+/// ShareMemberSubscription holds a member's subscription information.
 pub struct ShareMemberSubscription {
 pub:
 	member_id string
@@ -14,7 +14,7 @@ pub:
 	topics    []string
 }
 
-/// ShareTopicMetadata는 할당을 위한 토픽 정보를 담습니다.
+/// ShareTopicMetadata holds topic information for assignment.
 pub struct ShareTopicMetadata {
 pub:
 	topic_id        []u8
@@ -22,24 +22,26 @@ pub:
 	partition_count int
 }
 
-/// ShareGroupSimpleAssignor는 KIP-932의 SimpleAssignor를 구현합니다.
-/// 각 파티션에 할당된 컨슈머 수의 균형을 맞춥니다.
+/// ShareGroupSimpleAssignor implements the KIP-932 SimpleAssignor.
+/// Balances the number of consumers assigned to each partition.
 pub struct ShareGroupSimpleAssignor {}
 
+/// new_simple_assignor creates a new SimpleAssignor.
 pub fn new_simple_assignor() &ShareGroupSimpleAssignor {
 	return &ShareGroupSimpleAssignor{}
 }
 
+/// name returns the assignor name.
 pub fn (a &ShareGroupSimpleAssignor) name() string {
 	return 'simple'
 }
 
-/// assign은 share 그룹 멤버에 대한 파티션 할당을 계산합니다.
-/// 컨슈머 그룹과 달리 share 그룹은 동일한 파티션을 여러 멤버에게 할당할 수 있습니다.
+/// assign computes partition assignments for share group members.
+/// Unlike consumer groups, share groups can assign the same partition to multiple members.
 pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, topics map[string]ShareTopicMetadata) map[string][]domain.SharePartitionAssignment {
 	mut assignments := map[string][]domain.SharePartitionAssignment{}
 
-	// 빈 할당 초기화
+	// Initialize empty assignments
 	for m in members {
 		assignments[m.member_id] = []domain.SharePartitionAssignment{}
 	}
@@ -48,7 +50,7 @@ pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, t
 		return assignments
 	}
 
-	// 구독 토픽별로 멤버 그룹화
+	// Group members by subscribed topic
 	mut topic_assignments := map[string][]string{}
 
 	for m in members {
@@ -60,7 +62,7 @@ pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, t
 		}
 	}
 
-	// 각 토픽에 대해 구독한 멤버에게 파티션 할당
+	// Assign partitions to subscribed members for each topic
 	for topic_name, topic_meta in topics {
 		subscribed := topic_assignments[topic_name] or { continue }
 		if subscribed.len == 0 {
@@ -70,23 +72,23 @@ pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, t
 		num_partitions := topic_meta.partition_count
 		num_members := subscribed.len
 
-		// 이 토픽의 파티션 목록 생성
+		// Build partition list for this topic
 		mut partitions := []i32{}
 		for p in 0 .. num_partitions {
 			partitions << p
 		}
 
-		// 라운드 로빈으로 파티션 할당
+		// Assign partitions via round-robin
 		mut member_idx := 0
 		for partition in partitions {
 			member_id := subscribed[member_idx % subscribed.len]
 
-			// 이 멤버의 토픽 할당 찾기 또는 생성
+			// Find or create topic assignment for this member
 			mut found := false
 			mut member_assignments := assignments[member_id]
 			for i, ta in member_assignments {
 				if ta.topic_name == topic_name {
-					// 파티션 추가된 새 할당 생성
+					// Create new assignment with additional partition
 					mut new_partitions := ta.partitions.clone()
 					new_partitions << partition
 					member_assignments[i] = domain.SharePartitionAssignment{
@@ -110,10 +112,10 @@ pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, t
 
 			member_idx += 1
 
-			// Share 그룹의 경우, 멤버가 파티션보다 많으면
-			// 각 파티션을 여러 멤버에게 할당
+			// For share groups, if there are more members than partitions,
+			// assign each partition to multiple members
 			if num_members > num_partitions && member_idx < num_members {
-				// 이 파티션을 더 많은 멤버에게 계속 할당
+				// Continue assigning this partition to more members
 				extra_assignments := (num_members / num_partitions) - 1
 				for _ in 0 .. extra_assignments {
 					extra_member_id := subscribed[member_idx % subscribed.len]

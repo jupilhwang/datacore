@@ -3,7 +3,7 @@ module group
 import domain
 import service.port
 
-// 테스트용 Mock Storage
+// Mock Storage for testing
 
 struct MockStorage {
 mut:

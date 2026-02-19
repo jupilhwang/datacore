@@ -9,6 +9,7 @@ import time
 
 // DescribeAcls (API Key 29)
 
+/// DescribeAclsRequest은 DescribeAcls (API Key 29).
 pub struct DescribeAclsRequest {
 pub:
 	resource_type   i8
@@ -20,6 +21,7 @@ pub:
 	permission_type i8
 }
 
+/// DescribeAclsResponse는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeAclsResponse {
 pub:
 	throttle_time_ms i32
@@ -28,6 +30,7 @@ pub:
 	resources        []DescribeAclsResource
 }
 
+/// DescribeAclsResource는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeAclsResource {
 pub:
 	resource_type i8
@@ -36,6 +39,7 @@ pub:
 	acls          []DescribeAclsAcl
 }
 
+/// DescribeAclsAcl는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeAclsAcl {
 pub:
 	principal       string
@@ -68,6 +72,7 @@ fn parse_describe_acls_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
+/// encode를 수행합니다.
 pub fn (r DescribeAclsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -134,11 +139,13 @@ pub fn (r DescribeAclsResponse) encode(version i16) []u8 {
 
 // CreateAcls (API Key 30)
 
+/// CreateAclsRequest은 CreateAcls (API Key 30).
 pub struct CreateAclsRequest {
 pub:
 	creations []CreateAclsCreation
 }
 
+/// CreateAclsCreation는 관련 데이터를 담는 구조체입니다.
 pub struct CreateAclsCreation {
 pub:
 	resource_type   i8
@@ -150,12 +157,14 @@ pub:
 	permission_type i8
 }
 
+/// CreateAclsResponse는 관련 데이터를 담는 구조체입니다.
 pub struct CreateAclsResponse {
 pub:
 	throttle_time_ms i32
 	results          []CreateAclsResult
 }
 
+/// CreateAclsResult는 관련 데이터를 담는 구조체입니다.
 pub struct CreateAclsResult {
 pub:
 	error_code    i16
@@ -197,6 +206,7 @@ fn parse_create_acls_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
+/// encode를 수행합니다.
 pub fn (r CreateAclsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
@@ -228,11 +238,13 @@ pub fn (r CreateAclsResponse) encode(version i16) []u8 {
 
 // DeleteAcls (API Key 31)
 
+/// DeleteAclsRequest은 DeleteAcls (API Key 31).
 pub struct DeleteAclsRequest {
 pub:
 	filters []DeleteAclsFilter
 }
 
+/// DeleteAclsFilter는 관련 데이터를 담는 구조체입니다.
 pub struct DeleteAclsFilter {
 pub:
 	resource_type   i8
@@ -244,12 +256,14 @@ pub:
 	permission_type i8
 }
 
+/// DeleteAclsResponse는 관련 데이터를 담는 구조체입니다.
 pub struct DeleteAclsResponse {
 pub:
 	throttle_time_ms i32
 	results          []DeleteAclsResult
 }
 
+/// DeleteAclsResult는 관련 데이터를 담는 구조체입니다.
 pub struct DeleteAclsResult {
 pub:
 	error_code    i16
@@ -257,6 +271,7 @@ pub:
 	matching_acls []DeleteAclsMatchingAcl
 }
 
+/// DeleteAclsMatchingAcl는 관련 데이터를 담는 구조체입니다.
 pub struct DeleteAclsMatchingAcl {
 pub:
 	error_code      i16
@@ -305,6 +320,7 @@ fn parse_delete_acls_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
+/// encode를 수행합니다.
 pub fn (r DeleteAclsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()

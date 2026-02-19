@@ -1,30 +1,30 @@
 module benchmarks
 
-/// 종합 I/O 벤치마크 스위트
-/// 다양한 I/O 전략의 성능을 비교합니다:
-/// - 일반 파일 I/O
-/// - 메모리 매핑 I/O (mmap)
+/// Comprehensive I/O benchmark suite
+/// Compares performance of various I/O strategies:
+/// - Regular file I/O
+/// - Memory-mapped I/O (mmap)
 /// - DMA / Scatter-Gather I/O
 /// - io_uring (Linux)
-/// - NUMA 인식 할당
+/// - NUMA-aware allocation
 import os
 import time
 import infra.performance.engines
 import infra.performance.io
 import infra.performance.core
 
-// I/O 벤치마크 설정
+// I/O benchmark configuration
 
-/// IoBenchmarkConfig는 I/O 벤치마크 설정을 정의합니다.
+/// IoBenchmarkConfig defines I/O benchmark settings.
 pub struct IoBenchmarkConfig {
 pub:
-	// 테스트 매개변수
+	// Test parameters
 	iterations  int   = 100
 	warmup_runs int   = 10
 	data_size   usize = 4096
 	file_size   i64   = 1024 * 1024
 
-	// 테스트 선택
+	// Test selection
 	test_regular_io   bool = true
 	test_mmap         bool = true
 	test_dma          bool = true
@@ -32,21 +32,21 @@ pub:
 	test_numa         bool = true
 	test_buffer_pools bool = true
 
-	// 출력
+	// Output
 	verbose       bool
 	output_format OutputFormat = .text
 }
 
-/// OutputFormat은 벤치마크 결과 출력 형식을 정의합니다.
+/// OutputFormat defines benchmark result output format.
 pub enum OutputFormat {
 	text
 	json
 	markdown
 }
 
-// 벤치마크 결과
+// Benchmark results
 
-/// IoBenchmarkResults는 I/O 벤치마크 결과를 저장합니다.
+/// IoBenchmarkResults stores I/O benchmark results.
 pub struct IoBenchmarkResults {
 pub mut:
 	test_name       string
@@ -60,7 +60,7 @@ pub mut:
 	data_size       usize
 }
 
-/// IoBenchmarkSuite는 I/O 벤치마크 스위트입니다.
+/// IoBenchmarkSuite is the I/O benchmark suite.
 pub struct IoBenchmarkSuite {
 pub mut:
 	config  IoBenchmarkConfig
@@ -68,7 +68,7 @@ pub mut:
 	system  SystemInfo
 }
 
-/// SystemInfo는 시스템 정보를 저장합니다.
+/// SystemInfo stores system information.
 pub struct SystemInfo {
 pub:
 	os_name            string
@@ -80,9 +80,9 @@ pub:
 	total_memory       i64
 }
 
-// 벤치마크 러너
+// Benchmark runner
 
-/// new_io_benchmark_suite는 새로운 벤치마크 스위트를 생성합니다.
+/// new_io_benchmark_suite creates a new benchmark suite.
 pub fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
 	return IoBenchmarkSuite{
 		config:  config
@@ -91,7 +91,7 @@ pub fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
 	}
 }
 
-/// detect_system_capabilities는 시스템 기능을 감지합니다.
+/// detect_system_capabilities detects system capabilities.
 fn detect_system_capabilities() SystemInfo {
 	topology := engines.get_numa_topology()
 	io_caps := engines.get_async_io_capabilities()
@@ -119,14 +119,14 @@ fn detect_system_capabilities() SystemInfo {
 	}
 }
 
-/// run_all은 설정된 모든 벤치마크를 실행합니다.
+/// run_all runs all configured benchmarks.
 pub fn (mut s IoBenchmarkSuite) run_all() {
 	if s.config.verbose {
 		println('Starting benchmark suite...')
 		println('System: ${s.system.os_name}, NUMA nodes: ${s.system.numa_nodes}')
 	}
 
-	// 테스트 파일 생성
+	// Create test file
 	test_file := create_test_file(s.config.file_size)
 	defer {
 		os.rm(test_file) or {}
@@ -160,18 +160,18 @@ pub fn (mut s IoBenchmarkSuite) run_all() {
 	}
 }
 
-// 개별 벤치마크
+// Individual benchmarks
 
-/// bench_regular_read는 일반 파일 읽기를 벤치마크합니다.
+/// bench_regular_read benchmarks regular file reading.
 fn (mut s IoBenchmarkSuite) bench_regular_read(path string) {
 	mut times := []i64{cap: s.config.iterations}
 
-	// 워밍업
+	// Warmup
 	for _ in 0 .. s.config.warmup_runs {
 		os.read_file(path) or { continue }
 	}
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		_ = os.read_file(path) or { '' }
@@ -181,13 +181,13 @@ fn (mut s IoBenchmarkSuite) bench_regular_read(path string) {
 	s.results << calculate_io_results('Regular Read', times, s.config.data_size)
 }
 
-/// bench_regular_write는 일반 파일 쓰기를 벤치마크합니다.
+/// bench_regular_write benchmarks regular file writing.
 fn (mut s IoBenchmarkSuite) bench_regular_write(path string) {
 	mut times := []i64{cap: s.config.iterations}
 	data := []u8{len: int(s.config.data_size), init: u8(index % 256)}
 	test_path := '${path}.write_test'
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		os.write_file(test_path, data.bytestr()) or { continue }
@@ -198,11 +198,11 @@ fn (mut s IoBenchmarkSuite) bench_regular_write(path string) {
 	s.results << calculate_io_results('Regular Write', times, s.config.data_size)
 }
 
-/// bench_mmap_read는 메모리 매핑 읽기를 벤치마크합니다.
+/// bench_mmap_read benchmarks memory-mapped reading.
 fn (mut s IoBenchmarkSuite) bench_mmap_read(path string) {
 	mut times := []i64{cap: s.config.iterations}
 
-	// 워밍업
+	// Warmup
 	for _ in 0 .. s.config.warmup_runs {
 		if mut mm := io.MmapFile.open(path, true) {
 			if region := mm.map_region(0, int(s.config.data_size)) {
@@ -212,7 +212,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_read(path string) {
 		}
 	}
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		if mut mm := io.MmapFile.open(path, true) {
@@ -227,15 +227,15 @@ fn (mut s IoBenchmarkSuite) bench_mmap_read(path string) {
 	s.results << calculate_io_results('Mmap Read', times, s.config.data_size)
 }
 
-/// bench_mmap_write는 메모리 매핑 쓰기를 벤치마크합니다.
+/// bench_mmap_write benchmarks memory-mapped writing.
 fn (mut s IoBenchmarkSuite) bench_mmap_write(path string) {
 	mut times := []i64{cap: s.config.iterations}
 	test_path := '${path}.mmap_write'
 
-	// 먼저 파일 생성
+	// Create file first
 	os.write_file(test_path, []u8{len: int(s.config.file_size)}.bytestr()) or { return }
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		if mut mm := io.MmapFile.open(test_path, false) {
@@ -252,7 +252,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_write(path string) {
 	s.results << calculate_io_results('Mmap Write', times, s.config.data_size)
 }
 
-/// bench_dma_read는 DMA scatter 읽기를 벤치마크합니다.
+/// bench_dma_read benchmarks DMA scatter reading.
 fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 	mut times := []i64{cap: s.config.iterations}
 	caps := io.get_platform_capabilities()
@@ -264,7 +264,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 		return
 	}
 
-	// scatter 버퍼 준비
+	// Prepare scatter buffers
 	mut bufs := [
 		io.new_sg_buffer(1024),
 		io.new_sg_buffer(1024),
@@ -277,7 +277,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 		file.close()
 	}
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		_ = io.scatter_read_native(file.fd, mut bufs)
@@ -287,7 +287,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 	s.results << calculate_io_results('DMA Scatter Read', times, s.config.data_size)
 }
 
-/// bench_dma_write는 DMA gather 쓰기를 벤치마크합니다.
+/// bench_dma_write benchmarks DMA gather writing.
 fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 	mut times := []i64{cap: s.config.iterations}
 	caps := io.get_platform_capabilities()
@@ -300,7 +300,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 		return
 	}
 
-	// gather 버퍼 준비
+	// Prepare gather buffers
 	bufs := [
 		io.new_sg_buffer_from([]u8{len: 1024, init: 0xAA}),
 		io.new_sg_buffer_from([]u8{len: 1024, init: 0xBB}),
@@ -308,7 +308,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 		io.new_sg_buffer_from([]u8{len: 1024, init: 0xDD}),
 	]
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		mut fd := os.open_file(test_path, 'w') or { continue }
 
@@ -323,11 +323,11 @@ fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 	s.results << calculate_io_results('DMA Gather Write', times, s.config.data_size)
 }
 
-/// bench_io_uring은 io_uring 비동기 I/O를 벤치마크합니다.
+/// bench_io_uring benchmarks io_uring async I/O.
 fn (mut s IoBenchmarkSuite) bench_io_uring(path string) {
 	mut times := []i64{cap: s.config.iterations}
 
-	// 먼저 io_uring 기능 확인
+	// Check io_uring capability first
 	caps := engines.get_async_io_capabilities()
 	if !caps.has_io_uring {
 		s.results << IoBenchmarkResults{
@@ -352,7 +352,7 @@ fn (mut s IoBenchmarkSuite) bench_io_uring(path string) {
 
 	buf := []u8{len: int(s.config.data_size)}
 
-	// 비동기 읽기 벤치마크
+	// Async read benchmark
 	for i in 0 .. s.config.iterations {
 		mut file := os.open_file(path, 'r') or { continue }
 
@@ -368,16 +368,16 @@ fn (mut s IoBenchmarkSuite) bench_io_uring(path string) {
 	s.results << calculate_io_results('io_uring Read', times, s.config.data_size)
 }
 
-/// bench_numa_allocation은 NUMA 메모리 할당을 벤치마크합니다.
+/// bench_numa_allocation benchmarks NUMA memory allocation.
 fn (mut s IoBenchmarkSuite) bench_numa_allocation() {
 	mut times := []i64{cap: s.config.iterations}
 	size := s.config.data_size
 
-	// NUMA 로컬 할당 벤치마크
+	// NUMA local allocation benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		mem := engines.numa_alloc_local(size)
-		// 메모리가 실제로 할당되었는지 확인하기 위해 터치
+		// Touch memory to verify it was actually allocated
 		unsafe {
 			C.memset(mem.ptr, 0, size)
 		}
@@ -387,7 +387,7 @@ fn (mut s IoBenchmarkSuite) bench_numa_allocation() {
 
 	s.results << calculate_io_results('NUMA Local Alloc', times, size)
 
-	// 인터리브 할당 벤치마크
+	// Interleaved allocation benchmark
 	mut times2 := []i64{cap: s.config.iterations}
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
@@ -402,24 +402,24 @@ fn (mut s IoBenchmarkSuite) bench_numa_allocation() {
 	s.results << calculate_io_results('NUMA Interleaved Alloc', times2, size)
 }
 
-/// bench_buffer_pools는 버퍼 풀 성능을 벤치마크합니다.
+/// bench_buffer_pools benchmarks buffer pool performance.
 fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
-	// 버퍼 풀 벤치마크
+	// Buffer pool benchmark
 	mut times := []i64{cap: s.config.iterations}
 
 	mut pool := core.new_buffer_pool(core.PoolConfig{})
 
-	// 워밍업
+	// Warmup
 	for _ in 0 .. s.config.warmup_runs {
 		buf := pool.get(int(s.config.data_size))
 		pool.put(buf)
 	}
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		buf := pool.get(int(s.config.data_size))
-		// 작업 시뮬레이션
+		// Simulate operation
 		unsafe {
 			if buf.data.len > 0 {
 				C.memset(buf.data.data, 0, usize(buf.data.len))
@@ -431,7 +431,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 
 	s.results << calculate_io_results('Buffer Pool Get/Put', times, s.config.data_size)
 
-	// NUMA 버퍼 풀 벤치마크
+	// NUMA buffer pool benchmark
 	mut numa_times := []i64{cap: s.config.iterations}
 
 	mut numa_pool := engines.new_numa_buffer_pool(engines.NumaBufferConfig{
@@ -442,7 +442,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 		numa_pool.close()
 	}
 
-	// 벤치마크
+	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
 		if buf := numa_pool.get_buffer() {
@@ -456,7 +456,7 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 
 	s.results << calculate_io_results('NUMA Buffer Pool', numa_times, s.config.data_size)
 
-	// 레코드 풀 벤치마크 (객체 풀)
+	// Record pool benchmark (object pool)
 	mut obj_times := []i64{cap: s.config.iterations}
 
 	mut rec_pool := core.new_record_pool(100)
@@ -471,9 +471,9 @@ fn (mut s IoBenchmarkSuite) bench_buffer_pools() {
 	s.results << calculate_io_results('Record Pool', obj_times, s.config.data_size)
 }
 
-// 결과 계산 및 포맷팅
+// Result calculation and formatting
 
-/// calculate_io_results는 시간 측정값으로부터 I/O 벤치마크 결과를 계산합니다.
+/// calculate_io_results calculates I/O benchmark results from timing measurements.
 fn calculate_io_results(name string, times []i64, data_size usize) IoBenchmarkResults {
 	if times.len == 0 {
 		return IoBenchmarkResults{
@@ -516,7 +516,7 @@ fn calculate_io_results(name string, times []i64, data_size usize) IoBenchmarkRe
 	}
 }
 
-/// format_results는 출력 형식에 따라 결과를 포맷합니다.
+/// format_results formats results according to the output format.
 pub fn (s &IoBenchmarkSuite) format_results() string {
 	match s.config.output_format {
 		.text { return s.format_text() }
@@ -525,7 +525,7 @@ pub fn (s &IoBenchmarkSuite) format_results() string {
 	}
 }
 
-/// format_text는 결과를 텍스트 형식으로 포맷합니다.
+/// format_text formats results as text.
 fn (s &IoBenchmarkSuite) format_text() string {
 	mut sb := []string{}
 
@@ -565,7 +565,7 @@ fn (s &IoBenchmarkSuite) format_text() string {
 	return sb.join('\n')
 }
 
-/// format_markdown은 결과를 마크다운 형식으로 포맷합니다.
+/// format_markdown formats results as markdown.
 fn (s &IoBenchmarkSuite) format_markdown() string {
 	mut sb := []string{}
 
@@ -602,7 +602,7 @@ fn (s &IoBenchmarkSuite) format_markdown() string {
 	return sb.join('\n')
 }
 
-/// format_json은 결과를 JSON 형식으로 포맷합니다.
+/// format_json formats results as JSON.
 fn (s &IoBenchmarkSuite) format_json() string {
 	mut sb := []string{}
 
@@ -639,13 +639,13 @@ fn (s &IoBenchmarkSuite) format_json() string {
 	return sb.join('\n')
 }
 
-// 유틸리티 함수
+// Utility functions
 
-/// create_test_file은 지정된 크기의 테스트 파일을 생성합니다.
+/// create_test_file creates a test file of the specified size.
 fn create_test_file(size i64) string {
 	path := '/tmp/datacore_bench_${time.now().unix()}.dat'
 
-	// 랜덤 데이터로 파일 생성
+	// Create file with random data
 	mut data := []u8{len: int(size)}
 	for i in 0 .. data.len {
 		data[i] = u8(i % 256)
@@ -655,7 +655,7 @@ fn create_test_file(size i64) string {
 	return path
 }
 
-/// pad_right는 문자열을 지정된 너비로 오른쪽 패딩합니다.
+/// pad_right pads a string to the specified width on the right.
 fn pad_right(s string, width int) string {
 	if s.len >= width {
 		return s
@@ -663,9 +663,9 @@ fn pad_right(s string, width int) string {
 	return s + ' '.repeat(width - s.len)
 }
 
-// 빠른 벤치마크 함수
+// Quick benchmark functions
 
-/// run_quick_io_benchmark는 기본 설정으로 빠른 벤치마크를 실행합니다.
+/// run_quick_io_benchmark runs a quick benchmark with default settings.
 pub fn run_quick_io_benchmark() string {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:  50
@@ -677,7 +677,7 @@ pub fn run_quick_io_benchmark() string {
 	return suite.format_results()
 }
 
-/// run_comprehensive_io_benchmark는 종합 벤치마크를 실행합니다.
+/// run_comprehensive_io_benchmark runs a comprehensive benchmark.
 pub fn run_comprehensive_io_benchmark() string {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:    200
@@ -692,7 +692,7 @@ pub fn run_comprehensive_io_benchmark() string {
 	return suite.format_results()
 }
 
-/// compare_io_methods는 다양한 I/O 방법의 비교 결과를 반환합니다.
+/// compare_io_methods returns comparison results for various I/O methods.
 pub fn compare_io_methods(data_size usize, iterations int) []IoBenchmarkResults {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:        iterations
@@ -705,7 +705,7 @@ pub fn compare_io_methods(data_size usize, iterations int) []IoBenchmarkResults 
 	return suite.results
 }
 
-/// compare_memory_strategies는 메모리 할당 전략 비교 결과를 반환합니다.
+/// compare_memory_strategies returns comparison results for memory allocation strategies.
 pub fn compare_memory_strategies(size usize, iterations int) []IoBenchmarkResults {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:      iterations

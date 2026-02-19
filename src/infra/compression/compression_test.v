@@ -1,18 +1,18 @@
-/// 단위 테스트 - 압축 모듈
+/// Unit tests - Compression module
 module compression
 
 import time
 
-/// test_compression_type_enum은 CompressionType 열거형을 테스트합니다.
+/// test_compression_type_enum tests the CompressionType enum.
 fn test_compression_type_enum() {
-	// 값 확인
+	// Verify values
 	assert int(CompressionType.none) == 0
 	assert int(CompressionType.gzip) == 1
 	assert int(CompressionType.snappy) == 2
 	assert int(CompressionType.lz4) == 3
 	assert int(CompressionType.zstd) == 4
 
-	// 문자열 변환
+	// String conversion
 	assert CompressionType.none.str() == 'none'
 	assert CompressionType.gzip.str() == 'gzip'
 	assert CompressionType.snappy.str() == 'snappy'
@@ -20,7 +20,7 @@ fn test_compression_type_enum() {
 	assert CompressionType.zstd.str() == 'zstd'
 }
 
-/// test_compression_type_from_string은 문자열 파싱을 테스트합니다.
+/// test_compression_type_from_string tests string parsing.
 fn test_compression_type_from_string() {
 	ct := compression_type_from_string('gzip')!
 	assert ct == CompressionType.gzip
@@ -38,42 +38,42 @@ fn test_compression_type_from_string() {
 	assert ct5 == CompressionType.none
 }
 
-/// test_noop_compressor는 NoopCompressor를 테스트합니다.
+/// test_noop_compressor tests the NoopCompressor.
 fn test_noop_compressor() {
 	compressor := new_noop_compressor()
 
-	// 압축 타입 확인
+	// Verify compression type
 	assert compressor.compression_type() == CompressionType.none
 
-	// 데이터 압축/해제
+	// Compress and decompress data
 	test_data := 'Hello, World!'.bytes()
 	compressed := compressor.compress(test_data)!
 	decompressed := compressor.decompress(compressed)!
 
-	// Noop은 데이터를 변경하지 않음
+	// Noop does not modify data
 	assert compressed == test_data
 	assert decompressed == test_data
 }
 
-/// test_gzip_compressor는 GzipCompressor를 테스트합니다.
+/// test_gzip_compressor tests the GzipCompressor.
 fn test_gzip_compressor() {
 	compressor := new_gzip_compressor()
 
-	// 압축 타입 확인
+	// Verify compression type
 	assert compressor.compression_type() == CompressionType.gzip
 
-	// 데이터 압축/해제
+	// Compress and decompress data
 	test_data := 'Hello, World! This is a test message for gzip compression.'.bytes()
 	compressed := compressor.compress(test_data)!
 	decompressed := compressor.decompress(compressed)!
 
-	// 압축된 데이터는 원본과 다름
+	// Compressed data differs from original
 	assert compressed != test_data
-	// 해제된 데이터는 원본과 동일
+	// Decompressed data matches original
 	assert decompressed == test_data
 }
 
-/// test_gzip_compressor_with_level은 레벨별 GzipCompressor를 테스트합니다.
+/// test_gzip_compressor_with_level tests GzipCompressor with various levels.
 fn test_gzip_compressor_with_level() {
 	compressor1 := new_gzip_compressor_with_level(1)
 	compressor9 := new_gzip_compressor_with_level(9)
@@ -83,59 +83,59 @@ fn test_gzip_compressor_with_level() {
 	compressed1 := compressor1.compress(test_data)!
 	compressed9 := compressor9.compress(test_data)!
 
-	// 레벨 9는 레벨 1보다 더 작거나 같은 크기
+	// Level 9 produces output smaller than or equal to level 1
 	assert compressed9.len <= compressed1.len
 }
 
-/// test_snappy_compressor는 SnappyCompressor를 테스트합니다.
+/// test_snappy_compressor tests the SnappyCompressor.
 fn test_snappy_compressor() {
 	compressor := new_snappy_compressor()
 
-	// 압축 타입 확인
+	// Verify compression type
 	assert compressor.compression_type() == CompressionType.snappy
 
-	// 데이터 압축/해제
+	// Compress and decompress data
 	test_data := 'Hello, World! This is a test message for snappy compression.'.bytes()
 	compressed := compressor.compress(test_data)!
 	decompressed := compressor.decompress(compressed)!
 
-	// 해제된 데이터는 원본과 동일
+	// Decompressed data matches original
 	assert decompressed == test_data
 }
 
-/// test_lz4_compressor는 Lz4Compressor를 테스트합니다.
+/// test_lz4_compressor tests the Lz4Compressor.
 fn test_lz4_compressor() {
 	compressor := new_lz4_compressor()
 
-	// 압축 타입 확인
+	// Verify compression type
 	assert compressor.compression_type() == CompressionType.lz4
 
-	// 데이터 압축/해제
+	// Compress and decompress data
 	test_data := 'Hello, World! This is a test message for lz4 compression.'.bytes()
 	compressed := compressor.compress(test_data)!
 	decompressed := compressor.decompress(compressed)!
 
-	// 해제된 데이터는 원본과 동일
+	// Decompressed data matches original
 	assert decompressed == test_data
 }
 
-/// test_zstd_compressor는 ZstdCompressor를 테스트합니다.
+/// test_zstd_compressor tests the ZstdCompressor.
 fn test_zstd_compressor() {
 	compressor := new_zstd_compressor()
 
-	// 압축 타입 확인
+	// Verify compression type
 	assert compressor.compression_type() == CompressionType.zstd
 
-	// 데이터 압축/해제
+	// Compress and decompress data
 	test_data := 'Hello, World! This is a test message for zstd compression.'.bytes()
 	compressed := compressor.compress(test_data)!
 	decompressed := compressor.decompress(compressed)!
 
-	// 해제된 데이터는 원본과 동일
+	// Decompressed data matches original
 	assert decompressed == test_data
 }
 
-/// test_zstd_compressor_with_level은 레벨별 ZstdCompressor를 테스트합니다.
+/// test_zstd_compressor_with_level tests ZstdCompressor with various levels.
 fn test_zstd_compressor_with_level() {
 	compressor1 := new_zstd_compressor_with_level(1)
 	compressor22 := new_zstd_compressor_with_level(22)
@@ -144,9 +144,9 @@ fn test_zstd_compressor_with_level() {
 	assert compressor22.compression_type() == CompressionType.zstd
 }
 
-/// test_new_compressor_factory는 팩토리 함수를 테스트합니다.
+/// test_new_compressor_factory tests the factory function.
 fn test_new_compressor() {
-	// 각 타입별 Compressor 생성
+	// Create a Compressor for each type
 	noop := new_compressor(CompressionType.none)!
 	assert noop.compression_type() == CompressionType.none
 
@@ -163,7 +163,7 @@ fn test_new_compressor() {
 	assert zstd.compression_type() == CompressionType.zstd
 }
 
-/// test_compression_service는 CompressionService를 테스트합니다.
+/// test_compression_service tests the CompressionService.
 fn test_compression_service() {
 	config := CompressionConfig{
 		default_compression: CompressionType.gzip
@@ -172,61 +172,61 @@ fn test_compression_service() {
 
 	mut service := new_compression_service(config)!
 
-	// 데이터 압축/해제
+	// Compress and decompress data
 	test_data := 'Hello, World! This is a test message for compression service.'.bytes()
 
-	// gzip으로 압축
+	// Compress with gzip
 	compressed := service.compress(test_data, CompressionType.gzip)!
 	decompressed := service.decompress(compressed, CompressionType.gzip)!
 	assert decompressed == test_data
 
-	// 기본 압축 타입으로 압축
+	// Compress using the default compression type
 	compressed2 := service.compress_with_default(test_data)!
 	decompressed2 := service.decompress_with_default(compressed2)!
 	assert decompressed2 == test_data
 }
 
-/// test_compression_service_empty_data는 빈 데이터 처리를 테스트합니다.
+/// test_compression_service_empty_data tests handling of empty data.
 fn test_compression_service_empty_data() {
 	mut service := new_default_compression_service()!
 
 	empty_data := []u8{}
 
-	// 빈 데이터 압축
+	// Compress empty data
 	compressed := service.compress(empty_data, CompressionType.gzip)!
 	assert compressed.len == 0
 
-	// 빈 데이터 해제
+	// Decompress empty data
 	decompressed := service.decompress(empty_data, CompressionType.gzip)!
 	assert decompressed.len == 0
 }
 
-/// test_compression_metrics는 메트릭 수집을 테스트합니다.
+/// test_compression_metrics tests metric collection.
 fn test_compression_metrics() {
 	mut metrics := new_compression_metrics()
 
-	// 메트릭 레지스트리는 싱글톤이므로 초기값은 이전 테스트의 영향을 받을 수 있음
-	// 현재 값을 저장
+	// The metric registry is a singleton, so initial values may be affected by previous tests.
+	// Save current values
 	initial_compress_total := metrics.compress_total.value
 	initial_decompress_total := metrics.decompress_total.value
 
-	// 압축 기록
+	// Record compression
 	metrics.record_compress(100, 50, 1000000, true)
 	assert metrics.compress_total.value == initial_compress_total + 1
 
-	// 해제 기록
+	// Record decompression
 	metrics.record_decompress(50, 100, 2000000, true)
 	assert metrics.decompress_total.value == initial_decompress_total + 1
 }
 
-/// test_list_available_compressors는 사용 가능한 압축 타입 목록을 테스트합니다.
+/// test_list_available_compressors tests the list of available compression types.
 fn test_list_available_compressors() {
 	compressors := list_available_compressors()
 
-	// 5개의 압축 타입이 있어야 함
+	// There should be 5 compression types
 	assert compressors.len == 5
 
-	// 모든 타입이 포함되어 있는지 확인
+	// Verify all types are present
 	assert CompressionType.none in compressors
 	assert CompressionType.gzip in compressors
 	assert CompressionType.snappy in compressors
@@ -235,13 +235,13 @@ fn test_list_available_compressors() {
 }
 
 // Manual Compression Test - All Types with Timing
-// 이 테스트는 모든 압축 타입(Snappy, Gzip, LZ4, Zstd)을
-// 통합 테스트 환경에서 검증합니다.
+// This test validates all compression types (Snappy, Gzip, LZ4, Zstd)
+// in an integration test environment.
 
-/// test_all_compression_types_with_timing은 모든 압축 타입을 타이밍과 함께 테스트합니다.
-/// 이 테스트는 순수 V 구현체를 사용하여 C 라이브러리 의존성 없이 실행됩니다.
+/// test_all_compression_types_with_timing tests all compression types with timing.
+/// This test uses pure V implementations and runs without C library dependencies.
 fn test_all_compression_types_with_timing() {
-	// 테스트 데이터 생성 (약 12KB)
+	// Generate test data (approximately 12KB)
 	message := '{"id":"12345","timestamp":"2026-02-01T12:00:00Z","data":"This is a test message for compression testing. It contains various patterns and repeated content to test compression efficiency. Repeated: ABCABCABCXYZXYZXYZ123123123","metadata":{"source":"manual_test","version":"1.0","tags":["test","compression","kafka"]}}'
 
 	mut test_data := []u8{}
@@ -250,11 +250,11 @@ fn test_all_compression_types_with_timing() {
 		test_data << u8(`\n`)
 	}
 
-	// 각 압축 타입별로 순수 V 구현체 테스트
-	// Note: snappy, lz4, zstd는 기본적으로 C 라이브러리 사용
-	// gzip만 순수 V 구현
+	// Test pure V implementations for each compression type
+	// Note: snappy, lz4, zstd use C libraries by default
+	// Only gzip is a pure V implementation
 
-	// 1. Gzip 테스트 (순수 V)
+	// 1. Gzip test (pure V)
 	mut gzip_service := new_compression_service(CompressionConfig{
 		default_compression: CompressionType.gzip
 	})!
@@ -262,7 +262,7 @@ fn test_all_compression_types_with_timing() {
 		gzip_service)
 	assert gzip_result.passed, 'Gzip test failed: ${gzip_result.error_msg}'
 
-	// 2. Noop 테스트 (압축 없음)
+	// 2. Noop test (no compression)
 	mut noop_service := new_compression_service(CompressionConfig{
 		default_compression: CompressionType.none
 	})!
@@ -270,11 +270,11 @@ fn test_all_compression_types_with_timing() {
 		noop_service)
 	assert noop_result.passed, 'Noop test failed: ${noop_result.error_msg}'
 
-	// Note: Snappy, LZ4, Zstd는 C 라이브러리가 필요하므로
-	// 별도의 integration test에서 시스템 환경 확인 후 실행
+	// Note: Snappy, LZ4, Zstd require C libraries,
+	// so they are run in separate integration tests after verifying the system environment.
 }
 
-// 테스트 결과 구조체 (로컬용)
+// Test result struct (local use)
 struct TestResult {
 	name            string
 	passed          bool
@@ -286,11 +286,11 @@ struct TestResult {
 	error_msg       string
 }
 
-// 단일 압축 타입 테스트
+// Test a single compression type
 fn run_compression_test_with_timing(ct CompressionType, test_data []u8, mut service CompressionService) TestResult {
 	name := ct.str()
 
-	// 압축 테스트
+	// Compression test
 	compress_start := time.now()
 	compressed := service.compress(test_data, ct) or {
 		return TestResult{
@@ -301,7 +301,7 @@ fn run_compression_test_with_timing(ct CompressionType, test_data []u8, mut serv
 	}
 	compress_time := time.since(compress_start)
 
-	// 압축 결과 검증
+	// Validate compression result
 	if compressed.len == 0 && test_data.len > 0 {
 		return TestResult{
 			name:      name
@@ -310,7 +310,7 @@ fn run_compression_test_with_timing(ct CompressionType, test_data []u8, mut serv
 		}
 	}
 
-	// 해제 테스트
+	// Decompression test
 	decompress_start := time.now()
 	decompressed := service.decompress(compressed, ct) or {
 		return TestResult{
@@ -321,7 +321,7 @@ fn run_compression_test_with_timing(ct CompressionType, test_data []u8, mut serv
 	}
 	decompress_time := time.since(decompress_start)
 
-	// 데이터 무결성 검증
+	// Validate data integrity
 	if decompressed != test_data {
 		return TestResult{
 			name:      name
@@ -330,7 +330,7 @@ fn run_compression_test_with_timing(ct CompressionType, test_data []u8, mut serv
 		}
 	}
 
-	// 압축률 계산
+	// Calculate compression ratio
 	mut ratio := 0.0
 	if compressed.len > 0 {
 		ratio = f64(test_data.len) / f64(compressed.len)

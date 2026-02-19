@@ -6,6 +6,7 @@ module kafka
 import infra.observability
 import time
 
+/// ListGroupsRequest는 관련 데이터를 담는 구조체입니다.
 pub struct ListGroupsRequest {
 pub:
 	states_filter []string
@@ -24,6 +25,7 @@ fn parse_list_groups_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
+/// DescribeGroupsRequest는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeGroupsRequest {
 pub:
 	groups                        []string
@@ -48,6 +50,7 @@ fn parse_describe_groups_request(mut reader BinaryReader, version i16, is_flexib
 
 // ListGroups Response (API Key 16)
 
+/// ListGroupsResponse은 ListGroups Response (API Key 16).
 pub struct ListGroupsResponse {
 pub:
 	throttle_time_ms i32
@@ -55,6 +58,7 @@ pub:
 	groups           []ListGroupsResponseGroup
 }
 
+/// ListGroupsResponseGroup는 관련 데이터를 담는 구조체입니다.
 pub struct ListGroupsResponseGroup {
 pub:
 	group_id      string
@@ -62,6 +66,7 @@ pub:
 	group_state   string
 }
 
+/// encode를 수행합니다.
 pub fn (r ListGroupsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
@@ -106,12 +111,14 @@ pub fn (r ListGroupsResponse) encode(version i16) []u8 {
 
 // DescribeGroups Response (API Key 15)
 
+/// DescribeGroupsResponse은 DescribeGroups Response (API Key 15).
 pub struct DescribeGroupsResponse {
 pub:
 	throttle_time_ms i32
 	groups           []DescribeGroupsResponseGroup
 }
 
+/// DescribeGroupsResponseGroup는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeGroupsResponseGroup {
 pub:
 	error_code    i16
@@ -122,6 +129,7 @@ pub:
 	members       []DescribeGroupsResponseMember
 }
 
+/// DescribeGroupsResponseMember는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeGroupsResponseMember {
 pub:
 	member_id         string
@@ -131,6 +139,7 @@ pub:
 	member_assignment []u8
 }
 
+/// encode를 수행합니다.
 pub fn (r DescribeGroupsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 5
 	mut writer := new_writer()

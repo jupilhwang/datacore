@@ -1,35 +1,35 @@
-/// 인프라 레이어 - Snappy 압축 (C 라이브러리 사용)
-/// Google Snappy C 라이브러리를 사용한 고성능 압축/해제
+/// Infrastructure layer - Snappy compression (using C library)
+/// High-performance compression/decompression using the Google Snappy C library
 module compression
 
 import infra.observability
 
-// C 라이브러리 링크
+// Link C library
 #flag -L/opt/homebrew/lib -lsnappy
 #flag -I/opt/homebrew/include
 #include <snappy-c.h>
 
-/// SnappyCompressorC는 C 라이브러리를 사용한 Snappy 압축기입니다.
+/// SnappyCompressorC is a Snappy compressor using the C library.
 pub struct SnappyCompressorC {
 }
 
-/// new_snappy_compressor_c는 C 라이브러리를 사용하는 새 SnappyCompressorC를 생성합니다.
+/// new_snappy_compressor_c creates a new SnappyCompressorC using the C library.
 pub fn new_snappy_compressor_c() &SnappyCompressorC {
 	return &SnappyCompressorC{}
 }
 
-/// compress는 데이터를 Snappy 형식으로 압축합니다.
+/// compress compresses data into Snappy format.
 pub fn (c &SnappyCompressorC) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 출력 버퍼 크기 계산
+	// Calculate output buffer size
 	mut max_out_len := int(C.snappy_max_compressed_length(usize(data.len)))
 	mut result := []u8{len: max_out_len, cap: max_out_len}
 	mut out_len := usize(max_out_len)
 
-	// C 호출
+	// C call
 	snappy_status := C.snappy_compress(data.data, usize(data.len), result.data, &out_len)
 	if snappy_status != 0 {
 		return error('snappy compression failed with status: ${snappy_status}')
@@ -45,13 +45,13 @@ pub fn (c &SnappyCompressorC) compress(data []u8) ![]u8 {
 	return result
 }
 
-/// decompress는 Snappy 형식의 데이터를 해제합니다.
+/// decompress decompresses Snappy format data.
 pub fn (c &SnappyCompressorC) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 출력 버퍼 크기 계산
+	// Calculate output buffer size
 	mut uncompressed_len := usize(0)
 	snappy_len_status := C.snappy_uncompressed_length(data.data, usize(data.len), &uncompressed_len)
 	if snappy_len_status != 0 {
@@ -65,7 +65,7 @@ pub fn (c &SnappyCompressorC) decompress(data []u8) ![]u8 {
 	mut result := []u8{len: int(uncompressed_len), cap: int(uncompressed_len)}
 	mut out_len := uncompressed_len
 
-	// C 호출
+	// C call
 	snappy_status := C.snappy_uncompress(data.data, usize(data.len), result.data, &out_len)
 	if snappy_status != 0 {
 		return error('snappy decompression failed with status: ${snappy_status}')
@@ -81,17 +81,17 @@ pub fn (c &SnappyCompressorC) decompress(data []u8) ![]u8 {
 	return result
 }
 
-/// compression_type은 압축 타입을 반환합니다.
+/// compression_type returns the compression type.
 pub fn (c &SnappyCompressorC) compression_type() CompressionType {
 	return CompressionType.snappy
 }
 
-/// snappy_max_compressed_length는 지정된 원본 크기의 최대 압축 크기를 반환합니다.
+/// snappy_max_compressed_length returns the maximum compressed size for the given input length.
 fn snappy_max_compressed_length(input_len int) int {
 	return input_len + (input_len >> 6) + 32
 }
 
-// C 함수 선언 (snappy-c.h에서 제공)
+// C function declarations (provided by snappy-c.h)
 fn C.snappy_compress(src &u8, src_len usize, dst &u8, dst_len &usize) int
 fn C.snappy_uncompress(src &u8, src_len usize, dst &u8, dst_len &usize) int
 fn C.snappy_uncompressed_length(compressed &u8, compressed_len usize, result &usize) int

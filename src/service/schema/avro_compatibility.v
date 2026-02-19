@@ -18,6 +18,7 @@ mut:
 }
 
 // AvroSchema represents a parsed Avro schema
+/// AvroSchema represents a parsed Avro schema.
 pub struct AvroSchema {
 pub mut:
 	schema_type string

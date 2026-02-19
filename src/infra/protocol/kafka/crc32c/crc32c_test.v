@@ -1,7 +1,7 @@
-/// CRC32-C 모듈 테스트
+/// CRC32-C module tests
 module crc32c
 
-// 기본 기능 테스트
+// Basic functionality tests
 
 fn test_calculate_empty() {
 	result := calculate([]u8{})
@@ -9,28 +9,28 @@ fn test_calculate_empty() {
 }
 
 fn test_calculate_known_values() {
-	// 알려진 CRC32-C 테스트 벡터들
-	// 출처: https://reveng.sourceforge.io/crc-catalogue/17plus.htm#crc.cat.crc-32c
+	// Known CRC32-C test vectors
+	// Source: https://reveng.sourceforge.io/crc-catalogue/17plus.htm#crc.cat.crc-32c
 
 	// "123456789" -> 0xE3069283
 	data1 := '123456789'.bytes()
 	crc1 := calculate(data1)
 	assert crc1 == 0xE3069283, 'Expected 0xE3069283, got 0x${crc1:08X}'
 
-	// 단일 바이트 테스트
+	// single byte test
 	data2 := [u8(0x00)]
 	crc2 := calculate(data2)
 	assert crc2 == 0x527D5351, 'Expected 0x527D5351, got 0x${crc2:08X}'
 
-	// 여러 바이트 테스트
+	// multi-byte test
 	data3 := [u8(0x01), 0x02, 0x03, 0x04]
 	crc3 := calculate(data3)
-	// 이 값은 실제 CRC32-C 계산 결과
+	// this value is the actual CRC32-C computation result
 	assert crc3 != 0
 }
 
 fn test_calculate_consistency() {
-	// 같은 데이터에 대해 항상 같은 결과를 반환하는지 확인
+	// verify the same data always returns the same result
 	data := 'Hello, World!'.bytes()
 
 	crc1 := calculate(data)
@@ -42,20 +42,20 @@ fn test_calculate_consistency() {
 }
 
 fn test_software_implementation() {
-	// 소프트웨어 구현 직접 테스트
+	// directly test the software implementation
 	data := '123456789'.bytes()
 	crc := crc32c_sw(data)
 	assert crc == 0xE3069283, 'Software CRC32-C failed: expected 0xE3069283, got 0x${crc:08X}'
 }
 
-// 증분 계산 테스트
+// Incremental computation tests
 
 fn test_incremental_calculation() {
-	// 전체 데이터의 CRC
+	// CRC of full data
 	full_data := 'Hello, World!'.bytes()
 	full_crc := calculate(full_data)
 
-	// 증분 계산
+	// incremental computation
 	part1 := 'Hello, '.bytes()
 	part2 := 'World!'.bytes()
 
@@ -68,7 +68,7 @@ fn test_incremental_calculation() {
 }
 
 fn test_incremental_single_byte() {
-	// 바이트 단위 증분 계산
+	// byte-by-byte incremental computation
 	data := [u8(0x01), 0x02, 0x03, 0x04, 0x05]
 	full_crc := calculate(data)
 
@@ -81,23 +81,23 @@ fn test_incremental_single_byte() {
 	assert full_crc == incremental_crc
 }
 
-// 하드웨어 가속 테스트
+// Hardware acceleration tests
 
 fn test_cpu_detection() {
-	// CPU 기능 감지가 오류 없이 실행되는지 확인
+	// verify CPU feature detection runs without error
 	supported := cpu_supports_sse42()
-	// 결과는 플랫폼에 따라 다름, 단지 오류가 없어야 함
-	println('SSE4.2 지원: ${supported}')
+	// result varies by platform, just must not error
+	println('SSE4.2 supported: ${supported}')
 }
 
 fn test_is_hardware_accelerated() {
-	// 공개 API가 올바르게 작동하는지 확인
+	// verify the public API works correctly
 	hw_accel := is_hardware_accelerated()
-	println('하드웨어 가속 사용 가능: ${hw_accel}')
+	println('Hardware acceleration available: ${hw_accel}')
 }
 
 fn test_hw_sw_consistency() {
-	// 하드웨어와 소프트웨어 구현이 같은 결과를 반환하는지 확인
+	// verify hardware and software implementations return the same result
 	test_cases := [
 		''.bytes(),
 		'a'.bytes(),
@@ -120,10 +120,10 @@ fn test_hw_sw_consistency() {
 	}
 }
 
-// 대용량 데이터 테스트
+// Large data tests
 
 fn test_large_data() {
-	// 1KB 데이터
+	// 1KB data
 	mut data := []u8{len: 1024}
 	for i in 0 .. data.len {
 		data[i] = u8(i & 0xFF)
@@ -132,13 +132,13 @@ fn test_large_data() {
 	crc := calculate(data)
 	assert crc != 0
 
-	// 일관성 확인
+	// consistency check
 	crc2 := calculate(data)
 	assert crc == crc2
 }
 
 fn test_very_large_data() {
-	// 64KB 데이터
+	// 64KB data
 	mut data := []u8{len: 65536}
 	for i in 0 .. data.len {
 		data[i] = u8(i & 0xFF)
@@ -147,12 +147,12 @@ fn test_very_large_data() {
 	crc := calculate(data)
 	assert crc != 0
 
-	// 소프트웨어와 비교
+	// compare with software implementation
 	sw_crc := crc32c_sw(data)
 	assert crc == sw_crc, 'Large data CRC mismatch'
 }
 
-// 엣지 케이스 테스트
+// Edge case tests
 
 fn test_all_zeros() {
 	data := []u8{len: 16, init: 0}
@@ -171,14 +171,14 @@ fn test_alternating_bits() {
 	crc := calculate(data)
 	assert crc != 0
 
-	// 일관성
+	// consistency
 	assert calculate(data) == crc
 }
 
-// 벤치마크 (성능 측정)
+// Benchmarks (performance measurement)
 
 fn test_benchmark_small() {
-	// 작은 데이터 (64 바이트) - 일반적인 Kafka 레코드 크기
+	// small data (64 bytes) - typical Kafka record size
 	data := []u8{len: 64, init: 0x42}
 
 	iterations := 10000
@@ -188,13 +188,13 @@ fn test_benchmark_small() {
 		sum += calculate(data)
 	}
 
-	// 결과 사용 (최적화 방지)
+	// use result to prevent compiler optimization
 	assert sum != 0
 	println('Small data (64B) x ${iterations} iterations completed')
 }
 
 fn test_benchmark_medium() {
-	// 중간 크기 데이터 (4KB)
+	// medium-sized data (4KB)
 	data := []u8{len: 4096, init: 0x42}
 
 	iterations := 1000
@@ -209,7 +209,7 @@ fn test_benchmark_medium() {
 }
 
 fn test_benchmark_large() {
-	// 큰 데이터 (64KB)
+	// large data (64KB)
 	data := []u8{len: 65536, init: 0x42}
 
 	iterations := 100

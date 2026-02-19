@@ -1,4 +1,4 @@
-// Iceberg 테이블 형식으로 Parquet 파일을 생성하고 메타데이터를 관리합니다.
+// Generates Parquet files in Iceberg table format and manages metadata.
 module s3
 
 import domain
@@ -9,7 +9,7 @@ import crypto.md5
 import sync
 import strings
 
-/// IcebergWriter는 Iceberg 테이블에 데이터를 쓰는 기능을 제공합니다.
+/// IcebergWriter provides functionality for writing data to Iceberg tables.
 pub struct IcebergWriter {
 pub mut:
 	adapter           &S3StorageAdapter
@@ -22,9 +22,9 @@ pub mut:
 	file_counter      int
 }
 
-/// new_iceberg_writer는 새로운 Iceberg Writer를 생성합니다.
+/// new_iceberg_writer creates a new Iceberg Writer.
 pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table_location string) !&IcebergWriter {
-	// 기본 스키마 생성
+	// Create default schema
 	schema := create_default_schema()
 	partition_spec := if config.partition_by.len > 0 {
 		create_partition_spec_from_config(config.partition_by)
@@ -32,7 +32,7 @@ pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table
 		create_default_partition_spec()
 	}
 
-	// 테이블 메타데이터 초기화
+	// Initialize table metadata
 	metadata := IcebergMetadata{
 		format_version:      2
 		table_uuid:          generate_table_uuid()
@@ -63,7 +63,7 @@ pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table
 	}
 }
 
-/// append_records은 레코드를 파티션별로 버퍼링합니다.
+/// append_records buffers records per partition.
 pub fn (mut w IcebergWriter) append_records(topic string, partition int, records []domain.Record, start_offset i64) ! {
 	if records.len == 0 {
 		return
@@ -75,11 +75,11 @@ pub fn (mut w IcebergWriter) append_records(topic string, partition int, records
 	}
 
 	for i, record in records {
-		// 레코드의 파티션 값 계산
+		// Calculate partition values for the record
 		partition_values := w.compute_partition_values(record)
 		partition_key := w.partition_values_to_key(partition_values)
 
-		// 헤더를 JSON 문자열로 변환
+		// Convert headers to JSON string
 		mut headers_json := '{}'
 		if record.headers.len > 0 {
 			mut headers_map := map[string]string{}
@@ -99,7 +99,7 @@ pub fn (mut w IcebergWriter) append_records(topic string, partition int, records
 			headers:   headers_json
 		}
 
-		// 파티션별 버퍼에 추가
+		// Append to per-partition buffer
 		if partition_key !in w.partition_buffers {
 			w.partition_buffers[partition_key] = []
 		}
@@ -107,34 +107,34 @@ pub fn (mut w IcebergWriter) append_records(topic string, partition int, records
 	}
 }
 
-/// compute_partition_values은 레코드에서 파티션 값을 계산합니다.
+/// compute_partition_values computes partition values from a record.
 fn (w &IcebergWriter) compute_partition_values(record domain.Record) map[string]string {
 	mut values := map[string]string{}
 
 	for field in w.partition_spec.fields {
 		match field.transform {
 			'identity' {
-				// 원본 값을 그대로 사용
+				// Use the original value as-is
 				match field.source_id {
 					2 { values[field.name] = record.timestamp.format_ss()[0..10] }
 					else { values[field.name] = 'unknown' }
 				}
 			}
 			'day' {
-				// 날짜로 변환 (YYYY-MM-DD)
+				// Convert to date (YYYY-MM-DD)
 				values[field.name] = record.timestamp.format_ss()[0..10]
 			}
 			'hour' {
-				// 시간으로 변환 (YYYY-MM-DD-HH)
+				// Convert to hour (YYYY-MM-DD-HH)
 				values[field.name] = record.timestamp.format_ss()[0..13].replace(' ',
 					'-')
 			}
 			'month' {
-				// 월로 변환 (YYYY-MM)
+				// Convert to month (YYYY-MM)
 				values[field.name] = record.timestamp.format_ss()[0..7]
 			}
 			'year' {
-				// 연도로 변환 (YYYY)
+				// Convert to year (YYYY)
 				values[field.name] = record.timestamp.format_ss()[0..4]
 			}
 			else {
@@ -146,7 +146,7 @@ fn (w &IcebergWriter) compute_partition_values(record domain.Record) map[string]
 	return values
 }
 
-/// partition_values_to_key은 파티션 값을 키 문자열로 변환합니다.
+/// partition_values_to_key converts partition values to a key string.
 fn (w &IcebergWriter) partition_values_to_key(values map[string]string) string {
 	mut parts := []string{}
 	for field in w.partition_spec.fields {
@@ -157,7 +157,7 @@ fn (w &IcebergWriter) partition_values_to_key(values map[string]string) string {
 	return parts.join('/')
 }
 
-/// should_flush은 플러시가 필요한지 확인합니다.
+/// should_flush checks whether a flush is needed.
 pub fn (mut w IcebergWriter) should_flush() bool {
 	w.buffer_lock.lock()
 	defer {
@@ -173,7 +173,7 @@ pub fn (mut w IcebergWriter) should_flush() bool {
 	return false
 }
 
-/// flush_all_partitions은 모든 파티션 버퍼를 플러시합니다.
+/// flush_all_partitions flushes all partition buffers.
 pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) ![]IcebergDataFile {
 	w.buffer_lock.lock()
 	defer {
@@ -187,21 +187,21 @@ pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) !
 			continue
 		}
 
-		// Parquet 파일로 인코딩
+		// Encode as Parquet file
 		mut encoder := parquet.new_parquet_encoder(w.config.compression, w.config.max_file_size_mb)!
 		data, metadata := parquet.encode_batch(records, encoder.compression)!
 
-		// 파일 경로 생성
+		// Generate file path
 		file_path := w.generate_data_file_path(topic, partition, partition_key)
 
-		// S3에 업로드
+		// Upload to S3
 		full_path := '${w.table_metadata.location}/${file_path}'
 		w.adapter.put_object(full_path, data)!
 
-		// 파티션 값 파싱
+		// Parse partition values
 		partition_values := w.parse_partition_key(partition_key)
 
-		// Iceberg DataFile 메타데이터 생성
+		// Create Iceberg DataFile metadata
 		mut data_file := IcebergDataFile{
 			file_path:          full_path
 			file_format:        'PARQUET'
@@ -215,7 +215,7 @@ pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) !
 			partition:          partition_values
 		}
 
-		// 컬럼 통계 추가
+		// Add column statistics
 		for row_group in metadata.row_groups {
 			for chunk in row_group.columns {
 				col_name := chunk.column_name
@@ -229,14 +229,14 @@ pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) !
 
 		data_files << data_file
 
-		// 버퍼 비우기
+		// Clear buffer
 		w.partition_buffers[partition_key] = []
 	}
 
 	return data_files
 }
 
-/// parse_partition_key은 파티션 키를 파티션 값 맵으로 파싱합니다.
+/// parse_partition_key parses a partition key into a partition values map.
 fn (w &IcebergWriter) parse_partition_key(key string) map[string]string {
 	mut values := map[string]string{}
 	parts := key.split('/')
@@ -251,11 +251,11 @@ fn (w &IcebergWriter) parse_partition_key(key string) map[string]string {
 	return values
 }
 
-/// generate_data_file_path은 데이터 파일 경로를 생성합니다.
+/// generate_data_file_path generates a data file path.
 fn (mut w IcebergWriter) generate_data_file_path(topic string, partition int, partition_key string) string {
 	w.file_counter++
 
-	// 데이터 파일 경로: topics/{topic}/partitions/{partition}/data/{partition_key}/{counter}-{uuid}.parquet
+	// Data file path: topics/{topic}/partitions/{partition}/data/{partition_key}/{counter}-{uuid}.parquet
 	partition_values := w.parse_partition_key(partition_key)
 	mut partition_path := ''
 	for field in w.partition_spec.fields {
@@ -264,24 +264,24 @@ fn (mut w IcebergWriter) generate_data_file_path(topic string, partition int, pa
 		}
 	}
 
-	// 고유 ID 생성
+	// Generate unique ID
 	now := time.now()
 	unique_id := md5.sum('${now.unix_milli()}-${w.file_counter}'.bytes()).hex()
 
 	return 'topics/${topic}/partitions/${partition}/data/${partition_path}${w.file_counter:05d}-${unique_id[0..8]}.parquet'
 }
 
-/// create_snapshot은 새로운 스냅샷을 생성합니다.
+/// create_snapshot creates a new snapshot.
 pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic string) !IcebergSnapshot {
 	snapshot_id := generate_snapshot_id()
 	now := time.now()
 
-	// 매니페스트 파일 생성
+	// Create manifest file
 	manifest_path := w.generate_manifest_path(snapshot_id)
 	manifest_content := w.encode_manifest(data_files)!
 	w.adapter.put_object('${w.table_metadata.location}/${manifest_path}', manifest_content)!
 
-	// 스냅샷 요약 정보
+	// Snapshot summary information
 	mut added_files := 0
 	mut added_records := i64(0)
 	for file in data_files {
@@ -289,7 +289,7 @@ pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic
 		added_records += file.record_count
 	}
 
-	// 파일 크기 총합 계산
+	// Calculate total file size
 	mut total_size := i64(0)
 	for file in data_files {
 		total_size += file.file_size_in_bytes
@@ -312,7 +312,7 @@ pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic
 		summary:       summary
 	}
 
-	// 테이블 메타데이터 업데이트
+	// Update table metadata
 	w.table_metadata.snapshots << snapshot
 	w.table_metadata.current_snapshot_id = snapshot_id
 	w.table_metadata.last_updated_ms = now.unix_milli()
@@ -320,17 +320,17 @@ pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic
 	return snapshot
 }
 
-/// generate_manifest_path은 매니페스트 파일 경로를 생성합니다.
+/// generate_manifest_path generates a manifest file path.
 fn (w &IcebergWriter) generate_manifest_path(snapshot_id i64) string {
 	now := time.now()
 	return 'metadata/snap-${snapshot_id}-${now.format_ss().replace(' ', '-').replace(':',
 		'-')}.avro'
 }
 
-/// encode_manifest은 매니페스트 파일 내용을 인코딩합니다.
-/// 참고: 실제 Iceberg 매니페스트는 Avro 형식이며, 여기서는 JSON으로 모킹합니다.
+/// encode_manifest encodes manifest file content.
+/// Note: real Iceberg manifests use Avro format; here JSON is used as a mock.
 fn (w &IcebergWriter) encode_manifest(data_files []IcebergDataFile) ![]u8 {
-	// 간략화된 매니페스트 JSON - 문자열 직접 구성
+	// Simplified manifest JSON - build string directly
 	mut sb := strings.new_builder(2048)
 
 	sb.write_string('{')
@@ -371,9 +371,9 @@ fn (w &IcebergWriter) encode_manifest(data_files []IcebergDataFile) ![]u8 {
 	return sb.str().bytes()
 }
 
-/// encode_metadata_json은 테이블 메타데이터를 JSON으로 인코딩합니다.
+/// encode_metadata_json encodes table metadata as JSON.
 fn (w &IcebergWriter) encode_metadata_json() string {
-	// Iceberg 메타데이터 JSON 형식 - 문자열 직접 구성
+	// Iceberg metadata JSON format - build string directly
 	mut sb := strings.new_builder(4096)
 
 	sb.write_string('{')
@@ -449,33 +449,33 @@ fn (w &IcebergWriter) encode_metadata_json() string {
 	return sb.str()
 }
 
-/// write_metadata_file은 테이블 메타데이터 파일을 S3에 씁니다.
+/// write_metadata_file writes the table metadata file to S3.
 pub fn (mut w IcebergWriter) write_metadata_file() !string {
-	// 메타데이터 버전 증가
+	// Increment metadata version
 	version := w.table_metadata.snapshots.len
 	metadata_path := 'metadata/${version:05d}-${w.table_metadata.table_uuid}.metadata.json'
 
-	// 메타데이터 JSON 인코딩
+	// Encode metadata JSON
 	metadata_json := w.encode_metadata_json()
 
-	// S3에 메타데이터 파일 저장
+	// Save metadata file to S3
 	full_path := '${w.table_metadata.location}/${metadata_path}'
 	w.adapter.put_object(full_path, metadata_json.bytes())!
 
 	return metadata_path
 }
 
-/// get_table_metadata는 현재 테이블 메타데이터를 반환합니다.
+/// get_table_metadata returns the current table metadata.
 pub fn (w &IcebergWriter) get_table_metadata() IcebergMetadata {
 	return w.table_metadata
 }
 
-/// get_current_snapshot_id은 현재 스냅샷 ID를 반환합니다.
+/// get_current_snapshot_id returns the current snapshot ID.
 pub fn (w &IcebergWriter) get_current_snapshot_id() i64 {
 	return w.table_metadata.current_snapshot_id
 }
 
-/// time_travel은 특정 스냅샷으로 시간 여행합니다.
+/// time_travel time-travels to a specific snapshot.
 pub fn (mut w IcebergWriter) time_travel(snapshot_id i64) bool {
 	for snapshot in w.table_metadata.snapshots {
 		if snapshot.snapshot_id == snapshot_id {
@@ -486,7 +486,7 @@ pub fn (mut w IcebergWriter) time_travel(snapshot_id i64) bool {
 	return false
 }
 
-/// list_snapshots은 모든 스냅샷을 반환합니다.
+/// list_snapshots returns all snapshots.
 pub fn (w &IcebergWriter) list_snapshots() []IcebergSnapshot {
 	return w.table_metadata.snapshots.clone()
 }

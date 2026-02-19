@@ -1,18 +1,17 @@
 /// Interface Layer - Request Pipelining
-/// 인터페이스 레이어 - 요청 파이프라이닝
 ///
-/// Kafka 프로토콜은 요청 파이프라이닝을 지원합니다.
-/// 클라이언트는 응답을 받기 전에 여러 요청을 보낼 수 있지만,
-/// 응답은 반드시 요청 순서대로 반환되어야 합니다.
+/// The Kafka protocol supports request pipelining.
+/// Clients can send multiple requests before receiving responses,
+/// but responses must be returned in the same order as requests.
 ///
-/// 이 모듈은 요청 순서를 추적하고 응답을 올바른 순서로
-/// 반환하는 기능을 제공합니다.
+/// This module tracks request order and ensures responses
+/// are returned in the correct order.
 module server
 
 import sync
 import time
 
-/// PendingRequest는 응답을 기다리는 요청을 나타냅니다.
+/// PendingRequest represents a request waiting for a response.
 pub struct PendingRequest {
 pub:
 	correlation_id i32
@@ -26,8 +25,8 @@ pub mut:
 	error_msg     string
 }
 
-/// RequestPipeline은 연결에 대한 파이프라인된 요청을 관리합니다.
-/// 응답이 요청 수신 순서대로 전송되도록 보장합니다.
+/// RequestPipeline manages pipelined requests for a connection.
+/// Ensures responses are sent in the order requests were received.
 pub struct RequestPipeline {
 mut:
 	pending         []PendingRequest
@@ -108,7 +107,7 @@ pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	// 연속으로 완료된 요청 수 계산
+	// Count consecutively completed requests
 	mut ready_count := 0
 	for i in 0 .. p.pending.len {
 		if p.pending[i].completed {
@@ -122,11 +121,11 @@ pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 		return []PendingRequest{}
 	}
 
-	// 완료된 요청들을 복사하고 배열에서 제거
-	// 슬라이싱을 사용하여 O(n) 대신 O(ready_count)로 복사
+	// Copy completed requests and remove from array
+	// Use slicing to copy in O(ready_count) instead of O(n)
 	ready := p.pending[0..ready_count].clone()
 
-	// 나머지 요청들만 유지 (배열 재할당 한 번만 발생)
+	// Keep only remaining requests (single array reallocation)
 	p.pending = p.pending[ready_count..].clone()
 
 	return ready
@@ -185,7 +184,7 @@ pub fn (mut p RequestPipeline) get_stats() PipelineStats {
 	}
 }
 
-/// PipelineStats는 파이프라인 통계를 담는 구조체입니다.
+/// PipelineStats is a struct holding pipeline statistics.
 pub struct PipelineStats {
 pub:
 	pending_count   int
@@ -215,7 +214,7 @@ pub fn (mut p RequestPipeline) has_timed_out(timeout_ms i64) bool {
 
 	now := time.now()
 	for req in p.pending {
-		// 각 요청의 대기 시간을 계산하여 타임아웃 확인
+		// Calculate wait time for each request and check timeout
 		if (now - req.received_at).milliseconds() > timeout_ms {
 			return true
 		}

@@ -2,14 +2,14 @@ module offset
 
 import domain
 
-/// OffsetCommitRequest는 오프셋 커밋 요청을 나타냅니다.
+/// OffsetCommitRequest represents an offset commit request.
 pub struct OffsetCommitRequest {
 pub:
 	group_id string
 	offsets  []domain.PartitionOffset
 }
 
-/// OffsetCommitResult는 오프셋 커밋 결과를 나타냅니다.
+/// OffsetCommitResult represents the result of an offset commit.
 pub struct OffsetCommitResult {
 pub:
 	topic         string
@@ -18,13 +18,13 @@ pub:
 	error_message string
 }
 
-/// OffsetCommitResponse는 오프셋 커밋 응답을 나타냅니다.
+/// OffsetCommitResponse represents an offset commit response.
 pub struct OffsetCommitResponse {
 pub:
 	results []OffsetCommitResult
 }
 
-/// OffsetFetchRequest는 오프셋 조회 요청을 나타냅니다.
+/// OffsetFetchRequest represents an offset fetch request.
 pub struct OffsetFetchRequest {
 pub:
 	group_id       string
@@ -32,11 +32,11 @@ pub:
 	require_stable bool
 }
 
-/// OffsetFetchResult는 오프셋 조회 결과를 나타냅니다.
+/// OffsetFetchResult represents the result of an offset fetch.
 pub struct OffsetFetchResult {
 pub:
 	topic                  string
-	topic_id               ?[]u8 // 토픽 ID (v10+, UUID)
+	topic_id               ?[]u8 // Topic ID (v10+, UUID)
 	partition              int
 	committed_offset       i64
 	committed_leader_epoch i32
@@ -44,14 +44,14 @@ pub:
 	error_code             i16
 }
 
-/// OffsetFetchResponse는 오프셋 조회 응답을 나타냅니다.
+/// OffsetFetchResponse represents an offset fetch response.
 pub struct OffsetFetchResponse {
 pub:
 	results    []OffsetFetchResult
 	error_code i16
 }
 
-/// OffsetError는 오프셋 작업 중 발생하는 오류를 나타냅니다.
+/// OffsetError represents errors that occur during offset operations.
 pub enum OffsetError {
 	none
 	invalid_group_id
@@ -63,7 +63,7 @@ pub enum OffsetError {
 	unknown_error
 }
 
-/// to_error_code는 OffsetError를 Kafka 에러 코드로 변환합니다.
+/// to_error_code converts an OffsetError to a Kafka error code.
 pub fn (e OffsetError) to_error_code() i16 {
 	return match e {
 		.none { 0 }

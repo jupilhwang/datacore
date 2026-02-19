@@ -1,12 +1,12 @@
 // Interface Layer - Iceberg REST Catalog API
-// Apache Iceberg REST Catalog API 엔드포인트를 제공합니다.
-// v3 테이블 포맷 지원
+// Provides Apache Iceberg REST Catalog API endpoints.
+// Supports v3 table format.
 module rest
 
 import json
 import infra.storage.plugins.s3
 
-/// IcebergCatalogAPI는 Iceberg REST Catalog API 핸들러입니다.
+/// IcebergCatalogAPI is the handler for the Iceberg REST Catalog API.
 pub struct IcebergCatalogAPI {
 mut:
 	catalog        s3.IcebergCatalog
@@ -15,7 +15,7 @@ mut:
 	format_version int
 }
 
-/// new_iceberg_catalog_api는 새로운 Iceberg Catalog API를 생성합니다.
+/// new_iceberg_catalog_api creates a new Iceberg Catalog API.
 pub fn new_iceberg_catalog_api(catalog s3.IcebergCatalog, warehouse string, format_version int) &IcebergCatalogAPI {
 	return &IcebergCatalogAPI{
 		catalog:        catalog
@@ -25,27 +25,27 @@ pub fn new_iceberg_catalog_api(catalog s3.IcebergCatalog, warehouse string, form
 	}
 }
 
-/// handle_request는 Iceberg Catalog API 요청을 처리합니다.
-/// 반환: (HTTP 상태 코드, 응답 본문)
+/// handle_request handles an Iceberg Catalog API request.
+/// Returns: (HTTP status code, response body)
 pub fn (mut api IcebergCatalogAPI) handle_request(method string, path string, body string) (int, string) {
-	// 경로 파싱: /v1/iceberg/... 또는 /v1/...
+	// Parse path: /v1/iceberg/... or /v1/...
 	parts := path.trim_left('/').split('/')
 
 	if parts.len < 2 {
 		return api.error_response(400, 'Invalid path')
 	}
 
-	// /v1/config 처리
+	// Handle /v1/config
 	if parts.len == 2 && parts[1] == 'config' {
 		return api.handle_config(method)
 	}
 
-	// /v1/{prefix}/... 경로 처리
+	// Handle /v1/{prefix}/... paths
 	if parts.len < 3 {
 		return api.error_response(404, 'Not found')
 	}
 
-	// prefix 다음 경로 파싱
+	// Parse path after prefix
 	sub_parts := parts[2..]
 
 	match sub_parts[0] {
@@ -56,7 +56,7 @@ pub fn (mut api IcebergCatalogAPI) handle_request(method string, path string, bo
 	}
 }
 
-/// handle_config는 /v1/config 엔드포인트를 처리합니다.
+/// handle_config handles the /v1/config endpoint.
 fn (mut api IcebergCatalogAPI) handle_config(method string) (int, string) {
 	if method != 'GET' {
 		return api.error_response(405, 'Method not allowed')
@@ -66,9 +66,9 @@ fn (mut api IcebergCatalogAPI) handle_config(method string) (int, string) {
 	return 200, config.to_json()
 }
 
-/// handle_namespaces는 /v1/{prefix}/namespaces 관련 요청을 처리합니다.
+/// handle_namespaces handles requests related to /v1/{prefix}/namespaces.
 fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, body string) (int, string) {
-	// GET /namespaces - 네임스페이스 목록
+	// GET /namespaces - list namespaces
 	if parts.len == 0 {
 		return match method {
 			'GET' { api.list_namespaces() }
@@ -135,7 +135,7 @@ fn (mut api IcebergCatalogAPI) handle_namespaces(method string, parts []string, 
 	return api.error_response(404, 'Not found')
 }
 
-/// handle_tables_root는 /v1/{prefix}/tables 관련 요청을 처리합니다.
+/// handle_tables_root handles requests related to /v1/{prefix}/tables.
 fn (mut api IcebergCatalogAPI) handle_tables_root(method string, parts []string, body string) (int, string) {
 	// /tables/rename
 	if parts.len == 1 && parts[0] == 'rename' {
@@ -148,7 +148,7 @@ fn (mut api IcebergCatalogAPI) handle_tables_root(method string, parts []string,
 	return api.error_response(404, 'Not found')
 }
 
-/// handle_transactions는 /v1/{prefix}/transactions 관련 요청을 처리합니다.
+/// handle_transactions handles requests related to /v1/{prefix}/transactions.
 fn (mut api IcebergCatalogAPI) handle_transactions(method string, parts []string, body string) (int, string) {
 	// /transactions/commit
 	if parts.len == 1 && parts[0] == 'commit' {
@@ -161,10 +161,10 @@ fn (mut api IcebergCatalogAPI) handle_transactions(method string, parts []string
 	return api.error_response(404, 'Not found')
 }
 
-// Namespace 엔드포인트 구현
+// Namespace endpoint implementations
 
 fn (mut api IcebergCatalogAPI) list_namespaces() (int, string) {
-	// 기본 네임스페이스 목록 반환 (실제 구현에서는 catalog에서 조회)
+	// Return default namespace list (in real implementation, query from catalog)
 	resp := s3.ListNamespacesResponse{
 		namespaces: [['default']]
 	}
@@ -180,7 +180,7 @@ fn (mut api IcebergCatalogAPI) create_namespace(body string) (int, string) {
 		return api.error_response(400, 'Namespace is required')
 	}
 
-	// 카탈로그에 네임스페이스 생성
+	// Create namespace in catalog
 	api.catalog.create_namespace(req.namespace) or {
 		return api.error_response(500, 'Failed to create namespace: ${err}')
 	}
@@ -207,14 +207,14 @@ fn (mut api IcebergCatalogAPI) get_namespace(namespace string) (int, string) {
 }
 
 fn (mut api IcebergCatalogAPI) delete_namespace(namespace string) (int, string) {
-	// 네임스페이스 삭제는 비어있을 때만 가능
+	// Namespace can only be deleted when empty
 	ns := [namespace]
 
 	if !api.catalog.namespace_exists(ns) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
 
-	// 테이블이 있으면 삭제 불가
+	// Cannot delete if tables exist
 	tables := api.catalog.list_tables(ns) or {
 		return api.error_response(500, 'Failed to list tables: ${err}')
 	}
@@ -244,7 +244,7 @@ fn (mut api IcebergCatalogAPI) update_namespace_properties(namespace string, bod
 	return 200, resp.to_json()
 }
 
-// Table 엔드포인트 구현
+// Table endpoint implementations
 
 fn (mut api IcebergCatalogAPI) list_tables(namespace string) (int, string) {
 	ns := [namespace]
@@ -290,7 +290,7 @@ fn (mut api IcebergCatalogAPI) create_table(namespace string, body string) (int,
 		name:      req.name
 	}
 
-	// REST 스키마를 내부 형식으로 변환
+	// Convert REST schema to internal format
 	schema := api.rest_schema_to_internal(req.schema)
 	spec := api.rest_partition_spec_to_internal(req.partition_spec)
 
@@ -342,12 +342,12 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 		name:      table
 	}
 
-	// 현재 메타데이터 로드
+	// Load current metadata
 	mut metadata := api.catalog.load_table(identifier) or {
 		return api.error_response(404, 'Table not found: ${namespace}.${table}')
 	}
 
-	// 요구사항 검증
+	// Validate requirements
 	for requirement in req.requirements {
 		match requirement.typ {
 			'assert-current-schema-id' {
@@ -364,7 +364,7 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 		}
 	}
 
-	// 업데이트 적용
+	// Apply updates
 	for update in req.updates {
 		match update.action {
 			'add-schema' {
@@ -408,7 +408,7 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 		}
 	}
 
-	// 메타데이터 저장
+	// Save metadata
 	api.catalog.update_table(identifier, metadata) or {
 		return api.error_response(500, 'Failed to update table: ${err}')
 	}
@@ -438,7 +438,7 @@ fn (mut api IcebergCatalogAPI) register_table(namespace string, body string) (in
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
-	// 등록은 현재 지원하지 않음 - 메타데이터 파일에서 직접 로드 필요
+	// Registration is not currently supported - requires direct load from metadata file
 	return api.error_response(501, 'Register table not implemented')
 }
 
@@ -447,17 +447,17 @@ fn (mut api IcebergCatalogAPI) rename_table(body string) (int, string) {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
-	// 이름 변경은 현재 지원하지 않음
+	// Rename is not currently supported
 	return api.error_response(501, 'Rename table not implemented')
 }
 
 fn (mut api IcebergCatalogAPI) report_metrics(namespace string, table string, body string) (int, string) {
-	// 메트릭 보고는 현재 무시 (로깅만)
+	// Metric reporting is currently ignored (logging only)
 	return 204, ''
 }
 
 fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
-	// 멀티 테이블 트랜잭션은 현재 지원하지 않음
+	// Multi-table transactions are not currently supported
 	return api.error_response(501, 'Multi-table transactions not implemented')
 }
 

@@ -1,26 +1,26 @@
-// 컨슈머 그룹 조정 비즈니스 로직을 처리합니다.
-// JoinGroup, SyncGroup, Heartbeat, LeaveGroup 등의 프로토콜을 구현합니다.
+// Handles consumer group coordination business logic.
+// Implements protocols such as JoinGroup, SyncGroup, Heartbeat, and LeaveGroup.
 module group
 
 import domain
 import rand
 import service.port
 
-/// GroupCoordinator는 컨슈머 그룹 조정을 처리합니다.
-/// 그룹 멤버십 관리, 리밸런싱, 오프셋 관리를 담당합니다.
+/// GroupCoordinator handles consumer group coordination.
+/// Responsible for group membership management, rebalancing, and offset management.
 pub struct GroupCoordinator {
 mut:
 	storage port.StoragePort
 }
 
-/// new_group_coordinator는 새로운 GroupCoordinator를 생성합니다.
+/// new_group_coordinator creates a new GroupCoordinator.
 pub fn new_group_coordinator(storage port.StoragePort) &GroupCoordinator {
 	return &GroupCoordinator{
 		storage: storage
 	}
 }
 
-/// JoinGroupRequest는 그룹 참가 요청을 나타냅니다.
+/// JoinGroupRequest represents a group join request.
 pub struct JoinGroupRequest {
 pub:
 	group_id             string
@@ -32,14 +32,14 @@ pub:
 	protocols            []Protocol
 }
 
-/// Protocol은 그룹 프로토콜을 나타냅니다.
+/// Protocol represents a group protocol.
 pub struct Protocol {
 pub:
 	name     string
 	metadata []u8
 }
 
-/// JoinGroupResponse는 그룹 참가 응답을 나타냅니다.
+/// JoinGroupResponse represents a group join response.
 pub struct JoinGroupResponse {
 pub:
 	error_code    i16
@@ -51,26 +51,26 @@ pub:
 	members       []domain.GroupMember
 }
 
-/// join_group은 그룹 참가 요청을 처리합니다.
-/// 새 멤버를 그룹에 추가하고 리밸런싱을 트리거합니다.
+/// join_group handles a group join request.
+/// Adds a new member to the group and triggers rebalancing.
 pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupResponse {
-	// 그룹 ID 유효성 검사
+	// Validate group ID
 	if req.group_id.len == 0 {
 		return JoinGroupResponse{
 			error_code: i16(domain.ErrorCode.invalid_group_id)
 		}
 	}
 
-	// 멤버 ID가 없으면 새로 생성
+	// Generate a new member ID if not provided
 	member_id := if req.member_id.len > 0 {
 		req.member_id
 	} else {
 		'member-${req.group_id}-${generate_id()}'
 	}
 
-	// 기존 그룹 로드 또는 새 그룹 생성
+	// Load existing group or create a new one
 	mut group := c.storage.load_group(req.group_id) or {
-		// 새 그룹 생성
+		// Create new group
 		domain.ConsumerGroup{
 			group_id:      req.group_id
 			generation_id: 0
@@ -80,7 +80,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 		}
 	}
 
-	// 멤버 정보 생성
+	// Build member info
 	mut member := domain.GroupMember{
 		member_id:         member_id
 		group_instance_id: req.group_instance_id
@@ -89,7 +89,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 		metadata:          if req.protocols.len > 0 { req.protocols[0].metadata } else { []u8{} }
 	}
 
-	// 기존 멤버 인덱스 찾기 (가능하면 clone 방지)
+	// Find existing member index (avoid clone where possible)
 	mut member_idx := -1
 	for i, m in group.members {
 		if m.member_id == member_id {
@@ -98,10 +98,10 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 		}
 	}
 
-	// 멤버 목록 효율적으로 업데이트
+	// Update member list efficiently
 	mut updated_members := []domain.GroupMember{}
 	if member_idx >= 0 {
-		// 기존 멤버 업데이트 - clone 대신 용량 미리 할당 후 복사
+		// Update existing member - pre-allocate capacity instead of clone
 		updated_members = []domain.GroupMember{cap: group.members.len}
 		for i, m in group.members {
 			if i == member_idx {
@@ -111,7 +111,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 			}
 		}
 	} else {
-		// 새 멤버 추가 (단일 할당)
+		// Add new member (single allocation)
 		updated_members = []domain.GroupMember{cap: group.members.len + 1}
 		updated_members << group.members
 		updated_members << member
@@ -122,7 +122,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 		members: updated_members
 	}
 
-	// 세대 증가 및 리더 설정
+	// Increment generation and set leader
 	new_gen := group.generation_id + 1
 	leader := if group.members.len > 0 { group.members[0].member_id } else { member_id }
 	protocol_name := if req.protocols.len > 0 { req.protocols[0].name } else { '' }
@@ -135,7 +135,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 		state:         .stable
 	}
 
-	// 그룹 저장
+	// Save group
 	c.storage.save_group(new_group) or {
 		return JoinGroupResponse{
 			error_code: i16(domain.ErrorCode.unknown_server_error)
@@ -153,7 +153,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 	}
 }
 
-/// SyncGroupRequest는 그룹 동기화 요청을 나타냅니다.
+/// SyncGroupRequest represents a group sync request.
 pub struct SyncGroupRequest {
 pub:
 	group_id      string
@@ -162,22 +162,22 @@ pub:
 	assignments   []MemberAssignment
 }
 
-/// MemberAssignment는 멤버 할당을 나타냅니다.
+/// MemberAssignment represents a member assignment.
 pub struct MemberAssignment {
 pub:
 	member_id  string
 	assignment []u8
 }
 
-/// SyncGroupResponse는 그룹 동기화 응답을 나타냅니다.
+/// SyncGroupResponse represents a group sync response.
 pub struct SyncGroupResponse {
 pub:
 	error_code i16
 	assignment []u8
 }
 
-/// sync_group은 그룹 동기화 요청을 처리합니다.
-/// 리더가 제공한 할당을 각 멤버에게 배포합니다.
+/// sync_group handles a group sync request.
+/// Distributes the leader-provided assignment to each member.
 pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupResponse {
 	group := c.storage.load_group(req.group_id) or {
 		return SyncGroupResponse{
@@ -185,14 +185,14 @@ pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupRespon
 		}
 	}
 
-	// 세대 확인
+	// Verify generation
 	if group.generation_id != req.generation_id {
 		return SyncGroupResponse{
 			error_code: i16(domain.ErrorCode.illegal_generation)
 		}
 	}
 
-	// 이 멤버의 할당 찾기
+	// Find this member's assignment
 	for a in req.assignments {
 		if a.member_id == req.member_id {
 			return SyncGroupResponse{
@@ -202,7 +202,7 @@ pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupRespon
 		}
 	}
 
-	// 리더가 아닌 경우, 저장된 상태에서 할당 찾기
+	// If not the leader, find assignment from stored state
 	for m in group.members {
 		if m.member_id == req.member_id {
 			return SyncGroupResponse{
@@ -217,7 +217,7 @@ pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupRespon
 	}
 }
 
-/// HeartbeatRequest는 하트비트 요청을 나타냅니다.
+/// HeartbeatRequest represents a heartbeat request.
 pub struct HeartbeatRequest {
 pub:
 	group_id      string
@@ -225,14 +225,14 @@ pub:
 	member_id     string
 }
 
-/// HeartbeatResponse는 하트비트 응답을 나타냅니다.
+/// HeartbeatResponse represents a heartbeat response.
 pub struct HeartbeatResponse {
 pub:
 	error_code i16
 }
 
-/// heartbeat는 하트비트 요청을 처리합니다.
-/// 멤버의 활성 상태를 확인하고 리밸런싱 필요 여부를 알립니다.
+/// heartbeat handles a heartbeat request.
+/// Verifies member liveness and notifies whether rebalancing is needed.
 pub fn (mut c GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatResponse {
 	group := c.storage.load_group(req.group_id) or {
 		return HeartbeatResponse{
@@ -240,14 +240,14 @@ pub fn (mut c GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatRespons
 		}
 	}
 
-	// 세대 확인
+	// Verify generation
 	if group.generation_id != req.generation_id {
 		return HeartbeatResponse{
 			error_code: i16(domain.ErrorCode.illegal_generation)
 		}
 	}
 
-	// 멤버 존재 확인
+	// Verify member exists
 	for m in group.members {
 		if m.member_id == req.member_id {
 			return HeartbeatResponse{
@@ -261,12 +261,12 @@ pub fn (mut c GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatRespons
 	}
 }
 
-/// leave_group은 그룹 탈퇴 요청을 처리합니다.
-/// 멤버를 그룹에서 제거하고 리밸런싱을 트리거합니다.
+/// leave_group handles a group leave request.
+/// Removes the member from the group and triggers rebalancing.
 pub fn (mut c GroupCoordinator) leave_group(group_id string, member_id string) i16 {
 	group := c.storage.load_group(group_id) or { return i16(domain.ErrorCode.group_id_not_found) }
 
-	// 멤버 제거
+	// Remove member
 	mut new_members := []domain.GroupMember{}
 	for m in group.members {
 		if m.member_id != member_id {
@@ -289,17 +289,17 @@ pub fn (mut c GroupCoordinator) leave_group(group_id string, member_id string) i
 	return 0
 }
 
-/// list_groups는 모든 컨슈머 그룹 목록을 반환합니다.
+/// list_groups returns a list of all consumer groups.
 pub fn (mut c GroupCoordinator) list_groups() ![]domain.GroupInfo {
 	return c.storage.list_groups()
 }
 
-/// describe_group은 컨슈머 그룹 상세 정보를 반환합니다.
+/// describe_group returns detailed information for a consumer group.
 pub fn (mut c GroupCoordinator) describe_group(group_id string) !domain.ConsumerGroup {
 	return c.storage.load_group(group_id)
 }
 
-/// generate_id는 고유 ID를 생성합니다.
+/// generate_id generates a unique ID.
 fn generate_id() string {
 	return 'member-${rand.i64()}'
 }

@@ -1,16 +1,15 @@
 /// Interface Layer - TCP Server
-/// 인터페이스 레이어 - TCP 서버
 ///
-/// 이 모듈은 Kafka 호환 TCP 서버를 구현합니다.
-/// V 코루틴을 활용한 논블로킹 I/O 기반으로 동작하며,
-/// 고성능 동시 연결 처리를 지원합니다.
+/// This module implements a Kafka-compatible TCP server.
+/// Operates based on non-blocking I/O using V coroutines,
+/// supporting high-performance concurrent connection handling.
 ///
-/// 주요 기능:
-/// - 논블로킹 I/O 기반 TCP 연결 수락
-/// - 워커 풀을 통한 동시 연결 핸들러 제한
-/// - 요청 파이프라이닝 지원
-/// - 유휴 연결 자동 정리
-/// - 우아한 종료(Graceful Shutdown) 지원
+/// Key features:
+/// - Non-blocking I/O based TCP connection acceptance
+/// - Concurrent connection handler limiting via worker pool
+/// - Request pipelining support
+/// - Automatic idle connection cleanup
+/// - Graceful shutdown support
 module server
 
 import net
@@ -18,9 +17,9 @@ import sync
 import time
 import infra.observability
 
-// 로깅 (Logging)
+// Logging
 
-/// log_message는 구조화된 로그 메시지를 출력합니다.
+/// log_message prints a structured log message.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	mut logger := observability.get_named_logger('tcp.${component}')
 	match level {
@@ -32,8 +31,8 @@ fn log_message(level observability.LogLevel, component string, message string, c
 	}
 }
 
-/// ServerConfig는 서버 설정을 담는 구조체입니다.
-/// TCP 서버의 동작을 제어하는 다양한 옵션을 포함합니다.
+/// ServerConfig is a struct holding server configuration.
+/// Contains various options controlling TCP server behavior.
 pub struct ServerConfig {
 pub:
 	host                   string = '0.0.0.0'
@@ -47,30 +46,30 @@ pub:
 	max_request_size       int    = 104857600
 	max_pending_requests   int    = 100
 	shutdown_timeout_ms    int    = 30000
-	// 워커 풀 설정 (v0.28.0)
+	// Worker pool configuration (v0.28.0)
 	max_concurrent_handlers int = 1000
 	handler_acquire_timeout int = 5000
-	// io_uring 설정 (v0.32.0)
+	// io_uring configuration (v0.32.0)
 	use_io_uring         bool = true
 	io_uring_queue_depth u32  = 256
 	io_uring_sqpoll      bool
-	// NUMA 설정 (v0.33.0)
+	// NUMA configuration (v0.33.0)
 	numa_enabled      bool
 	numa_bind_workers bool = true
-	// TCP 최적화 설정 (v0.42.0)
+	// TCP optimization settings (v0.42.0)
 	tcp_nodelay       bool = true
 	tcp_send_buf_size int  = 262144
 	tcp_recv_buf_size int  = 262144
 }
 
-/// RequestHandler는 프로토콜 요청을 처리하는 인터페이스입니다.
-/// Kafka 프로토콜 요청을 받아 응답을 생성합니다.
+/// RequestHandler is the interface for handling protocol requests.
+/// Receives Kafka protocol requests and generates responses.
 pub interface RequestHandler {
 mut:
 	handle_request(data []u8) ![]u8
 }
 
-/// ServerState는 서버의 현재 상태를 나타내는 열거형입니다.
+/// ServerState is an enum representing the current state of the server.
 pub enum ServerState {
 	stopped
 	starting
@@ -78,9 +77,9 @@ pub enum ServerState {
 	stopping
 }
 
-/// Server는 논블로킹 I/O 기반 TCP 서버입니다.
-/// Kafka 호환 프로토콜을 처리하며, 워커 풀을 통해
-/// 동시 연결 수를 제어합니다.
+/// Server is a non-blocking I/O based TCP server.
+/// Handles Kafka-compatible protocol and controls concurrent
+/// connections via a worker pool.
 pub struct Server {
 mut:
 	config        ServerConfig
@@ -92,10 +91,10 @@ mut:
 	worker_pool   &WorkerPool
 }
 
-/// new_server는 새로운 TCP 서버를 생성합니다.
-/// 설정과 요청 핸들러를 받아 서버 인스턴스를 반환합니다.
+/// new_server creates a new TCP server.
+/// Accepts configuration and a request handler and returns a server instance.
 pub fn new_server(config ServerConfig, handler RequestHandler) &Server {
-	// 서버 설정에 따른 워커 풀 구성 생성
+	// Create worker pool configuration based on server settings
 	pool_config := WorkerPoolConfig{
 		max_workers:       config.max_concurrent_handlers
 		acquire_timeout:   config.handler_acquire_timeout
@@ -113,9 +112,9 @@ pub fn new_server(config ServerConfig, handler RequestHandler) &Server {
 	}
 }
 
-/// start는 TCP 서버를 시작합니다.
-/// 서버가 이미 실행 중이면 에러를 반환합니다.
-/// 이 메서드는 블로킹되며, stop()이 호출될 때까지 실행됩니다.
+/// start starts the TCP server.
+/// Returns an error if the server is already running.
+/// This method blocks and runs until stop() is called.
 pub fn (mut s Server) start() ! {
 	s.state_lock.@lock()
 	if s.state != .stopped {
@@ -125,7 +124,7 @@ pub fn (mut s Server) start() ! {
 	s.state = .starting
 	s.state_lock.unlock()
 
-	// TCP 리스너 생성
+	// Create TCP listener
 	mut listener := net.listen_tcp(.ip, '${s.config.host}:${s.config.port}')!
 
 	s.state_lock.@lock()
@@ -142,40 +141,40 @@ pub fn (mut s Server) start() ! {
 	println('║  Max Handlers: ${s.config.max_concurrent_handlers}                                     ║')
 	println('╚═══════════════════════════════════════════════════════════╝')
 
-	// 백그라운드 작업 시작
+	// Start background tasks
 	spawn s.cleanup_loop()
 	spawn s.stats_loop()
 
-	// 연결 수락 루프 (메인 루프)
+	// Connection accept loop (main loop)
 	for s.is_running() {
-		// 주기적으로 종료 신호를 확인하기 위해 타임아웃과 함께 수락
+		// Accept with timeout to periodically check for shutdown signal
 		mut conn := listener.accept() or {
-			// 종료해야 하는지 확인
+			// Check whether we should shut down
 			if !s.is_running() {
 				break
 			}
 			continue
 		}
 
-		// 워커 슬롯 획득 시도 (타임아웃 적용)
-		// 고부하 상황에서 고루틴 폭발을 방지
+		// Attempt to acquire a worker slot (with timeout)
+		// Prevents goroutine explosion under high load
 		if !s.worker_pool.acquire() {
-			// 슬롯 획득 실패 - 연결 거부
+			// Failed to acquire slot - reject connection
 			eprintln('[Connection] Rejected: worker pool exhausted (${s.worker_pool.active_count()}/${s.config.max_concurrent_handlers} active)')
 			conn.close() or {}
 			continue
 		}
 
-		// 각 연결을 별도의 코루틴에서 처리 (논블로킹)
-		// handle_connection 반환 시 워커 슬롯 해제
+		// Handle each connection in a separate coroutine (non-blocking)
+		// Worker slot is released when handle_connection returns
 		spawn s.handle_connection_with_pool(mut conn)
 	}
 
 	listener.close() or {}
 }
 
-/// stop은 우아한 종료를 시작합니다.
-/// 기존 연결이 완료될 때까지 대기하며, 타임아웃 시 강제 종료합니다.
+/// stop initiates graceful shutdown.
+/// Waits for existing connections to complete and force-closes on timeout.
 pub fn (mut s Server) stop() {
 	s.state_lock.@lock()
 	if s.state != .running {
@@ -187,16 +186,16 @@ pub fn (mut s Server) stop() {
 
 	println('\n[DataCore] Initiating graceful shutdown...')
 
-	// 종료 신호 전송 (상태 변경으로 수락 루프 종료)
+	// Send shutdown signal (state change terminates accept loop)
 	select {
 		s.shutdown_chan <- true {}
 		else {}
 	}
 
-	// 워커 풀 종료
+	// Shutdown worker pool
 	s.worker_pool.shutdown()
 
-	// 기존 연결 드레인 대기 (타임아웃 적용)
+	// Wait for existing connections to drain (with timeout)
 	start_time := time.now()
 	for {
 		active := s.conn_mgr.active_count()
@@ -219,7 +218,7 @@ pub fn (mut s Server) stop() {
 	s.state = .stopped
 	s.state_lock.unlock()
 
-	// 최종 통계 출력
+	// Print final statistics
 	metrics := s.conn_mgr.get_metrics()
 	pool_metrics := s.worker_pool.get_metrics()
 	println('[DataCore] Server stopped')
@@ -231,35 +230,35 @@ pub fn (mut s Server) stop() {
 	println('  Worker timeouts: ${pool_metrics.total_timeouts}')
 }
 
-/// is_running은 서버가 실행 중인지 확인합니다.
+/// is_running checks whether the server is running.
 pub fn (mut s Server) is_running() bool {
 	s.state_lock.@lock()
 	defer { s.state_lock.unlock() }
 	return s.state == .running
 }
 
-/// get_state는 현재 서버 상태를 반환합니다.
+/// get_state returns the current server state.
 pub fn (mut s Server) get_state() ServerState {
 	s.state_lock.@lock()
 	defer { s.state_lock.unlock() }
 	return s.state
 }
 
-/// get_metrics는 서버 메트릭을 반환합니다.
+/// get_metrics returns server metrics.
 pub fn (mut s Server) get_metrics() ConnectionMetrics {
 	return s.conn_mgr.get_metrics()
 }
 
-/// get_worker_pool_metrics는 워커 풀 메트릭을 반환합니다.
+/// get_worker_pool_metrics returns worker pool metrics.
 pub fn (mut s Server) get_worker_pool_metrics() WorkerPoolMetrics {
 	return s.worker_pool.get_metrics()
 }
 
-// TCP 최적화 헬퍼 함수 (TCP_NODELAY 설정)
+// TCP optimization helper (set TCP_NODELAY)
 fn set_tcp_nodelay(sock int) {
 	$if linux {
-		// Linux: TCP_NODELAY 설정으로 Nagle 알고리즘 비활성화
-		// 소켓 지연(latency) 감소를 위해 즉시 전송
+		// Linux: disable Nagle algorithm with TCP_NODELAY
+		// Send immediately to reduce socket latency
 		flag := 1
 		unsafe {
 			C.setsockopt(sock, C.IPPROTO_TCP, C.TCP_NODELAY, &flag, sizeof(int))
@@ -267,7 +266,7 @@ fn set_tcp_nodelay(sock int) {
 	}
 }
 
-// TCP 버퍼 크기 최적화
+// TCP buffer size optimization
 fn set_tcp_buffers(sock int, send_buf int, recv_buf int) {
 	$if linux {
 		unsafe {
@@ -281,39 +280,39 @@ fn set_tcp_buffers(sock int, send_buf int, recv_buf int) {
 	}
 }
 
-/// handle_connection_with_pool은 연결을 처리하고 완료 시 워커 슬롯을 해제합니다.
-/// defer를 사용하여 함수 종료 시 반드시 워커 슬롯이 반환되도록 보장합니다.
+/// handle_connection_with_pool handles a connection and releases the worker slot on completion.
+/// Uses defer to guarantee the worker slot is always returned when the function exits.
 fn (mut s Server) handle_connection_with_pool(mut conn net.TcpConn) {
-	// 함수 종료 시 워커 슬롯 해제 보장 (RAII 패턴)
+	// Guarantee worker slot release on function exit (RAII pattern)
 	defer {
 		s.worker_pool.release()
 	}
 
-	// TCP 최적화: Nagle 알고리즘 비활성화 (지연 감소)
-	// 소켓 핸들 얻기 (V의 net 모듈 내부 구조 활용)
+	// TCP optimization: disable Nagle algorithm to reduce latency
+	// Get socket handle (using V net module internal structure)
 	$if linux {
 		unsafe {
-			// net.TcpConn의 sock 필드는 TcpSocket을 포함하고 handle은 파일 디스크립터
+			// net.TcpConn's sock field contains TcpSocket and handle is the file descriptor
 			sock_ptr := &int(voidptr(usize(&conn.sock) + sizeof(voidptr)))
 			set_tcp_nodelay(*sock_ptr)
-			// TCP 버퍼 크기 최적화 (256KB 송신, 256KB 수신)
+			// Optimize TCP buffer sizes (256KB send, 256KB receive)
 			set_tcp_buffers(*sock_ptr, 262144, 262144)
 		}
 	}
 
-	// NUMA 노드에 워커 바인딩 (v0.33.0)
-	// 라운드로빈 방식으로 워커를 NUMA 노드에 분배
+	// Bind worker to NUMA node (v0.33.0)
+	// Distribute workers across NUMA nodes in round-robin fashion
 	s.worker_pool.bind_worker_to_numa()
 
 	s.handle_connection(mut conn)
 }
 
-/// handle_connection은 단일 클라이언트 연결을 처리합니다.
-/// Kafka 프로토콜에 따라 요청을 읽고 응답을 전송합니다.
-/// 지속 연결(persistent connection)을 지원하며, 연결이 닫히거나
-/// 에러가 발생할 때까지 요청-응답 루프를 유지합니다.
+/// handle_connection handles a single client connection.
+/// Reads requests and sends responses according to the Kafka protocol.
+/// Supports persistent connections and maintains a request-response loop
+/// until the connection is closed or an error occurs.
 fn (mut s Server) handle_connection(mut conn net.TcpConn) {
-	// 연결 관리자에 연결 등록
+	// Register connection with connection manager
 	mut client := s.conn_mgr.accept(mut conn) or {
 		eprintln('[Connection] Rejected: ${err}')
 		return
@@ -328,18 +327,18 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 		conn.close() or {}
 	}
 
-	// 이 연결에 대한 요청 파이프라인 생성
+	// Create request pipeline for this connection
 	mut pipeline := new_pipeline(s.config.max_pending_requests)
 
-	// 요청 처리 루프 (지속 연결)
+	// Request processing loop (persistent connection)
 	for s.is_running() {
-		// 요청 타임아웃 확인
+		// Check request timeout
 		if pipeline.has_timed_out(s.config.request_timeout_ms) {
 			eprintln('[Connection] Request timeout for ${client_addr}')
 			break
 		}
 
-		// 요청 크기 읽기 (4바이트, 빅엔디안)
+		// Read request size (4 bytes, big-endian)
 		mut size_buf := []u8{len: 4}
 		bytes_read := conn.read(mut size_buf) or { break }
 		if bytes_read != 4 {
@@ -348,7 +347,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 
 		request_size := int(u32(size_buf[0]) << 24 | u32(size_buf[1]) << 16 | u32(size_buf[2]) << 8 | u32(size_buf[3]))
 
-		// 요청 크기 유효성 검사
+		// Validate request size
 		if request_size <= 0 {
 			eprintln('[Connection] Invalid request size: ${request_size} from ${client_addr}')
 			break
@@ -359,7 +358,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 			break
 		}
 
-		// 요청 본문 읽기
+		// Read request body
 		mut request_buf := []u8{len: request_size}
 		mut total_read := 0
 		for total_read < request_size {
@@ -375,12 +374,12 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 			break
 		}
 
-		// 클라이언트 활동 시간 업데이트
+		// Update client activity timestamp
 		client.last_active_at = time.now()
 		client.request_count += 1
 		client.bytes_received += u64(4 + request_size)
 
-		// 파이프라이닝을 위한 correlation_id와 api_key 파싱
+		// Parse correlation_id and api_key for pipelining
 		if request_buf.len >= 8 {
 			api_key := i16(u16(request_buf[0]) << 8 | u16(request_buf[1]))
 			api_version := i16(u16(request_buf[2]) << 8 | u16(request_buf[3]))
@@ -388,27 +387,27 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 
 			println('[Request] api_key=${api_key}, version=${api_version}, correlation_id=${correlation_id}, size=${request_size}')
 
-			// 요청 큐에 추가 (파이프라이닝 지원)
+			// Add to pipeline queue (supports pipelining)
 			pipeline.enqueue(correlation_id, api_key, api_version, request_buf) or {
 				eprintln('[Connection] Pipeline full for ${client_addr}: ${err}')
 				break
 			}
 
-			// 요청 처리
+			// Process request
 			mut response := s.handler.handle_request(request_buf) or {
 				eprintln('[Connection] Error handling request from ${client_addr}: ${err}')
-				// 클라이언트 타임아웃 방지를 위한 최소 에러 응답 생성
-				// 유연한 응답인지 확인 (Fetch v12+, Metadata v9+ 등)
+				// Generate minimal error response to prevent client timeout
+				// Check whether this is a flexible response (Fetch v12+, Metadata v9+, etc.)
 				is_flexible := (api_key == 1 && api_version >= 12)
 					|| (api_key == 0 && api_version >= 9)
 					|| (api_key == 3 && api_version >= 9)
 					|| (api_key == 10 && api_version >= 6)
 
 				if api_key == 1 && is_flexible {
-					// Fetch v12+ 에러 응답은 적절한 본문 구조 필요
+					// Fetch v12+ error response requires proper body structure
 					// Body: throttle_time_ms(4) + error_code(2) + session_id(4) + topics(1) + tagged_fields(1)
-					// 총 본문: 12바이트
-					// 응답: size(4) + correlation_id(4) + header_tagged_fields(1) + body(12) = 21바이트
+					// Total body: 12 bytes
+					// Response: size(4) + correlation_id(4) + header_tagged_fields(1) + body(12) = 21 bytes
 					mut error_resp := []u8{len: 21}
 					error_resp[0] = 0
 					error_resp[1] = 0
@@ -419,7 +418,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 					error_resp[6] = u8(correlation_id >> 8)
 					error_resp[7] = u8(correlation_id)
 					error_resp[8] = 0
-					// 본문 시작 (인덱스 9)
+					// Body start (index 9)
 					error_resp[9] = 0
 					error_resp[10] = 0
 					error_resp[11] = 0
@@ -434,7 +433,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 					error_resp[20] = 0
 					error_resp
 				} else if is_flexible {
-					// 기타 유연한 응답: size(4) + correlation_id(4) + tagged_fields(1)
+					// Other flexible responses: size(4) + correlation_id(4) + tagged_fields(1)
 					mut error_resp := []u8{len: 9}
 					error_resp[0] = 0
 					error_resp[1] = 0
@@ -447,7 +446,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 					error_resp[8] = 0
 					error_resp
 				} else {
-					// 비유연 응답: size(4) + correlation_id(4)
+					// Non-flexible response: size(4) + correlation_id(4)
 					mut error_resp := []u8{len: 8}
 					error_resp[0] = 0
 					error_resp[1] = 0
@@ -463,18 +462,18 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 
 			println('[Response] api_key=${api_key}, response_size=${response.len}')
 
-			// 요청 완료 표시
+			// Mark request as completed
 			pipeline.complete(correlation_id, response) or {}
 
-			// 준비된 응답 전송 (순서대로)
+			// Send ready responses in order
 			ready := pipeline.get_ready_responses()
 			for req in ready {
 				if req.error_msg.len > 0 {
 					eprintln('[Response] Error for correlation_id=${req.correlation_id}: ${req.error_msg}')
-					// 클라이언트 타임아웃 방지를 위해 에러가 있어도 응답 전송
+					// Send response even with error to prevent client timeout
 				}
 
-				// 디버그: Fetch 응답 로깅
+				// Debug: log Fetch responses
 				if api_key == 1 && req.response_data.len < 200 {
 					eprintln('[Response] Fetch hex (${req.response_data.len} bytes): ${req.response_data.hex()}')
 				}
@@ -491,8 +490,8 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 	}
 }
 
-/// cleanup_loop은 주기적으로 유휴 연결을 제거합니다.
-/// 60초마다 실행되며, idle_timeout_ms를 초과한 연결을 정리합니다.
+/// cleanup_loop periodically removes idle connections.
+/// Runs every 60 seconds and cleans up connections exceeding idle_timeout_ms.
 fn (mut s Server) cleanup_loop() {
 	for s.is_running() {
 		closed := s.conn_mgr.cleanup_idle()
@@ -503,8 +502,8 @@ fn (mut s Server) cleanup_loop() {
 	}
 }
 
-/// stats_loop은 주기적으로 서버 통계를 로깅합니다.
-/// 5분마다 활성 연결 수, 총 연결 수, 거부된 연결 수를 출력합니다.
+/// stats_loop periodically logs server statistics.
+/// Every 5 minutes, prints active connections, total connections, and rejected connections.
 fn (mut s Server) stats_loop() {
 	for s.is_running() {
 		time.sleep(300 * time.second)
@@ -518,8 +517,8 @@ fn (mut s Server) stats_loop() {
 	}
 }
 
-/// format_bytes는 바이트를 읽기 쉬운 형식으로 변환합니다.
-/// GB, MB, KB, B 단위로 자동 변환하여 문자열을 반환합니다.
+/// format_bytes converts bytes to a human-readable format.
+/// Automatically converts to GB, MB, KB, or B and returns a string.
 fn format_bytes(bytes u64) string {
 	if bytes >= 1073741824 {
 		return '${f64(bytes) / 1073741824.0:.2}GB'

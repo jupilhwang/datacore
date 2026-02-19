@@ -1,19 +1,19 @@
 // Interface Layer - CLI Consume Command
 //
-// Kafka 프로토콜을 사용한 메시지 소비 명령어를 제공합니다.
-// 토픽에서 메시지를 읽어 콘솔에 출력합니다.
+// Provides message consumption commands using the Kafka protocol.
+// Reads messages from a topic and prints them to the console.
 //
-// 주요 기능:
-// - 특정 토픽/파티션에서 메시지 소비
-// - 시작 오프셋 지정 (earliest, latest, 숫자)
-// - 최대 메시지 수 제한
-// - 컨슈머 그룹 지원
+// Key features:
+// - Consume messages from a specific topic/partition
+// - Specify starting offset (earliest, latest, or numeric)
+// - Limit maximum number of messages
+// - Consumer group support
 module cli
 
 import net
 import time
 
-/// ConsumeOptions는 소비 명령어 옵션을 담는 구조체입니다.
+/// ConsumeOptions is a struct holding consume command options.
 pub struct ConsumeOptions {
 pub:
 	bootstrap_server string = 'localhost:9092'
@@ -112,7 +112,7 @@ fn set_positional_topic(opts ConsumeOptions, arg string) ConsumeOptions {
 	return opts
 }
 
-/// parse_consume_options는 소비 명령어 옵션을 파싱합니다.
+/// parse_consume_options parses consume command options.
 pub fn parse_consume_options(args []string) ConsumeOptions {
 	mut opts := ConsumeOptions{}
 
@@ -205,7 +205,7 @@ fn fetch_and_process_records(mut conn net.TcpConn, opts ConsumeOptions, fetch_of
 	return new_offset, new_count, false
 }
 
-/// run_consume은 토픽에서 메시지를 소비합니다.
+/// run_consume consumes messages from a topic.
 pub fn run_consume(opts ConsumeOptions) ! {
 	if opts.topic.len == 0 {
 		return error('Topic name is required. Use --topic <name>')
@@ -247,62 +247,62 @@ struct ConsumedRecord {
 }
 
 fn get_starting_offset(mut conn net.TcpConn, opts ConsumeOptions) !i64 {
-	// 옵션에 따라 오프셋 결정
+	// Determine offset based on options
 	if opts.offset == 'earliest' || opts.from_beginning {
 		return get_list_offset(mut conn, opts.topic, opts.partition, -2)
 	} else if opts.offset == 'latest' {
 		return get_list_offset(mut conn, opts.topic, opts.partition, -1)
 	} else {
-		// 숫자 오프셋
+		// Numeric offset
 		return opts.offset.i64()
 	}
 }
 
-// get_list_offset은 ListOffsets API를 사용하여 오프셋을 가져옵니다.
+// get_list_offset retrieves an offset using the ListOffsets API.
 fn get_list_offset(mut conn net.TcpConn, topic string, partition int, timestamp i64) !i64 {
-	// ListOffsets 요청 생성
+	// Build ListOffsets request
 	request := build_list_offsets_request(topic, partition, timestamp)
 
-	// 요청 전송
+	// Send request
 	send_kafka_request(mut conn, 2, 7, request)!
 
-	// 응답 읽기
+	// Read response
 	response := read_kafka_response(mut conn)!
 
-	// 응답에서 오프셋 파싱
+	// Parse offset from response
 	return parse_list_offsets_response(response)
 }
 
-// build_list_offsets_request는 ListOffsets 요청을 생성합니다.
+// build_list_offsets_request builds a ListOffsets request.
 fn build_list_offsets_request(topic string, partition int, timestamp i64) []u8 {
 	mut body := []u8{}
 
-	// Replica ID (4바이트) - 컨슈머는 -1
+	// Replica ID (4 bytes) - -1 for consumer
 	body << u8(0xff)
 	body << u8(0xff)
 	body << u8(0xff)
 	body << u8(0xff)
 
-	// Isolation level (1바이트) - 0 = read_uncommitted
+	// Isolation level (1 byte) - 0 = read_uncommitted
 	body << u8(0)
 
-	// Topics 배열 (compact array)
+	// Topics array (compact array)
 	body << u8(2)
 
-	// 토픽 이름 (compact string)
+	// Topic name (compact string)
 	body << u8(topic.len + 1)
 	body << topic.bytes()
 
-	// Partitions 배열 (compact array)
+	// Partitions array (compact array)
 	body << u8(2)
 
-	// 파티션 인덱스 (4바이트)
+	// Partition index (4 bytes)
 	body << u8(partition >> 24)
 	body << u8((partition >> 16) & 0xff)
 	body << u8((partition >> 8) & 0xff)
 	body << u8(partition & 0xff)
 
-	// Current leader epoch (4바이트) - -1
+	// Current leader epoch (4 bytes) - -1
 	body << u8(0xff)
 	body << u8(0xff)
 	body << u8(0xff)
@@ -317,31 +317,31 @@ fn build_list_offsets_request(topic string, partition int, timestamp i64) []u8 {
 	body << u8((timestamp >> 8) & 0xff)
 	body << u8(timestamp & 0xff)
 
-	// 파티션용 Tagged fields
+	// Tagged fields for partition
 	body << u8(0)
 
-	// 토픽용 Tagged fields
+	// Tagged fields for topic
 	body << u8(0)
 
-	// 요청용 Tagged fields
+	// Tagged fields for request
 	body << u8(0)
 
 	return body
 }
 
-// parse_list_offsets_response는 ListOffsets 응답에서 오프셋을 파싱합니다.
+// parse_list_offsets_response parses the offset from a ListOffsets response.
 fn parse_list_offsets_response(response []u8) !i64 {
 	if response.len < 30 {
 		return error('Invalid ListOffsets response')
 	}
 
-	// 간소화된 파싱 - 프로덕션에서는 전체 프로토콜 파싱 필요
-	// 응답: correlation_id(4) + tagged_fields(1) + throttle_time(4) + topics 배열
+	// Simplified parsing - full protocol parsing required in production
+	// Response: correlation_id(4) + tagged_fields(1) + throttle_time(4) + topics array
 
-	// 응답에서 오프셋 찾기 (오프셋은 8바이트)
-	// 이것은 대략적인 휴리스틱 - 예상 오프셋 위치로 건너뛰기
+	// Find offset in response (offset is 8 bytes)
+	// This is an approximate heuristic - skip to expected offset position
 
-	// 현재는 폴백으로 0 반환
+	// Return 0 as fallback for now
 	return 0
 }
 
@@ -383,73 +383,73 @@ fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, t
 	// Cluster ID (compact nullable string) - null (v12+)
 	body << u8(0)
 
-	// Replica ID (4바이트) - 컨슈머는 -1
+	// Replica ID (4 bytes) - -1 for consumer
 	write_negative_i32(mut body)
 
-	// Max wait ms (4바이트)
+	// Max wait ms (4 bytes)
 	write_i32_be(mut body, timeout_ms)
 
-	// Min bytes (4바이트)
+	// Min bytes (4 bytes)
 	write_i32_be(mut body, 1)
 
-	// Max bytes (4바이트)
+	// Max bytes (4 bytes)
 	write_i32_be(mut body, max_bytes)
 
-	// Isolation level (1바이트)
+	// Isolation level (1 byte)
 	body << u8(0)
 
-	// Session ID (4바이트) - 0
+	// Session ID (4 bytes) - 0
 	write_zeroes(mut body, 4)
 
-	// Session epoch (4바이트) - -1
+	// Session epoch (4 bytes) - -1
 	write_negative_i32(mut body)
 
-	// Topics 배열 (compact array)
+	// Topics array (compact array)
 	body << u8(2)
 
-	// Topic ID (16바이트 UUID) - v13+, 이름 기반 조회 시 0
+	// Topic ID (16-byte UUID) - v13+, zero for name-based lookup
 	write_zeroes(mut body, 16)
 
-	// Partitions 배열 (compact array)
+	// Partitions array (compact array)
 	body << u8(2)
 
-	// 파티션 인덱스 (4바이트)
+	// Partition index (4 bytes)
 	write_i32_be(mut body, partition)
 
-	// Current leader epoch (4바이트) - -1
+	// Current leader epoch (4 bytes) - -1
 	write_negative_i32(mut body)
 
-	// Fetch offset (8바이트)
+	// Fetch offset (8 bytes)
 	write_i64_be(mut body, offset)
 
-	// Last fetched epoch (4바이트) - -1
+	// Last fetched epoch (4 bytes) - -1
 	write_negative_i32(mut body)
 
-	// Log start offset (8바이트) - 0
+	// Log start offset (8 bytes) - 0
 	write_zeroes(mut body, 8)
 
-	// Partition max bytes (4바이트)
+	// Partition max bytes (4 bytes)
 	write_i32_be(mut body, max_bytes)
 
-	// 파티션용 Tagged fields
+	// Tagged fields for partition
 	body << u8(0)
 
-	// 토픽용 Tagged fields
+	// Tagged fields for topic
 	body << u8(0)
 
-	// Forgotten topics data (compact array) - 빈
+	// Forgotten topics data (compact array) - empty
 	body << u8(1)
 
-	// Rack ID (compact string) - 빈
+	// Rack ID (compact string) - empty
 	body << u8(1)
 
-	// 요청용 Tagged fields
+	// Tagged fields for request
 	body << u8(0)
 
 	return body
 }
 
-// parse_fetch_response는 Fetch 응답에서 레코드를 파싱합니다.
+// parse_fetch_response parses records from a Fetch response.
 fn parse_fetch_response(response []u8) []ConsumedRecord {
 	mut records := []ConsumedRecord{}
 
@@ -457,17 +457,17 @@ fn parse_fetch_response(response []u8) []ConsumedRecord {
 		return records
 	}
 
-	// 간소화된 파싱 - 전체 구현은 완전한 응답 파싱 필요
-	// 응답 구조는 중첩 배열로 복잡함
+	// Simplified parsing - full implementation requires complete response parsing
+	// Response structure is complex with nested arrays
 
-	// RecordBatch 매직 바이트 (0x02) 찾아서 레코드 파싱
-	// 이것은 휴리스틱 접근법
+	// Find magic byte (0x02) for RecordBatch and parse records
+	// This is a heuristic approach
 
 	mut pos := 0
 	for pos < response.len - 50 {
-		// 매직 바이트 0x02 찾기 (record batch v2)
+		// Find magic byte 0x02 (record batch v2)
 		if response[pos] == 0x02 {
-			// 이 위치에서 record batch 파싱 시도
+			// Attempt to parse record batch at this position
 			parsed := try_parse_record_batch(response, pos - 16)
 			if parsed.len > 0 {
 				records << parsed
@@ -480,7 +480,7 @@ fn parse_fetch_response(response []u8) []ConsumedRecord {
 	return records
 }
 
-// try_parse_record_batch는 record batch 파싱을 시도합니다.
+// try_parse_record_batch attempts to parse a record batch.
 fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 	mut records := []ConsumedRecord{}
 
@@ -490,24 +490,24 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 
 	pos := start
 
-	// Base offset (8바이트)
+	// Base offset (8 bytes)
 	base_offset := i64(u64(data[pos]) << 56 | u64(data[pos + 1]) << 48 | u64(data[pos + 2]) << 40 | u64(data[
 		pos + 3]) << 32 | u64(data[pos + 4]) << 24 | u64(data[pos + 5]) << 16 | u64(data[pos + 6]) << 8 | u64(data[
 		pos + 7]))
 
-	// batch_length (4) + partition_leader_epoch (4) + magic (1) + crc (4) + attributes (2)
-	// + last_offset_delta (4) + first_timestamp (8) + max_timestamp (8)
-	// + producer_id (8) + producer_epoch (2) + base_sequence (4) + records_count (4) 건너뛰기
+	// Skip: batch_length(4) + partition_leader_epoch(4) + magic(1) + crc(4) + attributes(2)
+	// + last_offset_delta(4) + first_timestamp(8) + max_timestamp(8)
+	// + producer_id(8) + producer_epoch(2) + base_sequence(4) + records_count(4)
 
-	// 이것은 간소화된 버전 - 전체 구현은 각 필드를 적절히 파싱해야 함
+	// This is a simplified version - full implementation should parse each field properly
 	record_start := start + 57
 
 	if record_start < data.len {
-		// 최소 하나의 레코드 추출 시도
-		// 레코드는 varint로 길이 접두사가 붙음
+		// Attempt to extract at least one record
+		// Records are length-prefixed with varints
 
-		// 현재는 플레이스홀더만 반환
-		// 전체 구현은 varint와 레코드 형식을 디코딩해야 함
+		// Return placeholder only for now
+		// Full implementation must decode varints and record format
 	}
 
 	_ = base_offset
@@ -515,7 +515,7 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 	return records
 }
 
-/// print_consume_help는 소비 명령어 도움말을 출력합니다.
+/// print_consume_help prints consume command help.
 pub fn print_consume_help() {
 	println('\x1b[33mConsume Command:\x1b[0m')
 	println('')

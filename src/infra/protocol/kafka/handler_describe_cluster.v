@@ -6,11 +6,13 @@ import domain
 
 // DescribeCluster (API Key 60)
 
+/// DescribeClusterRequest은 DescribeCluster (API Key 60).
 pub struct DescribeClusterRequest {
 pub:
 	include_cluster_authorized_operations bool
 }
 
+/// DescribeClusterResponse는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeClusterResponse {
 pub:
 	throttle_time_ms              i32
@@ -22,6 +24,7 @@ pub:
 	cluster_authorized_operations i32
 }
 
+/// DescribeClusterBroker는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeClusterBroker {
 pub:
 	broker_id i32
@@ -40,6 +43,7 @@ fn parse_describe_cluster_request(mut reader BinaryReader, version i16, is_flexi
 	}
 }
 
+/// encode를 수행합니다.
 pub fn (r DescribeClusterResponse) encode(version i16) []u8 {
 	is_flexible := version >= 0
 	mut writer := new_writer()

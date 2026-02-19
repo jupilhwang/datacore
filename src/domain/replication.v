@@ -3,6 +3,7 @@ module domain
 import time
 import json
 
+/// ReplicationType defines an enumeration of related values.
 pub enum ReplicationType {
 	replicate
 	replicate_ack
@@ -10,6 +11,7 @@ pub enum ReplicationType {
 	heartbeat
 }
 
+/// ReplicationMessage is a struct holding related data.
 pub struct ReplicationMessage {
 pub mut:
 	msg_type       ReplicationType
@@ -24,6 +26,7 @@ pub mut:
 	error_msg      string // For error cases
 }
 
+/// ReplicaBuffer is a struct holding related data.
 pub struct ReplicaBuffer {
 pub mut:
 	topic        string
@@ -33,6 +36,7 @@ pub mut:
 	timestamp    i64 // When replicated
 }
 
+/// ReplicationConfig is a struct holding related data.
 pub struct ReplicationConfig {
 pub mut:
 	enabled                    bool
@@ -44,6 +48,7 @@ pub mut:
 	orphan_cleanup_interval_ms int // Orphan buffer cleanup interval (default: 60000)
 }
 
+/// ReplicationStats is a struct holding related data.
 pub struct ReplicationStats {
 pub mut:
 	total_replicated      i64
@@ -54,6 +59,7 @@ pub mut:
 	replica_lag_ms        i64
 }
 
+/// ReplicaAssignment is a struct holding related data.
 pub struct ReplicaAssignment {
 pub mut:
 	topic           string
@@ -63,6 +69,7 @@ pub mut:
 	assigned_time   i64 // When this assignment was created
 }
 
+/// ReplicationHealth is a struct holding related data.
 pub struct ReplicationHealth {
 pub mut:
 	broker_id      string
@@ -75,6 +82,7 @@ pub mut:
 // to_json converts a ReplicationMessage to a JSON string for logging and debugging.
 //
 // Returns: JSON string representation of the message (excludes records_data for brevity)
+/// to_json returns the JSON representation.
 pub fn (msg ReplicationMessage) to_json() string {
 	msg_type_str := match msg.msg_type {
 		.replicate { 'replicate' }
@@ -106,6 +114,7 @@ pub fn (msg ReplicationMessage) to_json() string {
 // - Orphan cleanup interval: 60000ms
 //
 // Returns: ReplicationConfig with default settings
+/// default returns a ReplicationConfig with sensible default values.
 pub fn (cfg ReplicationConfig) default() ReplicationConfig {
 	return ReplicationConfig{
 		enabled:                    false
@@ -120,30 +129,35 @@ pub fn (cfg ReplicationConfig) default() ReplicationConfig {
 
 // record_replicate increments the total_replicated counter by one.
 // Called when a REPLICATE message is successfully sent to replica brokers.
+/// record_replicate increments the total_replicated counter by one.
 pub fn (mut stats ReplicationStats) record_replicate() {
 	stats.total_replicated++
 }
 
 // record_ack increments the total_ack_received counter by one.
 // Called when a REPLICATE_ACK response is received from a replica broker.
+/// record_ack increments the total_ack_received counter by one.
 pub fn (mut stats ReplicationStats) record_ack() {
 	stats.total_ack_received++
 }
 
 // record_flush_ack increments the total_flush_ack_sent counter by one.
 // Called when a FLUSH_ACK message is sent to replica brokers after S3 flush.
+/// record_flush_ack increments the total_flush_ack_sent counter by one.
 pub fn (mut stats ReplicationStats) record_flush_ack() {
 	stats.total_flush_ack_sent++
 }
 
 // record_orphan_cleanup increments the total_orphans_cleaned counter by one.
 // Called when an orphaned replica buffer is removed during periodic cleanup.
+/// record_orphan_cleanup increments the total_orphans_cleaned counter by one.
 pub fn (mut stats ReplicationStats) record_orphan_cleanup() {
 	stats.total_orphans_cleaned++
 }
 
 // update_heartbeat updates the last_heartbeat_time to the current time.
 // Called after each heartbeat cycle completes successfully.
+/// update_heartbeat updates the last_heartbeat_time to the current time.
 pub fn (mut stats ReplicationStats) update_heartbeat() {
 	stats.last_heartbeat_time = time.now().unix_milli()
 }

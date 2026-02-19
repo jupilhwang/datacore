@@ -1,11 +1,10 @@
 /// Interface Layer - Worker Pool
-/// 인터페이스 레이어 - 워커 풀
 ///
-/// 이 모듈은 동시 연결 핸들러 수를 제한하여
-/// 고부하 상황에서 고루틴 폭발을 방지합니다.
+/// This module limits the number of concurrent connection handlers
+/// to prevent goroutine explosions under high load.
 ///
-/// 세마포어 패턴을 사용하여 워커 슬롯을 관리하며,
-/// 타임아웃과 함께 슬롯 획득을 지원합니다.
+/// It manages worker slots using a semaphore pattern,
+/// and supports slot acquisition with a timeout.
 module server
 
 import sync
@@ -13,19 +12,19 @@ import time
 import os
 import infra.performance.engines
 
-/// WorkerPoolConfig는 워커 풀 설정을 담는 구조체입니다.
+/// WorkerPoolConfig holds the configuration for a worker pool.
 pub struct WorkerPoolConfig {
 pub:
 	max_workers      int = 1000
 	queue_size       int = 5000
 	acquire_timeout  int = 5000
 	metrics_interval int = 60
-	// NUMA 설정 (v0.33.0)
+	// NUMA configuration (v0.33.0)
 	numa_aware        bool
 	numa_bind_workers bool = true
 }
 
-/// WorkerPoolMetrics는 워커 풀 통계를 추적하는 구조체입니다.
+/// WorkerPoolMetrics tracks statistics for the worker pool.
 pub struct WorkerPoolMetrics {
 pub mut:
 	active_workers     int
@@ -35,13 +34,13 @@ pub mut:
 	total_released     u64
 	total_timeouts     u64
 	total_rejected     u64
-	// NUMA 통계 (v0.33.0)
+	// NUMA statistics (v0.33.0)
 	numa_bindings      u64
 	numa_binding_fails u64
 }
 
-/// WorkerPool은 연결 처리를 위한 고정 크기 워커 슬롯 풀을 관리합니다.
-/// 세마포어 패턴을 사용하여 동시 실행 수를 제한합니다.
+/// WorkerPool manages a fixed-size pool of worker slots for connection handling.
+/// It uses the semaphore pattern to limit concurrent execution.
 pub struct WorkerPool {
 mut:
 	config       WorkerPoolConfig
@@ -49,22 +48,22 @@ mut:
 	metrics      WorkerPoolMetrics
 	metrics_lock sync.Mutex
 	running      bool
-	// NUMA 관련 (v0.33.0)
+	// NUMA-related fields (v0.33.0)
 	numa_node_count int
 	next_numa_node  int
 }
 
-/// new_worker_pool은 새로운 워커 풀을 생성합니다.
-/// 세마포어 채널을 max_workers 크기로 생성하고 토큰으로 채웁니다.
+/// new_worker_pool creates a new worker pool.
+/// It creates a semaphore channel of size max_workers and fills it with tokens.
 pub fn new_worker_pool(config WorkerPoolConfig) &WorkerPool {
-	// 용량이 max_workers인 세마포어 채널 생성
+	// Create semaphore channel with capacity max_workers
 	mut sem := chan bool{cap: config.max_workers}
-	// 채널을 토큰으로 미리 채움 (사용 가능한 슬롯 표시)
+	// Pre-fill the channel with tokens (indicating available slots)
 	for _ in 0 .. config.max_workers {
 		sem <- true
 	}
 
-	// NUMA 노드 수 감지 (v0.33.0)
+	// Detect NUMA node count (v0.33.0)
 	numa_nodes := get_numa_node_count()
 
 	return &WorkerPool{
@@ -76,22 +75,22 @@ pub fn new_worker_pool(config WorkerPoolConfig) &WorkerPool {
 	}
 }
 
-/// acquire는 워커 슬롯 획득을 시도합니다.
-/// 성공하면 true, 타임아웃 또는 풀 종료 중이면 false를 반환합니다.
+/// acquire attempts to acquire a worker slot.
+/// Returns true on success, false on timeout or if the pool is shutting down.
 pub fn (mut wp WorkerPool) acquire() bool {
 	if !wp.running {
 		return false
 	}
 
-	// 타임아웃과 함께 획득 시도
+	// Attempt acquisition with timeout
 	select {
 		_ := <-wp.semaphore {
-			// 슬롯 획득 성공
+			// Slot acquired successfully
 			wp.update_metrics_on_acquire()
 			return true
 		}
 		wp.config.acquire_timeout * time.millisecond {
-			// 타임아웃
+			// Timeout
 			wp.metrics_lock.@lock()
 			wp.metrics.total_timeouts += 1
 			wp.metrics_lock.unlock()
@@ -102,8 +101,8 @@ pub fn (mut wp WorkerPool) acquire() bool {
 	return false
 }
 
-/// try_acquire는 블로킹 없이 워커 슬롯 획득을 시도합니다.
-/// 성공하면 true, 사용 가능한 슬롯이 없으면 false를 반환합니다.
+/// try_acquire attempts to acquire a worker slot without blocking.
+/// Returns true on success, false if no slots are available.
 pub fn (mut wp WorkerPool) try_acquire() bool {
 	if !wp.running {
 		return false
@@ -125,27 +124,27 @@ pub fn (mut wp WorkerPool) try_acquire() bool {
 	return false
 }
 
-/// release는 워커 슬롯을 풀에 반환합니다.
-/// acquire()와 쌍으로 호출되어야 합니다.
+/// release returns a worker slot back to the pool.
+/// Must be called in a pair with acquire().
 pub fn (mut wp WorkerPool) release() {
-	// 메트릭 업데이트 (락 보호)
+	// Update metrics (lock-protected)
 	wp.metrics_lock.@lock()
 	wp.metrics.active_workers -= 1
 	wp.metrics.total_released += 1
 	wp.metrics_lock.unlock()
 
-	// 세마포어에 토큰 반환 (논블로킹)
+	// Return token to semaphore (non-blocking)
 	select {
 		wp.semaphore <- true {}
 		else {
-			// acquire/release가 쌍으로 호출되면 발생하지 않음
-			// 채널이 가득 찬 경우 (비정상 상황)
+			// This should not occur if acquire/release are called in pairs
+			// Happens if the channel is full (abnormal situation)
 		}
 	}
 }
 
-/// update_metrics_on_acquire는 슬롯 획득 시 메트릭을 업데이트합니다.
-/// 활성 워커 수 증가, 총 획득 수 증가, 피크 워커 수 갱신을 수행합니다.
+/// update_metrics_on_acquire updates metrics when a slot is acquired.
+/// It increments active worker count, total acquired count, and updates peak worker count.
 fn (mut wp WorkerPool) update_metrics_on_acquire() {
 	wp.metrics_lock.@lock()
 	wp.metrics.active_workers += 1
@@ -156,32 +155,32 @@ fn (mut wp WorkerPool) update_metrics_on_acquire() {
 	wp.metrics_lock.unlock()
 }
 
-/// get_metrics는 현재 워커 풀 메트릭을 반환합니다.
+/// get_metrics returns the current worker pool metrics.
 pub fn (mut wp WorkerPool) get_metrics() WorkerPoolMetrics {
 	wp.metrics_lock.@lock()
 	defer { wp.metrics_lock.unlock() }
 	return wp.metrics
 }
 
-/// active_count는 활성 워커 수를 반환합니다.
+/// active_count returns the number of active workers.
 pub fn (mut wp WorkerPool) active_count() int {
 	wp.metrics_lock.@lock()
 	defer { wp.metrics_lock.unlock() }
 	return wp.metrics.active_workers
 }
 
-/// available_slots는 사용 가능한 워커 슬롯 수를 반환합니다.
+/// available_slots returns the number of available worker slots.
 pub fn (mut wp WorkerPool) available_slots() int {
 	wp.metrics_lock.@lock()
 	defer { wp.metrics_lock.unlock() }
 	return wp.config.max_workers - wp.metrics.active_workers
 }
 
-/// shutdown은 워커 풀을 우아하게 종료합니다.
-/// running 플래그를 false로 설정하고 세마포어를 드레인합니다.
+/// shutdown gracefully shuts down the worker pool.
+/// Sets the running flag to false and drains the semaphore.
 pub fn (mut wp WorkerPool) shutdown() {
 	wp.running = false
-	// 세마포어 드레인 (대기 중인 acquire 호출 해제)
+	// Drain the semaphore (unblocks any pending acquire calls)
 	for {
 		select {
 			_ := <-wp.semaphore {}
@@ -192,22 +191,22 @@ pub fn (mut wp WorkerPool) shutdown() {
 	}
 }
 
-/// is_running은 풀이 아직 실행 중인지 확인합니다.
+/// is_running checks whether the pool is still running.
 pub fn (wp &WorkerPool) is_running() bool {
 	return wp.running
 }
 
-/// WorkerGuard는 RAII 스타일의 워커 슬롯 관리를 제공합니다.
-/// defer와 함께 사용하여 슬롯이 항상 해제되도록 보장합니다.
-/// 사용 예: defer { guard.release() }
+/// WorkerGuard provides RAII-style worker slot management.
+/// Use with defer to ensure the slot is always released.
+/// Example: defer { guard.release() }
 pub struct WorkerGuard {
 mut:
 	pool     &WorkerPool
 	released bool
 }
 
-/// new_worker_guard는 새로운 워커 가드를 생성합니다.
-/// 워커 슬롯을 획득한 후 이 가드를 생성하여 자동 해제를 보장합니다.
+/// new_worker_guard creates a new worker guard.
+/// Create this guard after acquiring a worker slot to ensure automatic release.
 pub fn new_worker_guard(mut pool WorkerPool) WorkerGuard {
 	return WorkerGuard{
 		pool:     pool
@@ -215,8 +214,8 @@ pub fn new_worker_guard(mut pool WorkerPool) WorkerGuard {
 	}
 }
 
-/// release는 워커 슬롯을 해제합니다.
-/// 멱등성을 보장하여 여러 번 호출해도 안전합니다.
+/// release releases the worker slot.
+/// Idempotent — safe to call multiple times.
 pub fn (mut g WorkerGuard) release() {
 	if !g.released {
 		g.pool.release()
@@ -224,9 +223,9 @@ pub fn (mut g WorkerGuard) release() {
 	}
 }
 
-/// bind_worker_to_numa는 현재 워커를 NUMA 노드에 바인딩합니다.
-/// 라운드로빈 방식으로 워커를 노드에 분배합니다.
-/// NUMA가 비활성화되었거나 지원되지 않으면 아무 작업도 하지 않습니다.
+/// bind_worker_to_numa binds the current worker to a NUMA node.
+/// Distributes workers across nodes in a round-robin fashion.
+/// Does nothing if NUMA is disabled or unsupported.
 pub fn (mut wp WorkerPool) bind_worker_to_numa() {
 	if !wp.config.numa_aware || !wp.config.numa_bind_workers {
 		return
@@ -236,13 +235,13 @@ pub fn (mut wp WorkerPool) bind_worker_to_numa() {
 		return
 	}
 
-	// 다음 노드 선택 (라운드로빈)
+	// Select next node (round-robin)
 	wp.metrics_lock.@lock()
 	node := wp.next_numa_node
 	wp.next_numa_node = (wp.next_numa_node + 1) % wp.numa_node_count
 	wp.metrics_lock.unlock()
 
-	// NUMA 노드에 바인딩 시도
+	// Attempt to bind to the NUMA node
 	if bind_thread_to_numa_node(node) {
 		wp.metrics_lock.@lock()
 		wp.metrics.numa_bindings++
@@ -254,11 +253,11 @@ pub fn (mut wp WorkerPool) bind_worker_to_numa() {
 	}
 }
 
-/// get_numa_node_count는 시스템의 NUMA 노드 수를 반환합니다.
-/// Linux에서만 실제 값을 반환하고, 다른 플랫폼에서는 1을 반환합니다.
+/// get_numa_node_count returns the number of NUMA nodes in the system.
+/// Returns the actual value only on Linux; returns 1 on other platforms.
 fn get_numa_node_count() int {
 	$if linux {
-		// /sys/devices/system/node/node* 디렉토리 수로 판단
+		// Determine count by the number of /sys/devices/system/node/node* directories
 		nodes := os.ls('/sys/devices/system/node') or { return 1 }
 		mut count := 0
 		for node in nodes {
@@ -272,12 +271,12 @@ fn get_numa_node_count() int {
 	}
 }
 
-/// bind_thread_to_numa_node는 현재 스레드를 지정된 NUMA 노드에 바인딩합니다.
-/// Linux에서만 동작하며, 다른 플랫폼에서는 항상 false를 반환합니다.
+/// bind_thread_to_numa_node binds the current thread to the specified NUMA node.
+/// Only works on Linux; always returns false on other platforms.
 fn bind_thread_to_numa_node(node int) bool {
 	$if linux {
-		// libnuma가 있으면 사용, 없으면 sched_setaffinity 사용
-		// 여기서는 간단히 numa 모듈의 함수 호출
+		// Use libnuma if available, otherwise use sched_setaffinity
+		// Here we simply call the function from the numa module
 		return engines.bind_to_node(node)
 	} $else {
 		return false

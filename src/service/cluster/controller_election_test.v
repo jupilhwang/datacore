@@ -1,9 +1,9 @@
-// Service Layer - Controller Election 테스트
+// Service Layer - Controller Election Tests
 module cluster
 
 import time
 
-// 테스트용 Mock ClusterMetadataPort
+// Mock ClusterMetadataPort for testing
 struct MockClusterMetadataPort {
 mut:
 	locks         map[string]string

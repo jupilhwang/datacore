@@ -1,32 +1,32 @@
-/// 인프라 레이어 - ZSTD 압축
-/// DEPRECATED: Pure V ZSTD 구현체는 더 이상 권장되지 않습니다.
-/// C 라이브러리 버전(zstd_c.v)이 완전한 기능과 성능을 제공합니다.
-/// 테스트 목적으로만 사용하세요.
-/// Pure V 구현의 ZSTD 프레임 형식 압축 알고리즘
-/// Kafka와 호환되는 ZSTD 프레임 형식 지원
-/// 참조: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md
+/// Infrastructure layer - ZSTD compression
+/// DEPRECATED: The pure V ZSTD implementation is no longer recommended.
+/// The C library version (zstd_c.v) provides full functionality and performance.
+/// For testing purposes only.
+/// ZSTD frame format compression algorithm in pure V
+/// Supports ZSTD frame format compatible with Kafka
+/// Reference: https://github.com/facebook/zstd/blob/dev/doc/zstd_compression_format.md
 module compression
 
 import infra.observability
 
-/// ZSTD 압축 알고리즘 구현.
+/// ZSTD compression algorithm implementation.
 pub struct ZstdCompressor {
 	level int
 }
 
-/// ZSTD 매직 넘버
+/// ZSTD magic number
 const zstd_magic_number = u32(0xfd2fb528)
 
-/// new_zstd_compressor는 새 ZstdCompressor를 생성합니다.
-/// 기본 압축 레벨은 3입니다.
+/// new_zstd_compressor creates a new ZstdCompressor.
+/// The default compression level is 3.
 pub fn new_zstd_compressor() &ZstdCompressor {
 	return &ZstdCompressor{
 		level: 3
 	}
 }
 
-/// new_zstd_compressor_with_level은 지정된 압축 레벨로 ZstdCompressor를 생성합니다.
-/// 레벨: 1-22 (1=최고속도, 22=최고압축)
+/// new_zstd_compressor_with_level creates a ZstdCompressor with the specified compression level.
+/// Level: 1-22 (1=fastest, 22=best compression)
 pub fn new_zstd_compressor_with_level(level int) &ZstdCompressor {
 	mut lvl := level
 	if lvl < 1 {
@@ -40,40 +40,40 @@ pub fn new_zstd_compressor_with_level(level int) &ZstdCompressor {
 	}
 }
 
-/// compress는 데이터를 ZSTD 프레임 형식으로 압축합니다.
-/// 간단한 프레임 래퍼 구현 사용.
+/// compress compresses data into ZSTD frame format.
+/// Uses a simple frame wrapper implementation.
 pub fn (c &ZstdCompressor) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// ZSTD 프레임 형식:
-	// 매직 넘버 (4 bytes) + 프레임 헤더 + 블록들 + [선택적 체크섬]
+	// ZSTD frame format:
+	// Magic number (4 bytes) + frame header + blocks + [optional checksum]
 	mut result := []u8{cap: data.len + 32}
 
-	// 매직 넘버 (리틀 엔디안)
+	// Magic number (little-endian)
 	result << u8(zstd_magic_number & 0xff)
 	result << u8((zstd_magic_number >> 8) & 0xff)
 	result << u8((zstd_magic_number >> 16) & 0xff)
 	result << u8((zstd_magic_number >> 24) & 0xff)
 
-	// 프레임 헤더
+	// Frame header
 	fhd := u8(0xA0)
 	result << fhd
 
-	// Frame_Content_Size (4바이트, 리틀 엔디안)
+	// Frame_Content_Size (4 bytes, little-endian)
 	result << u8(data.len & 0xff)
 	result << u8((data.len >> 8) & 0xff)
 	result << u8((data.len >> 16) & 0xff)
 	result << u8((data.len >> 24) & 0xff)
 
-	// Raw_Block (비압축 블록)
+	// Raw_Block (uncompressed block)
 	block_header := u32(1) | (u32(0) << 1) | (u32(data.len) << 3)
 	result << u8(block_header & 0xff)
 	result << u8((block_header >> 8) & 0xff)
 	result << u8((block_header >> 16) & 0xff)
 
-	// 블록 데이터
+	// Block data
 	result << data
 
 	mut logger := observability.get_named_logger('zstd_compressor')
@@ -84,14 +84,14 @@ pub fn (c &ZstdCompressor) compress(data []u8) ![]u8 {
 	return result
 }
 
-/// decompress는 ZSTD 프레임 형식의 데이터를 해제합니다.
-/// Kafka 호환: ZSTD 프레임 형식 지원
+/// decompress decompresses ZSTD frame format data.
+/// Kafka compatible: supports ZSTD frame format
 pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 매직 넘버 확인
+	// Verify magic number
 	if data.len < 4 {
 		return error('incomplete ZSTD frame')
 	}
@@ -99,25 +99,25 @@ pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 	magic := u32(data[0]) | (u32(data[1]) << 8) | (u32(data[2]) << 16) | (u32(data[3]) << 24)
 
 	if magic != zstd_magic_number {
-		// 매직 넘버가 없으면 raw 데이터로 처리
+		// If magic number is absent, treat as raw data
 		return data.clone()
 	}
 
 	mut pos := 4
 	mut result := []u8{}
 
-	// 프레임 헤더 파싱
+	// Parse frame header
 	if pos >= data.len {
 		return error('incomplete ZSTD frame header')
 	}
 	fhd := data[pos]
 	pos++
 
-	// 플래그 파싱
+	// Parse flags
 	fcs_flag := (fhd >> 6) & 0x03
 	single_segment := (fhd & 0x20) != 0
 
-	// Window_Descriptor (Single_Segment가 아닌 경우)
+	// Window_Descriptor (when not Single_Segment)
 	if !single_segment {
 		if pos >= data.len {
 			return error('incomplete ZSTD frame header')
@@ -125,7 +125,7 @@ pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 		pos++
 	}
 
-	// Frame_Content_Size 읽기
+	// Read Frame_Content_Size
 	mut frame_content_size := u64(0)
 	match fcs_flag {
 		0 {
@@ -166,13 +166,13 @@ pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 
 	_ = frame_content_size
 
-	// 블록 파싱
+	// Parse blocks
 	for pos < data.len {
 		if pos + 3 > data.len {
 			break
 		}
 
-		// 블록 헤더 (3바이트, 리틀 엔디안)
+		// Block header (3 bytes, little-endian)
 		block_header := u32(data[pos]) | (u32(data[pos + 1]) << 8) | (u32(data[pos + 2]) << 16)
 		pos += 3
 
@@ -186,14 +186,14 @@ pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 
 		match block_type {
 			0 {
-				// Raw_Block (비압축)
+				// Raw_Block (uncompressed)
 				result << data[pos..pos + block_size]
 			}
 			1 {
 				// RLE_Block
 				if block_size > 0 {
 					byte_val := data[pos]
-					// 프레임 콘텐츠 크기만큼 반복
+					// Repeat for frame content size
 					repeat_count := if frame_content_size > 0 {
 						int(frame_content_size)
 					} else {
@@ -205,7 +205,7 @@ pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 				}
 			}
 			2 {
-				// Compressed_Block: ZSTD 압축 해제 실행
+				// Compressed_Block: run ZSTD decompression
 				decompressed_block := zstd_decompress_block(data[pos..pos + block_size])!
 				result << decompressed_block
 			}
@@ -230,15 +230,15 @@ pub fn (c &ZstdCompressor) decompress(data []u8) ![]u8 {
 	return result
 }
 
-/// zstd_decompress_block은 단일 ZSTD 압축 블록을 해제합니다.
-/// 간단한 FSE/Huffman 복사 구현
+/// zstd_decompress_block decompresses a single ZSTD compressed block.
+/// Simple FSE/Huffman copy implementation
 fn zstd_decompress_block(compressed_data []u8) ![]u8 {
-	// ZSTD 압축 해제는 복잡한 알고리즘이 필요합니다.
-	// 간단한 구현으로는 지원되지 않으므로 에러를 반환합니다.
+	// ZSTD decompression requires a complex algorithm.
+	// Not supported in this simple implementation; returns an error.
 	return error('ZSTD compressed block decompression requires full FSE/Huffman implementation')
 }
 
-/// compression_type은 압축 타입을 반환합니다.
+/// compression_type returns the compression type.
 pub fn (c &ZstdCompressor) compression_type() CompressionType {
 	return CompressionType.zstd
 }

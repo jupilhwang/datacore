@@ -1,29 +1,29 @@
-// Infra Layer - S3 버퍼 매니저
-// S3 스토리지를 위한 버퍼 관리 및 플러시 작업 처리
+// Infra Layer - S3 Buffer Manager
+// Buffer management and flush operation handling for S3 storage
 module s3
 
 import json
 import strconv
 import time
 
-/// TopicPartitionBuffer는 S3에 플러시하기 전 특정 파티션의 레코드를 보관합니다.
-/// 배치 쓰기를 통해 S3 API 호출 횟수를 줄이고 성능을 최적화합니다.
+/// TopicPartitionBuffer holds records for a specific partition before flushing to S3.
+/// Reduces S3 API call count and optimizes performance through batch writes.
 struct TopicPartitionBuffer {
 mut:
 	records            []StoredRecord
 	current_size_bytes i64
 }
 
-/// FlushBatch는 S3 플러시 대상인 단일 파티션의 레코드 배치를 나타냅니다.
-/// map lookup 오버헤드를 제거하기 위해 구조체 배열로 사용됩니다.
+/// FlushBatch represents a batch of records for a single partition to be flushed to S3.
+/// Used as a struct array to eliminate map lookup overhead.
 struct FlushBatch {
 	key     string
 	records []StoredRecord
 }
 
-/// async_flush_partition은 단일 파티션 배치에 대해 S3 put과 인덱스 업데이트를 수행합니다.
-/// 이 함수는 비동기로 호출되며, 버퍼의 레코드를 S3 세그먼트로 저장합니다.
-/// 주의: 현재는 flush_worker에서만 호출되며, 직접 호출은 비활성화되어 있습니다.
+/// async_flush_partition performs S3 put and index update for a single partition batch.
+/// This function is called asynchronously and saves buffered records as an S3 segment.
+/// Note: Currently only called from flush_worker; direct calls are disabled.
 fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	parts := partition_key.split(':')
 	if parts.len != 2 {
@@ -35,7 +35,7 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	}
 	partition := int(partition_i64)
 
-	// 1. 락 획득, 버퍼 복사, 메모리 내 버퍼 초기화
+	// 1. Acquire lock, copy buffer, clear in-memory buffer
 	a.buffer_lock.lock()
 
 	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
@@ -54,17 +54,17 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	a.topic_partition_buffers[partition_key] = tp_buffer
 	a.buffer_lock.unlock()
 
-	// 2. 배치의 오프셋 계산
+	// 2. Calculate offsets for the batch
 	base_offset := buffer_data[0].offset
 	end_offset := buffer_data[buffer_data.len - 1].offset
 
-	// 3. 세그먼트 인코딩 및 S3에 쓰기
+	// 3. Encode segment and write to S3
 	segment_data := encode_stored_records(buffer_data)
 	segment_key := a.log_segment_key(topic, partition, base_offset, end_offset)
 
-	// S3에 세그먼트 쓰기
+	// Write segment to S3
 	a.put_object(segment_key, segment_data) or {
-		// 실패 시 재시도하지 않으면 데이터 손실. 현재는 로깅 후 에러 반환.
+		// Without retry on failure, data will be lost. Currently log and return error.
 		log_message(.error, 'AsyncFlush', 'Segment put failed', {
 			'partition_key': partition_key
 			'segment_key':   segment_key
@@ -73,7 +73,7 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 		return error('Segment put failed during async flush: ${err}')
 	}
 
-	// 4. 새 세그먼트로 파티션 인덱스 업데이트
+	// 4. Update partition index with new segment
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
 		end_offset, segment_data.len) or {
 		log_message(.error, 'AsyncFlush', 'Index update failed', {
@@ -85,26 +85,26 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	}
 }
 
-/// flush_worker는 주기적으로 메시지 버퍼와 오프셋 버퍼를 병렬 플러시합니다.
-/// batch_timeout_ms 간격으로 실행되며, compactor_running이 false가 되면 종료됩니다.
+/// flush_worker periodically flushes message and offset buffers in parallel.
+/// Runs at batch_timeout_ms intervals and stops when compactor_running becomes false.
 fn (mut a S3StorageAdapter) flush_worker() {
 	for a.compactor_running {
 		time.sleep(a.config.batch_timeout_ms * time.millisecond)
 
-		// 메시지와 오프셋을 병렬 디스패치
+		// Dispatch messages and offsets in parallel
 		go a.flush_pending_messages()
 		go a.flush_pending_offsets()
 	}
 }
 
-/// flush_pending_messages는 메시지 버퍼를 S3에 플러시합니다.
-/// 기존 flush_worker의 메시지 플러시 로직을 그대로 추출한 것입니다.
+/// flush_pending_messages flushes the message buffer to S3.
+/// Extracted directly from the original flush_worker message flush logic.
 fn (mut a S3StorageAdapter) flush_pending_messages() {
-	// 락을 유지한 채 각 파티션의 버퍼 처리
-	// 키 수집과 플러시 사이에 append가 버퍼를 수정하는 경쟁 조건 방지
+	// Process each partition's buffer while holding the lock
+	// Prevents race condition where append modifies buffer between key collection and flush
 	a.buffer_lock.lock()
 
-	// 데이터가 있는 모든 파티션의 버퍼 데이터를 추출
+	// Extract buffer data for all partitions that have data
 	mut flush_batches := []FlushBatch{}
 	for key, _ in a.topic_partition_buffers {
 		if mut tp_buffer := a.topic_partition_buffers[key] {
@@ -122,7 +122,7 @@ fn (mut a S3StorageAdapter) flush_pending_messages() {
 
 	a.buffer_lock.unlock()
 
-	// 각 배치를 S3에 플러시 (락 없이)
+	// Flush each batch to S3 (without holding lock)
 	for batch in flush_batches {
 		if batch.records.len == 0 {
 			continue
@@ -142,8 +142,8 @@ fn (mut a S3StorageAdapter) flush_pending_messages() {
 	}
 }
 
-/// restore_failed_message_buffer는 플러시 실패 시 메시지 버퍼를 복원합니다.
-/// 실패한 레코드를 기존 버퍼 앞에 추가하여 순서를 보존합니다.
+/// restore_failed_message_buffer restores the message buffer on flush failure.
+/// Prepends failed records to existing buffer to preserve order.
 fn (mut a S3StorageAdapter) restore_failed_message_buffer(key string, buffer_data []StoredRecord) {
 	a.buffer_lock.lock()
 	defer { a.buffer_lock.unlock() }
@@ -171,20 +171,20 @@ fn (mut a S3StorageAdapter) restore_failed_message_buffer(key string, buffer_dat
 	}
 }
 
-/// flush_buffer_to_s3는 특정 버퍼 배치를 S3에 플러시합니다.
-/// 세그먼트를 S3에 저장하고 파티션 인덱스를 업데이트합니다.
-/// 동시 인덱스 업데이트로 인한 손상을 방지하기 위해 index_update_lock을 사용합니다.
+/// flush_buffer_to_s3 flushes a specific buffer batch to S3.
+/// Saves the segment to S3 and updates the partition index.
+/// Uses index_update_lock to prevent index corruption from concurrent updates.
 fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data []StoredRecord) ! {
 	start_time := time.now()
 
-	// 메트릭: 플러시 시작
+	// Metric: flush start
 	a.metrics_lock.@lock()
 	a.metrics.flush_count++
 	a.metrics_lock.unlock()
 
 	parts := partition_key.split(':')
 	if parts.len != 2 {
-		// 메트릭: 플러시 실패
+		// Metric: flush failure
 		a.metrics_lock.@lock()
 		a.metrics.flush_error_count++
 		a.metrics_lock.unlock()
@@ -192,7 +192,7 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 	}
 	topic := parts[0]
 	partition_i64 := strconv.atoi64(parts[1]) or {
-		// 메트릭: 플러시 실패
+		// Metric: flush failure
 		a.metrics_lock.@lock()
 		a.metrics.flush_error_count++
 		a.metrics_lock.unlock()
@@ -200,22 +200,22 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 	}
 	partition := int(partition_i64)
 
-	// 배치의 오프셋 계산
+	// Calculate offsets for the batch
 	base_offset := buffer_data[0].offset
 	end_offset := buffer_data[buffer_data.len - 1].offset
 
-	// 세그먼트 인코딩 및 S3에 쓰기
+	// Encode segment and write to S3
 	segment_data := encode_stored_records(buffer_data)
 	segment_key := a.log_segment_key(topic, partition, base_offset, end_offset)
 
-	// S3에 세그먼트 쓰기
+	// Write segment to S3
 	a.put_object(segment_key, segment_data) or {
 		log_message(.error, 'Flush', 'Segment put failed', {
 			'partition_key': partition_key
 			'segment_key':   segment_key
 			'error':         err.msg()
 		})
-		// 메트릭: 플러시 실패
+		// Metric: flush failure
 		a.metrics_lock.@lock()
 		a.metrics.flush_error_count++
 		a.metrics.s3_error_count++
@@ -223,13 +223,13 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 		return error('Segment put failed during flush: ${err}')
 	}
 
-	// 메트릭: S3 PUT 성공
+	// Metric: S3 PUT success
 	a.metrics_lock.@lock()
 	a.metrics.s3_put_count++
 	a.metrics_lock.unlock()
 
-	// 새 세그먼트로 파티션 인덱스 업데이트
-	// 동시 인덱스 업데이트로 인한 인덱스 손상 방지를 위해 락 사용
+	// Update partition index with new segment
+	// Use lock to prevent index corruption from concurrent updates
 	a.index_update_lock.lock()
 	defer {
 		a.index_update_lock.unlock()
@@ -242,14 +242,14 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 			'segment_key':   segment_key
 			'error':         err.msg()
 		})
-		// 메트릭: 플러시 실패
+		// Metric: flush failure
 		a.metrics_lock.@lock()
 		a.metrics.flush_error_count++
 		a.metrics_lock.unlock()
 		return error('Index update failed during flush: ${err}')
 	}
 
-	// 메트릭: 플러시 성공
+	// Metric: flush success
 	elapsed_ms := time.since(start_time).milliseconds()
 	a.metrics_lock.@lock()
 	a.metrics.flush_success_count++
@@ -257,10 +257,10 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 	a.metrics_lock.unlock()
 }
 
-/// update_partition_index_with_segment는 파티션 인덱스에 새 세그먼트를 추가합니다.
-/// S3에서 인덱스를 읽고, 세그먼트를 추가하고, 다시 S3에 저장합니다.
+/// update_partition_index_with_segment adds a new segment to the partition index.
+/// Reads the index from S3, appends the segment, and saves it back to S3.
 fn (mut a S3StorageAdapter) update_partition_index_with_segment(topic string, partition int, segment_key string, base_offset i64, end_offset i64, segment_size int) ! {
-	// S3에서 직접 현재 인덱스 조회 (캐시 우회)
+	// Fetch current index directly from S3 (bypassing cache)
 	index_key := a.partition_index_key(topic, partition)
 	mut index := PartitionIndex{
 		topic:           topic
@@ -276,8 +276,8 @@ fn (mut a S3StorageAdapter) update_partition_index_with_segment(topic string, pa
 		}
 	}
 
-	// 세그먼트가 아직 존재하지 않으면 항상 추가
-	// 세그먼트 키 비교로 중복 확인
+	// Always add if segment does not yet exist
+	// Check for duplicates by comparing segment keys
 	mut segment_exists := false
 	for seg in index.log_segments {
 		if seg.key == segment_key {
@@ -295,25 +295,25 @@ fn (mut a S3StorageAdapter) update_partition_index_with_segment(topic string, pa
 			created_at:   time.now()
 		}
 
-		// 순서 유지를 위해 start_offset으로 세그먼트 정렬
+		// Sort segments by start_offset to maintain order
 		index.log_segments.sort(a.start_offset < b.start_offset)
 
-		// high_watermark를 최대 end_offset + 1로 업데이트
+		// Update high_watermark to max end_offset + 1
 		for seg in index.log_segments {
 			if seg.end_offset + 1 > index.high_watermark {
 				index.high_watermark = seg.end_offset + 1
 			}
 		}
 
-		// 업데이트된 인덱스를 S3에 쓰기
+		// Write updated index to S3
 		a.put_object(index_key, json.encode(index).bytes())!
 
-		// 로컬 캐시 업데이트
+		// Update local cache
 		a.update_index_cache(topic, partition, index)
 	}
 }
 
-/// update_index_cache는 로컬 인덱스 캐시를 업데이트합니다.
+/// update_index_cache updates the local index cache.
 fn (mut a S3StorageAdapter) update_index_cache(topic string, partition int, index PartitionIndex) {
 	cache_key := '${topic}:${partition}'
 	a.topic_lock.@lock()
@@ -322,7 +322,7 @@ fn (mut a S3StorageAdapter) update_index_cache(topic string, partition int, inde
 	}
 
 	if cached := a.topic_index_cache[cache_key] {
-		// 캐시와 S3 사이에서 더 높은 high_watermark 유지
+		// Maintain higher high_watermark between cache and S3
 		mut final_index := index
 		if cached.index.high_watermark > index.high_watermark {
 			final_index.high_watermark = cached.index.high_watermark

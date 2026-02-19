@@ -1,11 +1,11 @@
-/// 성능 모듈 통합 테스트
+/// Performance module integration tests
 module benchmarks
 
 import infra.performance
 
-// 통합 테스트
+// Integration tests
 
-/// 전역 성능 관리자 초기화 테스트
+/// Tests initialization of the global performance manager
 fn test_global_performance_manager_init() {
 	init_global_performance(performance.PerformanceConfig{
 		buffer_pool_max_tiny:  100
@@ -18,46 +18,46 @@ fn test_global_performance_manager_init() {
 	assert mgr.enabled == true
 }
 
-/// 요청 버퍼 생명주기 테스트
+/// Tests request buffer lifecycle
 fn test_request_buffer_lifecycle() {
 	init_global_performance(performance.PerformanceConfig{})
 
-	// 할당
+	// Allocate
 	mut buf := new_request_buffer(1024)
 	assert buf.buffer != unsafe { nil }
 	assert buf.buffer.cap >= 1024
 
-	// 사용
+	// Use
 	data := buf.data()
 	assert data.len >= 1024
 
-	// 크기 조정
+	// Resize
 	buf.resize(2048)
 	assert buf.buffer.cap >= 2048
 
-	// 해제
+	// Release
 	buf.release()
 }
 
-/// 응답 버퍼 쓰기 테스트
+/// Tests response buffer writing
 fn test_response_buffer_write() {
 	init_global_performance(performance.PerformanceConfig{})
 
 	mut buf := new_response_buffer(256)
 
-	// 데이터 쓰기
+	// Write data
 	buf.write([u8(1), 2, 3, 4])
 	assert buf.len() == 4
 
-	// i32 쓰기
+	// Write i32
 	buf.write_i32_be(0x12345678)
 	assert buf.len() == 8
 
-	// i16 쓰기
+	// Write i16
 	buf.write_i16_be(0x1234)
 	assert buf.len() == 10
 
-	// 바이트 검증
+	// Verify bytes
 	bytes := buf.bytes()
 	assert bytes.len == 10
 	assert bytes[0] == 1
@@ -68,13 +68,13 @@ fn test_response_buffer_write() {
 	buf.release()
 }
 
-/// 응답 버퍼 확장 테스트
+/// Tests response buffer growth
 fn test_response_buffer_grow() {
 	init_global_performance(performance.PerformanceConfig{})
 
 	mut buf := new_response_buffer(16)
 
-	// 용량보다 많이 쓰기
+	// Write more than capacity
 	for _ in 0 .. 100 {
 		buf.write([u8(1), 2, 3, 4, 5, 6, 7, 8])
 	}
@@ -85,51 +85,51 @@ fn test_response_buffer_grow() {
 	buf.release()
 }
 
-/// 연결 버퍼 테스트
+/// Tests connection buffers
 fn test_connection_buffers() {
 	init_global_performance(performance.PerformanceConfig{})
 
 	mut bufs := new_connection_buffers(4096, 8192)
 
-	// 슬라이스 획득
+	// Get slices
 	read_slice := bufs.get_read_slice(1024)
 	assert read_slice.len == 1024
 
 	write_slice := bufs.get_write_slice(2048)
 	assert write_slice.len == 2048
 
-	// 버퍼보다 큰 슬라이스
+	// Slice larger than buffer
 	large_slice := bufs.get_read_slice(10000)
 	assert large_slice.len == 10000
 
 	bufs.release()
 }
 
-/// 스토리지 레코드 풀 테스트
+/// Tests storage record pool
 fn test_storage_record_pool() {
 	init_global_performance(performance.PerformanceConfig{})
 
 	mut pool := new_storage_record_pool()
 
-	// 레코드 획득 및 반환
+	// Acquire and release record
 	rec := pool.get_record()
 	assert rec != unsafe { nil }
 	pool.put_record(rec)
 
-	// 배치 획득 및 반환
+	// Acquire and release batch
 	batch := pool.get_batch()
 	assert batch != unsafe { nil }
 	pool.put_batch(batch)
 }
 
-/// Fetch 버퍼 제로카피 테스트
+/// Tests fetch buffer zero-copy
 fn test_fetch_buffer_zero_copy() {
 	init_global_performance(performance.PerformanceConfig{})
 
 	mut buf := new_fetch_buffer(4096)
 	assert !buf.has_zero_copy()
 
-	// 제로카피 설정
+	// Set zero-copy
 	buf.set_zero_copy(10, 1000, 4096)
 	assert buf.has_zero_copy()
 	assert buf.zero_copy_fd == 10
@@ -139,47 +139,47 @@ fn test_fetch_buffer_zero_copy() {
 	buf.release()
 }
 
-/// 요청 버퍼 콜백 테스트
+/// Tests request buffer callback
 fn test_with_request_buffer_callback() {
 	init_global_performance(performance.PerformanceConfig{})
 
-	// 콜백이 유효한 버퍼로 호출되는지 테스트
-	// 클로저 캡처 대신 직접 버퍼 작업 사용
+	// Test that callback is called with a valid buffer
+	// Use direct buffer operations instead of closure capture
 	mut buf := new_request_buffer(1024)
 	assert buf.buffer != unsafe { nil }
 	assert buf.buffer.cap >= 1024
 	buf.release()
 }
 
-/// 응답 버퍼 콜백 테스트
+/// Tests response buffer callback
 fn test_with_response_buffer_callback() {
 	init_global_performance(performance.PerformanceConfig{})
 
-	// 응답 버퍼가 올바르게 작동하는지 테스트
+	// Test that response buffer works correctly
 	mut buf := new_response_buffer(512)
 	buf.write([u8(1), 2, 3])
 	assert buf.len() == 3
 	buf.release()
 }
 
-/// 통합 통계 테스트
+/// Tests integration statistics
 fn test_integration_stats() {
 	init_global_performance(performance.PerformanceConfig{})
 
-	// 일부 작업 수행
+	// Perform some operations
 	mut req := allocate_request_buffer(1024)
 	req.release()
 
 	mut resp := allocate_response_buffer(512)
 	resp.release()
 
-	// 통계 획득 - 크래시 없이 동작하는지 확인
+	// Get stats - verify no crash
 	stats := get_integration_stats()
-	// 통계 구조체가 유효해야 함
+	// Stats struct should be valid
 	assert stats.perf_stats.buffer_hits >= 0 || stats.perf_stats.buffer_misses >= 0
 }
 
-/// 벤치마크 스위트 생성 테스트
+/// Tests benchmark suite creation
 fn test_benchmark_suite_creation() {
 	init_global_performance(performance.PerformanceConfig{})
 
@@ -192,7 +192,7 @@ fn test_benchmark_suite_creation() {
 	assert suite.config.benchmark_iterations == 100
 }
 
-/// 벤치마크 버퍼 할당 테스트
+/// Tests benchmark buffer allocation
 fn test_benchmark_buffer_allocation() {
 	init_global_performance(performance.PerformanceConfig{
 		buffer_pool_prewarm: true
@@ -209,7 +209,7 @@ fn test_benchmark_buffer_allocation() {
 	assert result.ops_per_second > 0
 }
 
-/// 벤치마크 레코드 풀 테스트
+/// Tests benchmark record pool
 fn test_benchmark_record_pool() {
 	init_global_performance(performance.PerformanceConfig{})
 
@@ -223,7 +223,7 @@ fn test_benchmark_record_pool() {
 	assert result.avg_time_ns > 0
 }
 
-/// 벤치마크 요청/응답 사이클 테스트
+/// Tests benchmark request/response cycle
 fn test_benchmark_request_response_cycle() {
 	init_global_performance(performance.PerformanceConfig{})
 
@@ -237,7 +237,7 @@ fn test_benchmark_request_response_cycle() {
 	assert result.name == 'Request/Response Cycle'
 }
 
-/// 부하 상태에서의 성능 테스트
+/// Tests performance under load
 fn test_performance_under_load() {
 	init_global_performance(performance.PerformanceConfig{
 		buffer_pool_max_tiny:  1000
@@ -245,22 +245,22 @@ fn test_performance_under_load() {
 		record_pool_max_size:  5000
 	})
 
-	// 높은 부하 시뮬레이션
+	// Simulate high load
 	mut buffers := []&RequestBuffer{cap: 100}
 
 	for _ in 0 .. 100 {
 		buffers << new_request_buffer(1024)
 	}
 
-	// 모두 반환
+	// Return all
 	for mut buf in buffers {
 		buf.release()
 	}
 
-	// 통계 확인
+	// Check statistics
 	mut mgr := get_global_performance()
 	stats := mgr.get_stats()
 
-	// 버퍼 반환 후 높은 재사용률이 있어야 함
+	// Should have high reuse rate after returning buffers
 	assert stats.buffer_hits >= 0 || stats.buffer_misses >= 0
 }

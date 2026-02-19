@@ -1,4 +1,4 @@
-// 단위 테스트 - Infra Layer: SASL 프로토콜
+// Unit tests - Infra Layer: SASL protocol
 module kafka_test
 
 import domain
@@ -8,7 +8,7 @@ import infra.auth as infra_auth
 import service.auth
 import service.port
 
-// 헬퍼: PLAIN 인증 바이트 생성
+// Helper: generate PLAIN authentication bytes
 fn make_plain_auth(authzid string, username string, password string) []u8 {
 	mut data := []u8{}
 	data << authzid.bytes()
@@ -245,7 +245,7 @@ fn create_mock_storage() port.StoragePort {
 	return MockStorage{}
 }
 
-// 테스트용 MockStorage - StoragePort 구현
+// MockStorage for testing - implements StoragePort
 struct MockStorage {}
 
 fn (m MockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {

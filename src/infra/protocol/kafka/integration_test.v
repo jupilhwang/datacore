@@ -1,5 +1,5 @@
-// 통합 테스트 - SASL/ACL/트랜잭션 결합 테스트
-// Task #48: 보안 및 트랜잭션 기능 통합 테스트
+// Integration tests - Combined SASL/ACL/Transaction tests
+// Task #48: Security and transaction feature integration tests
 module kafka_test
 
 import domain
@@ -40,7 +40,7 @@ fn create_full_integration_handler() kafka.Handler {
 		auth_service, acl_manager, *txn_coordinator, compression_service)
 }
 
-// 통합 테스트용 Mock Storage
+// Mock Storage for integration tests
 struct IntegrationMockStorage {}
 
 fn (m IntegrationMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {

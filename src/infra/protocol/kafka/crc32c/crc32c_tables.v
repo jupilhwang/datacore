@@ -1,10 +1,10 @@
-/// CRC32-C Slicing-by-8 테이블
+/// CRC32-C Slicing-by-8 tables
 ///
-/// 이 파일은 Slicing-by-8 알고리즘에 필요한 8개의 256 엔트리 테이블을 포함합니다.
-/// 각 테이블은 CRC32-C (Castagnoli) 다항식 0x82F63B78을 기반으로 생성되었습니다.
+/// This file contains 8 tables of 256 entries each, required by the Slicing-by-8 algorithm.
+/// Each table is generated based on the CRC32-C (Castagnoli) polynomial 0x82F63B78.
 ///
-/// 테이블 생성 알고리즘:
-/// - table[0][i] = 기본 CRC 테이블 (바이트 i에 대한 CRC)
+/// Table generation algorithm:
+/// - table[0][i] = base CRC table (CRC for byte i)
 /// - table[n][i] = table[0][table[n-1][i] & 0xFF] ^ (table[n-1][i] >> 8)
 module crc32c
 

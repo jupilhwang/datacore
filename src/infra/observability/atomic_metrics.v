@@ -1,39 +1,39 @@
-/// 인프라 레이어 - Atomic 메트릭
-/// 락 경합을 최소화하기 위한 고성능 메트릭 수집
-/// 샤딩 기반 카운터 사용
+/// Infrastructure layer - Atomic metrics
+/// High-performance metric collection to minimize lock contention
+/// Uses sharding-based counters
 module observability
 
 import sync
 
-// ShardedCounter - 샤딩된 카운터 (락 경합 분산)
+// ShardedCounter - sharded counter (distributes lock contention)
 
 const shard_count = 16
 
-/// ShardedCounter는 샤딩을 통해 락 경합을 최소화하는 카운터입니다.
+/// ShardedCounter is a counter that minimizes lock contention through sharding.
 pub struct ShardedCounter {
 pub mut:
 	shards [16]Shard
 }
 
-/// Shard는 개별 샤드의 카운터와 락입니다.
+/// Shard is the counter and lock for an individual shard.
 pub struct Shard {
 pub mut:
 	value i64
 	lock  sync.Mutex
 }
 
-/// new_sharded_counter은 새 ShardedCounter를 생성합니다.
+/// new_sharded_counter creates a new ShardedCounter.
 pub fn new_sharded_counter() ShardedCounter {
 	mut sc := ShardedCounter{}
 	return sc
 }
 
-/// get_shard_index는 현재 스레드 ID를 기반으로 샤드 인덱스를 계산합니다.
+/// get_shard_index calculates the shard index based on the current thread ID.
 fn get_shard_index() int {
 	return int(C.pthread_self()) % shard_count
 }
 
-/// inc는 카운터를 1 증가시킵니다.
+/// inc increments the counter by 1.
 pub fn (mut sc ShardedCounter) inc() {
 	idx := get_shard_index()
 	mut shard := &sc.shards[idx]
@@ -42,7 +42,7 @@ pub fn (mut sc ShardedCounter) inc() {
 	shard.lock.unlock()
 }
 
-/// inc_by는 카운터를 지정된 값만큼 증가시킵니다.
+/// inc_by increments the counter by the specified value.
 pub fn (mut sc ShardedCounter) inc_by(delta i64) {
 	if delta <= 0 {
 		return
@@ -54,7 +54,7 @@ pub fn (mut sc ShardedCounter) inc_by(delta i64) {
 	shard.lock.unlock()
 }
 
-/// dec는 카운터를 1 감소시킵니다.
+/// dec decrements the counter by 1.
 pub fn (mut sc ShardedCounter) dec() {
 	idx := get_shard_index()
 	mut shard := &sc.shards[idx]
@@ -63,7 +63,7 @@ pub fn (mut sc ShardedCounter) dec() {
 	shard.lock.unlock()
 }
 
-/// dec_by는 카운터를 지정된 값만큼 감소시킵니다.
+/// dec_by decrements the counter by the specified value.
 pub fn (mut sc ShardedCounter) dec_by(delta i64) {
 	if delta <= 0 {
 		return
@@ -75,7 +75,7 @@ pub fn (mut sc ShardedCounter) dec_by(delta i64) {
 	shard.lock.unlock()
 }
 
-/// get는 모든 샤드의 합계를 반환합니다.
+/// get returns the sum of all shards.
 pub fn (sc &ShardedCounter) get() i64 {
 	mut total := i64(0)
 	for i := 0; i < shard_count; i++ {
@@ -87,7 +87,7 @@ pub fn (sc &ShardedCounter) get() i64 {
 	return total
 }
 
-/// set는 모든 샤드를 지정된 값으로 설정합니다 (분산).
+/// set sets all shards to the specified value (distributed).
 pub fn (mut sc ShardedCounter) set(val i64) {
 	per_shard := val / shard_count
 	remainder := val % shard_count
@@ -102,7 +102,7 @@ pub fn (mut sc ShardedCounter) set(val i64) {
 	}
 }
 
-/// reset는 모든 샤드를 0으로 리셋합니다.
+/// reset resets all shards to 0.
 pub fn (mut sc ShardedCounter) reset() {
 	for i := 0; i < shard_count; i++ {
 		mut shard := &sc.shards[i]
@@ -112,9 +112,9 @@ pub fn (mut sc ShardedCounter) reset() {
 	}
 }
 
-// ShardedMetrics - 샤딩된 메트릭 컬렉션
+// ShardedMetrics - sharded metrics collection
 
-/// ShardedMetrics는 락 경합을 최소화하는 메트릭 집합입니다.
+/// ShardedMetrics is a metric set that minimizes lock contention.
 pub struct ShardedMetrics {
 pub mut:
 	topic_create_count   ShardedCounter
@@ -137,7 +137,7 @@ pub mut:
 	fetch_latency_us     ShardedCounter
 }
 
-/// new_sharded_metrics는 새 ShardedMetrics를 생성합니다.
+/// new_sharded_metrics creates a new ShardedMetrics.
 pub fn new_sharded_metrics() ShardedMetrics {
 	return ShardedMetrics{
 		topic_create_count:   new_sharded_counter()
@@ -161,7 +161,7 @@ pub fn new_sharded_metrics() ShardedMetrics {
 	}
 }
 
-/// record_append는 append 작업을 기록합니다.
+/// record_append records an append operation.
 pub fn (mut m ShardedMetrics) record_append(record_count int, bytes i64, latency_us i64) {
 	m.append_count.inc()
 	m.append_record_count.inc_by(i64(record_count))
@@ -169,7 +169,7 @@ pub fn (mut m ShardedMetrics) record_append(record_count int, bytes i64, latency
 	m.append_latency_us.inc_by(latency_us)
 }
 
-/// record_fetch는 fetch 작업을 기록합니다.
+/// record_fetch records a fetch operation.
 pub fn (mut m ShardedMetrics) record_fetch(record_count int, bytes i64, latency_us i64) {
 	m.fetch_count.inc()
 	m.fetch_record_count.inc_by(i64(record_count))
@@ -177,57 +177,57 @@ pub fn (mut m ShardedMetrics) record_fetch(record_count int, bytes i64, latency_
 	m.fetch_latency_us.inc_by(latency_us)
 }
 
-/// record_topic_create는 토픽 생성을 기록합니다.
+/// record_topic_create records a topic creation.
 pub fn (mut m ShardedMetrics) record_topic_create() {
 	m.topic_create_count.inc()
 }
 
-/// record_topic_delete는 토픽 삭제를 기록합니다.
+/// record_topic_delete records a topic deletion.
 pub fn (mut m ShardedMetrics) record_topic_delete() {
 	m.topic_delete_count.inc()
 }
 
-/// record_topic_lookup는 토픽 조회를 기록합니다.
+/// record_topic_lookup records a topic lookup.
 pub fn (mut m ShardedMetrics) record_topic_lookup() {
 	m.topic_lookup_count.inc()
 }
 
-/// record_offset_commit은 오프셋 커밋을 기록합니다.
+/// record_offset_commit records an offset commit.
 pub fn (mut m ShardedMetrics) record_offset_commit(count int) {
 	m.offset_commit_count.inc_by(i64(count))
 }
 
-/// record_offset_fetch는 오프셋 조회를 기록합니다.
+/// record_offset_fetch records an offset fetch.
 pub fn (mut m ShardedMetrics) record_offset_fetch(count int) {
 	m.offset_fetch_count.inc_by(i64(count))
 }
 
-/// record_group_save는 그룹 저장을 기록합니다.
+/// record_group_save records a group save.
 pub fn (mut m ShardedMetrics) record_group_save() {
 	m.group_save_count.inc()
 }
 
-/// record_group_load는 그룹 로드를 기록합니다.
+/// record_group_load records a group load.
 pub fn (mut m ShardedMetrics) record_group_load() {
 	m.group_load_count.inc()
 }
 
-/// record_group_delete는 그룹 삭제를 기록합니다.
+/// record_group_delete records a group deletion.
 pub fn (mut m ShardedMetrics) record_group_delete() {
 	m.group_delete_count.inc()
 }
 
-/// record_error는 에러를 기록합니다.
+/// record_error records an error.
 pub fn (mut m ShardedMetrics) record_error() {
 	m.error_count.inc()
 }
 
-/// record_delete_records는 레코드 삭제를 기록합니다.
+/// record_delete_records records a record deletion.
 pub fn (mut m ShardedMetrics) record_delete_records() {
 	m.delete_records_count.inc()
 }
 
-/// get_summary는 메트릭 요약을 반환합니다.
+/// get_summary returns a metrics summary.
 pub fn (m &ShardedMetrics) get_summary() ShardedMetricsSnapshot {
 	return ShardedMetricsSnapshot{
 		topic_create_count:   m.topic_create_count.get()
@@ -251,7 +251,7 @@ pub fn (m &ShardedMetrics) get_summary() ShardedMetricsSnapshot {
 	}
 }
 
-/// reset는 모든 메트릭을 0으로 리셋합니다.
+/// reset resets all metrics to 0.
 pub fn (mut m ShardedMetrics) reset() {
 	m.topic_create_count.reset()
 	m.topic_delete_count.reset()
@@ -273,9 +273,9 @@ pub fn (mut m ShardedMetrics) reset() {
 	m.fetch_latency_us.reset()
 }
 
-// ShardedMetricsSnapshot - 메트릭 스냅샷
+// ShardedMetricsSnapshot - metrics snapshot
 
-/// ShardedMetricsSnapshot은 특정 시점의 메트릭 값을 저장합니다.
+/// ShardedMetricsSnapshot stores metric values at a specific point in time.
 pub struct ShardedMetricsSnapshot {
 pub:
 	topic_create_count   i64
@@ -298,7 +298,7 @@ pub:
 	fetch_latency_us     i64
 }
 
-/// get_append_latency_avg_ms는 평균 append 지연 시간을 밀리초로 반환합니다.
+/// get_append_latency_avg_ms returns the average append latency in milliseconds.
 pub fn (s &ShardedMetricsSnapshot) get_append_latency_avg_ms() f64 {
 	if s.append_count == 0 {
 		return 0.0
@@ -306,7 +306,7 @@ pub fn (s &ShardedMetricsSnapshot) get_append_latency_avg_ms() f64 {
 	return f64(s.append_latency_us) / f64(s.append_count) / 1000.0
 }
 
-/// get_fetch_latency_avg_ms는 평균 fetch 지연 시간을 밀리초로 반환합니다.
+/// get_fetch_latency_avg_ms returns the average fetch latency in milliseconds.
 pub fn (s &ShardedMetricsSnapshot) get_fetch_latency_avg_ms() f64 {
 	if s.fetch_count == 0 {
 		return 0.0
@@ -314,7 +314,7 @@ pub fn (s &ShardedMetricsSnapshot) get_fetch_latency_avg_ms() f64 {
 	return f64(s.fetch_latency_us) / f64(s.fetch_count) / 1000.0
 }
 
-/// to_string은 메트릭 요약을 문자열로 반환합니다.
+/// to_string returns a string representation of the metrics summary.
 pub fn (s &ShardedMetricsSnapshot) to_string() string {
 	return '[ShardedMetrics]
   Topics: create=${s.topic_create_count}, delete=${s.topic_delete_count}, lookup=${s.topic_lookup_count}
@@ -325,16 +325,23 @@ pub fn (s &ShardedMetricsSnapshot) to_string() string {
   Errors: ${s.error_count}'
 }
 
-// 호환성 별칭
+// Compatibility aliases
 
+/// AtomicCounter type.
 pub type AtomicCounter = ShardedCounter
+
+/// AtomicMetrics type.
 pub type AtomicMetrics = ShardedMetrics
+
+/// AtomicMetricsSnapshot type.
 pub type AtomicMetricsSnapshot = ShardedMetricsSnapshot
 
+/// new_atomic_counter creates a new atomic counter.
 pub fn new_atomic_counter() ShardedCounter {
 	return new_sharded_counter()
 }
 
+/// new_atomic_metrics creates new atomic metrics.
 pub fn new_atomic_metrics() ShardedMetrics {
 	return new_sharded_metrics()
 }

@@ -1,10 +1,12 @@
 module kafka
 
 // Common constants for Kafka protocol responses
+/// default_throttle_time_ms constant.
 pub const default_throttle_time_ms = 0
+/// no_throttle constant.
 pub const no_throttle = 0
 
-/// API Keys - Kafka 프로토콜
+/// API Keys - Kafka protocol
 pub enum ApiKey {
 	produce                         = 0
 	fetch                           = 1
@@ -84,7 +86,7 @@ pub enum ApiKey {
 	delete_share_group_state        = 86
 }
 
-/// Error Codes - Kafka 프로토콜
+/// Error Codes - Kafka protocol
 pub enum ErrorCode {
 	none                                  = 0
 	unknown_server_error                  = -1
@@ -200,7 +202,7 @@ pub enum ErrorCode {
 	transaction_abortable = 109
 }
 
-/// API 버전 범위
+/// API version range
 pub struct ApiVersionRange {
 pub:
 	api_key     ApiKey
@@ -208,7 +210,7 @@ pub:
 	max_version i16
 }
 
-/// 지원되는 API 버전을 반환합니다.
+/// Returns the supported API versions.
 pub fn get_supported_api_versions() []ApiVersionRange {
 	return [
 		ApiVersionRange{.produce, 0, 13},

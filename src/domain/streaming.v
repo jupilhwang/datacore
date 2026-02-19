@@ -2,7 +2,7 @@ module domain
 
 import time
 
-/// SSEEventType은 SSE 이벤트의 유형을 나타냅니다.
+/// SSEEventType represents the type of an SSE event.
 pub enum SSEEventType {
 	message
 	heartbeat
@@ -11,7 +11,7 @@ pub enum SSEEventType {
 	subscribed
 }
 
-/// str은 SSEEventType을 문자열로 변환합니다.
+/// str converts SSEEventType to a string.
 pub fn (t SSEEventType) str() string {
 	return match t {
 		.message { 'message' }
@@ -22,7 +22,7 @@ pub fn (t SSEEventType) str() string {
 	}
 }
 
-/// SSEEvent는 Server-Sent Event를 나타냅니다.
+/// SSEEvent represents a Server-Sent Event.
 pub struct SSEEvent {
 pub:
 	id         string
@@ -31,7 +31,7 @@ pub:
 	retry      int
 }
 
-/// new_sse_message_event는 새로운 메시지 이벤트를 생성합니다.
+/// new_sse_message_event creates a new message event.
 pub fn new_sse_message_event(topic string, partition i32, offset i64, data string) SSEEvent {
 	return SSEEvent{
 		id:         '${topic}:${partition}:${offset}'
@@ -40,7 +40,7 @@ pub fn new_sse_message_event(topic string, partition i32, offset i64, data strin
 	}
 }
 
-/// new_sse_heartbeat_event는 새로운 heartbeat 이벤트를 생성합니다.
+/// new_sse_heartbeat_event creates a new heartbeat event.
 pub fn new_sse_heartbeat_event() SSEEvent {
 	return SSEEvent{
 		id:         'heartbeat'
@@ -49,7 +49,7 @@ pub fn new_sse_heartbeat_event() SSEEvent {
 	}
 }
 
-/// new_sse_error_event는 새로운 에러 이벤트를 생성합니다.
+/// new_sse_error_event creates a new error event.
 pub fn new_sse_error_event(code string, message string) SSEEvent {
 	return SSEEvent{
 		id:         'error'
@@ -58,7 +58,7 @@ pub fn new_sse_error_event(code string, message string) SSEEvent {
 	}
 }
 
-/// new_sse_close_event는 새로운 종료 이벤트를 생성합니다.
+/// new_sse_close_event creates a new close event.
 pub fn new_sse_close_event(reason string) SSEEvent {
 	return SSEEvent{
 		id:         'close'
@@ -67,7 +67,7 @@ pub fn new_sse_close_event(reason string) SSEEvent {
 	}
 }
 
-/// encode는 SSE 이벤트를 HTTP 스트리밍용으로 포맷합니다.
+/// encode formats an SSE event for HTTP streaming.
 pub fn (e &SSEEvent) encode() string {
 	mut result := ''
 
@@ -86,9 +86,9 @@ pub fn (e &SSEEvent) encode() string {
 	return result
 }
 
-// SSE 메시지 데이터
+// SSE message data
 
-/// SSEMessageData는 SSE 메시지 이벤트의 데이터 페이로드를 나타냅니다.
+/// SSEMessageData represents the data payload of an SSE message event.
 pub struct SSEMessageData {
 pub:
 	topic     string
@@ -100,16 +100,16 @@ pub:
 	headers   map[string]string
 }
 
-// 구독 모델
+// Subscription model
 
-/// SubscriptionOffset은 소비 시작 위치를 나타냅니다.
+/// SubscriptionOffset represents the position from which consumption starts.
 pub enum SubscriptionOffset {
 	earliest
 	latest
 	specific
 }
 
-/// subscription_offset_from_str은 오프셋 문자열을 파싱합니다.
+/// subscription_offset_from_str parses an offset string.
 pub fn subscription_offset_from_str(s string) SubscriptionOffset {
 	return match s.to_lower() {
 		'earliest', 'beginning', '0' { .earliest }
@@ -118,7 +118,7 @@ pub fn subscription_offset_from_str(s string) SubscriptionOffset {
 	}
 }
 
-/// Subscription은 클라이언트의 토픽/파티션 구독을 나타냅니다.
+/// Subscription represents a client's subscription to a topic/partition.
 pub struct Subscription {
 pub:
 	id          string
@@ -134,7 +134,7 @@ pub mut:
 	last_activity  i64
 }
 
-/// new_subscription은 새로운 구독을 생성합니다.
+/// new_subscription creates a new subscription.
 pub fn new_subscription(topic string, partition ?i32, offset_type SubscriptionOffset, offset i64, group_id ?string, client_id string) Subscription {
 	now := time.now().unix_milli()
 	return Subscription{
@@ -151,14 +151,14 @@ pub fn new_subscription(topic string, partition ?i32, offset_type SubscriptionOf
 	}
 }
 
-/// generate_subscription_id는 고유한 구독 ID를 생성합니다.
+/// generate_subscription_id generates a unique subscription ID.
 fn generate_subscription_id() string {
 	return 'sub-${time.now().unix_nano()}'
 }
 
-// SSE 연결 상태
+// SSE connection state
 
-/// SSEConnectionState는 SSE 연결의 상태를 나타냅니다.
+/// SSEConnectionState represents the state of an SSE connection.
 pub enum SSEConnectionState {
 	connecting
 	connected
@@ -167,7 +167,7 @@ pub enum SSEConnectionState {
 	closed
 }
 
-/// SSEConnection은 활성 SSE 연결을 나타냅니다.
+/// SSEConnection represents an active SSE connection.
 pub struct SSEConnection {
 pub:
 	id         string
@@ -183,7 +183,7 @@ pub mut:
 	last_activity i64
 }
 
-/// new_sse_connection은 새로운 SSE 연결을 생성합니다.
+/// new_sse_connection creates a new SSE connection.
 pub fn new_sse_connection(client_ip string, user_agent string) SSEConnection {
 	now := time.now().unix_milli()
 	return SSEConnection{
@@ -200,9 +200,9 @@ pub fn new_sse_connection(client_ip string, user_agent string) SSEConnection {
 	}
 }
 
-// SSE 설정
+// SSE configuration
 
-/// SSEConfig는 SSE 서버 설정을 보관합니다.
+/// SSEConfig holds SSE server configuration.
 pub struct SSEConfig {
 pub:
 	heartbeat_interval_ms int = 30000
@@ -213,14 +213,14 @@ pub:
 	retry_interval_ms     int = 3000
 }
 
-/// default_sse_config는 기본 SSE 설정을 반환합니다.
+/// default_sse_config returns the default SSE configuration.
 pub fn default_sse_config() SSEConfig {
 	return SSEConfig{}
 }
 
-// WebSocket 모델
+// WebSocket model
 
-/// WebSocketAction은 WebSocket을 통한 클라이언트 액션을 나타냅니다.
+/// WebSocketAction represents a client action via WebSocket.
 pub enum WebSocketAction {
 	subscribe
 	unsubscribe
@@ -229,7 +229,7 @@ pub enum WebSocketAction {
 	ping
 }
 
-/// websocket_action_from_str은 액션 문자열을 파싱합니다.
+/// websocket_action_from_str parses an action string.
 pub fn websocket_action_from_str(s string) ?WebSocketAction {
 	return match s.to_lower() {
 		'subscribe' { .subscribe }
@@ -241,7 +241,7 @@ pub fn websocket_action_from_str(s string) ?WebSocketAction {
 	}
 }
 
-/// WebSocketMessage는 WebSocket 메시지 (클라이언트 -> 서버)를 나타냅니다.
+/// WebSocketMessage represents a WebSocket message (client -> server).
 pub struct WebSocketMessage {
 pub:
 	action    WebSocketAction
@@ -254,7 +254,7 @@ pub:
 	group_id  ?string
 }
 
-/// WebSocketResponse는 WebSocket 메시지 (서버 -> 클라이언트)를 나타냅니다.
+/// WebSocketResponse represents a WebSocket message (server -> client).
 pub struct WebSocketResponse {
 pub:
 	response_type string
@@ -269,7 +269,7 @@ pub:
 	error_message ?string
 }
 
-/// new_ws_message_response는 메시지 응답을 생성합니다.
+/// new_ws_message_response creates a message response.
 pub fn new_ws_message_response(topic string, partition i32, offset i64, timestamp i64, key ?string, value string, headers map[string]string) WebSocketResponse {
 	return WebSocketResponse{
 		response_type: 'message'
@@ -283,7 +283,7 @@ pub fn new_ws_message_response(topic string, partition i32, offset i64, timestam
 	}
 }
 
-/// new_ws_subscribed_response는 구독 확인 응답을 생성합니다.
+/// new_ws_subscribed_response creates a subscription confirmation response.
 pub fn new_ws_subscribed_response(topic string, partition i32, offset i64) WebSocketResponse {
 	return WebSocketResponse{
 		response_type: 'subscribed'
@@ -294,7 +294,7 @@ pub fn new_ws_subscribed_response(topic string, partition i32, offset i64) WebSo
 	}
 }
 
-/// new_ws_produced_response는 produce 확인 응답을 생성합니다.
+/// new_ws_produced_response creates a produce confirmation response.
 pub fn new_ws_produced_response(topic string, partition i32, offset i64) WebSocketResponse {
 	return WebSocketResponse{
 		response_type: 'produced'
@@ -305,7 +305,7 @@ pub fn new_ws_produced_response(topic string, partition i32, offset i64) WebSock
 	}
 }
 
-/// new_ws_error_response는 에러 응답을 생성합니다.
+/// new_ws_error_response creates an error response.
 pub fn new_ws_error_response(code string, message string) WebSocketResponse {
 	return WebSocketResponse{
 		response_type: 'error'
@@ -315,7 +315,7 @@ pub fn new_ws_error_response(code string, message string) WebSocketResponse {
 	}
 }
 
-/// new_ws_pong_response는 pong 응답을 생성합니다.
+/// new_ws_pong_response creates a pong response.
 pub fn new_ws_pong_response() WebSocketResponse {
 	return WebSocketResponse{
 		response_type: 'pong'
@@ -323,7 +323,7 @@ pub fn new_ws_pong_response() WebSocketResponse {
 	}
 }
 
-/// to_json은 WebSocketResponse를 JSON 문자열로 변환합니다.
+/// to_json converts a WebSocketResponse to a JSON string.
 pub fn (r &WebSocketResponse) to_json() string {
 	mut json := '{"type":"${r.response_type}"'
 
@@ -367,7 +367,7 @@ pub fn (r &WebSocketResponse) to_json() string {
 	return json
 }
 
-/// escape_json_str은 JSON용 특수 문자를 이스케이프합니다.
+/// escape_json_str escapes special characters for JSON.
 fn escape_json_str(s string) string {
 	mut result := ''
 	for c in s {
@@ -383,9 +383,9 @@ fn escape_json_str(s string) string {
 	return result
 }
 
-// WebSocket 연결 상태
+// WebSocket connection state
 
-/// WebSocketConnectionState는 WebSocket 연결의 상태를 나타냅니다.
+/// WebSocketConnectionState represents the state of a WebSocket connection.
 pub enum WebSocketConnectionState {
 	connecting
 	open
@@ -393,7 +393,7 @@ pub enum WebSocketConnectionState {
 	closed
 }
 
-/// WebSocketConnection은 활성 WebSocket 연결을 나타냅니다.
+/// WebSocketConnection represents an active WebSocket connection.
 pub struct WebSocketConnection {
 pub:
 	id         string
@@ -412,7 +412,7 @@ pub mut:
 	last_pong     i64
 }
 
-/// new_ws_connection은 새로운 WebSocket 연결을 생성합니다.
+/// new_ws_connection creates a new WebSocket connection.
 pub fn new_ws_connection(client_ip string, user_agent string) WebSocketConnection {
 	now := time.now().unix_milli()
 	return WebSocketConnection{
@@ -432,9 +432,9 @@ pub fn new_ws_connection(client_ip string, user_agent string) WebSocketConnectio
 	}
 }
 
-// WebSocket 설정
+// WebSocket configuration
 
-/// WebSocketConfig는 WebSocket 서버 설정을 보관합니다.
+/// WebSocketConfig holds WebSocket server configuration.
 pub struct WebSocketConfig {
 pub:
 	ping_interval_ms      int = 30000
@@ -445,7 +445,7 @@ pub:
 	max_message_size      int = 1048576
 }
 
-/// default_ws_config는 기본 WebSocket 설정을 반환합니다.
+/// default_ws_config returns the default WebSocket configuration.
 pub fn default_ws_config() WebSocketConfig {
 	return WebSocketConfig{}
 }

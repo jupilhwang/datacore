@@ -1,13 +1,13 @@
-/// 인프라 레이어 - BinaryWriter 풀
-/// Kafka 프로토콜 인코딩을 위한 BinaryWriter 재사용 풀
-/// GC 압력 감소 및 메모리 할당 최적화
+/// Infrastructure layer - BinaryWriter pool
+/// Reusable pool of BinaryWriters for Kafka protocol encoding
+/// Reduces GC pressure and optimizes memory allocation
 module core
 
 import sync
 
-// WriterPool - BinaryWriter 재사용 풀
+// WriterPool - BinaryWriter reuse pool
 
-/// WriterPool은 BinaryWriter 객체를 재사용하여 메모리 할당을 최소화합니다.
+/// WriterPool reuses BinaryWriter objects to minimize memory allocations.
 @[heap]
 pub struct WriterPool {
 pub mut:
@@ -19,7 +19,7 @@ mut:
 	is_running bool
 }
 
-/// PooledWriter는 풀에서 관리되는 BinaryWriter 래퍼입니다.
+/// PooledWriter is a BinaryWriter wrapper managed by the pool.
 @[heap]
 pub struct PooledWriter {
 pub mut:
@@ -29,7 +29,7 @@ pub mut:
 	size_class SizeClass
 }
 
-/// WriterPoolStats는 WriterPool 통계를 담고 있습니다.
+/// WriterPoolStats holds WriterPool statistics.
 pub struct WriterPoolStats {
 pub mut:
 	hits        u64
@@ -40,7 +40,7 @@ pub mut:
 	bytes_saved u64
 }
 
-/// WriterGuard는 RAII 스타일의 Writer 관리를 제공합니다.
+/// WriterGuard provides RAII-style writer management.
 pub struct WriterGuard {
 pub mut:
 	pool   &WriterPool
@@ -48,11 +48,11 @@ pub mut:
 	active bool
 }
 
-// 전역 WriterPool 인스턴스
+// Global WriterPool instance
 __global g_writer_pool = &WriterPool(unsafe { nil })
 
-/// get_global_writer_pool은 전역 WriterPool 인스턴스를 반환합니다.
-/// 초기화되지 않은 경우 기본 설정으로 초기화합니다.
+/// get_global_writer_pool returns the global WriterPool instance.
+/// Initializes with default configuration if not yet initialized.
 pub fn get_global_writer_pool() &WriterPool {
 	if g_writer_pool == unsafe { nil } {
 		g_writer_pool = new_writer_pool(PoolConfig{
@@ -66,7 +66,7 @@ pub fn get_global_writer_pool() &WriterPool {
 	return g_writer_pool
 }
 
-/// new_writer_pool은 새 WriterPool을 생성합니다.
+/// new_writer_pool creates a new WriterPool.
 pub fn new_writer_pool(config PoolConfig) &WriterPool {
 	mut pool := &WriterPool{
 		config:     config
@@ -77,15 +77,15 @@ pub fn new_writer_pool(config PoolConfig) &WriterPool {
 	return pool
 }
 
-/// prewarm은 풀을 사전에 Writer로 채웁니다.
+/// prewarm pre-fills the pool with writers.
 fn (mut p WriterPool) prewarm() {
-	// small 크기 클래스 위주로 prewarm (가장 흔히 사용됨)
+	// Prewarm primarily with small size class (most commonly used)
 	for _ in 0 .. p.config.prewarm_small {
 		p.pool << p.allocate_writer(.small)
 	}
 }
 
-/// allocate_writer는 지정된 크기 클래스의 새 Writer를 할당합니다.
+/// allocate_writer allocates a new writer of the specified size class.
 fn (mut p WriterPool) allocate_writer(sc SizeClass) &PooledWriter {
 	size := size_class_bytes(sc)
 	p.stats.allocations += 1
@@ -98,8 +98,8 @@ fn (mut p WriterPool) allocate_writer(sc SizeClass) &PooledWriter {
 	}
 }
 
-/// get은 풀에서 BinaryWriter를 가져옵니다.
-/// 사용 후에는 반드시 return_writer()로 반환해야 합니다.
+/// get retrieves a BinaryWriter from the pool.
+/// Must be returned with return_writer() after use.
 pub fn (mut p WriterPool) get(min_size int) &PooledWriter {
 	if !p.is_running {
 		return p.allocate_writer(get_size_class(min_size))
@@ -110,11 +110,11 @@ pub fn (mut p WriterPool) get(min_size int) &PooledWriter {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	// 풀에서 적절한 크기의 Writer 찾기
+	// Find a writer of appropriate size from the pool
 	for i := p.pool.len - 1; i >= 0; i-- {
 		mut writer := p.pool[i]
 		if writer.size_class == sc {
-			// 풀에서 제거하고 반환
+			// Remove from pool and return
 			p.pool.delete(i)
 			writer.reset()
 			p.stats.hits += 1
@@ -123,13 +123,13 @@ pub fn (mut p WriterPool) get(min_size int) &PooledWriter {
 		}
 	}
 
-	// 풀에서 찾지 못함 - 새로 할당
+	// Not found in pool - allocate new
 	p.stats.misses += 1
 	return p.allocate_writer(sc)
 }
 
-/// get_guard는 RAII 스타일의 WriterGuard를 반환합니다.
-/// defer로 자동 반환을 보장할 수 있습니다.
+/// get_guard returns a RAII-style WriterGuard.
+/// Use with defer to guarantee automatic return.
 pub fn (mut p WriterPool) get_guard(min_size int) WriterGuard {
 	writer := p.get(min_size)
 	return WriterGuard{
@@ -139,7 +139,7 @@ pub fn (mut p WriterPool) get_guard(min_size int) WriterGuard {
 	}
 }
 
-/// return_writer는 Writer를 풀에 반환합니다.
+/// return_writer returns a writer to the pool.
 pub fn (mut p WriterPool) return_writer(mut writer PooledWriter) {
 	if !p.is_running || &writer == unsafe { nil } {
 		return
@@ -148,7 +148,7 @@ pub fn (mut p WriterPool) return_writer(mut writer PooledWriter) {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	// 최대 크기 제한 확인
+	// Check maximum size limit
 	current_count := p.count_by_class(writer.size_class)
 	max_for_class := p.max_for_class(writer.size_class)
 
@@ -161,7 +161,7 @@ pub fn (mut p WriterPool) return_writer(mut writer PooledWriter) {
 	}
 }
 
-/// count_by_class는 지정된 크기 클래스의 Writer 수를 반환합니다.
+/// count_by_class returns the number of writers of the specified size class.
 fn (p &WriterPool) count_by_class(sc SizeClass) int {
 	mut count := 0
 	for writer in p.pool {
@@ -172,7 +172,7 @@ fn (p &WriterPool) count_by_class(sc SizeClass) int {
 	return count
 }
 
-/// max_for_class는 지정된 크기 클래스의 최대 Writer 수를 반환합니다.
+/// max_for_class returns the maximum number of writers for the specified size class.
 fn (p &WriterPool) max_for_class(sc SizeClass) int {
 	return match sc {
 		.tiny { p.config.max_tiny }
@@ -183,14 +183,14 @@ fn (p &WriterPool) max_for_class(sc SizeClass) int {
 	}
 }
 
-/// get_stats는 현재 풀 통계를 반환합니다.
+/// get_stats returns the current pool statistics.
 pub fn (mut p WriterPool) get_stats() WriterPoolStats {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 	return p.stats
 }
 
-/// shutdown은 WriterPool을 종료합니다.
+/// shutdown shuts down the WriterPool.
 pub fn (mut p WriterPool) shutdown() {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -198,19 +198,19 @@ pub fn (mut p WriterPool) shutdown() {
 	p.pool.clear()
 }
 
-// PooledWriter 메서드
+// PooledWriter methods
 
-/// reset은 Writer를 재사용을 위해 초기화합니다.
+/// reset resets the writer for reuse.
 pub fn (mut w PooledWriter) reset() {
 	w.len = 0
 	w.data = w.data[..0]
 }
 
-/// write는 데이터를 Writer에 씁니다.
+/// write writes data to the writer.
 pub fn (mut w PooledWriter) write(data []u8) int {
 	needed := w.len + data.len
 	if needed > w.cap {
-		// 용량 초과 - 현재 가능한 만큼만 쓰기
+		// Capacity exceeded - write only as much as possible
 		available := w.cap - w.len
 		if available <= 0 {
 			return 0
@@ -231,7 +231,7 @@ pub fn (mut w PooledWriter) write(data []u8) int {
 	return data.len
 }
 
-/// write_byte는 단일 바이트를 씁니다.
+/// write_byte writes a single byte.
 pub fn (mut w PooledWriter) write_byte(byte u8) bool {
 	if w.len >= w.cap {
 		return false
@@ -246,7 +246,7 @@ pub fn (mut w PooledWriter) write_byte(byte u8) bool {
 	return true
 }
 
-/// write_i16_be는 16비트 정수를 빅엔디안으로 씁니다.
+/// write_i16_be writes a 16-bit integer in big-endian order.
 pub fn (mut w PooledWriter) write_i16_be(val i16) bool {
 	if w.len + 2 > w.cap {
 		return false
@@ -255,7 +255,7 @@ pub fn (mut w PooledWriter) write_i16_be(val i16) bool {
 	return w.write(new_data) == 2
 }
 
-/// write_i32_be는 32비트 정수를 빅엔디안으로 씁니다.
+/// write_i32_be writes a 32-bit integer in big-endian order.
 pub fn (mut w PooledWriter) write_i32_be(val i32) bool {
 	if w.len + 4 > w.cap {
 		return false
@@ -264,7 +264,7 @@ pub fn (mut w PooledWriter) write_i32_be(val i32) bool {
 	return w.write(new_data) == 4
 }
 
-/// write_i64_be는 64비트 정수를 빅엔디안으로 씁니다.
+/// write_i64_be writes a 64-bit integer in big-endian order.
 pub fn (mut w PooledWriter) write_i64_be(val i64) bool {
 	if w.len + 8 > w.cap {
 		return false
@@ -274,19 +274,19 @@ pub fn (mut w PooledWriter) write_i64_be(val i64) bool {
 	return w.write(new_data) == 8
 }
 
-/// bytes는 Writer의 데이터를 반환합니다.
+/// bytes returns the writer's data.
 pub fn (w &PooledWriter) bytes() []u8 {
 	return w.data[..w.len]
 }
 
-/// remaining은 남은 용량을 반환합니다.
+/// remaining returns the remaining capacity.
 pub fn (w &PooledWriter) remaining() int {
 	return w.cap - w.len
 }
 
-// WriterGuard 메서드
+// WriterGuard methods
 
-/// release는 Writer를 풀에 반환합니다.
+/// release returns the writer to the pool.
 pub fn (mut g WriterGuard) release() {
 	if g.active {
 		g.pool.return_writer(mut g.writer)
@@ -294,33 +294,33 @@ pub fn (mut g WriterGuard) release() {
 	}
 }
 
-/// get_writer는 내부 Writer에 대한 참조를 반환합니다.
+/// get_writer returns a reference to the internal writer.
 pub fn (g &WriterGuard) get_writer() &PooledWriter {
 	return g.writer
 }
 
-// 편의 함수들
+// Convenience functions
 
-/// pooled_writer는 풀에서 BinaryWriter를 가져옵니다 (전역 풀 사용).
-/// 사용 예: mut writer := pooled_writer(1024)
+/// pooled_writer retrieves a BinaryWriter from the pool (uses global pool).
+/// Usage: mut writer := pooled_writer(1024)
 pub fn pooled_writer(min_size int) &PooledWriter {
 	mut pool := get_global_writer_pool()
 	return pool.get(min_size)
 }
 
-/// release_writer는 Writer를 전역 풀에 반환합니다.
+/// release_writer returns a writer to the global pool.
 pub fn release_writer(mut writer PooledWriter) {
 	mut pool := get_global_writer_pool()
 	pool.return_writer(mut writer)
 }
 
-/// get_writer_stats는 전역 풀의 통계를 반환합니다.
+/// get_writer_stats returns statistics from the global pool.
 pub fn get_writer_stats() WriterPoolStats {
 	mut pool := get_global_writer_pool()
 	return pool.get_stats()
 }
 
-/// reset_writer_pool_stats는 통계를 초기화합니다.
+/// reset_writer_pool_stats resets the statistics.
 pub fn reset_writer_pool_stats() {
 	mut pool := get_global_writer_pool()
 	pool.lock.@lock()

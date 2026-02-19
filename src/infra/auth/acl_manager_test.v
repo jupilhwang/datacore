@@ -1,14 +1,14 @@
-/// 단위 테스트 - 인프라 계층: 메모리 ACL 관리자
+/// Unit tests - Infrastructure layer: Memory ACL manager
 module auth
 
 import domain
 
-/// test_memory_acl_manager는 MemoryAclManager의 전체 기능을 테스트합니다.
-/// ACL 생성, 조회, 권한 검증, 삭제 기능을 순차적으로 검증합니다.
+/// test_memory_acl_manager tests the full functionality of MemoryAclManager.
+/// Sequentially validates ACL creation, lookup, authorization, and deletion.
 fn test_memory_acl_manager() {
 	mut manager := new_memory_acl_manager()
 
-	// 1. ACL 생성
+	// 1. Create ACLs
 	acls := [
 		domain.AclBinding{
 			pattern: domain.ResourcePattern{
@@ -43,7 +43,7 @@ fn test_memory_acl_manager() {
 	assert create_results[0].error_code == 0
 	assert create_results[1].error_code == 0
 
-	// 2. ACL 조회
+	// 2. Lookup ACLs
 	filter := domain.AclBindingFilter{
 		pattern_filter: domain.ResourcePatternFilter{
 			resource_type: .any
@@ -61,7 +61,7 @@ fn test_memory_acl_manager() {
 	found_acls := manager.describe_acls(filter) or { panic(err) }
 	assert found_acls.len == 2
 
-	// 주체(principal)로 필터링
+	// Filter by principal
 	alice_filter := domain.AclBindingFilter{
 		pattern_filter: domain.ResourcePatternFilter{
 			resource_type: .any
@@ -79,8 +79,8 @@ fn test_memory_acl_manager() {
 	assert alice_acls.len == 1
 	assert alice_acls[0].entry.principal == 'User:alice'
 
-	// 3. 권한 검증
-	// Alice가 test-topic 읽기 -> 허용
+	// 3. Authorization check
+	// Alice reads test-topic -> allowed
 	allowed := manager.authorize('User:alice', '192.168.1.1', .read, domain.ResourcePattern{
 		resource_type: .topic
 		name:          'test-topic'
@@ -88,7 +88,7 @@ fn test_memory_acl_manager() {
 	}) or { false }
 	assert allowed == true
 
-	// Bob이 test-group-1에 쓰기 (접두사 매칭) -> 거부
+	// Bob writes to test-group-1 (prefix match) -> denied
 	denied := manager.authorize('User:bob', '127.0.0.1', .write, domain.ResourcePattern{
 		resource_type: .group
 		name:          'test-group-1'
@@ -96,7 +96,7 @@ fn test_memory_acl_manager() {
 	}) or { true }
 	assert denied == false
 
-	// 4. ACL 삭제
+	// 4. Delete ACLs
 	delete_filter := domain.AclBindingFilter{
 		pattern_filter: domain.ResourcePatternFilter{
 			resource_type: .topic
@@ -115,7 +115,7 @@ fn test_memory_acl_manager() {
 	assert delete_results.len == 1
 	assert delete_results[0].deleted_acls.len == 1
 
-	// 삭제 확인
+	// Verify deletion
 	remaining := manager.describe_acls(filter) or { panic(err) }
 	assert remaining.len == 1
 	assert remaining[0].pattern.resource_type == .group

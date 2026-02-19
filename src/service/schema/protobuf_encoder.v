@@ -5,19 +5,23 @@ module schema
 
 // Protobuf Binary Encoder
 // Implements Protocol Buffers wire format encoding
+/// ProtobufEncoder implements Protocol Buffers wire format encoding.
 pub struct ProtobufEncoder {}
 
 // new_protobuf_encoder creates a new Protobuf encoder
+/// new_protobuf_encoder creates a new Protobuf encoder.
 pub fn new_protobuf_encoder() !ProtobufEncoder {
 	return ProtobufEncoder{}
 }
 
 // format returns the encoding format
+/// format returns the encoding format.
 pub fn (mut e ProtobufEncoder) format() Format {
 	return Format.protobuf
 }
 
 // encode encodes JSON data to Protobuf binary format
+/// encode encodes JSON data to Protobuf binary format.
 pub fn (mut e ProtobufEncoder) encode(data []u8, schema_str string) ![]u8 {
 	schema := parse_protobuf_schema(schema_str) or {
 		return error('failed to parse schema: ${err}')
@@ -26,6 +30,7 @@ pub fn (mut e ProtobufEncoder) encode(data []u8, schema_str string) ![]u8 {
 }
 
 // decode decodes Protobuf binary data to JSON
+/// decode decodes Protobuf binary data to JSON.
 pub fn (mut e ProtobufEncoder) decode(data []u8, schema_str string) ![]u8 {
 	schema := parse_protobuf_schema(schema_str) or {
 		return error('failed to parse schema: ${err}')

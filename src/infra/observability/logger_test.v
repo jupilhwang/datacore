@@ -1,17 +1,17 @@
-/// 단위 테스트 - 구조화된 로거
+/// Unit tests - structured logger
 module observability
 
 import time
 
 fn test_log_levels() {
-	// debug 레벨로 로거 생성
+	// Create logger at debug level
 	logger := new_logger(LoggerConfig{
 		name:   'test'
 		level:  .debug
 		format: .text
 	})
 
-	// should_log는 debug 이상의 레벨에 대해 true를 반환해야 함
+	// should_log must return true for levels of debug and above
 	assert logger.should_log(.trace) == false
 	assert logger.should_log(.debug) == true
 	assert logger.should_log(.info) == true
@@ -216,7 +216,7 @@ fn test_log_context_empty() {
 }
 
 fn test_special_characters_in_json() {
-	// 특수 문자 이스케이프 테스트
+	// Test special character escaping
 	entry := LogEntry{
 		timestamp:   time.now()
 		level:       .info

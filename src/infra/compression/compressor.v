@@ -1,8 +1,8 @@
-/// 인프라 레이어 - 압축 인터페이스
-/// Kafka 프로토콜과 호환되는 압축 타입 및 Compressor 인터페이스 정의
+/// Infrastructure layer - Compression interface
+/// Defines compression types and the Compressor interface compatible with the Kafka protocol
 module compression
 
-/// 압축 알고리즘 타입.
+/// Compression algorithm type.
 pub enum CompressionType {
 	none   = 0
 	gzip   = 1
@@ -11,7 +11,7 @@ pub enum CompressionType {
 	zstd   = 4
 }
 
-/// CompressionType을 문자열로 변환합니다.
+/// Converts a CompressionType to its string representation.
 pub fn (ct CompressionType) str() string {
 	return match ct {
 		.none { 'none' }
@@ -22,7 +22,7 @@ pub fn (ct CompressionType) str() string {
 	}
 }
 
-/// 문자열에서 CompressionType을 파싱합니다.
+/// Parses a CompressionType from a string.
 pub fn compression_type_from_string(s string) !CompressionType {
 	return match s.to_lower() {
 		'none', 'noop', '' { CompressionType.none }
@@ -34,20 +34,20 @@ pub fn compression_type_from_string(s string) !CompressionType {
 	}
 }
 
-/// 인터페이스.
+/// Interface.
 pub interface Compressor {
 	compress(data []u8) ![]u8
 	decompress(data []u8) ![]u8
 	compression_type() CompressionType
 }
 
-/// CompressorError는 압축 관련 에러를 나타냅니다.
+/// CompressorError represents a compression-related error.
 pub struct CompressorError {
 	message string
 	typ     string
 }
 
-/// new_compressor_error는 새 CompressorError를 생성합니다.
+/// new_compressor_error creates a new CompressorError.
 pub fn new_compressor_error(message string, typ string) CompressorError {
 	return CompressorError{
 		message: message

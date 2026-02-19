@@ -8,6 +8,7 @@ import sync
 import time
 
 // GrpcService manages gRPC connections and operations
+/// GrpcService manages gRPC connections and operations.
 pub struct GrpcService {
 	config domain.GrpcConfig
 mut:
@@ -19,7 +20,7 @@ mut:
 	running     bool
 }
 
-// GrpcConnectionState는 gRPC 연결 상태를 보관합니다
+// GrpcConnectionState holds gRPC connection state
 @[heap]
 struct GrpcConnectionState {
 pub mut:
@@ -30,6 +31,7 @@ pub mut:
 }
 
 // GrpcStats holds gRPC service statistics
+/// GrpcStats holds gRPC service statistics.
 pub struct GrpcStats {
 pub mut:
 	active_connections  int
@@ -46,6 +48,7 @@ pub mut:
 }
 
 // new_grpc_service creates a new gRPC service
+/// new_grpc_service creates a new gRPC service.
 pub fn new_grpc_service(storage port.StoragePort, config domain.GrpcConfig) &GrpcService {
 	return &GrpcService{
 		config:      config
@@ -60,6 +63,7 @@ pub fn new_grpc_service(storage port.StoragePort, config domain.GrpcConfig) &Grp
 // Connection Management
 
 // register_connection registers a new gRPC connection
+/// register_connection registers a new gRPC connection.
 pub fn (mut s GrpcService) register_connection(conn domain.GrpcConnection) !string {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -86,6 +90,7 @@ pub fn (mut s GrpcService) register_connection(conn domain.GrpcConnection) !stri
 }
 
 // unregister_connection removes a gRPC connection
+/// unregister_connection removes a gRPC connection.
 pub fn (mut s GrpcService) unregister_connection(conn_id string) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -106,6 +111,7 @@ pub fn (mut s GrpcService) unregister_connection(conn_id string) ! {
 }
 
 // get_connection returns connection info
+/// get_connection returns connection info.
 pub fn (mut s GrpcService) get_connection(conn_id string) !domain.GrpcConnection {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -115,6 +121,7 @@ pub fn (mut s GrpcService) get_connection(conn_id string) !domain.GrpcConnection
 }
 
 // list_connections returns all active connections
+/// list_connections returns all active connections.
 pub fn (mut s GrpcService) list_connections() []domain.GrpcConnection {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -127,6 +134,7 @@ pub fn (mut s GrpcService) list_connections() []domain.GrpcConnection {
 }
 
 // get_send_channel returns the send channel for a connection
+/// get_send_channel returns the send channel for a connection.
 pub fn (mut s GrpcService) get_send_channel(conn_id string) !chan domain.GrpcStreamResponse {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -138,6 +146,7 @@ pub fn (mut s GrpcService) get_send_channel(conn_id string) !chan domain.GrpcStr
 // Produce Operations
 
 // produce handles a produce request
+/// produce handles a produce request.
 pub fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest) domain.GrpcProduceResponse {
 	// Verify topic exists
 	topic := s.storage.get_topic(req.topic) or {
@@ -212,6 +221,7 @@ pub fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest
 // Consume Operations (Server Streaming)
 
 // subscribe adds a subscription for server streaming
+/// subscribe adds a subscription for server streaming.
 pub fn (mut s GrpcService) subscribe(conn_id string, req domain.GrpcConsumeRequest) !domain.GrpcConsumeResponse {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -253,6 +263,7 @@ pub fn (mut s GrpcService) subscribe(conn_id string, req domain.GrpcConsumeReque
 }
 
 // unsubscribe removes a subscription
+/// unsubscribe removes a subscription.
 pub fn (mut s GrpcService) unsubscribe(conn_id string, topic string, partition i32) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -290,6 +301,7 @@ pub fn (mut s GrpcService) unsubscribe(conn_id string, topic string, partition i
 }
 
 // fetch_messages fetches messages for a consume request
+/// fetch_messages fetches messages for a consume request.
 pub fn (mut s GrpcService) fetch_messages(conn_id string, req domain.GrpcConsumeRequest) domain.GrpcConsumeResponse {
 	// Fetch messages from storage
 	result := s.storage.fetch(req.topic, req.partition, req.offset, req.max_bytes) or {
@@ -325,6 +337,7 @@ pub fn (mut s GrpcService) fetch_messages(conn_id string, req domain.GrpcConsume
 }
 
 // poll_and_send polls for new messages and sends them to subscribers
+/// poll_and_send polls for new messages and sends them to subscribers.
 pub fn (mut s GrpcService) poll_and_send() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
@@ -406,6 +419,7 @@ fn (mut s GrpcService) poll_subscription(conn_id string, sub_id string, sub doma
 // Bidirectional Streaming
 
 // handle_stream_request handles a bidirectional stream request
+/// handle_stream_request handles a bidirectional stream request.
 pub fn (mut s GrpcService) handle_stream_request(conn_id string, req domain.GrpcStreamRequest) domain.GrpcStreamResponse {
 	match req.request_type {
 		.produce {
@@ -532,6 +546,7 @@ fn (s &GrpcService) create_error_response(code i32, msg string) domain.GrpcStrea
 // Keepalive Management
 
 // send_keepalives sends keepalive pings to all connections
+/// send_keepalives sends keepalive pings to all connections.
 pub fn (mut s GrpcService) send_keepalives() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
@@ -567,6 +582,7 @@ pub fn (mut s GrpcService) send_keepalives() {
 }
 
 // cleanup_stale_connections removes connections that have timed out
+/// cleanup_stale_connections removes connections that have timed out.
 pub fn (mut s GrpcService) cleanup_stale_connections() []string {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -608,6 +624,7 @@ pub fn (mut s GrpcService) cleanup_stale_connections() []string {
 // Statistics
 
 // get_stats returns gRPC service statistics
+/// get_stats returns gRPC service statistics.
 pub fn (mut s GrpcService) get_stats() GrpcStats {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }

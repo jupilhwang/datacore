@@ -1,4 +1,4 @@
-/// 단위 테스트 - 분산 트레이싱
+/// Unit tests - distributed tracing
 module observability
 
 import time
@@ -71,11 +71,11 @@ fn test_span_with_parent() {
 
 	mut child := tracer.start_span('child-span', with_parent(parent_ctx))
 
-	// 부모로부터 trace_id를 상속해야 함
+	// Must inherit trace_id from parent
 	assert child.context.trace_id == parent_ctx.trace_id
-	// 부모의 span_id를 parent_id로 가져야 함
+	// Must have the parent's span_id as parent_id
 	assert child.context.parent_id == parent_ctx.span_id
-	// 자신만의 span_id를 가져야 함
+	// Must have its own span_id
 	assert child.context.span_id != parent_ctx.span_id
 }
 
@@ -163,7 +163,7 @@ fn test_span_immutable_after_end() {
 
 	span.end()
 
-	// 종료 후에는 이것들이 무시되어야 함
+	// These should be ignored after ending
 	span.set_attribute(attr_string('key', 'value'))
 	span.add_event('should_not_add')
 	span.set_status(.error, 'should not set')
@@ -176,7 +176,7 @@ fn test_span_immutable_after_end() {
 fn test_always_on_sampler() {
 	s := AlwaysOnSampler{}
 
-	// 항상 true를 반환해야 함
+	// Must always return true
 	for _ in 0 .. 100 {
 		assert s.should_sample() == true
 	}
@@ -185,7 +185,7 @@ fn test_always_on_sampler() {
 fn test_always_off_sampler() {
 	s := AlwaysOffSampler{}
 
-	// 항상 false를 반환해야 함
+	// Must always return false
 	for _ in 0 .. 100 {
 		assert s.should_sample() == false
 	}
@@ -214,14 +214,14 @@ fn test_extract_context() {
 }
 
 fn test_extract_context_invalid() {
-	// 잘못된 형식
+	// Invalid format
 	headers := {
 		'traceparent': 'invalid-format'
 	}
 	ctx := extract_context(headers)
 	assert ctx.is_valid() == false
 
-	// 헤더 누락
+	// Missing header
 	empty_headers := map[string]string{}
 	ctx2 := extract_context(empty_headers)
 	assert ctx2.is_valid() == false
@@ -249,7 +249,7 @@ fn test_inject_context_invalid() {
 	mut headers := map[string]string{}
 	inject_context(invalid_ctx, mut headers)
 
-	// 아무것도 주입되지 않아야 함
+	// Nothing should be injected
 	assert 'traceparent' !in headers
 }
 

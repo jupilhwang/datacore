@@ -1,32 +1,32 @@
-/// 인프라 레이어 - LZ4 압축 (C 라이브러리 사용)
-/// LZ4 프레임 API를 사용한 고성능 압축/해제 (Kafka 호환)
+/// Infrastructure layer - LZ4 compression (using C library)
+/// High-performance compression/decompression using the LZ4 Frame API (Kafka compatible)
 module compression
 
 import infra.observability
 
-// C 라이브러리 링크 - LZ4 Frame API 사용
+// Link C library - using LZ4 Frame API
 #flag -L/opt/homebrew/lib -llz4
 #flag -I/opt/homebrew/include
 #include <lz4frame.h>
 
-/// Lz4CompressorC는 C 라이브러리를 사용한 LZ4 압축기입니다.
-/// Kafka 호환을 위해 LZ4 Frame Format을 사용합니다.
+/// Lz4CompressorC is an LZ4 compressor using the C library.
+/// Uses LZ4 Frame Format for Kafka compatibility.
 pub struct Lz4CompressorC {
 }
 
-/// new_lz4_compressor_c는 C 라이브러리를 사용하는 새 Lz4CompressorC를 생성합니다.
+/// new_lz4_compressor_c creates a new Lz4CompressorC using the C library.
 pub fn new_lz4_compressor_c() &Lz4CompressorC {
 	return &Lz4CompressorC{}
 }
 
-/// compress는 데이터를 LZ4 Frame 형식으로 압축합니다.
-/// Kafka와 호환되는 LZ4 Frame Format (Magic: 0x184D2204)을 생성합니다.
+/// compress compresses data into LZ4 Frame format.
+/// Produces LZ4 Frame Format (Magic: 0x184D2204) compatible with Kafka.
 pub fn (c &Lz4CompressorC) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 프레임 압축에 필요한 최대 버퍼 크기 계산
+	// Calculate the maximum buffer size required for frame compression
 	max_dst_size := C.LZ4F_compressFrameBound(usize(data.len), unsafe { nil })
 	if max_dst_size == 0 {
 		return error('lz4 frame: failed to calculate bound')
@@ -34,7 +34,7 @@ pub fn (c &Lz4CompressorC) compress(data []u8) ![]u8 {
 
 	mut result := []u8{len: int(max_dst_size), cap: int(max_dst_size)}
 
-	// 한 번의 호출로 전체 프레임 압축
+	// Compress the entire frame in a single call
 	compressed_size := C.LZ4F_compressFrame(result.data, max_dst_size, data.data, usize(data.len),
 		unsafe { nil })
 
@@ -52,14 +52,14 @@ pub fn (c &Lz4CompressorC) compress(data []u8) ![]u8 {
 	return result
 }
 
-/// decompress는 LZ4 Frame 형식의 데이터를 해제합니다.
-/// Kafka에서 생성된 LZ4 압축 데이터를 처리할 수 있습니다.
+/// decompress decompresses LZ4 Frame format data.
+/// Can handle LZ4-compressed data produced by Kafka.
 pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 압축 해제 컨텍스트 생성
+	// Create decompression context
 	mut dctx := unsafe { nil }
 	create_result := C.LZ4F_createDecompressionContext(&dctx, lz4f_version)
 	if C.LZ4F_isError(create_result) != 0 {
@@ -70,7 +70,7 @@ pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 		C.LZ4F_freeDecompressionContext(dctx)
 	}
 
-	// 프레임 헤더에서 원본 크기 정보 추출 시도
+	// Attempt to extract original size from the frame header
 	mut frame_info := Lz4FrameInfo{}
 	mut src_size := usize(data.len)
 	header_result := C.LZ4F_getFrameInfo(dctx, &frame_info, data.data, &src_size)
@@ -79,12 +79,12 @@ pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 		return error('lz4 frame: invalid frame header: ${err_name}')
 	}
 
-	// 원본 크기 결정 (프레임 헤더에 있으면 사용, 없으면 추정)
+	// Determine original size (use from frame header if available, otherwise estimate)
 	content_size := frame_info.content_size
 	estimated_size := if content_size > 0 {
 		int(content_size)
 	} else {
-		// 원본 크기 미포함 시 압축률 1:4 가정, 최소 64KB, 최대 64MB
+		// Assume 1:4 ratio when original size is absent; minimum 64KB, maximum 64MB
 		mut size := data.len * 4
 		if size < 65536 {
 			size = 65536
@@ -98,7 +98,7 @@ pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 	mut result := []u8{len: estimated_size, cap: estimated_size}
 	mut dst_offset := 0
 
-	// 남은 데이터 압축 해제 (헤더 이후부터)
+	// Decompress remaining data (after the header)
 	mut src_offset := int(src_size)
 	mut remaining := usize(data.len - src_offset)
 
@@ -118,11 +118,11 @@ pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 		src_offset += int(src_consumed)
 		remaining -= src_consumed
 
-		// 버퍼 확장이 필요한 경우
+		// Expand buffer if needed
 		if dst_offset >= result.len && remaining > 0 {
 			new_size := result.len * 2
 			if new_size > 268435456 {
-				// 256MB 제한
+				// 256MB limit
 				return error('lz4 frame: decompressed data too large')
 			}
 			mut new_result := []u8{len: new_size, cap: new_size}
@@ -132,7 +132,7 @@ pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 			result = unsafe { new_result }
 		}
 
-		// 프레임 끝에 도달
+		// Reached end of frame
 		if decomp_result == 0 {
 			break
 		}
@@ -147,12 +147,12 @@ pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 	return result
 }
 
-/// compression_type은 압축 타입을 반환합니다.
+/// compression_type returns the compression type.
 pub fn (c &Lz4CompressorC) compression_type() CompressionType {
 	return CompressionType.lz4
 }
 
-// LZ4 Frame API C 함수 선언 (lz4frame.h)
+// LZ4 Frame API C function declarations (lz4frame.h)
 fn C.LZ4F_compressFrameBound(srcSize usize, prefsPtr voidptr) usize
 fn C.LZ4F_compressFrame(dstBuffer voidptr, dstCapacity usize, srcBuffer voidptr, srcSize usize, prefsPtr voidptr) usize
 fn C.LZ4F_createDecompressionContext(dctxPtr voidptr, version u32) usize
@@ -162,10 +162,10 @@ fn C.LZ4F_decompress(dctx voidptr, dstBuffer voidptr, dstSizePtr &usize, srcBuff
 fn C.LZ4F_isError(code usize) u32
 fn C.LZ4F_getErrorName(code usize) &char
 
-// LZ4F 버전 상수
+// LZ4F version constant
 const lz4f_version = u32(100)
 
-// Lz4FrameInfo 구조체 (V에서 사용) - snake_case 적용
+// Lz4FrameInfo struct (used in V) - snake_case applied
 struct Lz4FrameInfo {
 	block_size_id         u32
 	block_mode            u32

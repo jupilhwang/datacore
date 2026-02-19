@@ -1,10 +1,10 @@
-// Avro, JSON Schema, Protobuf 스키마의 구문 유효성 검사를 제공합니다.
-// 스키마 등록 전 구문 오류를 검출합니다.
+// Provides syntax validation for Avro, JSON Schema, and Protobuf schemas.
+// Detects syntax errors before schema registration.
 module schema
 
 import domain
 
-/// validate_schema는 스키마 타입에 따라 스키마 구문을 검증합니다.
+/// validate_schema validates schema syntax according to the schema type.
 fn validate_schema(schema_type domain.SchemaType, schema_str string) ! {
 	match schema_type {
 		.avro {
@@ -19,18 +19,18 @@ fn validate_schema(schema_type domain.SchemaType, schema_str string) ! {
 	}
 }
 
-// Avro 스키마 유효성 검사
+// Avro schema validation
 
-/// validate_avro_schema_syntax는 Avro 스키마 구문을 검증합니다.
+/// validate_avro_schema_syntax validates Avro schema syntax.
 fn validate_avro_schema_syntax(schema_str string) ! {
-	// 유효한 JSON인지 확인
+	// Check if valid JSON
 	if !is_valid_json(schema_str) {
 		return error('invalid Avro schema: not valid JSON')
 	}
 
 	trimmed := schema_str.trim_space()
 
-	// "string", "int" 등의 원시 타입 문자열 처리
+	// Handle primitive type strings such as "string", "int", etc.
 	if trimmed.starts_with('"') && trimmed.ends_with('"') {
 		type_name := trimmed[1..trimmed.len - 1]
 		valid_primitives := ['null', 'boolean', 'int', 'long', 'float', 'double', 'bytes', 'string']
@@ -40,23 +40,23 @@ fn validate_avro_schema_syntax(schema_str string) ! {
 		return
 	}
 
-	// ["null", "string"] 같은 배열 (union 타입) 처리
+	// Handle arrays like ["null", "string"] (union types)
 	if trimmed.starts_with('[') && trimmed.ends_with(']') {
-		// Union 타입 - 각 요소 검증
+		// Union type - validate each element
 		return
 	}
 
-	// 객체 스키마 처리
+	// Handle object schemas
 	if !trimmed.starts_with('{') {
 		return error('invalid Avro schema: expected JSON object, array, or primitive type string')
 	}
 
-	// 복합 타입은 "type" 필드가 필수
+	// Complex types require a "type" field
 	if !schema_str.contains('"type"') {
 		return error('invalid Avro schema: missing "type" field')
 	}
 
-	// 타입 추출 및 검증
+	// Extract and validate type
 	schema_type := extract_json_string(schema_str, 'type') or {
 		return error('invalid Avro schema: cannot parse "type" field')
 	}
@@ -67,7 +67,7 @@ fn validate_avro_schema_syntax(schema_str string) ! {
 		return error('invalid Avro schema: unknown type "${schema_type}"')
 	}
 
-	// 타입별 요구사항 검증
+	// Validate per-type requirements
 	match schema_type {
 		'record' {
 			validate_avro_record_schema(schema_str)!
@@ -85,21 +85,21 @@ fn validate_avro_schema_syntax(schema_str string) ! {
 			validate_avro_fixed_schema(schema_str)!
 		}
 		else {
-			// 원시 타입은 유효함
+			// Primitive types are valid
 		}
 	}
 }
 
-/// validate_avro_record_schema는 Avro record 타입 스키마를 검증합니다.
+/// validate_avro_record_schema validates an Avro record type schema.
 fn validate_avro_record_schema(schema_str string) ! {
-	// record는 "name"과 "fields"가 필수
+	// record requires "name" and "fields"
 	if !schema_str.contains('"name"') {
 		return error('invalid Avro schema: record type requires "name" field')
 	}
 	if !schema_str.contains('"fields"') {
 		return error('invalid Avro schema: record type requires "fields" field')
 	}
-	// fields 배열 검증
+	// Validate fields array
 	fields := parse_avro_fields(schema_str) or { []AvroField{} }
 	for field in fields {
 		if field.name.len == 0 {
@@ -108,41 +108,41 @@ fn validate_avro_record_schema(schema_str string) ! {
 	}
 }
 
-/// validate_avro_enum_schema는 Avro enum 타입 스키마를 검증합니다.
+/// validate_avro_enum_schema validates an Avro enum type schema.
 fn validate_avro_enum_schema(schema_str string) ! {
-	// enum은 "name"과 "symbols"가 필수
+	// enum requires "name" and "symbols"
 	if !schema_str.contains('"name"') {
 		return error('invalid Avro schema: enum type requires "name" field')
 	}
 	if !schema_str.contains('"symbols"') {
 		return error('invalid Avro schema: enum type requires "symbols" field')
 	}
-	// symbols가 비어있지 않은 배열인지 검증
+	// Validate symbols is a non-empty array
 	symbols := parse_json_string_array(schema_str, 'symbols') or { []string{} }
 	if symbols.len == 0 {
 		return error('invalid Avro schema: enum "symbols" cannot be empty')
 	}
 }
 
-/// validate_avro_array_schema는 Avro array 타입 스키마를 검증합니다.
+/// validate_avro_array_schema validates an Avro array type schema.
 fn validate_avro_array_schema(schema_str string) ! {
-	// array는 "items"가 필수
+	// array requires "items"
 	if !schema_str.contains('"items"') {
 		return error('invalid Avro schema: array type requires "items" field')
 	}
 }
 
-/// validate_avro_map_schema는 Avro map 타입 스키마를 검증합니다.
+/// validate_avro_map_schema validates an Avro map type schema.
 fn validate_avro_map_schema(schema_str string) ! {
-	// map은 "values"가 필수
+	// map requires "values"
 	if !schema_str.contains('"values"') {
 		return error('invalid Avro schema: map type requires "values" field')
 	}
 }
 
-/// validate_avro_fixed_schema는 Avro fixed 타입 스키마를 검증합니다.
+/// validate_avro_fixed_schema validates an Avro fixed type schema.
 fn validate_avro_fixed_schema(schema_str string) ! {
-	// fixed는 "name"과 "size"가 필수
+	// fixed requires "name" and "size"
 	if !schema_str.contains('"name"') {
 		return error('invalid Avro schema: fixed type requires "name" field')
 	}
@@ -151,30 +151,30 @@ fn validate_avro_fixed_schema(schema_str string) ! {
 	}
 }
 
-// JSON Schema 유효성 검사
+// JSON Schema validation
 
-/// validate_json_schema_syntax는 JSON Schema 구문을 검증합니다 (Draft-07 호환).
+/// validate_json_schema_syntax validates JSON Schema syntax (Draft-07 compatible).
 fn validate_json_schema_syntax(schema_str string) ! {
-	// 유효한 JSON인지 확인
+	// Check if valid JSON
 	if !is_valid_json(schema_str) {
 		return error('invalid JSON Schema: not valid JSON')
 	}
 
 	trimmed := schema_str.trim_space()
 
-	// JSON Schema는 boolean일 수 있음 (true/false)
+	// JSON Schema can be a boolean (true/false)
 	if trimmed == 'true' || trimmed == 'false' {
 		return
 	}
 
-	// 객체여야 함
+	// Must be an object
 	if !trimmed.starts_with('{') {
 		return error('invalid JSON Schema: expected JSON object or boolean')
 	}
 
-	// 선택사항: draft 버전을 위한 $schema 필드 확인
+	// Optional: check $schema field for draft version
 	if schema_version := extract_json_string(schema_str, r'$schema') {
-		// 지원되는 draft 검증
+		// Validate supported draft
 		supported_drafts := [
 			'http://json-schema.org/draft-04/schema#',
 			'http://json-schema.org/draft-06/schema#',
@@ -189,11 +189,11 @@ fn validate_json_schema_syntax(schema_str string) ! {
 				break
 			}
 		}
-		// 알 수 없는 draft에서 실패하지 않음, 경고만
+		// Do not fail on unknown draft, only warn
 		_ = supported
 	}
 
-	// type 필드가 있으면 검증
+	// Validate type field if present
 	if type_val := extract_json_string(schema_str, 'type') {
 		valid_json_types := ['string', 'number', 'integer', 'boolean', 'array', 'object', 'null']
 		if type_val !in valid_json_types {
@@ -201,44 +201,44 @@ fn validate_json_schema_syntax(schema_str string) ! {
 		}
 	}
 
-	// 타입별 키워드 검증
+	// Validate per-type keywords
 	validate_json_schema_keywords(schema_str)!
 }
 
-/// validate_json_schema_keywords는 JSON Schema 키워드를 검증합니다.
+/// validate_json_schema_keywords validates JSON Schema keywords.
 fn validate_json_schema_keywords(schema_str string) ! {
-	// 충돌하는 키워드 확인
-	// 예: minLength/maxLength는 string에만 유효
-	// minItems/maxItems는 array에만 유효
-	// minimum/maximum은 number에만 유효
+	// Check for conflicting keywords
+	// e.g. minLength/maxLength are only valid for string
+	// minItems/maxItems are only valid for array
+	// minimum/maximum are only valid for number
 
 	type_val := extract_json_string(schema_str, 'type') or { '' }
 
-	// 문자열 전용 검증
+	// String-only validation
 	if type_val.len > 0 && type_val != 'string' {
 		if schema_str.contains('"minLength"') || schema_str.contains('"maxLength"')
 			|| schema_str.contains('"pattern"') {
-			// 경고: 비문자열 타입에 문자열 키워드 (사양상 오류 아님)
+			// Warning: string keywords on non-string type (not an error per spec)
 		}
 	}
 
-	// 배열 전용 검증
+	// Array-only validation
 	if type_val.len > 0 && type_val != 'array' {
 		if schema_str.contains('"minItems"') || schema_str.contains('"maxItems"')
 			|| schema_str.contains('"uniqueItems"') {
-			// 경고: 비배열 타입에 배열 키워드
+			// Warning: array keywords on non-array type
 		}
 	}
 
-	// 숫자 전용 검증
+	// Number-only validation
 	if type_val.len > 0 && type_val != 'number' && type_val != 'integer' {
 		if schema_str.contains('"minimum"') || schema_str.contains('"maximum"')
 			|| schema_str.contains('"multipleOf"') {
-			// 경고: 비숫자 타입에 숫자 키워드
+			// Warning: numeric keywords on non-numeric type
 		}
 	}
 
-	// minLength <= maxLength 검증 (둘 다 있는 경우)
+	// Validate minLength <= maxLength (when both present)
 	if min_len := extract_json_int(schema_str, 'minLength') {
 		if max_len := extract_json_int(schema_str, 'maxLength') {
 			if min_len > max_len {
@@ -247,7 +247,7 @@ fn validate_json_schema_keywords(schema_str string) ! {
 		}
 	}
 
-	// minItems <= maxItems 검증 (둘 다 있는 경우)
+	// Validate minItems <= maxItems (when both present)
 	if min_items := extract_json_int(schema_str, 'minItems') {
 		if max_items := extract_json_int(schema_str, 'maxItems') {
 			if min_items > max_items {
@@ -256,7 +256,7 @@ fn validate_json_schema_keywords(schema_str string) ! {
 		}
 	}
 
-	// minimum <= maximum 검증 (둘 다 있는 경우)
+	// Validate minimum <= maximum (when both present)
 	if min_val := extract_json_float(schema_str, 'minimum') {
 		if max_val := extract_json_float(schema_str, 'maximum') {
 			if min_val > max_val {
@@ -266,19 +266,19 @@ fn validate_json_schema_keywords(schema_str string) ! {
 	}
 }
 
-// Protobuf 스키마 유효성 검사
+// Protobuf schema validation
 
-/// validate_protobuf_schema_syntax는 Protobuf 스키마 구문을 검증합니다.
+/// validate_protobuf_schema_syntax validates Protobuf schema syntax.
 fn validate_protobuf_schema_syntax(schema_str string) ! {
-	// 기본 protobuf 검증
+	// Basic protobuf validation
 	trimmed := schema_str.trim_space()
 
-	// message 또는 enum 정의가 필수
+	// At least one message or enum definition is required
 	if !trimmed.contains('message ') && !trimmed.contains('enum ') {
 		return error('invalid Protobuf schema: missing message or enum definition')
 	}
 
-	// 중괄호 균형 확인
+	// Check brace balance
 	mut brace_count := 0
 	for c in trimmed {
 		if c == `{` {
@@ -294,7 +294,7 @@ fn validate_protobuf_schema_syntax(schema_str string) ! {
 		return error('invalid Protobuf schema: unbalanced braces')
 	}
 
-	// syntax 선언이 있으면 검증
+	// Validate syntax declaration if present
 	if trimmed.contains('syntax') {
 		if !trimmed.contains('syntax = "proto2"') && !trimmed.contains('syntax = "proto3"')
 			&& !trimmed.contains("syntax = 'proto2'") && !trimmed.contains("syntax = 'proto3'") {
@@ -302,15 +302,15 @@ fn validate_protobuf_schema_syntax(schema_str string) ! {
 		}
 	}
 
-	// message 정의가 있는 경우에만 필드 검증
-	// enum 전용 스키마는 message 필드 정의가 없음
+	// Validate fields only when a message definition is present
+	// Enum-only schemas have no message field definitions
 	if trimmed.contains('message ') {
-		// message 본문 추출 및 필드 검증
+		// Extract message body and validate fields
 		if msg_start := trimmed.index('message ') {
-			// message 본문 찾기
+			// Find message body
 			rest := trimmed[msg_start..]
 			if brace_start := rest.index('{') {
-				// 일치하는 닫는 중괄호 찾기
+				// Find matching closing brace
 				mut depth := 1
 				mut brace_end := brace_start + 1
 				for brace_end < rest.len && depth > 0 {
@@ -328,11 +328,11 @@ fn validate_protobuf_schema_syntax(schema_str string) ! {
 	}
 }
 
-/// validate_protobuf_fields는 protobuf 필드 정의를 검증합니다.
+/// validate_protobuf_fields validates protobuf field definitions.
 fn validate_protobuf_fields(body string) ! {
-	// 유효한 protobuf 필드 타입
+	// Valid protobuf field types
 	valid_types := [
-		// 스칼라 타입
+		// Scalar types
 		'double',
 		'float',
 		'int32',
@@ -348,7 +348,7 @@ fn validate_protobuf_fields(body string) ! {
 		'bool',
 		'string',
 		'bytes',
-		// Well-known 타입
+		// Well-known types
 		'google.protobuf.Any',
 		'google.protobuf.Duration',
 		'google.protobuf.Timestamp',
@@ -357,7 +357,7 @@ fn validate_protobuf_fields(body string) ! {
 		'google.protobuf.ListValue',
 	]
 
-	// 필드 이름으로 사용할 수 없는 예약어
+	// Reserved words that cannot be used as field names
 	reserved_words := [
 		'syntax',
 		'import',
@@ -381,7 +381,7 @@ fn validate_protobuf_fields(body string) ! {
 		'map',
 	]
 
-	// 정규화: 균일한 파싱을 위해 줄바꿈을 세미콜론으로 대체
+	// Normalize: replace newlines with semicolons for uniform parsing
 	normalized := body.replace('\n', ';').replace(';;', ';')
 	statements := normalized.split(';')
 
@@ -394,33 +394,33 @@ fn validate_protobuf_fields(body string) ! {
 			continue
 		}
 
-		// 중첩된 message/enum 정의 건너뛰기
+		// Skip nested message/enum definitions
 		if trimmed.starts_with('message ') || trimmed.starts_with('enum ') {
 			continue
 		}
 
-		// reserved 문 건너뛰기
+		// Skip reserved statements
 		if trimmed.starts_with('reserved ') {
 			continue
 		}
 
-		// option 문 건너뛰기
+		// Skip option statements
 		if trimmed.starts_with('option ') {
 			continue
 		}
 
-		// 주석 건너뛰기
+		// Skip comments
 		if trimmed.starts_with('//') {
 			continue
 		}
 
-		// 필드 정의 파싱: [modifier] type name = number [options];
+		// Parse field definition: [modifier] type name = number [options];
 		if trimmed.contains('=') && !trimmed.starts_with('option') {
 			parts := trimmed.split('=')
 			if parts.len >= 2 {
-				// 필드 번호 추출
+				// Extract field number
 				num_part := parts[1].trim_space().trim_right(';')
-				// 옵션 [...] 제거
+				// Remove options [...]
 				mut clean_num := num_part
 				if bracket_idx := num_part.index('[') {
 					clean_num = num_part[..bracket_idx].trim_space()
@@ -431,32 +431,32 @@ fn validate_protobuf_fields(body string) ! {
 					return error('invalid Protobuf schema: invalid field number in "${trimmed}"')
 				}
 
-				// 예약된 필드 번호 확인
+				// Check reserved field number range
 				if field_num >= 19000 && field_num <= 19999 {
 					return error('invalid Protobuf schema: field numbers 19000-19999 are reserved')
 				}
 
-				// 중복 필드 번호 확인
+				// Check for duplicate field numbers
 				if existing := used_field_numbers[field_num] {
 					return error('invalid Protobuf schema: duplicate field number ${field_num} (used by "${existing}")')
 				}
 
-				// 필드 이름과 타입 추출
+				// Extract field name and type
 				type_name_part := parts[0].trim_space()
 				tokens := type_name_part.split(' ').filter(fn (s string) bool {
 					return s.len > 0
 				})
 
 				if tokens.len >= 2 {
-					// 마지막 토큰이 필드 이름
+					// Last token is the field name
 					field_name := tokens[tokens.len - 1]
 
-					// 예약어 확인
+					// Check reserved words
 					if field_name in reserved_words {
 						return error('invalid Protobuf schema: "${field_name}" is a reserved word')
 					}
 
-					// 필드 이름 형식 검증 (문자로 시작, 영숫자와 밑줄만 포함)
+					// Validate field name format (must start with a letter, only alphanumeric and underscore)
 					if field_name.len > 0 {
 						first_char := field_name[0]
 						if !((first_char >= `a` && first_char <= `z`)
@@ -467,7 +467,7 @@ fn validate_protobuf_fields(body string) ! {
 
 					used_field_numbers[field_num] = field_name
 
-					// 타입 가져오기 (끝에서 두 번째 토큰, 또는 첫 번째 비수식어 토큰)
+					// Get type (second-to-last token, or first non-modifier token)
 					mut type_idx := 0
 					for type_idx < tokens.len - 1 {
 						if tokens[type_idx] in ['repeated', 'optional', 'required'] {
@@ -479,11 +479,11 @@ fn validate_protobuf_fields(body string) ! {
 
 					if type_idx < tokens.len - 1 {
 						field_type := tokens[type_idx]
-						// 알려진 스칼라 타입만 검증; 커스텀 메시지 타입은 허용
+						// Only validate known scalar types; allow custom message types
 						if field_type.len > 0 && field_type[0] >= `a` && field_type[0] <= `z` {
-							// 소문자 타입은 스칼라여야 함
+							// Lowercase types must be scalars
 							if field_type !in valid_types && !field_type.starts_with('map<') {
-								// 다른 곳에서 정의된 커스텀 타입일 수 있음 - 허용
+								// Could be a custom type defined elsewhere - allow it
 								_ = field_type
 							}
 						}

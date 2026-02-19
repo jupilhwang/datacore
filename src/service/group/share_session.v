@@ -1,29 +1,29 @@
-// Share 그룹 컨슈머를 위한 share fetch 세션을 관리합니다.
-// 세션은 컨슈머와 브로커 간의 상태를 유지하여 효율적인 fetch를 가능하게 합니다.
+// Manages share fetch sessions for share group consumers.
+// Sessions maintain state between consumers and brokers to enable efficient fetching.
 module group
 
 import domain
 import sync
 import time
 
-/// ShareSessionManager는 share 세션을 관리합니다.
-/// 세션 생성, 업데이트, 만료 처리를 담당합니다.
+/// ShareSessionManager manages share sessions.
+/// Responsible for session creation, updates, and expiry handling.
 pub struct ShareSessionManager {
 mut:
-	// "group_id:member_id" 키로 관리되는 share 세션
+	// Share sessions keyed by "group_id:member_id"
 	sessions map[string]&domain.ShareSession
-	// 스레드 안전성
+	// Thread safety
 	lock sync.RwMutex
 }
 
-/// new_share_session_manager는 새로운 share 세션 매니저를 생성합니다.
+/// new_share_session_manager creates a new share session manager.
 pub fn new_share_session_manager() &ShareSessionManager {
 	return &ShareSessionManager{
 		sessions: map[string]&domain.ShareSession{}
 	}
 }
 
-/// get_or_create_session은 share 세션을 가져오거나 생성합니다.
+/// get_or_create_session gets or creates a share session.
 pub fn (mut m ShareSessionManager) get_or_create_session(group_id string, member_id string) &domain.ShareSession {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
@@ -31,7 +31,7 @@ pub fn (mut m ShareSessionManager) get_or_create_session(group_id string, member
 	return m.get_or_create_session_internal(group_id, member_id)
 }
 
-/// get_session은 존재하는 경우 share 세션을 반환합니다.
+/// get_session returns a share session if it exists.
 pub fn (mut m ShareSessionManager) get_session(group_id string, member_id string) ?&domain.ShareSession {
 	m.lock.rlock()
 	defer { m.lock.runlock() }
@@ -40,8 +40,8 @@ pub fn (mut m ShareSessionManager) get_session(group_id string, member_id string
 	return m.sessions[key] or { return none }
 }
 
-/// update_session은 share 세션을 업데이트합니다.
-/// 파티션 추가/제거 및 에포크 증가를 처리합니다.
+/// update_session updates a share session.
+/// Handles adding/removing partitions and incrementing the epoch.
 pub fn (mut m ShareSessionManager) update_session(group_id string, member_id string, epoch i32, partitions_to_add []domain.ShareSessionPartition, partitions_to_remove []domain.ShareSessionPartition) !&domain.ShareSession {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
@@ -49,7 +49,7 @@ pub fn (mut m ShareSessionManager) update_session(group_id string, member_id str
 	key := '${group_id}:${member_id}'
 	mut session := m.sessions[key] or { return error('session not found') }
 
-	// 에포크 확인
+	// Verify epoch
 	if epoch != session.session_epoch && epoch != -1 {
 		return error('invalid session epoch')
 	}
@@ -57,16 +57,16 @@ pub fn (mut m ShareSessionManager) update_session(group_id string, member_id str
 	now := time.now().unix_milli()
 	session.last_used = now
 
-	// 파티션 제거
+	// Remove partitions
 	for to_remove in partitions_to_remove {
 		session.partitions = session.partitions.filter(fn [to_remove] (p domain.ShareSessionPartition) bool {
 			return p.topic_name != to_remove.topic_name || p.partition != to_remove.partition
 		})
 	}
 
-	// 파티션 추가
+	// Add partitions
 	for to_add in partitions_to_add {
-		// 이미 존재하는지 확인
+		// Check if already exists
 		mut exists := false
 		for existing in session.partitions {
 			if existing.topic_name == to_add.topic_name && existing.partition == to_add.partition {
@@ -79,7 +79,7 @@ pub fn (mut m ShareSessionManager) update_session(group_id string, member_id str
 		}
 	}
 
-	// 에포크 증가
+	// Increment epoch
 	session.session_epoch += 1
 	if session.session_epoch > 2147483647 {
 		session.session_epoch = 1
@@ -88,7 +88,7 @@ pub fn (mut m ShareSessionManager) update_session(group_id string, member_id str
 	return session
 }
 
-/// close_session은 share 세션을 종료합니다.
+/// close_session closes a share session.
 pub fn (mut m ShareSessionManager) close_session(group_id string, member_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
@@ -97,13 +97,13 @@ pub fn (mut m ShareSessionManager) close_session(group_id string, member_id stri
 	m.sessions.delete(key)
 }
 
-/// delete_session은 키로 세션을 삭제합니다 (내부 사용).
+/// delete_session deletes a session by key (internal use).
 pub fn (mut m ShareSessionManager) delete_session(group_id string, member_id string) {
 	key := '${group_id}:${member_id}'
 	m.sessions.delete(key)
 }
 
-/// delete_sessions_for_group은 그룹의 모든 세션을 삭제합니다.
+/// delete_sessions_for_group deletes all sessions for a group.
 pub fn (mut m ShareSessionManager) delete_sessions_for_group(group_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
@@ -119,8 +119,8 @@ pub fn (mut m ShareSessionManager) delete_sessions_for_group(group_id string) {
 	}
 }
 
-/// expire_sessions는 최근에 사용되지 않은 세션을 제거합니다.
-/// 반환값: 만료된 세션 키 목록
+/// expire_sessions removes sessions that have not been used recently.
+/// Returns a list of expired session keys.
 pub fn (mut m ShareSessionManager) expire_sessions(timeout_ms i64) []string {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
@@ -141,7 +141,7 @@ pub fn (mut m ShareSessionManager) expire_sessions(timeout_ms i64) []string {
 	return expired
 }
 
-/// get_or_create_session_internal은 잠금 없이 세션을 가져오거나 생성합니다.
+/// get_or_create_session_internal gets or creates a session without acquiring a lock.
 fn (mut m ShareSessionManager) get_or_create_session_internal(group_id string, member_id string) &domain.ShareSession {
 	key := '${group_id}:${member_id}'
 

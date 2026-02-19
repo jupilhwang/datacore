@@ -1,23 +1,23 @@
-/// CRC32-C (Castagnoli) 체크섬 모듈
+/// CRC32-C (Castagnoli) checksum module
 ///
-/// 이 모듈은 Kafka RecordBatch 검증에 사용되는 CRC32-C 체크섬을 계산합니다.
-/// Slicing-by-8 알고리즘을 사용하여 최적화된 성능을 제공합니다.
+/// This module computes CRC32-C checksums used for Kafka RecordBatch validation.
+/// Uses the Slicing-by-8 algorithm for optimized performance.
 ///
-/// 다항식: 0x1EDC6F41 (iSCSI/Castagnoli)
-/// 역순 다항식: 0x82F63B78
+/// Polynomial: 0x1EDC6F41 (iSCSI/Castagnoli)
+/// Reversed polynomial: 0x82F63B78
 ///
-/// 성능 특성:
-/// - Slicing-by-8: 한 번에 8바이트 처리, 기본 테이블 대비 ~3-5배 빠름
-/// - 작은 데이터(<8바이트): 바이트 단위 폴백
+/// Performance characteristics:
+/// - Slicing-by-8: processes 8 bytes at a time, ~3-5x faster than basic table
+/// - Small data (<8 bytes): byte-by-byte fallback
 ///
-/// 향후 개선 계획:
-/// - SSE4.2 하드웨어 가속 (Intel/AMD)
-/// - ARM CRC32 명령어 지원
+/// Future improvements:
+/// - SSE4.2 hardware acceleration (Intel/AMD)
+/// - ARM CRC32 instruction support
 module crc32c
 
-// CRC32-C 테이블 (Castagnoli 다항식)
+// CRC32-C table (Castagnoli polynomial)
 
-/// 기본 CRC32-C 다항식 테이블 (256 엔트리)
+/// Base CRC32-C polynomial table (256 entries)
 const crc32c_table = [
 	u32(0x00000000),
 	0xF26B8303,
@@ -277,12 +277,12 @@ const crc32c_table = [
 	0xAD7D5351,
 ]
 
-// CPU 기능 감지
+// CPU feature detection
 
 /// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
 /// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
 pub fn cpu_supports_hw_crc32c() bool {
-	// TODO: C 인터롭을 통한 하드웨어 가속 지원 시 true 반환
+	// TODO: return true when hardware acceleration is supported via C interop
 	return false
 }
 
@@ -292,7 +292,7 @@ pub fn cpu_supports_sse42() bool {
 	return cpu_supports_hw_crc32c()
 }
 
-// CRC32-C 구현
+// CRC32-C implementation
 
 /// crc32c_sw - software-based CRC32-C calculation using table lookup
 /// crc32c_sw - software-based CRC32-C calculation using table lookup
@@ -305,28 +305,28 @@ pub fn crc32c_sw(data []u8) u32 {
 	return crc ^ 0xFFFFFFFF
 }
 
-/// Slicing-by-8 최적화 CRC32-C 계산
-/// 8바이트 단위로 처리하여 성능 향상 (기본 대비 ~3-5배)
+/// Slicing-by-8 optimized CRC32-C computation
+/// Processes 8 bytes at a time for improved performance (~3-5x over basic table)
 fn crc32c_slicing8(data []u8) u32 {
 	mut crc := u32(0xFFFFFFFF)
 	mut i := 0
 	len := data.len
 
-	// 8바이트 단위로 처리
+	// process 8 bytes at a time
 	for i + 8 <= len {
-		// 첫 번째 4바이트 읽기 (리틀 엔디안) + CRC XOR
+		// read first 4 bytes (little-endian) XOR with CRC
 		lo := (u32(data[i]) | (u32(data[i + 1]) << 8) | (u32(data[i + 2]) << 16) | (u32(data[i + 3]) << 24)) ^ crc
-		// 두 번째 4바이트 읽기
+		// read second 4 bytes
 		hi := u32(data[i + 4]) | (u32(data[i + 5]) << 8) | (u32(data[i + 6]) << 16) | (u32(data[i +
 			7]) << 24)
 
-		// 8개 테이블에서 룩업하여 결합
+		// combine lookups from 8 tables
 		crc = crc32c_tables[7][lo & 0xFF] ^ crc32c_tables[6][(lo >> 8) & 0xFF] ^ crc32c_tables[5][(lo >> 16) & 0xFF] ^ crc32c_tables[4][(lo >> 24) & 0xFF] ^ crc32c_tables[3][hi & 0xFF] ^ crc32c_tables[2][(hi >> 8) & 0xFF] ^ crc32c_tables[1][(hi >> 16) & 0xFF] ^ crc32c_tables[0][(hi >> 24) & 0xFF]
 
 		i += 8
 	}
 
-	// 나머지 바이트 처리 (0-7 바이트)
+	// process remaining bytes (0-7 bytes)
 	for i < len {
 		index := (crc ^ u32(data[i])) & 0xFF
 		crc = (crc >> 8) ^ crc32c_tables[0][index]
@@ -336,7 +336,7 @@ fn crc32c_slicing8(data []u8) u32 {
 	return crc ^ 0xFFFFFFFF
 }
 
-// 공개 API
+// Public API
 
 /// calculate - calculates CRC32-C checksum
 /// calculate - calculates CRC32-C checksum
@@ -344,11 +344,11 @@ pub fn calculate(data []u8) u32 {
 	if data.len == 0 {
 		return 0
 	}
-	// 8바이트 이상이면 Slicing-by-8 사용
+	// use Slicing-by-8 for data >= 8 bytes
 	if data.len >= 8 {
 		return crc32c_slicing8(data)
 	}
-	// 작은 데이터는 기본 테이블 룩업 사용
+	// use basic table lookup for small data
 	return crc32c_sw(data)
 }
 

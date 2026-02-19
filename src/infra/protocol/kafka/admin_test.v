@@ -1,11 +1,11 @@
-// Kafka Admin API 단위 테스트 (CreateTopics, DeleteTopics)
+// Kafka Admin API unit tests (CreateTopics, DeleteTopics)
 module kafka
 
 import domain
 import infra.compression
 import service.port
 
-// 테스트용 Mock Storage
+// Mock storage for testing
 struct MockStorage {
 mut:
 	topics      map[string]domain.TopicMetadata
@@ -26,7 +26,7 @@ fn new_mock_storage() &MockStorage {
 		topics: map[string]domain.TopicMetadata{}
 		groups: map[string]domain.ConsumerGroup{}
 	}
-	// 기본 테스트 그룹 추가
+	// Add default test groups
 	storage.groups['test-group-1'] = domain.ConsumerGroup{
 		group_id:      'test-group-1'
 		generation_id: 5
@@ -205,9 +205,9 @@ fn (s &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
 
-// CreateTopics 요청 파싱 테스트
+// Test parsing CreateTopics request
 fn test_parse_create_topics_request() {
-	// 최소한의 CreateTopics 요청 빌드 (v0)
+	// Build minimal CreateTopics request (v0)
 	// [topics array][timeout_ms]
 	mut writer := new_writer()
 

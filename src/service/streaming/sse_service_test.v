@@ -1,10 +1,10 @@
-// SSE Service 테스트
+// SSE Service tests
 module streaming
 
 import domain
 import service.port
 
-// 테스트용 Mock Storage
+// Mock Storage for testing
 
 struct MockStorage {
 mut:

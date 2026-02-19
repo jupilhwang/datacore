@@ -1,5 +1,5 @@
-// Infra Layer - PostgreSQL 클러스터 메타데이터 구현
-// 멀티 브로커 조정을 위한 ClusterMetadataPort 구현
+// Infra Layer - PostgreSQL cluster metadata implementation
+// ClusterMetadataPort implementation for multi-broker coordination
 module postgres
 
 import db.pg
@@ -7,8 +7,8 @@ import domain
 import time
 import sync
 
-/// PostgresClusterMetadataPort는 port.ClusterMetadataPort를 구현합니다.
-/// PostgreSQL을 사용하여 브로커 등록, 파티션 할당, 분산 락을 관리합니다.
+/// PostgresClusterMetadataPort implements port.ClusterMetadataPort.
+/// Manages broker registration, partition assignments, and distributed locks using PostgreSQL.
 pub struct PostgresClusterMetadataPort {
 mut:
 	pool       &pg.ConnectionPool
@@ -28,7 +28,7 @@ pub fn new_cluster_metadata_port(pool &pg.ConnectionPool, cluster_id string) !&P
 	return cmp
 }
 
-/// init_cluster_schema는 클러스터 관련 테이블들을 초기화합니다.
+/// init_cluster_schema initializes the cluster-related tables.
 fn (mut p PostgresClusterMetadataPort) init_cluster_schema() ! {
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
@@ -473,11 +473,11 @@ pub fn (mut p PostgresClusterMetadataPort) update_partition_assignment(assignmen
 	mut db := p.pool.acquire()!
 	defer { p.pool.release(db) }
 
-	// PostgreSQL 배열 형식으로 변환: {1,2,3}
+	// Convert to PostgreSQL array format: {1,2,3}
 	replica_array := format_pg_int_array(assignment.replica_brokers)
 	isr_array := format_pg_int_array(assignment.isr_brokers)
 
-	// topic_id를 hex 문자열로 변환
+	// Convert topic_id to hex string
 	topic_id_hex := format_pg_bytea(assignment.topic_id)
 
 	db.exec_param_many('
@@ -547,7 +547,7 @@ pub fn (mut p PostgresClusterMetadataPort) list_all_partition_assignments() ![]d
 	return assignments
 }
 
-// 분산 락 (Distributed Locking)
+// Distributed Locking
 
 /// try_acquire_lock - attempts to acquire a distributed lock
 /// try_acquire_lock - attempts to acquire a distributed lock
@@ -612,7 +612,7 @@ pub fn (mut p PostgresClusterMetadataPort) refresh_lock(lock_name string, holder
 	return rows.len > 0
 }
 
-// 상태 모니터링 (Health Monitoring)
+// Health Monitoring
 
 /// mark_broker_dead - marks a broker as dead
 /// mark_broker_dead - marks a broker as dead
@@ -623,7 +623,7 @@ pub fn (mut p PostgresClusterMetadataPort) mark_broker_dead(broker_id i32) ! {
 	db.exec_param("UPDATE brokers SET status = 'dead' WHERE broker_id = \$1", broker_id.str())!
 }
 
-// 스토리지 기능 (Capability)
+// Storage Capability
 
 /// get_capability - returns PostgreSQL storage capability information
 /// get_capability - returns PostgreSQL storage capability information
@@ -631,9 +631,9 @@ pub fn (p &PostgresClusterMetadataPort) get_capability() domain.StorageCapabilit
 	return postgres_capability
 }
 
-// 헬퍼 함수 (Helper Functions)
+// Helper Functions
 
-/// broker_status_to_string은 BrokerStatus를 문자열로 변환합니다.
+/// broker_status_to_string converts BrokerStatus to a string.
 fn broker_status_to_string(status domain.BrokerStatus) string {
 	return match status {
 		.starting { 'starting' }
@@ -644,7 +644,7 @@ fn broker_status_to_string(status domain.BrokerStatus) string {
 	}
 }
 
-/// string_to_broker_status는 문자열을 BrokerStatus로 변환합니다.
+/// string_to_broker_status converts a string to BrokerStatus.
 fn string_to_broker_status(s string) domain.BrokerStatus {
 	return match s {
 		'active' { domain.BrokerStatus.active }
@@ -655,14 +655,14 @@ fn string_to_broker_status(s string) domain.BrokerStatus {
 	}
 }
 
-/// parse_pg_int_array는 PostgreSQL int[] 배열 문자열을 []i32로 파싱합니다.
-/// 형식: "{1,2,3}" 또는 빈 배열 "{}"
+/// parse_pg_int_array parses a PostgreSQL int[] array string into []i32.
+/// Format: "{1,2,3}" or empty array "{}"
 fn parse_pg_int_array(s string) []i32 {
 	if s == '' || s == '{}' || s == 'NULL' {
 		return []i32{}
 	}
 
-	// 중괄호 제거
+	// Remove curly braces
 	trimmed := s.trim('{}')
 	if trimmed == '' {
 		return []i32{}
@@ -673,7 +673,7 @@ fn parse_pg_int_array(s string) []i32 {
 	for part in parts {
 		cleaned := part.trim_space()
 		if cleaned.len > 0 {
-			// V의 string.int()는 직접 int를 반환하므로 바로 사용
+			// V's string.int() returns int directly, so use it as-is
 			val := cleaned.int()
 			if val != 0 || cleaned == '0' {
 				result << i32(val)
@@ -683,16 +683,16 @@ fn parse_pg_int_array(s string) []i32 {
 	return result
 }
 
-/// parse_pg_bytea는 PostgreSQL bytea 문자열을 []u8로 파싱합니다.
-/// 지원 형식:
-/// - hex 형식: "\\x0102030405..." (PostgreSQL 기본 출력)
-/// - escape 형식: "\\001\\002..." (레거시)
+/// parse_pg_bytea parses a PostgreSQL bytea string into []u8.
+/// Supported formats:
+/// - hex format: "\\x0102030405..." (PostgreSQL default output)
+/// - escape format: "\\001\\002..." (legacy)
 fn parse_pg_bytea(s string) []u8 {
 	if s == '' || s == 'NULL' {
 		return []u8{}
 	}
 
-	// hex 형식 확인: \x 또는 \\x로 시작
+	// Check hex format: starts with \x or \\x
 	if s.starts_with('\\x') || s.starts_with(r'\x') {
 		hex_str := if s.starts_with('\\x') {
 			s[2..]
@@ -702,7 +702,7 @@ fn parse_pg_bytea(s string) []u8 {
 		return parse_hex_string(hex_str)
 	}
 
-	// escape 형식 (레거시): \001\002...
+	// Escape format (legacy): \001\002...
 	mut result := []u8{}
 	mut i := 0
 	for i < s.len {
@@ -722,7 +722,7 @@ fn parse_pg_bytea(s string) []u8 {
 	return result
 }
 
-/// parse_hex_string은 16진수 문자열을 바이트 배열로 변환합니다.
+/// parse_hex_string converts a hexadecimal string to a byte array.
 fn parse_hex_string(s string) []u8 {
 	if s == '' || s.len % 2 != 0 {
 		return []u8{}
@@ -741,7 +741,7 @@ fn parse_hex_string(s string) []u8 {
 	return result
 }
 
-/// hex_char_to_nibble은 16진수 문자를 4비트 값으로 변환합니다.
+/// hex_char_to_nibble converts a hexadecimal character to a 4-bit value.
 fn hex_char_to_nibble(c u8) int {
 	if c >= `0` && c <= `9` {
 		return int(c - `0`)
@@ -753,7 +753,7 @@ fn hex_char_to_nibble(c u8) int {
 	return -1
 }
 
-/// is_octal은 문자열이 3자리 8진수인지 확인합니다.
+/// is_octal checks whether a string is a 3-digit octal number.
 fn is_octal(s string) bool {
 	if s.len != 3 {
 		return false
@@ -766,7 +766,7 @@ fn is_octal(s string) bool {
 	return true
 }
 
-/// parse_octal은 3자리 8진수 문자열을 정수로 변환합니다.
+/// parse_octal converts a 3-digit octal string to an integer.
 fn parse_octal(s string) int {
 	mut result := 0
 	for c in s {
@@ -775,8 +775,8 @@ fn parse_octal(s string) int {
 	return result
 }
 
-/// format_pg_int_array는 []i32를 PostgreSQL int[] 형식으로 변환합니다.
-/// 형식: "{1,2,3}" 또는 "{}" (빈 배열)
+/// format_pg_int_array converts []i32 to PostgreSQL int[] format.
+/// Format: "{1,2,3}" or "{}" (empty array)
 fn format_pg_int_array(arr []i32) string {
 	if arr.len == 0 {
 		return '{}'
@@ -788,8 +788,8 @@ fn format_pg_int_array(arr []i32) string {
 	return '{${parts.join(',')}}'
 }
 
-/// format_pg_bytea는 []u8을 PostgreSQL bytea hex 형식으로 변환합니다.
-/// 형식: "\\x01020304..."
+/// format_pg_bytea converts []u8 to PostgreSQL bytea hex format.
+/// Format: "\\x01020304..."
 fn format_pg_bytea(data []u8) string {
 	if data.len == 0 {
 		return ''
@@ -803,7 +803,7 @@ fn format_pg_bytea(data []u8) string {
 	return '\\x${hex_parts.join('')}'
 }
 
-/// hex_nibble_to_char는 4비트 값을 16진수 문자로 변환합니다.
+/// hex_nibble_to_char converts a 4-bit value to a hexadecimal character.
 fn hex_nibble_to_char(n u8) string {
 	if n < 10 {
 		return (u8(`0`) + n).ascii_str()

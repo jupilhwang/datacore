@@ -1,26 +1,26 @@
-/// 인프라 계층 - 메모리 기반 사용자 저장소
+/// Infrastructure layer - Memory-based user store
 module auth
 
 import domain
 import sync
 import time
 
-/// MemoryUserStore는 인메모리 저장소를 사용하여 UserStore 인터페이스를 구현합니다.
-/// 사용자 생성, 조회, 수정, 삭제 및 비밀번호 검증 기능을 제공합니다.
+/// MemoryUserStore implements the UserStore interface using an in-memory store.
+/// Provides user creation, lookup, update, deletion, and password validation.
 pub struct MemoryUserStore {
 mut:
 	users map[string]domain.User
 	lock  sync.RwMutex
 }
 
-/// new_memory_user_store는 새로운 인메모리 사용자 저장소를 생성합니다.
+/// new_memory_user_store creates a new in-memory user store.
 pub fn new_memory_user_store() &MemoryUserStore {
 	return &MemoryUserStore{
 		users: map[string]domain.User{}
 	}
 }
 
-/// new_memory_user_store_with_users는 미리 구성된 사용자들로 저장소를 생성합니다.
+/// new_memory_user_store_with_users creates a store pre-populated with the given users.
 pub fn new_memory_user_store_with_users(users []domain.User) &MemoryUserStore {
 	mut store := new_memory_user_store()
 	for user in users {
@@ -29,7 +29,7 @@ pub fn new_memory_user_store_with_users(users []domain.User) &MemoryUserStore {
 	return store
 }
 
-/// get_user는 사용자명으로 사용자를 조회합니다.
+/// get_user retrieves a user by username.
 pub fn (mut s MemoryUserStore) get_user(username string) !domain.User {
 	s.lock.@rlock()
 	defer { s.lock.runlock() }
@@ -40,7 +40,7 @@ pub fn (mut s MemoryUserStore) get_user(username string) !domain.User {
 	return error('user not found: ${username}')
 }
 
-/// create_user는 새로운 사용자를 생성합니다.
+/// create_user creates a new user.
 pub fn (mut s MemoryUserStore) create_user(username string, password string, mechanism domain.SaslMechanism) !domain.User {
 	s.lock.@lock()
 	defer { s.lock.unlock() }
@@ -62,7 +62,7 @@ pub fn (mut s MemoryUserStore) create_user(username string, password string, mec
 	return user
 }
 
-/// update_password는 사용자의 비밀번호를 업데이트합니다.
+/// update_password updates the password of a user.
 pub fn (mut s MemoryUserStore) update_password(username string, new_password string) ! {
 	s.lock.@lock()
 	defer { s.lock.unlock() }
@@ -78,7 +78,7 @@ pub fn (mut s MemoryUserStore) update_password(username string, new_password str
 	return error('user not found: ${username}')
 }
 
-/// delete_user는 사용자를 삭제합니다.
+/// delete_user deletes a user.
 pub fn (mut s MemoryUserStore) delete_user(username string) ! {
 	s.lock.@lock()
 	defer { s.lock.unlock() }
@@ -90,7 +90,7 @@ pub fn (mut s MemoryUserStore) delete_user(username string) ! {
 	s.users.delete(username)
 }
 
-/// list_users는 모든 사용자를 반환합니다.
+/// list_users returns all users.
 pub fn (mut s MemoryUserStore) list_users() ![]domain.User {
 	s.lock.@rlock()
 	defer { s.lock.runlock() }
@@ -102,13 +102,13 @@ pub fn (mut s MemoryUserStore) list_users() ![]domain.User {
 	return result
 }
 
-/// validate_password는 사용자의 비밀번호를 검증합니다.
+/// validate_password validates a user's password.
 pub fn (mut s MemoryUserStore) validate_password(username string, password string) !bool {
 	s.lock.@rlock()
 	defer { s.lock.runlock() }
 
 	if user := s.users[username] {
-		// 프로덕션에서는 해시된 비밀번호를 비교해야 합니다
+		// In production, hashed passwords should be compared
 		return user.password_hash == password
 	}
 	return error('user not found: ${username}')

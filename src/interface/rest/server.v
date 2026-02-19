@@ -1,16 +1,16 @@
 // Interface Layer - REST API Server
 //
-// HTTP 기반 REST API, SSE(Server-Sent Events), WebSocket 스트리밍을
-// 제공하는 서버입니다. Kubernetes 호환 헬스체크 및 Prometheus 메트릭을
-// 지원합니다.
+// Server providing HTTP-based REST API, SSE (Server-Sent Events),
+// and WebSocket streaming. Supports Kubernetes-compatible health checks
+// and Prometheus metrics.
 //
-// 주요 기능:
-// - REST API 엔드포인트 (토픽 관리)
-// - SSE 스트리밍 (실시간 메시지 구독)
-// - WebSocket 스트리밍 (양방향 통신)
-// - 헬스체크 (/health, /ready, /live)
-// - Prometheus 메트릭 (/metrics)
-// - 정적 파일 서빙 (테스트 클라이언트)
+// Key features:
+// - REST API endpoints (topic management)
+// - SSE streaming (real-time message subscription)
+// - WebSocket streaming (bidirectional communication)
+// - Health checks (/health, /ready, /live)
+// - Prometheus metrics (/metrics)
+// - Static file serving (test client)
 module rest
 
 import domain
@@ -24,9 +24,9 @@ import regex
 import service.port
 import time
 
-// REST API 서버
+// REST API server
 
-/// RestServerConfig는 REST 서버 설정을 담는 구조체입니다.
+/// RestServerConfig is a struct holding REST server configuration.
 pub struct RestServerConfig {
 pub:
 	host            string
@@ -38,8 +38,8 @@ pub mut:
 	ws_config  domain.WebSocketConfig
 }
 
-/// RestServer는 HTTP 기반 REST API 서버를 제공합니다.
-/// SSE와 WebSocket 스트리밍을 지원합니다.
+/// RestServer provides an HTTP-based REST API server.
+/// Supports SSE and WebSocket streaming.
 pub struct RestServer {
 	config RestServerConfig
 mut:
@@ -54,7 +54,7 @@ mut:
 	ready               bool
 }
 
-// ParsedRequest는 handle_connection에서 파싱된 HTTP 요청을 담는 구조체입니다.
+// ParsedRequest holds the parsed HTTP request from handle_connection.
 struct ParsedRequest {
 	method  string
 	path    string
@@ -63,32 +63,32 @@ struct ParsedRequest {
 	body    string
 }
 
-// 응답 구조체
+// Response structs
 
-// TopicResponse는 단일 토픽 정보를 나타내는 응답 구조체입니다.
+// TopicResponse is the response struct representing a single topic.
 struct TopicResponse {
 	name       string @[json: 'name']
 	partitions int    @[json: 'partitions']
 }
 
-// TopicsListResponse는 토픽 목록 응답 구조체입니다.
+// TopicsListResponse is the response struct for listing topics.
 struct TopicsListResponse {
 	topics []TopicResponse @[json: 'topics']
 }
 
-// CreateTopicRequest는 POST /v1/topics 요청 구조체입니다.
+// CreateTopicRequest is the request struct for POST /v1/topics.
 struct CreateTopicRequest {
 	name       string @[json: 'name']
 	partitions int    @[json: 'partitions']
 }
 
-// RestErrorResponse는 REST API 에러 응답 구조체입니다.
+// RestErrorResponse is the REST API error response struct.
 struct RestErrorResponse {
 	error_code int    @[json: 'error_code']
 	message    string @[json: 'message']
 }
 
-// SSEStatsResponse는 SSE 통계 응답 구조체입니다.
+// SSEStatsResponse is the SSE statistics response struct.
 struct SSEStatsResponse {
 	active_connections  int @[json: 'active_connections']
 	total_subscriptions int @[json: 'total_subscriptions']
@@ -98,7 +98,7 @@ struct SSEStatsResponse {
 	connections_closed  i64 @[json: 'connections_closed']
 }
 
-// WSStatsResponse는 WebSocket 통계 응답 구조체입니다.
+// WSStatsResponse is the WebSocket statistics response struct.
 struct WSStatsResponse {
 	active_connections  int @[json: 'active_connections']
 	total_subscriptions int @[json: 'total_subscriptions']
@@ -110,7 +110,7 @@ struct WSStatsResponse {
 	connections_closed  i64 @[json: 'connections_closed']
 }
 
-// HealthResponse는 헬스체크 응답 구조체입니다.
+// HealthResponse is the health check response struct.
 struct HealthResponse {
 	status         string @[json: 'status']
 	storage        string @[json: 'storage']
@@ -118,13 +118,13 @@ struct HealthResponse {
 	version        string @[json: 'version']
 }
 
-// ReadyResponse는 /ready 엔드포인트 응답 구조체입니다.
+// ReadyResponse is the response struct for the /ready endpoint.
 struct ReadyResponse {
 	ready  bool   @[json: 'ready']
 	reason string @[json: 'reason'; omitempty]
 }
 
-// LiveResponse는 /live 엔드포인트 응답 구조체입니다.
+// LiveResponse is the response struct for the /live endpoint.
 struct LiveResponse {
 	alive bool @[json: 'alive']
 }
@@ -218,12 +218,12 @@ pub fn (mut s RestServer) stop() {
 	println('[REST] Server stopped')
 }
 
-// handle_connection은 단일 HTTP 연결을 처리합니다.
+// handle_connection handles a single HTTP connection.
 fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
-	// HTTP 요청 읽기 - buffered reader로 헤더와 body를 모두 읽어 데이터 유실 방지
+	// Read HTTP request - use buffered reader to read headers and body to prevent data loss
 	mut reader := io.new_buffered_reader(reader: conn)
 
-	// 요청 라인 읽기
+	// Read request line
 	request_line := reader.read_line() or {
 		conn.close() or {}
 		return
@@ -238,7 +238,7 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 	method := parts[0]
 	full_path := parts[1]
 
-	// 경로와 쿼리 문자열 파싱
+	// Parse path and query string
 	path_parts := full_path.split('?')
 	path := path_parts[0]
 	query := if path_parts.len > 1 {
@@ -247,7 +247,7 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 		map[string]string{}
 	}
 
-	// 헤더 읽기
+	// Read headers
 	mut headers := map[string]string{}
 	for {
 		header_line := reader.read_line() or { break }
@@ -262,7 +262,7 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 		}
 	}
 
-	// body 읽기: buffered reader로 헤더를 읽었으므로 body도 동일한 reader에서 읽어야 함
+	// Read body: since headers were read from buffered reader, body must be read from the same reader
 	mut body := ''
 	content_length_str := headers['Content-Length'] or { headers['content-length'] or { '0' } }
 	content_length := content_length_str.int()
@@ -272,7 +272,7 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 		body = body_buf.bytestr()
 	}
 
-	// 클라이언트 IP 가져오기
+	// Get client IP
 	client_ip := conn.peer_ip() or { '0.0.0.0' }
 
 	parsed := ParsedRequest{
@@ -283,20 +283,20 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 		body:    body
 	}
 
-	// 요청 라우팅
+	// Route request
 	s.route_request(parsed, client_ip, mut conn)
 }
 
-// route_request는 HTTP 요청을 적절한 핸들러로 라우팅합니다.
+// route_request routes an HTTP request to the appropriate handler.
 fn (mut s RestServer) route_request(parsed ParsedRequest, client_ip string, mut conn net.TcpConn) {
-	// WebSocket 업그레이드
+	// WebSocket upgrade
 	upgrade := parsed.headers['Upgrade'] or { parsed.headers['upgrade'] or { '' } }
 	if upgrade.to_lower() == 'websocket' && (parsed.path == '/v1/ws' || parsed.path == '/ws') {
 		s.handle_websocket(parsed.headers, client_ip, mut conn)
 		return
 	}
 
-	// Stats API (경로 충돌 방지를 위해 SSE보다 먼저 확인)
+	// Stats API (check before SSE to avoid path conflicts)
 	if parsed.path == '/v1/sse/stats' && parsed.method == 'GET' {
 		s.handle_sse_stats(mut conn)
 		return
@@ -307,7 +307,7 @@ fn (mut s RestServer) route_request(parsed ParsedRequest, client_ip string, mut 
 		return
 	}
 
-	// SSE 엔드포인트
+	// SSE endpoint
 	if parsed.path.contains('/sse') && parsed.method == 'GET' {
 		s.handle_sse(parsed.path, parsed.query, parsed.headers, client_ip, mut conn)
 		return
@@ -335,7 +335,7 @@ fn (mut s RestServer) route_request(parsed ParsedRequest, client_ip string, mut 
 		return
 	}
 
-	// 헬스 엔드포인트 (Kubernetes 호환)
+	// Health endpoints (Kubernetes compatible)
 	if parsed.path == '/health' || parsed.path == '/healthz' {
 		s.handle_health(mut conn)
 		return
@@ -351,39 +351,39 @@ fn (mut s RestServer) route_request(parsed ParsedRequest, client_ip string, mut 
 		return
 	}
 
-	// 메트릭 엔드포인트 (Prometheus 형식)
+	// Metrics endpoint (Prometheus format)
 	if parsed.path == '/metrics' {
 		s.handle_metrics(mut conn)
 		return
 	}
 
-	// 정적 파일 (테스트 클라이언트)
+	// Static files (test client)
 	if parsed.path == '/' || parsed.path == '/index.html' || parsed.path.starts_with('/static/') {
 		s.serve_static_file(parsed.path, mut conn)
 		return
 	}
 
-	// 찾을 수 없음
+	// Not found
 	s.send_error(mut conn, 404, 40401, 'Not Found')
 	conn.close() or {}
 }
 
-// WebSocket 핸들러
+// WebSocket handler
 
-// handle_websocket은 WebSocket 업그레이드 요청을 처리합니다.
+// handle_websocket handles a WebSocket upgrade request.
 fn (mut s RestServer) handle_websocket(headers map[string]string, client_ip string, mut conn net.TcpConn) {
-	// 업그레이드 처리
+	// Handle upgrade
 	conn_id := s.ws_handler.handle_upgrade(mut conn, headers, client_ip) or {
 		s.send_error(mut conn, 400, 40001, 'WebSocket upgrade failed: ${err}')
 		conn.close() or {}
 		return
 	}
 
-	// WebSocket 연결 시작 (연결이 닫힐 때까지 블로킹)
+	// Start WebSocket connection (blocks until connection is closed)
 	s.ws_handler.start_connection(conn_id, mut conn)
 }
 
-// handle_ws_stats는 WebSocket 통계 요청을 처리합니다.
+// handle_ws_stats handles a WebSocket statistics request.
 fn (mut s RestServer) handle_ws_stats(mut conn net.TcpConn) {
 	stats := s.ws_handler.get_stats()
 	resp := WSStatsResponse{
@@ -400,18 +400,18 @@ fn (mut s RestServer) handle_ws_stats(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// SSE 핸들러
+// SSE handler
 
-// handle_sse는 SSE 스트리밍 요청을 처리합니다.
+// handle_sse handles an SSE streaming request.
 fn (mut s RestServer) handle_sse(path string, query map[string]string, headers map[string]string, client_ip string, mut conn net.TcpConn) {
-	// SSE 요청 파싱
+	// Parse SSE request
 	request := proto_http.parse_sse_request(path, query, headers, client_ip) or {
 		s.send_error(mut conn, 400, 40001, 'Invalid SSE request: ${err}')
 		conn.close() or {}
 		return
 	}
 
-	// SSE 요청 처리
+	// Handle SSE request
 	status, resp_headers, should_stream := s.sse_handler.handle_sse_request(request) or {
 		s.send_error(mut conn, 500, 50001, 'Internal server error')
 		conn.close() or {}
@@ -424,7 +424,7 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 		return
 	}
 
-	// 헤더에서 연결 ID 가져오기
+	// Get connection ID from headers
 	conn_id := resp_headers['X-SSE-Connection-Id'] or { '' }
 	if conn_id == '' {
 		s.send_error(mut conn, 500, 50001, 'Failed to create SSE connection')
@@ -432,7 +432,7 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 		return
 	}
 
-	// SSE 헤더 전송
+	// Send SSE headers
 	mut header_str := 'HTTP/1.1 200 OK\r\n'
 	for key, value in resp_headers {
 		header_str += '${key}: ${value}\r\n'
@@ -445,7 +445,7 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 		return
 	}
 
-	// 초기 연결 이벤트 전송
+	// Send initial connection event
 	connected_event := domain.SSEEvent{
 		id:         conn_id
 		event_type: .subscribed
@@ -457,12 +457,12 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 		return
 	}
 
-	// SSE 라이터 생성 및 스트리밍 시작
+	// Create SSE writer and start streaming
 	mut writer := proto_http.new_sse_response_writer(conn)
 	s.sse_handler.start_streaming(conn_id, mut writer)
 }
 
-// handle_sse_stats는 SSE 통계 요청을 처리합니다.
+// handle_sse_stats handles an SSE statistics request.
 fn (mut s RestServer) handle_sse_stats(mut conn net.TcpConn) {
 	stats := s.sse_handler.get_stats()
 	resp := SSEStatsResponse{
@@ -477,12 +477,12 @@ fn (mut s RestServer) handle_sse_stats(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// 헬스 & 메트릭 핸들러
+// Health & metrics handlers
 
-// handle_health는 /health 엔드포인트를 처리합니다.
-// 스토리지 상태를 포함한 전체 헬스 상태를 반환합니다.
+// handle_health handles the /health endpoint.
+// Returns full health status including storage state.
 fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
-	// 스토리지 헬스 확인
+	// Check storage health
 	storage_status := s.storage.health_check() or {
 		resp := HealthResponse{
 			status:  'unhealthy'
@@ -517,11 +517,11 @@ fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// handle_ready는 /ready 엔드포인트를 처리합니다.
-// 서버가 트래픽을 받을 준비가 되었는지 반환합니다.
+// handle_ready handles the /ready endpoint.
+// Returns whether the server is ready to receive traffic.
 fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
 	if s.ready {
-		// 추가 준비 상태 확인 가능
+		// Additional readiness checks possible
 		storage_status := s.storage.health_check() or {
 			resp := ReadyResponse{
 				ready:  false
@@ -556,10 +556,10 @@ fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// handle_live는 /live 엔드포인트를 처리합니다.
-// 서버 프로세스가 살아있는지 반환합니다.
+// handle_live handles the /live endpoint.
+// Returns whether the server process is alive.
 fn (mut s RestServer) handle_live(mut conn net.TcpConn) {
-	// 라이브니스 확인 - 서버가 실행 중인지만 확인
+	// Liveness check - only verify that the server is running
 	if s.running {
 		s.send_json(mut conn, 200, json.encode(LiveResponse{ alive: true }))
 	} else {
@@ -568,7 +568,7 @@ fn (mut s RestServer) handle_live(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// handle_metrics는 /metrics 엔드포인트를 처리합니다 (Prometheus 형식).
+// handle_metrics handles the /metrics endpoint (Prometheus format).
 fn (s &RestServer) handle_metrics(mut conn net.TcpConn) {
 	registry := observability.get_registry()
 	metrics_output := registry.export_prometheus()
@@ -582,14 +582,14 @@ fn (s &RestServer) handle_metrics(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// Topics API 핸들러
+// Topics API handlers
 
-// handle_topics_api는 토픽 REST API 요청을 처리합니다.
+// handle_topics_api handles topic REST API requests.
 fn (mut s RestServer) handle_topics_api(method string, path string, query map[string]string, headers map[string]string, body string, mut conn net.TcpConn) {
 	parts := path.trim_left('/').split('/')
 
-	// GET /v1/topics - 토픽 목록
-	// POST /v1/topics - 토픽 생성
+	// GET /v1/topics - list topics
+	// POST /v1/topics - create topic
 	if parts.len == 2 && parts[1] == 'topics' {
 		match method {
 			'GET' {
@@ -606,8 +606,8 @@ fn (mut s RestServer) handle_topics_api(method string, path string, query map[st
 		return
 	}
 
-	// GET /v1/topics/{topic} - 토픽 정보
-	// DELETE /v1/topics/{topic} - 토픽 삭제
+	// GET /v1/topics/{topic} - topic info
+	// DELETE /v1/topics/{topic} - delete topic
 	if parts.len == 3 && parts[1] == 'topics' {
 		match method {
 			'GET' {
@@ -628,7 +628,7 @@ fn (mut s RestServer) handle_topics_api(method string, path string, query map[st
 	conn.close() or {}
 }
 
-// list_topics는 모든 토픽 목록을 반환합니다.
+// list_topics returns a list of all topics.
 fn (mut s RestServer) list_topics(mut conn net.TcpConn) {
 	topics := s.storage.list_topics() or {
 		s.send_error(mut conn, 500, 50001, 'Failed to list topics')
@@ -651,7 +651,7 @@ fn (mut s RestServer) list_topics(mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// get_topic은 토픽 정보를 반환합니다.
+// get_topic returns topic information.
 fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 	topic := s.storage.get_topic(name) or {
 		s.send_error(mut conn, 404, 40401, 'Topic not found')
@@ -667,8 +667,8 @@ fn (mut s RestServer) get_topic(name string, mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// create_topic은 새 토픽을 생성합니다.
-// body는 handle_connection에서 buffered reader로 미리 읽어 전달됩니다.
+// create_topic creates a new topic.
+// body is pre-read by handle_connection using a buffered reader.
 fn (mut s RestServer) create_topic(body string, mut conn net.TcpConn) {
 	if body == '' {
 		s.send_error(mut conn, 400, 40001, 'Request body is required')
@@ -688,7 +688,7 @@ fn (mut s RestServer) create_topic(body string, mut conn net.TcpConn) {
 		return
 	}
 
-	// 토픽 이름 검증: ^[a-zA-Z0-9._-]{1,249}$
+	// Validate topic name: ^[a-zA-Z0-9._-]{1,249}$
 	if req.name.len > 249 || !is_valid_topic_name(req.name) {
 		s.send_error(mut conn, 400, 40002, 'Invalid topic name. Use alphanumeric, dots, underscores, hyphens (max 249 chars)')
 		conn.close() or {}
@@ -698,7 +698,7 @@ fn (mut s RestServer) create_topic(body string, mut conn net.TcpConn) {
 	partitions := if req.partitions > 0 { req.partitions } else { 1 }
 
 	topic_meta := s.storage.create_topic(req.name, partitions, domain.TopicConfig{}) or {
-		// 이미 존재하는 토픽인 경우 409 Conflict
+		// Return 409 Conflict if topic already exists
 		if err.msg().contains('already exists') {
 			s.send_error(mut conn, 409, 40901, 'Topic already exists: ${req.name}')
 		} else {
@@ -716,7 +716,7 @@ fn (mut s RestServer) create_topic(body string, mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// delete_topic은 토픽을 삭제합니다.
+// delete_topic deletes a topic.
 fn (mut s RestServer) delete_topic(name string, mut conn net.TcpConn) {
 	s.storage.delete_topic(name) or {
 		if err.msg().contains('not found') || err.msg().contains('does not exist') {
@@ -728,15 +728,15 @@ fn (mut s RestServer) delete_topic(name string, mut conn net.TcpConn) {
 		return
 	}
 
-	// 204 No Content - 성공적으로 삭제됨
+	// 204 No Content - successfully deleted
 	s.send_json(mut conn, 204, '')
 	conn.close() or {}
 }
 
-// Iceberg Catalog API 핸들러
+// Iceberg Catalog API handler
 
-// handle_iceberg_catalog_api는 Iceberg REST Catalog API 요청을 처리합니다.
-// body는 handle_connection에서 buffered reader로 미리 읽어 전달됩니다.
+// handle_iceberg_catalog_api handles Iceberg REST Catalog API requests.
+// body is pre-read by handle_connection using a buffered reader.
 fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, headers map[string]string, body string, mut conn net.TcpConn) {
 	unsafe {
 		if s.iceberg_catalog_api == 0 {
@@ -745,16 +745,16 @@ fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, hea
 			return
 		}
 	}
-	// Iceberg Catalog API 요청 처리
+	// Handle Iceberg Catalog API request
 	status, resp_body := s.iceberg_catalog_api.handle_request(method, path, body)
 	s.send_json(mut conn, status, resp_body)
 	conn.close() or {}
 }
 
-// Schema Registry API 핸들러
+// Schema Registry API handler
 
-// handle_schema_api는 스키마 레지스트리 REST API 요청을 처리합니다.
-// body는 handle_connection에서 buffered reader로 미리 읽어 전달됩니다.
+// handle_schema_api handles Schema Registry REST API requests.
+// body is pre-read by handle_connection using a buffered reader.
 fn (mut s RestServer) handle_schema_api(method string, path string, headers map[string]string, body string, mut conn net.TcpConn) {
 	unsafe {
 		if s.schema_api == 0 {
@@ -768,7 +768,7 @@ fn (mut s RestServer) handle_schema_api(method string, path string, headers map[
 	conn.close() or {}
 }
 
-// get_content_length는 Content-Length 헤더 값을 반환합니다.
+// get_content_length returns the Content-Length header value.
 fn (s &RestServer) get_content_length(headers map[string]string) !int {
 	content_length := headers['Content-Length'] or { headers['content-length'] or { '' } }
 	if content_length == '' {
@@ -777,12 +777,12 @@ fn (s &RestServer) get_content_length(headers map[string]string) !int {
 	return content_length.int()
 }
 
-// 응답 헬퍼
+// Response helpers
 
-// send_json은 JSON 응답을 전송합니다.
-// 204 No Content인 경우 본문 없이 헤더만 전송합니다.
+// send_json sends a JSON response.
+// For 204 No Content, sends only headers without a body.
 fn (s &RestServer) send_json(mut conn net.TcpConn, status int, body string) {
-	// 204 No Content는 본문 없이 헤더만 전송
+	// 204 No Content - send only headers without body
 	if status == 204 {
 		conn.write_string('HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n') or {}
 		return
@@ -809,7 +809,7 @@ fn (s &RestServer) send_json(mut conn net.TcpConn, status int, body string) {
 	conn.write_string(response) or {}
 }
 
-// send_error는 에러 응답을 전송합니다.
+// send_error sends an error response.
 fn (s &RestServer) send_error(mut conn net.TcpConn, status int, error_code int, message string) {
 	resp := RestErrorResponse{
 		error_code: error_code
@@ -818,9 +818,9 @@ fn (s &RestServer) send_error(mut conn net.TcpConn, status int, error_code int, 
 	s.send_json(mut conn, status, json.encode(resp))
 }
 
-// serve_static_file은 정적 디렉토리에서 정적 파일을 서빙합니다.
+// serve_static_file serves static files from the static directory.
 fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
-	// 파일 경로 결정
+	// Determine file path
 	file_path := if path == '/' || path == '/index.html' {
 		os.join_path(s.config.static_dir, 'test_client.html')
 	} else if path.starts_with('/static/') {
@@ -829,7 +829,7 @@ fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
 		os.join_path(s.config.static_dir, path.trim_left('/'))
 	}
 
-	// 보안: 디렉토리 탐색 방지
+	// Security: prevent directory traversal
 	abs_static_dir := os.real_path(s.config.static_dir)
 	abs_file_path := os.real_path(file_path)
 	if !abs_file_path.starts_with(abs_static_dir) {
@@ -838,17 +838,17 @@ fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
 		return
 	}
 
-	// 파일 읽기
+	// Read file
 	content := os.read_file(file_path) or {
 		s.send_error(mut conn, 404, 40401, 'File not found')
 		conn.close() or {}
 		return
 	}
 
-	// 콘텐츠 타입 결정
+	// Determine content type
 	content_type := get_content_type(file_path)
 
-	// 응답 전송
+	// Send response
 	response := 'HTTP/1.1 200 OK\r\n' + 'Content-Type: ${content_type}\r\n' +
 		'Content-Length: ${content.len}\r\n' + 'Cache-Control: no-cache\r\n' +
 		'Connection: close\r\n' + '\r\n' + content
@@ -857,7 +857,7 @@ fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
 	conn.close() or {}
 }
 
-// get_content_type은 파일의 콘텐츠 타입을 반환합니다.
+// get_content_type returns the content type for a file.
 fn get_content_type(path string) string {
 	if path.ends_with('.html') {
 		return 'text/html; charset=utf-8'
@@ -879,7 +879,7 @@ fn get_content_type(path string) string {
 	return 'application/octet-stream'
 }
 
-// is_valid_topic_name은 토픽 이름이 ^[a-zA-Z0-9._-]{1,249}$ 패턴에 맞는지 검증합니다.
+// is_valid_topic_name validates that a topic name matches the pattern ^[a-zA-Z0-9._-]{1,249}$.
 fn is_valid_topic_name(name string) bool {
 	if name == '' || name.len > 249 {
 		return false
@@ -888,7 +888,7 @@ fn is_valid_topic_name(name string) bool {
 	return re.matches_string(name)
 }
 
-// parse_query_string은 URL 쿼리 문자열을 맵으로 파싱합니다.
+// parse_query_string parses a URL query string into a map.
 fn parse_query_string(query string) map[string]string {
 	mut result := map[string]string{}
 	if query == '' {

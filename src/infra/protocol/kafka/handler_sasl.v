@@ -17,6 +17,7 @@ import time
 // v0: 기본 메커니즘 협상
 // v1: 메커니즘 활성화/비활성화 플래그 추가
 
+/// SaslHandshakeRequest은 클라이언트와 브로커 간 SASL 메커니즘 협상에 사용 v0: 기본 메커니즘 협상 v1: 메커니즘 활성화/비활성화 플래그 추가.
 pub struct SaslHandshakeRequest {
 pub:
 	mechanism string
@@ -38,6 +39,7 @@ fn parse_sasl_handshake_request(mut reader BinaryReader, version i16, is_flexibl
 // v1: 세션 수명 추가
 // v2: Flexible 버전
 
+/// SaslAuthenticateRequest은 메커니즘 핸드셰이크 후 SASL 인증 수행에 사용 v0: 기본 인증 v1: 세션 수명 추가 v2: Flexible 버전.
 pub struct SaslAuthenticateRequest {
 pub:
 	auth_bytes []u8
@@ -61,12 +63,14 @@ fn parse_sasl_authenticate_request(mut reader BinaryReader, version i16, is_flex
 
 // 브로커가 지원하는 SASL 메커니즘 목록 반환
 
+/// SaslHandshakeResponse은 브로커가 지원하는 SASL 메커니즘 목록 반환.
 pub struct SaslHandshakeResponse {
 pub:
 	error_code i16
 	mechanisms []string
 }
 
+/// encode를 수행합니다.
 pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
 	// SaslHandshake는 flexible 버전이 아님 (v0-v1만 지원)
 	mut writer := new_writer()
@@ -87,6 +91,7 @@ pub fn (r SaslHandshakeResponse) encode(version i16) []u8 {
 
 // SASL 인증 결과 반환
 
+/// SaslAuthenticateResponse은 SASL 인증 결과 반환.
 pub struct SaslAuthenticateResponse {
 pub:
 	error_code          i16
@@ -95,6 +100,7 @@ pub:
 	session_lifetime_ms i64
 }
 
+/// encode를 수행합니다.
 pub fn (r SaslAuthenticateResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()

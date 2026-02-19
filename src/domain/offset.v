@@ -1,11 +1,11 @@
 module domain
 
-/// PartitionOffset은 파티션에 대해 커밋된 오프셋을 나타냅니다.
-/// topic: 토픽 이름
-/// partition: 파티션 번호
-/// offset: 커밋된 오프셋
-/// leader_epoch: 리더 에포크 (기본 -1)
-/// metadata: 사용자 정의 메타데이터
+/// PartitionOffset represents a committed offset for a partition.
+/// topic: topic name
+/// partition: partition number
+/// offset: committed offset
+/// leader_epoch: leader epoch (default -1)
+/// metadata: user-defined metadata
 pub struct PartitionOffset {
 pub:
 	topic        string
@@ -15,11 +15,11 @@ pub:
 	metadata     string
 }
 
-/// OffsetCommit은 오프셋 커밋 요청을 나타냅니다.
-/// group_id: 컨슈머 그룹 ID
-/// generation_id: 세대 ID
-/// member_id: 멤버 ID
-/// offsets: 커밋할 파티션 오프셋 목록
+/// OffsetCommit represents an offset commit request.
+/// group_id: consumer group ID
+/// generation_id: generation ID
+/// member_id: member ID
+/// offsets: list of partition offsets to commit
 pub struct OffsetCommit {
 pub:
 	group_id      string
@@ -28,12 +28,12 @@ pub:
 	offsets       []PartitionOffset
 }
 
-/// OffsetFetchResult는 오프셋 조회 결과를 나타냅니다.
-/// topic: 토픽 이름
-/// partition: 파티션 번호
-/// offset: 조회된 오프셋
-/// metadata: 사용자 정의 메타데이터
-/// error_code: 에러 코드 (0 = 성공)
+/// OffsetFetchResult represents the result of an offset fetch.
+/// topic: topic name
+/// partition: partition number
+/// offset: fetched offset
+/// metadata: user-defined metadata
+/// error_code: error code (0 = success)
 pub struct OffsetFetchResult {
 pub:
 	topic      string

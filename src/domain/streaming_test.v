@@ -1,4 +1,4 @@
-// SSE 도메인 모델 테스트
+// SSE domain model tests
 module domain
 
 fn test_sse_event_type_str() {
@@ -137,7 +137,7 @@ fn test_websocket_action_from_str() {
 	assert websocket_action_from_str('invalid') == none
 }
 
-// WebSocket 도메인 테스트
+// WebSocket domain tests
 
 fn test_new_ws_message_response() {
 	resp := new_ws_message_response('test-topic', 0, 100, 1234567890, 'key1', 'value1',

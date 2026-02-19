@@ -2,7 +2,7 @@ module domain
 
 import time
 
-/// GrpcProduceRequest는 gRPC produce 요청을 나타냅니다.
+/// GrpcProduceRequest represents a gRPC produce request.
 pub struct GrpcProduceRequest {
 pub:
 	topic     string
@@ -10,7 +10,7 @@ pub:
 	records   []GrpcRecord
 }
 
-/// GrpcRecord는 gRPC 형식의 단일 레코드를 나타냅니다.
+/// GrpcRecord represents a single record in gRPC format.
 pub struct GrpcRecord {
 pub:
 	key       []u8
@@ -19,7 +19,7 @@ pub:
 	timestamp i64
 }
 
-/// GrpcProduceResponse는 gRPC produce 응답을 나타냅니다.
+/// GrpcProduceResponse represents a gRPC produce response.
 pub struct GrpcProduceResponse {
 pub:
 	topic        string
@@ -31,7 +31,7 @@ pub:
 	error_msg    string
 }
 
-/// new_grpc_produce_response는 성공적인 produce 응답을 생성합니다.
+/// new_grpc_produce_response creates a successful produce response.
 pub fn new_grpc_produce_response(topic string, partition i32, base_offset i64, count int) GrpcProduceResponse {
 	return GrpcProduceResponse{
 		topic:        topic
@@ -44,7 +44,7 @@ pub fn new_grpc_produce_response(topic string, partition i32, base_offset i64, c
 	}
 }
 
-/// new_grpc_produce_error는 에러 produce 응답을 생성합니다.
+/// new_grpc_produce_error creates an error produce response.
 pub fn new_grpc_produce_error(topic string, partition i32, code i32, msg string) GrpcProduceResponse {
 	return GrpcProduceResponse{
 		topic:       topic
@@ -56,7 +56,7 @@ pub fn new_grpc_produce_error(topic string, partition i32, code i32, msg string)
 	}
 }
 
-/// GrpcConsumeRequest는 gRPC consume 요청을 나타냅니다.
+/// GrpcConsumeRequest represents a gRPC consume request.
 pub struct GrpcConsumeRequest {
 pub:
 	topic       string
@@ -67,7 +67,7 @@ pub:
 	group_id    ?string
 }
 
-/// GrpcConsumeResponse는 gRPC consume 응답(스트림 요소)을 나타냅니다.
+/// GrpcConsumeResponse represents a gRPC consume response (stream element).
 pub struct GrpcConsumeResponse {
 pub:
 	topic          string
@@ -79,7 +79,7 @@ pub:
 	error_msg      string
 }
 
-/// new_grpc_consume_response는 성공적인 consume 응답을 생성합니다.
+/// new_grpc_consume_response creates a successful consume response.
 pub fn new_grpc_consume_response(topic string, partition i32, records []GrpcRecord, hwm i64, next i64) GrpcConsumeResponse {
 	return GrpcConsumeResponse{
 		topic:          topic
@@ -92,7 +92,7 @@ pub fn new_grpc_consume_response(topic string, partition i32, records []GrpcReco
 	}
 }
 
-/// new_grpc_consume_error는 에러 consume 응답을 생성합니다.
+/// new_grpc_consume_error creates an error consume response.
 pub fn new_grpc_consume_error(topic string, partition i32, code i32, msg string) GrpcConsumeResponse {
 	return GrpcConsumeResponse{
 		topic:      topic
@@ -103,7 +103,7 @@ pub fn new_grpc_consume_error(topic string, partition i32, code i32, msg string)
 	}
 }
 
-/// GrpcStreamRequest는 양방향 스트림 요청을 나타냅니다.
+/// GrpcStreamRequest represents a bidirectional stream request.
 pub struct GrpcStreamRequest {
 pub:
 	request_type GrpcStreamRequestType
@@ -113,7 +113,7 @@ pub:
 	ack          ?GrpcAckRequest
 }
 
-/// GrpcStreamRequestType은 스트림 요청의 유형을 나타냅니다.
+/// GrpcStreamRequestType represents the type of a stream request.
 pub enum GrpcStreamRequestType {
 	produce
 	subscribe
@@ -122,7 +122,7 @@ pub enum GrpcStreamRequestType {
 	ping
 }
 
-/// grpc_stream_request_type_from_int는 정수를 GrpcStreamRequestType으로 변환합니다.
+/// grpc_stream_request_type_from_int converts an integer to a GrpcStreamRequestType.
 pub fn grpc_stream_request_type_from_int(i int) GrpcStreamRequestType {
 	return match i {
 		0 { .produce }
@@ -134,14 +134,14 @@ pub fn grpc_stream_request_type_from_int(i int) GrpcStreamRequestType {
 	}
 }
 
-/// GrpcCommitRequest는 오프셋 커밋 요청을 나타냅니다.
+/// GrpcCommitRequest represents an offset commit request.
 pub struct GrpcCommitRequest {
 pub:
 	group_id string
 	offsets  []GrpcPartitionOffset
 }
 
-/// GrpcPartitionOffset은 파티션 오프셋을 나타냅니다.
+/// GrpcPartitionOffset represents a partition offset.
 pub struct GrpcPartitionOffset {
 pub:
 	topic     string
@@ -150,7 +150,7 @@ pub:
 	metadata  string
 }
 
-/// GrpcAckRequest는 메시지 수신 확인을 나타냅니다.
+/// GrpcAckRequest represents a message acknowledgement.
 pub struct GrpcAckRequest {
 pub:
 	topic     string
@@ -158,7 +158,7 @@ pub:
 	offset    i64
 }
 
-/// GrpcStreamResponse는 양방향 스트림 응답을 나타냅니다.
+/// GrpcStreamResponse represents a bidirectional stream response.
 pub struct GrpcStreamResponse {
 pub:
 	response_type GrpcStreamResponseType
@@ -169,7 +169,7 @@ pub:
 	pong          ?GrpcPongResponse
 }
 
-/// GrpcStreamResponseType은 스트림 응답의 유형을 나타냅니다.
+/// GrpcStreamResponseType represents the type of a stream response.
 pub enum GrpcStreamResponseType {
 	produce_ack
 	message
@@ -178,7 +178,7 @@ pub enum GrpcStreamResponseType {
 	pong
 }
 
-/// GrpcMessageResponse는 소비된 메시지를 나타냅니다.
+/// GrpcMessageResponse represents a consumed message.
 pub struct GrpcMessageResponse {
 pub:
 	topic     string
@@ -190,27 +190,27 @@ pub:
 	headers   map[string][]u8
 }
 
-/// GrpcCommitResponse는 커밋 결과를 나타냅니다.
+/// GrpcCommitResponse represents a commit result.
 pub struct GrpcCommitResponse {
 pub:
 	success bool
 	message string
 }
 
-/// GrpcErrorResponse는 에러를 나타냅니다.
+/// GrpcErrorResponse represents an error.
 pub struct GrpcErrorResponse {
 pub:
 	code    i32
 	message string
 }
 
-/// GrpcPongResponse는 pong을 나타냅니다.
+/// GrpcPongResponse represents a pong.
 pub struct GrpcPongResponse {
 pub:
 	timestamp i64
 }
 
-/// GrpcConnectionState는 gRPC 연결의 상태를 나타냅니다.
+/// GrpcConnectionState represents the state of a gRPC connection.
 pub enum GrpcConnectionState {
 	connecting
 	ready
@@ -219,7 +219,7 @@ pub enum GrpcConnectionState {
 	closed
 }
 
-/// GrpcConnection은 활성 gRPC 연결을 나타냅니다.
+/// GrpcConnection represents an active gRPC connection.
 pub struct GrpcConnection {
 pub:
 	id         string
@@ -236,7 +236,7 @@ pub mut:
 	stream_type    GrpcStreamType
 }
 
-/// GrpcStreamType은 gRPC 스트림의 유형을 나타냅니다.
+/// GrpcStreamType represents the type of a gRPC stream.
 pub enum GrpcStreamType {
 	unary
 	server_streaming
@@ -244,7 +244,7 @@ pub enum GrpcStreamType {
 	bidirectional
 }
 
-/// new_grpc_connection은 새로운 gRPC 연결을 생성합니다.
+/// new_grpc_connection creates a new gRPC connection.
 pub fn new_grpc_connection(client_ip string, stream_type GrpcStreamType) GrpcConnection {
 	now := time.now().unix_milli()
 	return GrpcConnection{
@@ -262,7 +262,7 @@ pub fn new_grpc_connection(client_ip string, stream_type GrpcStreamType) GrpcCon
 	}
 }
 
-/// GrpcConfig는 gRPC 서버 설정을 보관합니다.
+/// GrpcConfig holds gRPC server configuration.
 pub struct GrpcConfig {
 pub:
 	port                   int  = 9093
@@ -276,29 +276,45 @@ pub:
 	enable_reflection      bool = true
 }
 
-/// default_grpc_config는 기본 gRPC 설정을 반환합니다.
+/// default_grpc_config returns the default gRPC configuration.
 pub fn default_grpc_config() GrpcConfig {
 	return GrpcConfig{}
 }
 
+/// grpc_error_none constant.
 pub const grpc_error_none = 0
+/// grpc_error_unknown constant.
 pub const grpc_error_unknown = -1
+/// grpc_error_offset_out_of_range constant.
 pub const grpc_error_offset_out_of_range = 1
+/// grpc_error_invalid_message constant.
 pub const grpc_error_invalid_message = 2
+/// grpc_error_unknown_topic constant.
 pub const grpc_error_unknown_topic = 3
+/// grpc_error_invalid_partition constant.
 pub const grpc_error_invalid_partition = 4
+/// grpc_error_leader_not_available constant.
 pub const grpc_error_leader_not_available = 5
+/// grpc_error_not_leader_for_partition constant.
 pub const grpc_error_not_leader_for_partition = 6
+/// grpc_error_request_timed_out constant.
 pub const grpc_error_request_timed_out = 7
+/// grpc_error_message_too_large constant.
 pub const grpc_error_message_too_large = 10
+/// grpc_error_group_coordinator_not_available constant.
 pub const grpc_error_group_coordinator_not_available = 15
+/// grpc_error_not_coordinator constant.
 pub const grpc_error_not_coordinator = 16
+/// grpc_error_invalid_topic constant.
 pub const grpc_error_invalid_topic = 17
+/// grpc_error_record_list_too_large constant.
 pub const grpc_error_record_list_too_large = 18
+/// grpc_error_group_auth_failed constant.
 pub const grpc_error_group_auth_failed = 30
+/// grpc_error_invalid_session_timeout constant.
 pub const grpc_error_invalid_session_timeout = 26
 
-/// grpc_error_message는 사람이 읽을 수 있는 에러 메시지를 반환합니다.
+/// grpc_error_message returns a human-readable error message.
 pub fn grpc_error_message(code i32) string {
 	return match code {
 		grpc_error_none { 'No error' }
@@ -320,7 +336,7 @@ pub fn grpc_error_message(code i32) string {
 	}
 }
 
-/// encode는 GrpcRecord를 바이트로 인코딩합니다.
+/// encode encodes a GrpcRecord to bytes.
 pub fn (r &GrpcRecord) encode() []u8 {
 	mut buf := []u8{cap: 64 + r.key.len + r.value.len}
 
@@ -369,7 +385,7 @@ pub fn (r &GrpcRecord) encode() []u8 {
 	return buf
 }
 
-/// decode_grpc_record는 바이트를 GrpcRecord로 디코딩합니다.
+/// decode_grpc_record decodes bytes into a GrpcRecord.
 pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	if data.len < 20 {
 		return error('Data too short for GrpcRecord')
@@ -448,7 +464,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	}
 }
 
-/// to_domain_record는 GrpcRecord를 domain.Record로 변환합니다.
+/// to_domain_record converts a GrpcRecord to a domain.Record.
 pub fn (r &GrpcRecord) to_domain_record() Record {
 	return Record{
 		key:       r.key
@@ -458,7 +474,7 @@ pub fn (r &GrpcRecord) to_domain_record() Record {
 	}
 }
 
-/// grpc_record_from_domain은 domain.Record로부터 GrpcRecord를 생성합니다.
+/// grpc_record_from_domain creates a GrpcRecord from a domain.Record.
 pub fn grpc_record_from_domain(r &Record) GrpcRecord {
 	return GrpcRecord{
 		key:       r.key

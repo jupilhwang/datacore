@@ -1,14 +1,14 @@
 module domain
 
-/// ResourceType은 접근하려는 리소스의 유형을 나타냅니다.
-/// unknown: 알 수 없음
-/// any: 모든 리소스
-/// topic: 토픽
-/// group: 컨슈머 그룹
-/// cluster: 클러스터
-/// transactional_id: 트랜잭션 ID
-/// delegation_token: 위임 토큰
-/// user: 사용자
+/// ResourceType represents the type of resource being accessed.
+/// unknown: unknown
+/// any: any resource
+/// topic: topic
+/// group: consumer group
+/// cluster: cluster
+/// transactional_id: transaction ID
+/// delegation_token: delegation token
+/// user: user
 pub enum ResourceType {
 	unknown          = 0
 	any              = 1
@@ -20,12 +20,12 @@ pub enum ResourceType {
 	user             = 7
 }
 
-/// PatternType은 리소스 이름 패턴 매칭 유형을 나타냅니다.
-/// unknown: 알 수 없음
-/// any: 모든 패턴
-/// match: 매칭
-/// literal: 정확히 일치
-/// prefixed: 접두사 매칭
+/// PatternType represents the resource name pattern matching type.
+/// unknown: unknown
+/// any: any pattern
+/// match: matching
+/// literal: exact match
+/// prefixed: prefix matching
 pub enum PatternType {
 	unknown  = 0
 	any      = 1
@@ -34,13 +34,13 @@ pub enum PatternType {
 	prefixed = 4
 }
 
-/// AclOperation은 수행하려는 작업을 나타냅니다.
-/// read: 읽기
-/// write: 쓰기
-/// create: 생성
-/// delete: 삭제
-/// alter: 변경
-/// describe: 조회
+/// AclOperation represents the operation being performed.
+/// read: read
+/// write: write
+/// create: create
+/// delete: delete
+/// alter: alter
+/// describe: describe/query
 pub enum AclOperation {
 	unknown          = 0
 	any              = 1
@@ -57,9 +57,9 @@ pub enum AclOperation {
 	idempotent_write = 12
 }
 
-/// PermissionType은 허용 또는 거부 권한을 나타냅니다.
-/// allow: 허용
-/// deny: 거부
+/// PermissionType represents allow or deny permissions.
+/// allow: allow
+/// deny: deny
 pub enum PermissionType {
 	unknown = 0
 	any     = 1
@@ -67,11 +67,11 @@ pub enum PermissionType {
 	deny    = 3
 }
 
-/// AccessControlEntry(ACE)는 누가 무엇을 할 수 있는지 정의합니다.
-/// principal: 주체 (예: "User:alice")
-/// host: 호스트 (예: "*" 또는 특정 IP)
-/// operation: 작업
-/// permission_type: 권한 유형
+/// AccessControlEntry (ACE) defines who can do what.
+/// principal: principal (e.g. "User:alice")
+/// host: host (e.g. "*" or a specific IP)
+/// operation: operation
+/// permission_type: permission type
 pub struct AccessControlEntry {
 pub:
 	principal       string
@@ -80,10 +80,10 @@ pub:
 	permission_type PermissionType
 }
 
-/// ResourcePattern은 ACL을 위한 리소스 패턴을 정의합니다.
-/// resource_type: 리소스 유형
-/// name: 리소스 이름
-/// pattern_type: 패턴 유형
+/// ResourcePattern defines a resource pattern for ACLs.
+/// resource_type: resource type
+/// name: resource name
+/// pattern_type: pattern type
 pub struct ResourcePattern {
 pub:
 	resource_type ResourceType
@@ -91,23 +91,23 @@ pub:
 	pattern_type  PatternType
 }
 
-/// AclBinding은 리소스 패턴과 접근 제어 항목을 결합합니다.
-/// pattern: 리소스 패턴
-/// entry: 접근 제어 항목
+/// AclBinding combines a resource pattern with an access control entry.
+/// pattern: resource pattern
+/// entry: access control entry
 pub struct AclBinding {
 pub:
 	pattern ResourcePattern
 	entry   AccessControlEntry
 }
 
-/// AclBindingFilter는 ACL 필터링에 사용됩니다.
+/// AclBindingFilter is used for ACL filtering.
 pub struct AclBindingFilter {
 pub:
 	pattern_filter ResourcePatternFilter
 	entry_filter   AccessControlEntryFilter
 }
 
-/// ResourcePatternFilter는 리소스 패턴 필터입니다.
+/// ResourcePatternFilter is a resource pattern filter.
 pub struct ResourcePatternFilter {
 pub:
 	resource_type ResourceType
@@ -115,7 +115,7 @@ pub:
 	pattern_type  PatternType
 }
 
-/// AccessControlEntryFilter는 접근 제어 항목 필터입니다.
+/// AccessControlEntryFilter is an access control entry filter.
 pub struct AccessControlEntryFilter {
 pub:
 	principal       ?string
@@ -124,14 +124,14 @@ pub:
 	permission_type PermissionType
 }
 
-/// AclCreateResult는 ACL 생성 결과입니다.
+/// AclCreateResult is the result of creating an ACL.
 pub struct AclCreateResult {
 pub:
 	error_code    i16
 	error_message ?string
 }
 
-/// AclDeleteResult는 ACL 삭제 결과입니다.
+/// AclDeleteResult is the result of deleting an ACL.
 pub struct AclDeleteResult {
 pub:
 	error_code    i16
@@ -139,9 +139,9 @@ pub:
 	deleted_acls  []AclBinding
 }
 
-// 헬퍼 메서드
+// Helper methods
 
-/// str은 ResourceType을 문자열로 변환합니다.
+/// str converts ResourceType to a string.
 pub fn (t ResourceType) str() string {
 	return match t {
 		.unknown { 'Unknown' }
@@ -155,12 +155,12 @@ pub fn (t ResourceType) str() string {
 	}
 }
 
-/// resource_type_from_i8은 i8 값을 ResourceType으로 변환합니다.
+/// resource_type_from_i8 converts an i8 value to a ResourceType.
 pub fn resource_type_from_i8(val i8) ResourceType {
 	return unsafe { ResourceType(val) }
 }
 
-/// str은 PatternType을 문자열로 변환합니다.
+/// str converts PatternType to a string.
 pub fn (t PatternType) str() string {
 	return match t {
 		.unknown { 'Unknown' }
@@ -171,12 +171,12 @@ pub fn (t PatternType) str() string {
 	}
 }
 
-/// pattern_type_from_i8은 i8 값을 PatternType으로 변환합니다.
+/// pattern_type_from_i8 converts an i8 value to a PatternType.
 pub fn pattern_type_from_i8(val i8) PatternType {
 	return unsafe { PatternType(val) }
 }
 
-/// str은 AclOperation을 문자열로 변환합니다.
+/// str converts AclOperation to a string.
 pub fn (o AclOperation) str() string {
 	return match o {
 		.unknown { 'Unknown' }
@@ -195,12 +195,12 @@ pub fn (o AclOperation) str() string {
 	}
 }
 
-/// acl_operation_from_i8은 i8 값을 AclOperation으로 변환합니다.
+/// acl_operation_from_i8 converts an i8 value to an AclOperation.
 pub fn acl_operation_from_i8(val i8) AclOperation {
 	return unsafe { AclOperation(val) }
 }
 
-/// str은 PermissionType을 문자열로 변환합니다.
+/// str converts PermissionType to a string.
 pub fn (p PermissionType) str() string {
 	return match p {
 		.unknown { 'Unknown' }
@@ -210,7 +210,7 @@ pub fn (p PermissionType) str() string {
 	}
 }
 
-/// permission_type_from_i8은 i8 값을 PermissionType으로 변환합니다.
+/// permission_type_from_i8 converts an i8 value to a PermissionType.
 pub fn permission_type_from_i8(val i8) PermissionType {
 	return unsafe { PermissionType(val) }
 }

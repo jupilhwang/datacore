@@ -1,19 +1,19 @@
-/// Infra Layer - mmap 기반 파티션 스토어
-/// Memory Mapped I/O를 사용한 고성능 영속 파티션 스토리지
+/// Infra Layer - mmap-based partition store
+/// High-performance persistent partition storage using Memory Mapped I/O
 ///
-/// 특징:
-/// - append-only 로그 세그먼트
-/// - sparse 오프셋 인덱스
-/// - 자동 세그먼트 롤오버
-/// - OS 페이지 캐시 활용
+/// Features:
+/// - append-only log segments
+/// - sparse offset index
+/// - automatic segment rollover
+/// - OS page cache utilization
 module memory
 
 import os
 import time
 import infra.performance.io
 
-/// MmapPartitionStore는 mmap 기반 파티션 스토리지입니다.
-/// 각 파티션은 여러 세그먼트로 구성되며, 세그먼트는 mmap으로 관리됩니다.
+/// MmapPartitionStore is an mmap-based partition storage.
+/// Each partition consists of multiple segments managed via mmap.
 pub struct MmapPartitionStore {
 pub:
 	topic_name string
@@ -29,8 +29,8 @@ mut:
 	index          MmapOffsetIndex
 }
 
-/// MmapOffsetIndex는 오프셋 → 세그먼트/위치 매핑을 관리합니다.
-/// sparse 인덱스로 메모리 효율적입니다.
+/// MmapOffsetIndex manages offset -> segment/position mappings.
+/// A sparse index for memory efficiency.
 struct MmapOffsetIndex {
 mut:
 	entries      []OffsetIndexEntry
@@ -38,7 +38,7 @@ mut:
 	last_indexed i64
 }
 
-/// OffsetIndexEntry는 오프셋 인덱스 엔트리입니다.
+/// OffsetIndexEntry is an offset index entry.
 struct OffsetIndexEntry {
 pub:
 	offset       i64
@@ -47,7 +47,7 @@ pub:
 	timestamp_ms i64
 }
 
-/// MmapPartitionConfig는 mmap 파티션 설정입니다.
+/// MmapPartitionConfig is the mmap partition configuration.
 pub struct MmapPartitionConfig {
 pub:
 	topic_name    string
@@ -57,9 +57,9 @@ pub:
 	sync_on_write bool
 }
 
-/// new_mmap_partition은 새 mmap 파티션 스토어를 생성합니다.
+/// new_mmap_partition creates a new mmap partition store.
 pub fn new_mmap_partition(config MmapPartitionConfig) !&MmapPartitionStore {
-	// 파티션 디렉토리 생성
+	// Create partition directory
 	partition_dir := '${config.base_dir}/${config.topic_name}/${config.partition}'
 	os.mkdir_all(partition_dir) or { return error('failed to create partition directory: ${err}') }
 
@@ -79,10 +79,10 @@ pub fn new_mmap_partition(config MmapPartitionConfig) !&MmapPartitionStore {
 		}
 	}
 
-	// 기존 세그먼트 로드 시도
+	// Attempt to load existing segments
 	store.load_existing_segments()!
 
-	// 활성 세그먼트가 없으면 새로 생성
+	// Create a new segment if no active segment exists
 	if store.active_segment == none {
 		store.create_new_segment()!
 	}
@@ -90,16 +90,16 @@ pub fn new_mmap_partition(config MmapPartitionConfig) !&MmapPartitionStore {
 	return store
 }
 
-/// load_existing_segments는 디스크에서 기존 세그먼트를 로드합니다.
+/// load_existing_segments loads existing segments from disk.
 fn (mut s MmapPartitionStore) load_existing_segments() ! {
 	files := os.ls(s.base_dir) or { return }
 
-	// .log 파일만 필터링하고 정렬
+	// Filter and sort .log files only
 	mut log_files := files.filter(it.ends_with('.log'))
 	log_files.sort()
 
 	for file in log_files {
-		// 파일명에서 base_offset 추출 (예: 00000000000000000000.log)
+		// Extract base_offset from filename (e.g. 00000000000000000000.log)
 		base_name := file.replace('.log', '')
 		base_offset := base_name.i64()
 
@@ -110,24 +110,24 @@ fn (mut s MmapPartitionStore) load_existing_segments() ! {
 
 		s.segments << &segment
 
-		// 첫 세그먼트의 base_offset 설정
+		// Set base_offset from the first segment
 		if s.segments.len == 1 {
 			s.base_offset = base_offset
 		}
 
-		// high_watermark 업데이트
+		// Update high_watermark
 		s.high_watermark = base_offset + segment.current_position()
 	}
 
-	// 마지막 세그먼트를 활성 세그먼트로 설정
+	// Set the last segment as the active segment
 	if s.segments.len > 0 {
 		s.active_segment = s.segments[s.segments.len - 1]
 	}
 }
 
-/// create_new_segment는 새 세그먼트를 생성합니다.
+/// create_new_segment creates a new segment.
 fn (mut s MmapPartitionStore) create_new_segment() ! {
-	// 새 세그먼트의 base_offset은 현재 high_watermark
+	// The base_offset of the new segment is the current high_watermark
 	base_offset := s.high_watermark
 
 	segment := io.LogSegmentMmap.create(s.base_dir, base_offset, s.segment_size) or {
@@ -138,8 +138,8 @@ fn (mut s MmapPartitionStore) create_new_segment() ! {
 	s.active_segment = s.segments[s.segments.len - 1]
 }
 
-/// append는 레코드를 파티션에 추가합니다.
-/// 반환값: (base_offset, records_written)
+/// append adds records to the partition.
+/// Returns: (base_offset, records_written)
 pub fn (mut s MmapPartitionStore) append(records [][]u8) !(i64, int) {
 	if records.len == 0 {
 		return s.high_watermark, 0
@@ -152,20 +152,20 @@ pub fn (mut s MmapPartitionStore) append(records [][]u8) !(i64, int) {
 	now := time.now()
 
 	for record in records {
-		// 레코드 프레임: length(4) + timestamp(8) + data
+		// Record frame: length(4) + timestamp(8) + data
 		record_frame := encode_record_frame(record, now.unix_milli())
 
-		// 세그먼트가 가득 찼으면 새 세그먼트 생성
+		// Create a new segment if the current one is full
 		if active.remaining_capacity() < record_frame.len {
 			active.flush() or {}
 			s.create_new_segment()!
 			active = s.active_segment or { return error('failed to create new segment') }
 		}
 
-		// 레코드 쓰기
+		// Write record
 		_ := active.append(record_frame) or { return error('failed to append record: ${err}') }
 
-		// 인덱스 업데이트
+		// Update index
 		current_offset := base_offset + written
 		s.maybe_add_index_entry(current_offset, s.segments.len - 1, active.current_position())
 
@@ -174,7 +174,7 @@ pub fn (mut s MmapPartitionStore) append(records [][]u8) !(i64, int) {
 
 	s.high_watermark = base_offset + written
 
-	// sync_on_write가 활성화되면 즉시 플러시
+	// Flush immediately if sync_on_write is enabled
 	if s.sync_on_write {
 		active.flush() or {}
 	}
@@ -182,13 +182,13 @@ pub fn (mut s MmapPartitionStore) append(records [][]u8) !(i64, int) {
 	return base_offset, written
 }
 
-/// read는 지정된 오프셋부터 레코드를 읽습니다.
+/// read reads records from the specified offset.
 pub fn (mut s MmapPartitionStore) read(offset i64, max_records int) ![][]u8 {
 	if offset < s.base_offset || offset >= s.high_watermark {
 		return [][]u8{}
 	}
 
-	// 인덱스에서 시작 위치 찾기
+	// Find the starting position from the index
 	segment_idx, position := s.find_position(offset)
 
 	if segment_idx < 0 || segment_idx >= s.segments.len {
@@ -200,7 +200,7 @@ pub fn (mut s MmapPartitionStore) read(offset i64, max_records int) ![][]u8 {
 	mut current_pos := position
 	mut current_offset := offset
 
-	// 여러 세그먼트에 걸쳐 읽기
+	// Read across multiple segments
 	for result.len < max_records && current_offset < s.high_watermark {
 		if current_seg_idx >= s.segments.len {
 			break
@@ -208,9 +208,9 @@ pub fn (mut s MmapPartitionStore) read(offset i64, max_records int) ![][]u8 {
 
 		mut segment := s.segments[current_seg_idx]
 
-		// 세그먼트 끝까지 읽기
+		// Read to the end of the segment
 		for result.len < max_records && current_pos < segment.current_position() {
-			// 레코드 프레임 읽기: length(4) + timestamp(8) + data
+			// Read record frame: length(4) + timestamp(8) + data
 			frame := segment.read(current_pos, 12) or { break }
 			if frame.len < 12 {
 				break
@@ -218,17 +218,17 @@ pub fn (mut s MmapPartitionStore) read(offset i64, max_records int) ![][]u8 {
 
 			record_len := int(u32(frame[0]) << 24 | u32(frame[1]) << 16 | u32(frame[2]) << 8 | u32(frame[3]))
 			if record_len <= 0 || record_len > 104857600 {
-				// 100MB 초과는 비정상
+				// More than 100MB is abnormal
 				break
 			}
 
-			// 전체 레코드 읽기
+			// Read the full record
 			full_frame := segment.read(current_pos, 12 + record_len) or { break }
 			if full_frame.len < 12 + record_len {
 				break
 			}
 
-			// 데이터 추출 (timestamp 건너뛰고)
+			// Extract data (skip timestamp)
 			record_data := full_frame[12..].clone()
 			result << record_data
 
@@ -236,7 +236,7 @@ pub fn (mut s MmapPartitionStore) read(offset i64, max_records int) ![][]u8 {
 			current_offset++
 		}
 
-		// 다음 세그먼트로 이동
+		// Move to the next segment
 		current_seg_idx++
 		current_pos = 0
 	}
@@ -244,9 +244,9 @@ pub fn (mut s MmapPartitionStore) read(offset i64, max_records int) ![][]u8 {
 	return result
 }
 
-/// find_position은 오프셋에 해당하는 세그먼트와 위치를 찾습니다.
+/// find_position finds the segment and position corresponding to an offset.
 fn (s &MmapPartitionStore) find_position(offset i64) (int, i64) {
-	// 인덱스에서 가장 가까운 엔트리 찾기
+	// Find the nearest entry in the index
 	mut best_entry := OffsetIndexEntry{
 		offset:      s.base_offset
 		segment_idx: 0
@@ -259,7 +259,7 @@ fn (s &MmapPartitionStore) find_position(offset i64) (int, i64) {
 		}
 	}
 
-	// 인덱스 엔트리에서 순차 스캔
+	// Sequential scan from the index entry
 	mut seg_idx := best_entry.segment_idx
 	mut pos := best_entry.position
 	mut current_offset := best_entry.offset
@@ -268,7 +268,7 @@ fn (s &MmapPartitionStore) find_position(offset i64) (int, i64) {
 		mut segment := s.segments[seg_idx]
 
 		for current_offset < offset && pos < segment.current_position() {
-			// 레코드 길이 읽기
+			// Read record length
 			frame := segment.read(pos, 4) or { break }
 			if frame.len < 4 {
 				break
@@ -292,7 +292,7 @@ fn (s &MmapPartitionStore) find_position(offset i64) (int, i64) {
 	return seg_idx, pos
 }
 
-/// maybe_add_index_entry는 인덱싱 간격에 따라 인덱스 엔트리를 추가합니다.
+/// maybe_add_index_entry adds an index entry based on the indexing interval.
 fn (mut s MmapPartitionStore) maybe_add_index_entry(offset i64, segment_idx int, position i64) {
 	if offset - s.index.last_indexed >= s.index.interval {
 		s.index.entries << OffsetIndexEntry{
@@ -305,24 +305,24 @@ fn (mut s MmapPartitionStore) maybe_add_index_entry(offset i64, segment_idx int,
 	}
 }
 
-/// get_base_offset는 기본 오프셋을 반환합니다.
+/// get_base_offset returns the base offset.
 pub fn (s &MmapPartitionStore) get_base_offset() i64 {
 	return s.base_offset
 }
 
-/// get_high_watermark는 최고 수위를 반환합니다.
+/// get_high_watermark returns the high watermark.
 pub fn (s &MmapPartitionStore) get_high_watermark() i64 {
 	return s.high_watermark
 }
 
-/// flush는 모든 세그먼트를 디스크에 플러시합니다.
+/// flush flushes all segments to disk.
 pub fn (mut s MmapPartitionStore) flush() ! {
 	for mut segment in s.segments {
 		segment.flush()!
 	}
 }
 
-/// close는 모든 세그먼트를 닫습니다.
+/// close closes all segments.
 pub fn (mut s MmapPartitionStore) close() ! {
 	for mut segment in s.segments {
 		segment.close()!
@@ -331,8 +331,8 @@ pub fn (mut s MmapPartitionStore) close() ! {
 	s.active_segment = none
 }
 
-/// encode_record_frame은 레코드를 프레임으로 인코딩합니다.
-/// 형식: length(4) + timestamp(8) + data
+/// encode_record_frame encodes a record into a frame.
+/// Format: length(4) + timestamp(8) + data
 fn encode_record_frame(data []u8, timestamp_ms i64) []u8 {
 	total_len := data.len
 	mut frame := []u8{len: 12 + total_len}
@@ -361,7 +361,7 @@ fn encode_record_frame(data []u8, timestamp_ms i64) []u8 {
 	return frame
 }
 
-/// MmapPartitionStats는 파티션 통계입니다.
+/// MmapPartitionStats holds partition statistics.
 pub struct MmapPartitionStats {
 pub:
 	segment_count  int
@@ -371,7 +371,7 @@ pub:
 	index_entries  int
 }
 
-/// get_stats는 파티션 통계를 반환합니다.
+/// get_stats returns partition statistics.
 pub fn (s &MmapPartitionStore) get_stats() MmapPartitionStats {
 	mut total_bytes := i64(0)
 	for segment in s.segments {

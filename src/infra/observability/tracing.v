@@ -1,12 +1,12 @@
-/// 인프라 레이어 - 분산 트레이싱 (OpenTelemetry 호환)
-/// 스팬 생성 및 트레이스 컨텍스트 전파
+/// Infrastructure layer - Distributed tracing (OpenTelemetry compatible)
+/// Span creation and trace context propagation
 module observability
 
 import time
 import rand
 import sync
 
-/// SpanKind는 스팬의 유형을 나타냅니다.
+/// SpanKind represents the type of a span.
 pub enum SpanKind {
 	internal
 	server
@@ -15,14 +15,14 @@ pub enum SpanKind {
 	consumer
 }
 
-/// SpanStatus는 스팬의 결과를 나타냅니다.
+/// SpanStatus represents the result of a span.
 pub enum SpanStatus {
 	unset
 	ok
 	error
 }
 
-/// SpanContext는 트레이스 식별 정보를 포함합니다.
+/// SpanContext contains trace identification information.
 pub struct SpanContext {
 pub:
 	trace_id    string
@@ -32,27 +32,27 @@ pub:
 	trace_state string
 }
 
-/// is_valid는 컨텍스트가 유효한지 확인합니다.
+/// is_valid checks whether the context is valid.
 pub fn (c SpanContext) is_valid() bool {
 	return c.trace_id.len == 32 && c.span_id.len == 16
 }
 
-/// is_sampled는 스팬이 기록되어야 하는지 확인합니다.
+/// is_sampled checks whether the span should be recorded.
 pub fn (c SpanContext) is_sampled() bool {
 	return (c.trace_flags & 0x01) != 0
 }
 
-/// SpanAttribute는 키-값 속성을 나타냅니다.
+/// SpanAttribute represents a key-value attribute.
 pub struct SpanAttribute {
 pub:
 	key   string
 	value SpanValue
 }
 
-/// SpanValue는 속성 값을 보유합니다.
+/// SpanValue holds an attribute value.
 pub type SpanValue = bool | f64 | i64 | string | []string
 
-/// 속성 생성자들
+/// Attribute constructors
 pub fn attr_string(key string, value string) SpanAttribute {
 	return SpanAttribute{
 		key:   key
@@ -60,6 +60,7 @@ pub fn attr_string(key string, value string) SpanAttribute {
 	}
 }
 
+/// attr_int creates an integer span attribute.
 pub fn attr_int(key string, value i64) SpanAttribute {
 	return SpanAttribute{
 		key:   key
@@ -67,6 +68,7 @@ pub fn attr_int(key string, value i64) SpanAttribute {
 	}
 }
 
+/// attr_float creates a float span attribute.
 pub fn attr_float(key string, value f64) SpanAttribute {
 	return SpanAttribute{
 		key:   key
@@ -74,6 +76,7 @@ pub fn attr_float(key string, value f64) SpanAttribute {
 	}
 }
 
+/// attr_bool creates a boolean span attribute.
 pub fn attr_bool(key string, value bool) SpanAttribute {
 	return SpanAttribute{
 		key:   key
@@ -81,7 +84,7 @@ pub fn attr_bool(key string, value bool) SpanAttribute {
 	}
 }
 
-/// SpanEvent는 스팬 내의 시간 기록 이벤트를 나타냅니다.
+/// SpanEvent represents a timestamped event within a span.
 pub struct SpanEvent {
 pub:
 	name       string
@@ -89,14 +92,14 @@ pub:
 	attributes []SpanAttribute
 }
 
-/// SpanLink는 다른 스팬에 대한 링크를 나타냅니다.
+/// SpanLink represents a link to another span.
 pub struct SpanLink {
 pub:
 	context    SpanContext
 	attributes []SpanAttribute
 }
 
-/// Span은 트레이스 내의 단일 작업을 나타냅니다.
+/// Span represents a single operation within a trace.
 pub struct Span {
 pub:
 	name       string
@@ -113,12 +116,12 @@ pub mut:
 	ended      bool
 }
 
-/// set_attribute는 속성을 추가하거나 업데이트합니다.
+/// set_attribute adds or updates an attribute.
 pub fn (mut s Span) set_attribute(attr SpanAttribute) {
 	if s.ended {
 		return
 	}
-	// 존재하면 교체, 그렇지 않으면 추가
+	// Replace if exists, otherwise add
 	for i, a in s.attributes {
 		if a.key == attr.key {
 			s.attributes[i] = attr
@@ -128,14 +131,14 @@ pub fn (mut s Span) set_attribute(attr SpanAttribute) {
 	s.attributes << attr
 }
 
-/// set_attributes는 여러 속성을 추가합니다.
+/// set_attributes adds multiple attributes.
 pub fn (mut s Span) set_attributes(attrs ...SpanAttribute) {
 	for attr in attrs {
 		s.set_attribute(attr)
 	}
 }
 
-/// add_event는 시간 기록 이벤트를 추가합니다.
+/// add_event adds a timestamped event.
 pub fn (mut s Span) add_event(name string, attrs ...SpanAttribute) {
 	if s.ended {
 		return
@@ -147,7 +150,7 @@ pub fn (mut s Span) add_event(name string, attrs ...SpanAttribute) {
 	}
 }
 
-/// set_status는 스팬 상태를 설정합니다.
+/// set_status sets the span status.
 pub fn (mut s Span) set_status(status SpanStatus, msg string) {
 	if s.ended {
 		return
@@ -156,7 +159,7 @@ pub fn (mut s Span) set_status(status SpanStatus, msg string) {
 	s.status_msg = msg
 }
 
-/// record_error는 에러를 기록하고 상태를 설정합니다.
+/// record_error records an error and sets the status.
 pub fn (mut s Span) record_error(err IError) {
 	if s.ended {
 		return
@@ -166,7 +169,7 @@ pub fn (mut s Span) record_error(err IError) {
 	s.set_status(.error, err.str())
 }
 
-/// end는 스팬을 종료합니다.
+/// end finalizes the span.
 pub fn (mut s Span) end() {
 	if s.ended {
 		return
@@ -175,7 +178,7 @@ pub fn (mut s Span) end() {
 	s.ended = true
 }
 
-/// duration은 스팬 지속 시간을 반환합니다.
+/// duration returns the span duration.
 pub fn (s Span) duration() time.Duration {
 	if s.ended {
 		return s.end_time - s.start_time
@@ -183,9 +186,9 @@ pub fn (s Span) duration() time.Duration {
 	return time.now() - s.start_time
 }
 
-// 트레이서
+// Tracer
 
-/// TracerConfig는 트레이서 설정을 보유합니다.
+/// TracerConfig holds tracer configuration.
 pub struct TracerConfig {
 pub:
 	service_name    string  = 'datacore'
@@ -194,7 +197,7 @@ pub:
 	sampler         Sampler = AlwaysOnSampler{}
 }
 
-/// Tracer는 트레이싱 작업을 위한 스팬을 생성합니다.
+/// Tracer creates spans for tracing operations.
 pub struct Tracer {
 pub:
 	config TracerConfig
@@ -203,7 +206,7 @@ mut:
 	lock  sync.Mutex
 }
 
-/// new_tracer는 새 트레이서를 생성합니다.
+/// new_tracer creates a new tracer.
 pub fn new_tracer(config TracerConfig) &Tracer {
 	return &Tracer{
 		config: config
@@ -211,19 +214,19 @@ pub fn new_tracer(config TracerConfig) &Tracer {
 	}
 }
 
-/// new_default_tracer는 기본 설정으로 트레이서를 생성합니다.
+/// new_default_tracer creates a tracer with default configuration.
 pub fn new_default_tracer() &Tracer {
 	return new_tracer(TracerConfig{})
 }
 
-/// start_span은 새 스팬을 생성하고 시작합니다.
+/// start_span creates and starts a new span.
 pub fn (mut t Tracer) start_span(name string, opts ...SpanOption) &Span {
 	mut span_opts := SpanOptions{}
 	for opt in opts {
 		opt.apply(mut span_opts)
 	}
 
-	// 컨텍스트 생성 또는 파생
+	// Create or derive context
 	mut ctx := SpanContext{}
 	if span_opts.parent_ctx.is_valid() {
 		ctx = SpanContext{
@@ -256,12 +259,12 @@ pub fn (mut t Tracer) start_span(name string, opts ...SpanOption) &Span {
 	return span
 }
 
-/// end_span은 스팬을 종료하고 잠재적으로 내보냅니다.
+/// end_span finalizes the span and potentially exports it.
 pub fn (mut t Tracer) end_span(mut span Span) {
 	span.end()
 }
 
-// 스팬 옵션
+// Span options
 
 struct SpanOptions {
 mut:
@@ -272,16 +275,17 @@ mut:
 	links      []SpanLink
 }
 
-/// SpanOption은 스팬 설정을 위한 인터페이스입니다.
+/// SpanOption is an interface for configuring spans.
 pub interface SpanOption {
 	apply(mut opts SpanOptions)
 }
 
-/// WithParent는 부모 스팬 컨텍스트를 설정합니다.
+/// WithParent sets the parent span context.
 struct WithParent {
 	ctx SpanContext
 }
 
+/// with_parent creates a SpanOption that sets the parent context.
 pub fn with_parent(ctx SpanContext) SpanOption {
 	return WithParent{
 		ctx: ctx
@@ -292,11 +296,12 @@ fn (w WithParent) apply(mut opts SpanOptions) {
 	opts.parent_ctx = w.ctx
 }
 
-/// WithKind는 스팬 종류를 설정합니다.
+/// WithKind sets the span kind.
 struct WithKind {
 	kind SpanKind
 }
 
+/// with_kind creates a SpanOption that sets the span kind.
 pub fn with_kind(kind SpanKind) SpanOption {
 	return WithKind{
 		kind: kind
@@ -307,11 +312,12 @@ fn (w WithKind) apply(mut opts SpanOptions) {
 	opts.kind = w.kind
 }
 
-/// WithAttributes는 초기 속성을 설정합니다.
+/// WithAttributes sets initial attributes.
 struct WithAttributes {
 	attrs []SpanAttribute
 }
 
+/// with_attributes creates a SpanOption that sets initial attributes.
 pub fn with_attributes(attrs ...SpanAttribute) SpanOption {
 	return WithAttributes{
 		attrs: attrs
@@ -322,11 +328,12 @@ fn (w WithAttributes) apply(mut opts SpanOptions) {
 	opts.attributes = w.attrs
 }
 
-/// WithLinks는 스팬 링크를 설정합니다.
+/// WithLinks sets span links.
 struct WithLinks {
 	links []SpanLink
 }
 
+/// with_links creates a SpanOption that sets span links.
 pub fn with_links(links ...SpanLink) SpanOption {
 	return WithLinks{
 		links: links
@@ -337,32 +344,35 @@ fn (w WithLinks) apply(mut opts SpanOptions) {
 	opts.links = w.links
 }
 
-// 샘플러
+// Samplers
 
-/// Sampler는 스팬이 기록되어야 하는지 결정합니다.
+/// Sampler decides whether a span should be recorded.
 pub interface Sampler {
 	should_sample() bool
 }
 
-/// AlwaysOnSampler는 모든 스팬을 샘플링합니다.
+/// AlwaysOnSampler samples all spans.
 pub struct AlwaysOnSampler {}
 
+/// should_sample returns whether to sample the span.
 pub fn (s AlwaysOnSampler) should_sample() bool {
 	return true
 }
 
-/// AlwaysOffSampler는 스팬을 샘플링하지 않습니다.
+/// AlwaysOffSampler never samples spans.
 pub struct AlwaysOffSampler {}
 
+/// should_sample returns whether to sample the span.
 pub fn (s AlwaysOffSampler) should_sample() bool {
 	return false
 }
 
-/// RatioSampler는 비율에 따라 샘플링합니다.
+/// RatioSampler samples spans according to a ratio.
 pub struct RatioSampler {
 	ratio f64
 }
 
+/// new_ratio_sampler creates a RatioSampler with the given ratio.
 pub fn new_ratio_sampler(ratio f64) RatioSampler {
 	return RatioSampler{
 		ratio: if ratio < 0 {
@@ -375,13 +385,14 @@ pub fn new_ratio_sampler(ratio f64) RatioSampler {
 	}
 }
 
+/// should_sample returns whether to sample the span.
 pub fn (s RatioSampler) should_sample() bool {
 	return rand.f64() < s.ratio
 }
 
-// ID 생성
+// ID generation
 
-/// 트레이스 ID를 생성합니다.
+/// Generates a trace ID.
 fn generate_trace_id() string {
 	mut id := []u8{len: 16}
 	for i in 0 .. 16 {
@@ -390,7 +401,7 @@ fn generate_trace_id() string {
 	return id.hex()
 }
 
-/// 스팬 ID를 생성합니다.
+/// Generates a span ID.
 fn generate_span_id() string {
 	mut id := []u8{len: 8}
 	for i in 0 .. 8 {
@@ -399,14 +410,14 @@ fn generate_span_id() string {
 	return id.hex()
 }
 
-// 컨텍스트 전파 (W3C Trace Context)
+// Context propagation (W3C Trace Context)
 
-/// extract_context는 헤더에서 트레이스 컨텍스트를 추출합니다.
+/// extract_context extracts the trace context from headers.
 pub fn extract_context(headers map[string]string) SpanContext {
 	traceparent := headers['traceparent'] or { return SpanContext{} }
 
-	// 형식: {version}-{trace-id}-{parent-id}-{trace-flags}
-	// 예: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+	// Format: {version}-{trace-id}-{parent-id}-{trace-flags}
+	// Example: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
 	parts := traceparent.split('-')
 	if parts.len != 4 {
 		return SpanContext{}
@@ -426,13 +437,13 @@ pub fn extract_context(headers map[string]string) SpanContext {
 	}
 }
 
-/// inject_context는 트레이스 컨텍스트를 헤더에 주입합니다.
+/// inject_context injects the trace context into headers.
 pub fn inject_context(ctx SpanContext, mut headers map[string]string) {
 	if !ctx.is_valid() {
 		return
 	}
 
-	// W3C Trace Context 형식
+	// W3C Trace Context format
 	traceparent := '00-${ctx.trace_id}-${ctx.span_id}-${ctx.trace_flags:02x}'
 	headers['traceparent'] = traceparent
 
@@ -441,16 +452,16 @@ pub fn inject_context(ctx SpanContext, mut headers map[string]string) {
 	}
 }
 
-// 스팬 내보내기 (OTLP 유사 JSON 형식)
+// Span export (OTLP-like JSON format)
 
-/// export_span_json은 스팬을 JSON으로 내보냅니다.
+/// export_span_json exports a span as JSON.
 pub fn export_span_json(span &Span, tracer &Tracer) string {
 	mut sb := []u8{}
 	sb << '{"resourceSpans":[{"resource":{"attributes":['.bytes()
 	sb << '{"key":"service.name","value":{"stringValue":"${tracer.config.service_name}"}}'.bytes()
 	sb << ']},"scopeSpans":[{"spans":['.bytes()
 
-	// 스팬
+	// Span
 	sb << '{"traceId":"${span.context.trace_id}"'.bytes()
 	sb << ',"spanId":"${span.context.span_id}"'.bytes()
 	if span.context.parent_id.len > 0 {
@@ -461,7 +472,7 @@ pub fn export_span_json(span &Span, tracer &Tracer) string {
 	sb << ',"startTimeUnixNano":${span.start_time.unix_nano()}'.bytes()
 	sb << ',"endTimeUnixNano":${span.end_time.unix_nano()}'.bytes()
 
-	// 속성
+	// Attributes
 	sb << ',"attributes":['.bytes()
 	for i, attr in span.attributes {
 		if i > 0 {
@@ -473,7 +484,7 @@ pub fn export_span_json(span &Span, tracer &Tracer) string {
 	}
 	sb << ']'.bytes()
 
-	// 이벤트
+	// Events
 	sb << ',"events":['.bytes()
 	for i, event in span.events {
 		if i > 0 {
@@ -494,7 +505,7 @@ pub fn export_span_json(span &Span, tracer &Tracer) string {
 	return sb.bytestr()
 }
 
-/// 스팬 값을 포맷팅합니다.
+/// Formats a span value.
 fn format_span_value(v SpanValue) string {
 	return match v {
 		string {
@@ -519,9 +530,9 @@ fn format_span_value(v SpanValue) string {
 	}
 }
 
-// 편의 함수
+// Convenience functions
 
-/// trace_operation은 동기 작업을 트레이싱합니다.
+/// trace_operation traces a synchronous operation.
 pub fn trace_operation[T](mut tracer Tracer, name string, op fn () !T) !T {
 	mut span := tracer.start_span(name)
 	defer {

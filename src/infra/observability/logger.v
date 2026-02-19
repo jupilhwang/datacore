@@ -1,13 +1,13 @@
-/// 인프라 레이어 - 구조화된 로깅 (OpenTelemetry 호환)
-/// JSON 형식 로깅과 컨텍스트 전파 및 OTLP 내보내기 지원
+/// Infrastructure layer - Structured logging (OpenTelemetry compatible)
+/// Supports JSON format logging, context propagation, and OTLP export
 module observability
 
 import sync
 import time
 
-// 로그 레벨
+// Log levels
 
-/// LogLevel은 로그 항목의 심각도를 나타냅니다.
+/// LogLevel represents the severity of a log entry.
 pub enum LogLevel {
 	trace = 0
 	debug = 1
@@ -42,9 +42,9 @@ pub fn log_level_from_string(s string) LogLevel {
 	}
 }
 
-// 로그 출력 대상
+// Log output destinations
 
-/// LogOutput은 로그가 전송되는 위치를 결정합니다.
+/// LogOutput determines where logs are sent.
 pub enum LogOutput {
 	stdout
 	otel
@@ -63,16 +63,16 @@ pub fn log_output_from_string(s string) LogOutput {
 	}
 }
 
-// 로그 필드 (구조화된 로깅)
+// Log fields (structured logging)
 
-/// LogField는 구조화된 로깅을 위한 키-값 쌍을 나타냅니다.
+/// LogField represents a key-value pair for structured logging.
 pub struct LogField {
 pub:
 	key   string
 	value string
 }
 
-/// 필드 생성자 - 비활성화된 레벨에 대해 제로 할당
+/// Field constructors - zero allocation for disabled levels
 @[inline]
 pub fn field_string(key string, value string) LogField {
 	return LogField{
@@ -154,9 +154,9 @@ pub fn field_bytes(key string, size i64) LogField {
 	}
 }
 
-// 로그 컨텍스트 (트레이스 전파)
+// Log context (trace propagation)
 
-/// LogContext는 분산 트레이싱을 위한 트레이스 컨텍스트를 보유합니다.
+/// LogContext holds the trace context for distributed tracing.
 pub struct LogContext {
 pub:
 	trace_id  string
@@ -166,9 +166,9 @@ pub:
 	instance  string
 }
 
-// 로그 항목
+// Log entry
 
-/// LogEntry는 단일 로그 항목을 나타냅니다.
+/// LogEntry represents a single log entry.
 pub struct LogEntry {
 pub:
 	timestamp   time.Time
@@ -179,9 +179,9 @@ pub:
 	context     LogContext
 }
 
-// 출력 형식
+// Output format
 
-/// OutputFormat은 로그 형식을 결정합니다.
+/// OutputFormat determines the log format.
 pub enum OutputFormat {
 	json
 	text
@@ -196,9 +196,9 @@ pub fn output_format_from_string(s string) OutputFormat {
 	}
 }
 
-// 로거 설정
+// Logger configuration
 
-/// LoggerConfig는 로거 설정을 보유합니다.
+/// LoggerConfig holds logger configuration.
 pub struct LoggerConfig {
 pub:
 	name          string       = 'datacore'
@@ -210,9 +210,9 @@ pub:
 	otlp_endpoint string
 }
 
-// 로거 (스레드 안전)
+// Logger (thread-safe)
 
-/// Logger는 구조화된 로깅 기능을 제공합니다.
+/// Logger provides structured logging functionality.
 pub struct Logger {
 pub:
 	name          string
@@ -294,9 +294,9 @@ pub fn (l &Logger) with_fields(fields ...LogField) &Logger {
 	}
 }
 
-// 로깅 메서드 (성능을 위한 조기 종료)
+// Logging methods (early exit for performance)
 
-/// should_log는 레벨이 로깅되어야 하는지 확인합니다 (성능을 위해 인라인).
+/// should_log checks whether the level should be logged (inlined for performance).
 @[inline]
 pub fn (l &Logger) should_log(level LogLevel) bool {
 	return int(level) >= int(l.level)
@@ -304,12 +304,12 @@ pub fn (l &Logger) should_log(level LogLevel) bool {
 
 /// log(level LogLevel, msg string, fields ...LogField) - writes a log entry with the specified level, message, and optional fields
 pub fn (mut l Logger) log(level LogLevel, msg string, fields ...LogField) {
-	// 비활성화된 레벨에 대한 조기 종료 (제로 오버헤드)
+	// Early exit for disabled levels (zero overhead)
 	if !l.should_log(level) {
 		return
 	}
 
-	// 출력이 비활성화된 경우 조기 종료
+	// Early exit if output is disabled
 	if l.output == .none {
 		return
 	}
@@ -326,7 +326,7 @@ pub fn (mut l Logger) log(level LogLevel, msg string, fields ...LogField) {
 		context:     l.context
 	}
 
-	// stdout/stderr로 출력
+	// Output to stdout/stderr
 	if l.output == .stdout || l.output == .both {
 		output := if l.format == .json {
 			format_entry_json(entry)
@@ -334,7 +334,7 @@ pub fn (mut l Logger) log(level LogLevel, msg string, fields ...LogField) {
 			format_entry_text(entry)
 		}
 
-		// stdout에 쓰기 (에러는 stderr로)
+		// Write to stdout (errors go to stderr)
 		if int(level) >= int(LogLevel.error) {
 			eprint(output)
 		} else {
@@ -342,14 +342,14 @@ pub fn (mut l Logger) log(level LogLevel, msg string, fields ...LogField) {
 		}
 	}
 
-	// OTLP 내보내기용 버퍼링
+	// Buffering for OTLP export
 	if l.output == .otel || l.output == .both {
 		l.buffer_lock.@lock()
 		l.otlp_buffer << entry
 		l.buffer_lock.unlock()
 	}
 
-	// Fatal 로그는 종료해야 함
+	// Fatal logs must exit
 	if level == .fatal {
 		l.flush()
 		exit(1)
@@ -415,20 +415,20 @@ pub fn (mut l Logger) flush() {
 	l.otlp_buffer.clear()
 	l.buffer_lock.unlock()
 
-	// OTLP로 내보내기 (비동기)
+	// Export to OTLP (async)
 	spawn export_logs_to_otlp(l.otlp_endpoint, l.context.service, entries)
 }
 
-// 전역 로거 (구조체 홀더를 사용한 싱글톤 패턴)
+// Global logger (singleton pattern using struct holder)
 
-/// LoggerHolder는 싱글톤 로거 인스턴스를 보유합니다.
+/// LoggerHolder holds the singleton logger instance.
 struct LoggerHolder {
 mut:
 	logger &Logger = unsafe { nil }
 	lock   sync.Mutex
 }
 
-/// 전역 홀더 인스턴스 (인라인으로 초기화됨)
+/// Global holder instance (initialized inline)
 const logger_holder = &LoggerHolder{}
 
 /// init_global_logger(config LoggerConfig) - initializes the global logger instance (call once at startup)
@@ -439,13 +439,13 @@ pub fn init_global_logger(config LoggerConfig) {
 	holder.logger = new_logger(config)
 }
 
-/// get_logger는 전역 로거 인스턴스를 반환합니다.
-/// 초기화되지 않은 경우 기본 로거를 반환합니다.
+/// get_logger returns the global logger instance.
+/// Returns the default logger if not initialized.
 @[inline]
 pub fn get_logger() &Logger {
 	mut holder := unsafe { logger_holder }
 	if holder.logger == unsafe { nil } {
-		// 기본값으로 지연 초기화
+		// Lazy initialization with defaults
 		holder.lock.@lock()
 		if holder.logger == unsafe { nil } {
 			holder.logger = new_default_logger()
@@ -455,14 +455,15 @@ pub fn get_logger() &Logger {
 	return holder.logger
 }
 
-/// get_named_logger는 특정 이름을 가진 로거를 반환합니다 (하위 컴포넌트용).
+/// get_named_logger returns a logger with a specific name (for sub-components).
 @[inline]
 pub fn get_named_logger(name string) &Logger {
 	return get_logger().with_name(name)
 }
 
-// 빠른 로깅 함수 (전역 로거 사용)
+// Quick logging functions (using global logger)
 
+/// log_trace writes a TRACE level log using the global logger.
 @[inline]
 pub fn log_trace(msg string, fields ...LogField) {
 	mut logger := get_logger()
@@ -504,9 +505,9 @@ pub fn log_fatal(msg string, fields ...LogField) {
 	logger.fatal(msg, ...fields)
 }
 
-// 포맷팅 함수
+// Formatting functions
 
-/// JSON 문자열 이스케이프 처리
+/// Escapes a JSON string
 fn escape_json_string(s string) string {
 	mut result := []u8{cap: s.len + 10}
 	for c in s.bytes() {
@@ -539,7 +540,7 @@ fn escape_json_string(s string) string {
 	return result.bytestr()
 }
 
-/// 로그 항목을 JSON 형식으로 포맷팅합니다.
+/// Formats a log entry in JSON format.
 fn format_entry_json(entry LogEntry) string {
 	mut sb := []u8{cap: 256}
 	sb << '{"timestamp":"'.bytes()
@@ -552,7 +553,7 @@ fn format_entry_json(entry LogEntry) string {
 	sb << escape_json_string(entry.message).bytes()
 	sb << '"'.bytes()
 
-	// 트레이스 컨텍스트가 있으면 추가
+	// Add trace context if present
 	if entry.context.trace_id.len > 0 {
 		sb << ',"trace_id":"'.bytes()
 		sb << entry.context.trace_id.bytes()
@@ -569,7 +570,7 @@ fn format_entry_json(entry LogEntry) string {
 		sb << '"'.bytes()
 	}
 
-	// 필드 추가
+	// Add fields
 	for f in entry.fields {
 		sb << ',"'.bytes()
 		sb << escape_json_string(f.key).bytes()
@@ -582,14 +583,14 @@ fn format_entry_json(entry LogEntry) string {
 	return sb.bytestr()
 }
 
-/// 로그 항목을 텍스트 형식으로 포맷팅합니다.
+/// Formats a log entry in text format.
 fn format_entry_text(entry LogEntry) string {
 	mut sb := []u8{cap: 256}
 
 	sb << entry.timestamp.format_ss().bytes()
 	sb << ' '.bytes()
 
-	// 색상이 있는 레벨
+	// Level with color
 	sb << get_level_color(entry.level).bytes()
 	sb << '['.bytes()
 	sb << entry.level.str().bytes()
@@ -597,15 +598,15 @@ fn format_entry_text(entry LogEntry) string {
 	sb << '\x1b[0m'.bytes()
 	sb << ' '.bytes()
 
-	// 로거 이름
+	// Logger name
 	sb << '['.bytes()
 	sb << entry.logger_name.bytes()
 	sb << '] '.bytes()
 
-	// 메시지
+	// Message
 	sb << entry.message.bytes()
 
-	// 필드
+	// Fields
 	if entry.fields.len > 0 {
 		sb << ' |'.bytes()
 		for f in entry.fields {
@@ -616,7 +617,7 @@ fn format_entry_text(entry LogEntry) string {
 		}
 	}
 
-	// 트레이스 컨텍스트
+	// Trace context
 	if entry.context.trace_id.len > 0 {
 		sb << ' trace_id='.bytes()
 		sb << entry.context.trace_id.bytes()
@@ -626,7 +627,7 @@ fn format_entry_text(entry LogEntry) string {
 	return sb.bytestr()
 }
 
-/// 로그 레벨에 따른 색상 코드를 반환합니다.
+/// Returns the ANSI color code for a log level.
 fn get_level_color(level LogLevel) string {
 	return match level {
 		.trace { '\x1b[90m' }
@@ -638,23 +639,23 @@ fn get_level_color(level LogLevel) string {
 	}
 }
 
-// OTLP 로그 내보내기 (OpenTelemetry Protocol)
+// OTLP log export (OpenTelemetry Protocol)
 
-/// export_logs_to_otlp는 로그 항목을 OTLP 엔드포인트로 내보냅니다.
+/// export_logs_to_otlp exports log entries to the OTLP endpoint.
 fn export_logs_to_otlp(endpoint string, service_name string, entries []LogEntry) {
 	if entries.len == 0 || endpoint == '' {
 		return
 	}
 
-	// OTLP JSON 페이로드 빌드
+	// Build OTLP JSON payload
 	payload := build_otlp_logs_payload(service_name, entries)
 
-	// OTLP 엔드포인트로 HTTP POST 전송
-	// 참고: 현재는 간단한 HTTP 사용, 더 나은 성능을 위해 gRPC 사용 가능
+	// Send HTTP POST to OTLP endpoint
+	// Note: Currently using simple HTTP; gRPC can be used for better performance
 	send_otlp_http(endpoint, payload)
 }
 
-/// OTLP 로그 페이로드를 빌드합니다.
+/// Builds the OTLP logs payload.
 fn build_otlp_logs_payload(service_name string, entries []LogEntry) string {
 	mut sb := []u8{cap: 1024}
 	sb << '{"resourceLogs":[{"resource":{"attributes":['.bytes()
@@ -672,9 +673,9 @@ fn build_otlp_logs_payload(service_name string, entries []LogEntry) string {
 	return sb.bytestr()
 }
 
-/// 단일 OTLP 로그 레코드를 빌드합니다.
+/// Builds a single OTLP log record.
 fn build_otlp_log_record(entry LogEntry) string {
-	// LogLevel을 OTLP 심각도 번호로 매핑
+	// Map LogLevel to OTLP severity number
 	severity_number := match entry.level {
 		.trace { 1 }
 		.debug { 5 }
@@ -690,7 +691,7 @@ fn build_otlp_log_record(entry LogEntry) string {
 	sb << ',"severityText":"${entry.level.str()}"'.bytes()
 	sb << ',"body":{"stringValue":"${escape_json_string(entry.message)}"}'.bytes()
 
-	// 트레이스 컨텍스트 추가
+	// Add trace context
 	if entry.context.trace_id.len > 0 {
 		sb << ',"traceId":"${entry.context.trace_id}"'.bytes()
 	}
@@ -698,7 +699,7 @@ fn build_otlp_log_record(entry LogEntry) string {
 		sb << ',"spanId":"${entry.context.span_id}"'.bytes()
 	}
 
-	// 속성 추가
+	// Add attributes
 	sb << ',"attributes":['.bytes()
 	sb << '{"key":"logger","value":{"stringValue":"${escape_json_string(entry.logger_name)}"}}'.bytes()
 	for f in entry.fields {
@@ -709,23 +710,23 @@ fn build_otlp_log_record(entry LogEntry) string {
 	return sb.bytestr()
 }
 
-/// OTLP HTTP 전송 함수
+/// OTLP HTTP transport function
 fn send_otlp_http(endpoint string, payload string) {
-	// V의 net.http를 사용한 간단한 HTTP POST
-	// 프로덕션에서는 연결 풀링과 재시도 고려
+	// Simple HTTP POST using V's net.http
+	// Consider connection pooling and retry in production
 	$if !windows {
-		// 간단함을 위해 curl 사용 (V의 크로스 플랫폼 HTTP 클라이언트에 제한이 있음)
-		// 이것은 fire-and-forget 비동기 호출
+		// Using curl for simplicity (V's cross-platform HTTP client has limitations)
+		// This is a fire-and-forget async call
 		_ := $env('PATH')
 	}
 
-	// 현재는 간단한 접근 방식 사용
-	// TODO: 재시도가 있는 적절한 HTTP 클라이언트 구현
+	// Using simple approach for now
+	// TODO: Implement proper HTTP client with retry
 	_ = endpoint
 	_ = payload
 }
 
-// 유틸리티: 로그 레벨 심각도 매핑
+// Utility: log level severity mapping
 
 /// severity_to_level(severity int) LogLevel - converts an OTLP severity number to a LogLevel
 pub fn severity_to_level(severity int) LogLevel {

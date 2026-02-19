@@ -1,47 +1,47 @@
-// 분산 락을 사용하여 컨트롤러 선출을 관리
-// v0.28.0: 멀티 브로커 클러스터를 위한 리더 선출 구현
+// Manages controller election using distributed locks
+// v0.28.0: Leader election implementation for multi-broker clusters
 module cluster
 
 import service.port
 import sync
 import time
 
-// 컨트롤러 선출 상수
+// Controller Election Constants
 
-// 컨트롤러 선출을 위한 락 이름
+// Lock name for controller election
 const controller_lock_name = 'controller-election'
 
-// 컨트롤러 선출 락 TTL (밀리초)
+// Controller election lock TTL (milliseconds)
 const controller_lock_ttl_ms = i64(30000)
 
-// 컨트롤러 갱신 주기 (TTL보다 짧아야 함)
+// Controller refresh interval (must be shorter than TTL)
 const controller_refresh_interval_ms = 10000
 
-// 컨트롤러 선출기
+// Controller Elector
 
-/// ControllerElector는 멀티 브로커 모드에서 컨트롤러 선출을 관리한다
+/// ControllerElector manages controller election in multi-broker mode
 pub struct ControllerElector {
 	broker_id i32
 mut:
-	// 분산 락을 위한 클러스터 메타데이터 포트
+	// Cluster metadata port for distributed locks
 	metadata_port ?port.ClusterMetadataPort
-	// 현재 컨트롤러 상태
+	// Current controller state
 	is_controller bool
 	controller_id i32
-	// 락 상태
+	// Lock state
 	lock_acquired bool
 	last_refresh  i64
-	// 스레드 안전성
+	// Thread safety
 	lock sync.RwMutex
-	// 백그라운드 워커 제어
+	// Background worker control
 	running bool
-	// 콜백 함수들
+	// Callback functions
 	on_become_controller  ?fn ()
 	on_lose_controller    ?fn ()
 	on_controller_changed ?fn (i32)
 }
 
-/// ControllerElectorConfig는 컨트롤러 선출을 위한 설정을 담는다
+/// ControllerElectorConfig holds configuration for controller election
 pub struct ControllerElectorConfig {
 pub:
 	broker_id           i32
@@ -49,7 +49,7 @@ pub:
 	refresh_interval_ms int = controller_refresh_interval_ms
 }
 
-/// new_controller_elector는 새로운 컨트롤러 선출기를 생성한다
+/// new_controller_elector creates a new controller elector
 pub fn new_controller_elector(config ControllerElectorConfig, metadata_port ?port.ClusterMetadataPort) &ControllerElector {
 	return &ControllerElector{
 		broker_id:     config.broker_id
@@ -61,20 +61,20 @@ pub fn new_controller_elector(config ControllerElectorConfig, metadata_port ?por
 	}
 }
 
-// 선출 작업
+// Election Operations
 
-/// try_become_controller는 컨트롤러가 되기를 시도한다
-/// 이 브로커가 컨트롤러가 되면 true를 반환한다
+/// try_become_controller attempts to become the controller
+/// Returns true if this broker becomes the controller
 pub fn (mut e ControllerElector) try_become_controller() !bool {
 	e.lock.@lock()
 	defer { e.lock.unlock() }
 
-	// 이미 컨트롤러라면 true 반환
+	// Return true if already controller
 	if e.is_controller && e.lock_acquired {
 		return true
 	}
 
-	// 멀티 브로커 선출을 위해 분산 스토리지가 필요함
+	// Distributed storage required for multi-broker election
 	if mut mp := e.metadata_port {
 		holder_id := 'broker-${e.broker_id}'
 		acquired := mp.try_acquire_lock(controller_lock_name, holder_id, controller_lock_ttl_ms)!
@@ -85,7 +85,7 @@ pub fn (mut e ControllerElector) try_become_controller() !bool {
 			e.controller_id = e.broker_id
 			e.last_refresh = time.now().unix_milli()
 
-			// 콜백 트리거
+			// Trigger callback
 			if callback := e.on_become_controller {
 				spawn callback()
 			}
@@ -93,20 +93,20 @@ pub fn (mut e ControllerElector) try_become_controller() !bool {
 			println('[Controller] Broker ${e.broker_id} became controller')
 			return true
 		} else {
-			// 다른 브로커가 컨트롤러임 - 누구인지 확인 시도
+			// Another broker is the controller - try to identify who
 			e.is_controller = false
 			e.lock_acquired = false
 			return false
 		}
 	}
 
-	// 단일 브로커 모드 - 항상 컨트롤러임
+	// Single-broker mode - always the controller
 	e.is_controller = true
 	e.controller_id = e.broker_id
 	return true
 }
 
-/// refresh_controller_lock은 컨트롤러 락을 보유하고 있다면 갱신한다
+/// refresh_controller_lock refreshes the controller lock if held
 pub fn (mut e ControllerElector) refresh_controller_lock() !bool {
 	e.lock.@lock()
 	defer { e.lock.unlock() }
@@ -123,17 +123,17 @@ pub fn (mut e ControllerElector) refresh_controller_lock() !bool {
 			e.last_refresh = time.now().unix_milli()
 			return true
 		} else {
-			// 락을 잃음
+			// Lock lost
 			e.lose_controller_internal()
 			return false
 		}
 	}
 
-	// 단일 브로커 모드 - 항상 성공
+	// Single-broker mode - always succeeds
 	return true
 }
 
-/// resign_controller는 자발적으로 컨트롤러 역할을 포기한다
+/// resign_controller voluntarily gives up the controller role
 pub fn (mut e ControllerElector) resign_controller() ! {
 	e.lock.@lock()
 	defer { e.lock.unlock() }
@@ -151,7 +151,7 @@ pub fn (mut e ControllerElector) resign_controller() ! {
 	println('[Controller] Broker ${e.broker_id} resigned as controller')
 }
 
-/// lose_controller_internal은 컨트롤러 상태 상실을 처리한다 (락을 보유한 상태에서 호출해야 함)
+/// lose_controller_internal handles loss of controller state (must be called while holding lock)
 fn (mut e ControllerElector) lose_controller_internal() {
 	was_controller := e.is_controller
 	e.is_controller = false
@@ -165,52 +165,52 @@ fn (mut e ControllerElector) lose_controller_internal() {
 	}
 }
 
-// 조회 작업
+// Query Operations
 
-/// is_controller는 이 브로커가 컨트롤러인지 반환한다
+/// is_controller returns whether this broker is the controller
 pub fn (e &ControllerElector) is_controller() bool {
 	return e.is_controller
 }
 
-/// get_controller_id는 현재 컨트롤러 ID를 반환한다 (알 수 없으면 -1)
+/// get_controller_id returns the current controller ID (-1 if unknown)
 pub fn (e &ControllerElector) get_controller_id() i32 {
 	return e.controller_id
 }
 
-/// discover_controller는 현재 컨트롤러를 탐색한다
+/// discover_controller discovers the current controller
 pub fn (mut e ControllerElector) discover_controller() !i32 {
 	e.lock.rlock()
 	defer { e.lock.runlock() }
 
-	// 우리가 컨트롤러라면 우리 ID 반환
+	// Return our ID if we are the controller
 	if e.is_controller {
 		return e.broker_id
 	}
 
-	// 클러스터 메타데이터에서 가져오기 시도
+	// Try to get from cluster metadata
 	if mut mp := e.metadata_port {
 		metadata := mp.get_cluster_metadata()!
 		return metadata.controller_id
 	}
 
-	// 단일 브로커 모드
+	// Single-broker mode
 	return e.broker_id
 }
 
-/// start는 컨트롤러 선출 백그라운드 워커를 시작한다
+/// start starts the controller election background worker
 pub fn (mut e ControllerElector) start() {
 	e.running = true
 	spawn e.election_loop()
 }
 
-/// stop은 컨트롤러 선출 워커를 중지하고 락을 해제한다
+/// stop stops the controller election worker and releases the lock
 pub fn (mut e ControllerElector) stop() {
 	e.running = false
 	e.resign_controller() or {}
 }
 
 fn (mut e ControllerElector) election_loop() {
-	// 초기 선출 시도
+	// Initial election attempt
 	e.try_become_controller() or { eprintln('[Controller] Initial election failed: ${err}') }
 
 	interval := time.Duration(controller_refresh_interval_ms * time.millisecond)
@@ -223,48 +223,48 @@ fn (mut e ControllerElector) election_loop() {
 		}
 
 		if e.lock_acquired {
-			// 락 갱신
+			// Refresh lock
 			e.refresh_controller_lock() or {
 				eprintln('[Controller] Lock refresh failed: ${err}')
-				// 재획득 시도
+				// Attempt to reacquire
 				e.try_become_controller() or {}
 			}
 		} else {
-			// 컨트롤러 되기 시도
+			// Attempt to become controller
 			e.try_become_controller() or {
-				// 다른 브로커가 컨트롤러임, 정상 상황
+				// Another broker is controller, normal situation
 			}
 		}
 	}
 }
 
-// 콜백
+// Callbacks
 
-/// set_on_become_controller는 이 브로커가 컨트롤러가 될 때의 콜백을 설정한다
+/// set_on_become_controller sets the callback for when this broker becomes controller
 pub fn (mut e ControllerElector) set_on_become_controller(callback fn ()) {
 	e.on_become_controller = callback
 }
 
-/// set_on_lose_controller는 이 브로커가 컨트롤러 역할을 잃을 때의 콜백을 설정한다
+/// set_on_lose_controller sets the callback for when this broker loses the controller role
 pub fn (mut e ControllerElector) set_on_lose_controller(callback fn ()) {
 	e.on_lose_controller = callback
 }
 
-/// set_on_controller_changed는 컨트롤러가 변경될 때의 콜백을 설정한다
+/// set_on_controller_changed sets the callback for when the controller changes
 pub fn (mut e ControllerElector) set_on_controller_changed(callback fn (i32)) {
 	e.on_controller_changed = callback
 }
 
-// 컨트롤러 태스크 (컨트롤러에서만 실행)
+// Controller Tasks (run only on controller)
 
-/// ControllerTask는 컨트롤러에서만 실행되어야 하는 태스크를 나타낸다
+/// ControllerTask represents a task that should only run on the controller
 pub struct ControllerTask {
 	name     string
 	interval time.Duration
 	task     ?fn () !
 }
 
-/// ControllerTaskRunner는 이 브로커가 컨트롤러일 때만 태스크를 실행한다
+/// ControllerTaskRunner executes tasks only when this broker is the controller
 pub struct ControllerTaskRunner {
 mut:
 	elector &ControllerElector
@@ -272,7 +272,7 @@ mut:
 	running bool
 }
 
-/// new_controller_task_runner는 새로운 태스크 러너를 생성한다
+/// new_controller_task_runner creates a new task runner
 pub fn new_controller_task_runner(elector &ControllerElector) &ControllerTaskRunner {
 	return &ControllerTaskRunner{
 		elector: elector
@@ -281,7 +281,7 @@ pub fn new_controller_task_runner(elector &ControllerElector) &ControllerTaskRun
 	}
 }
 
-/// add_task는 컨트롤러일 때 실행할 태스크를 추가한다
+/// add_task adds a task to run when acting as controller
 pub fn (mut r ControllerTaskRunner) add_task(name string, interval time.Duration, task fn () !) {
 	r.tasks << ControllerTask{
 		name:     name
@@ -290,7 +290,7 @@ pub fn (mut r ControllerTaskRunner) add_task(name string, interval time.Duration
 	}
 }
 
-/// start는 모든 태스크 러너를 시작한다
+/// start starts all task runners
 pub fn (mut r ControllerTaskRunner) start() {
 	r.running = true
 	for task in r.tasks {
@@ -298,7 +298,7 @@ pub fn (mut r ControllerTaskRunner) start() {
 	}
 }
 
-/// stop은 모든 태스크 러너를 중지한다
+/// stop stops all task runners
 pub fn (mut r ControllerTaskRunner) stop() {
 	r.running = false
 }

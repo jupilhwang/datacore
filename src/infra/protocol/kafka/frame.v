@@ -1,9 +1,9 @@
-// Kafka 프로토콜 프레임
-// 프레임 기반 요청/응답 처리
+// Kafka protocol frame
+// Frame-based request/response handling
 module kafka
 
-/// Frame은 완전한 Kafka 프로토콜 메시지를 나타냅니다.
-/// 형식: [size: 4바이트][header][body]
+/// Frame represents a complete Kafka protocol message.
+/// Format: [size: 4 bytes][header][body]
 pub struct Frame {
 pub:
 	size   i32
@@ -11,10 +11,10 @@ pub:
 	body   Body
 }
 
-/// FrameHeader는 요청 헤더 또는 응답 헤더일 수 있습니다.
+/// FrameHeader can be either a request header or a response header.
 pub type FrameHeader = FrameRequestHeader | FrameResponseHeader
 
-/// Frame 요청 헤더 (v0 및 v2 형식 모두 지원)
+/// Frame request header (supports both v0 and v2 formats)
 pub struct FrameRequestHeader {
 pub:
 	api_key        ApiKey
@@ -23,13 +23,13 @@ pub:
 	client_id      ?string
 }
 
-/// Frame 응답 헤더
+/// Frame response header
 pub struct FrameResponseHeader {
 pub:
 	correlation_id i32
 }
 
-/// Body는 모든 요청 또는 응답 타입이 될 수 있습니다.
+/// Body can be any request or response type.
 pub type Body = ApiVersionsRequest
 	| ApiVersionsResponse
 	| MetadataRequest
@@ -71,12 +71,12 @@ pub type Body = ApiVersionsRequest
 	| DescribeConfigsRequest
 	| DescribeConfigsResponse
 
-/// ApiKey 트레이트 - 각 요청 타입은 자신의 API 키를 알고 있습니다.
+/// ApiKeyProvider interface - each request type knows its own API key.
 pub interface ApiKeyProvider {
 	api_key() ApiKey
 }
 
-/// 원시 바이트에서 Frame을 파싱합니다 (요청).
+/// frame_from_bytes parses a Frame from raw bytes (request).
 pub fn frame_from_bytes(data []u8) !Frame {
 	if data.len < 8 {
 		return error('frame too short: need at least 8 bytes, got ${data.len}')
@@ -84,28 +84,28 @@ pub fn frame_from_bytes(data []u8) !Frame {
 
 	mut reader := new_reader(data)
 
-	// 헤더 필드 파싱
+	// Parse header fields
 	api_key_raw := reader.read_i16()!
 	api_version := reader.read_i16()!
 	correlation_id := reader.read_i32()!
 
 	api_key := unsafe { ApiKey(api_key_raw) }
 
-	// ApiVersions는 헤더에서 항상 non-flexible입니다 (클라이언트가 서버 버전을 아직 모름)
+	// ApiVersions is always non-flexible in the header (client does not yet know the server version)
 	is_flexible := api_key != .api_versions && is_flexible_version(api_key, api_version)
 
-	// 요청 헤더 v2 (flexible)에서 client_id는 여전히 NULLABLE_STRING입니다 (compact가 아님!)
+	// In request header v2 (flexible), client_id is still NULLABLE_STRING, not compact
 	client_id := reader.read_nullable_string()!
 
 	if is_flexible {
 		reader.skip_tagged_fields()!
 	}
 
-	// API 키에 따라 본문 파싱
+	// Parse body based on API key
 	body_data := data[reader.pos..].clone()
 	body := parse_body(api_key, api_version, body_data)!
 
-	// 크기 계산 (size 필드 자체를 제외한 모든 것)
+	// Size covers everything except the size field itself
 	size := i32(data.len)
 
 	return Frame{
@@ -120,7 +120,7 @@ pub fn frame_from_bytes(data []u8) !Frame {
 	}
 }
 
-/// API 키와 버전에 따라 본문을 파싱합니다.
+/// parse_body parses the request body based on the API key and version.
 fn parse_body(api_key ApiKey, version i16, data []u8) !Body {
 	mut reader := new_reader(data)
 	is_flexible := is_flexible_version(api_key, version)
@@ -192,7 +192,7 @@ fn parse_body(api_key ApiKey, version i16, data []u8) !Body {
 	}
 }
 
-/// 응답 Frame을 생성합니다.
+/// frame_response creates a response Frame.
 pub fn frame_response(correlation_id i32, api_key ApiKey, version i16, body Body) Frame {
 	return Frame{
 		size:   0
@@ -203,12 +203,12 @@ pub fn frame_response(correlation_id i32, api_key ApiKey, version i16, body Body
 	}
 }
 
-/// Frame을 바이트로 인코딩합니다 (응답용).
+/// response_to_bytes encodes the Frame to bytes (for responses).
 pub fn (f Frame) response_to_bytes(api_key ApiKey, version i16) []u8 {
-	// 본문 바이트 획득
+	// Obtain body bytes
 	body_bytes := encode_body(f.body, version)
 
-	// ApiVersions는 항상 non-flexible 응답 헤더를 사용합니다.
+	// ApiVersions always uses a non-flexible response header.
 	is_flexible := api_key != .api_versions && is_flexible_version(api_key, version)
 
 	if is_flexible {
@@ -218,7 +218,7 @@ pub fn (f Frame) response_to_bytes(api_key ApiKey, version i16) []u8 {
 	return build_response(f.header.correlation_id(), body_bytes)
 }
 
-/// 헤더에서 correlation_id를 가져옵니다.
+/// correlation_id returns the correlation ID from the header.
 fn (h FrameHeader) correlation_id() i32 {
 	return match h {
 		FrameRequestHeader { h.correlation_id }
@@ -226,7 +226,7 @@ fn (h FrameHeader) correlation_id() i32 {
 	}
 }
 
-/// 타입에 따라 본문을 인코딩합니다.
+/// encode_body encodes the body based on its type.
 fn encode_body(body Body, version i16) []u8 {
 	return match body {
 		ApiVersionsResponse { body.encode(version) }

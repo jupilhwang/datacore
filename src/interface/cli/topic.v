@@ -1,19 +1,19 @@
 // Interface Layer - CLI Topic Commands
 //
-// Kafka 프로토콜을 사용한 토픽 관리 명령어를 제공합니다.
-// 토픽 생성, 삭제, 조회, 상세 정보 확인 등의 기능을 지원합니다.
+// Provides topic management commands using the Kafka protocol.
+// Supports topic creation, deletion, listing, and describe operations.
 //
-// 주요 기능:
-// - 토픽 생성 (파티션 수, 복제 계수 지정)
-// - 토픽 목록 조회
-// - 토픽 상세 정보 조회
-// - 토픽 삭제
+// Key features:
+// - Create topics (specify partition count and replication factor)
+// - List topics
+// - Describe topic details
+// - Delete topics
 module cli
 
 import net
 import time
 
-/// TopicOptions는 토픽 명령어 옵션을 담는 구조체입니다.
+/// TopicOptions is a struct holding topic command options.
 pub struct TopicOptions {
 pub:
 	bootstrap_server string = 'localhost:9092'
@@ -23,7 +23,7 @@ pub:
 	timeout_ms       int = 30000
 }
 
-/// parse_topic_options는 토픽 명령어 옵션을 파싱합니다.
+/// parse_topic_options parses topic command options.
 pub fn parse_topic_options(args []string) TopicOptions {
 	mut opts := TopicOptions{}
 
@@ -67,7 +67,7 @@ pub fn parse_topic_options(args []string) TopicOptions {
 				}
 			}
 			else {
-				// 위치 인자가 토픽 이름일 수 있음
+				// Positional argument may be the topic name
 				if !args[i].starts_with('-') && opts.topic.len == 0 {
 					opts = TopicOptions{
 						...opts
@@ -82,7 +82,7 @@ pub fn parse_topic_options(args []string) TopicOptions {
 	return opts
 }
 
-/// run_topic_create는 토픽을 생성합니다.
+/// run_topic_create creates a topic.
 pub fn run_topic_create(opts TopicOptions) ! {
 	if opts.topic.len == 0 {
 		return error('Topic name is required. Use --topic <name>')
@@ -90,21 +90,21 @@ pub fn run_topic_create(opts TopicOptions) ! {
 
 	println('\x1b[90m⏳ Creating topic "${opts.topic}"...\x1b[0m')
 
-	// 브로커에 연결
+	// Connect to broker
 	mut conn := connect_broker(opts.bootstrap_server)!
 	defer { conn.close() or {} }
 
-	// CreateTopics 요청 생성
+	// Build CreateTopics request
 	request := build_create_topic_request(opts.topic, opts.partitions, opts.replication,
 		opts.timeout_ms)
 
-	// 요청 전송
+	// Send request
 	send_kafka_request(mut conn, 19, 3, request)!
 
-	// 응답 읽기
+	// Read response
 	response := read_kafka_response(mut conn)!
 
-	// 응답 파싱 및 확인
+	// Parse and validate response
 	check_create_topic_response(response, opts.topic)!
 
 	println('\x1b[32m✓\x1b[0m Topic "${opts.topic}" created successfully')
@@ -112,24 +112,24 @@ pub fn run_topic_create(opts TopicOptions) ! {
 	println('  Replication: ${opts.replication}')
 }
 
-/// run_topic_list는 모든 토픽을 나열합니다.
+/// run_topic_list lists all topics.
 pub fn run_topic_list(opts TopicOptions) ! {
 	println('\x1b[90m⏳ Listing topics...\x1b[0m')
 
-	// 브로커에 연결
+	// Connect to broker
 	mut conn := connect_broker(opts.bootstrap_server)!
 	defer { conn.close() or {} }
 
-	// Metadata 요청 생성 (빈 토픽 배열 = 모든 토픽)
+	// Build Metadata request (empty topics array = all topics)
 	request := build_metadata_request([])
 
-	// 요청 전송
+	// Send request
 	send_kafka_request(mut conn, 3, 12, request)!
 
-	// 응답 읽기
+	// Read response
 	response := read_kafka_response(mut conn)!
 
-	// 토픽 파싱 및 표시
+	// Parse and display topics
 	topics := parse_metadata_response_topics(response)
 
 	if topics.len == 0 {
@@ -146,7 +146,7 @@ pub fn run_topic_list(opts TopicOptions) ! {
 	}
 }
 
-/// run_topic_describe는 토픽의 상세 정보를 표시합니다.
+/// run_topic_describe displays detailed information about a topic.
 pub fn run_topic_describe(opts TopicOptions) ! {
 	if opts.topic.len == 0 {
 		return error('Topic name is required. Use --topic <name>')
@@ -154,20 +154,20 @@ pub fn run_topic_describe(opts TopicOptions) ! {
 
 	println('\x1b[90m⏳ Describing topic "${opts.topic}"...\x1b[0m')
 
-	// 브로커에 연결
+	// Connect to broker
 	mut conn := connect_broker(opts.bootstrap_server)!
 	defer { conn.close() or {} }
 
-	// 특정 토픽에 대한 Metadata 요청 생성
+	// Build Metadata request for a specific topic
 	request := build_metadata_request([opts.topic])
 
-	// 요청 전송
+	// Send request
 	send_kafka_request(mut conn, 3, 12, request)!
 
-	// 응답 읽기
+	// Read response
 	response := read_kafka_response(mut conn)!
 
-	// 토픽 상세 정보 파싱 및 표시
+	// Parse and display topic details
 	topics := parse_metadata_response_topics(response)
 
 	if topics.len == 0 {
@@ -179,10 +179,10 @@ pub fn run_topic_describe(opts TopicOptions) ! {
 	println('\x1b[33mTopic:\x1b[0m ${topic.name}')
 	println('  Internal:    ${topic.is_internal}')
 	println('  Partitions:  ${topic.partitions}')
-	// TODO: 파티션 상세 정보 추가 (리더, 복제본, ISR)
+	// TODO: Add partition details (leader, replicas, ISR)
 }
 
-/// run_topic_delete는 토픽을 삭제합니다.
+/// run_topic_delete deletes a topic.
 pub fn run_topic_delete(opts TopicOptions) ! {
 	if opts.topic.len == 0 {
 		return error('Topic name is required. Use --topic <name>')
@@ -190,20 +190,20 @@ pub fn run_topic_delete(opts TopicOptions) ! {
 
 	println('\x1b[90m⏳ Deleting topic "${opts.topic}"...\x1b[0m')
 
-	// 브로커에 연결
+	// Connect to broker
 	mut conn := connect_broker(opts.bootstrap_server)!
 	defer { conn.close() or {} }
 
-	// DeleteTopics 요청 생성
+	// Build DeleteTopics request
 	request := build_delete_topic_request(opts.topic, opts.timeout_ms)
 
-	// 요청 전송
+	// Send request
 	send_kafka_request(mut conn, 20, 6, request)!
 
-	// 응답 읽기
+	// Read response
 	response := read_kafka_response(mut conn)!
 
-	// 응답 파싱 및 확인
+	// Parse and validate response
 	check_delete_topic_response(response, opts.topic)!
 
 	println('\x1b[32m✓\x1b[0m Topic "${opts.topic}" deleted successfully')
@@ -231,20 +231,20 @@ fn connect_broker(addr string) !&net.TcpConn {
 	}
 }
 
-// send_kafka_request는 Kafka 요청을 전송합니다.
+// send_kafka_request sends a Kafka request.
 fn send_kafka_request(mut conn net.TcpConn, api_key i16, api_version i16, body []u8) ! {
-	// 헤더 생성
+	// Build header
 	mut header := []u8{}
 
-	// API Key (2바이트)
+	// API Key (2 bytes)
 	header << u8(api_key >> 8)
 	header << u8(api_key & 0xff)
 
-	// API Version (2바이트)
+	// API Version (2 bytes)
 	header << u8(api_version >> 8)
 	header << u8(api_version & 0xff)
 
-	// Correlation ID (4바이트)
+	// Correlation ID (4 bytes)
 	correlation_id := i32(1)
 	header << u8(correlation_id >> 24)
 	header << u8((correlation_id >> 16) & 0xff)
@@ -254,32 +254,32 @@ fn send_kafka_request(mut conn net.TcpConn, api_key i16, api_version i16, body [
 	// Client ID
 	client_id := 'datacore-cli'
 
-	// 유연한 헤더(V2) 또는 비유연 헤더(V1) 사용 여부 결정
-	// CreateTopics V3는 비유연, Metadata V12는 유연
+	// Determine whether to use flexible header (V2) or non-flexible header (V1)
+	// CreateTopics V3 is non-flexible, Metadata V12 is flexible
 	is_flexible_api := (api_key == 3 && api_version >= 9)
 		|| (api_key == 1 && api_version >= 12) || (api_key == 20 && api_version >= 6)
 		|| (api_key == 19 && api_version >= 5)
 
 	if is_flexible_api {
-		// 유연한 헤더 V2: Compact Client ID + Tagged Fields
+		// Flexible header V2: Compact Client ID + Tagged Fields
 		// Client ID (compact string)
 		header << u8(client_id.len + 1)
 		header << client_id.bytes()
-		// Tagged fields (빈 compact array)
+		// Tagged fields (empty compact array)
 		header << u8(0)
 	} else {
-		// 비유연 헤더 V1: Nullable String Client ID
-		// 길이 접두사에 i16 사용 (2바이트)
+		// Non-flexible header V1: Nullable String Client ID
+		// Use i16 (2 bytes) for length prefix
 		header << u8(client_id.len >> 8)
 		header << u8(client_id.len & 0xff)
 		header << client_id.bytes()
 	}
 
-	// 헤더와 본문 결합
+	// Combine header and body
 	mut message := header.clone()
 	message << body
 
-	// 크기 접두사 쓰기 (4바이트)
+	// Write size prefix (4 bytes)
 	size := i32(message.len)
 	mut frame := []u8{}
 	frame << u8(size >> 24)
@@ -291,11 +291,11 @@ fn send_kafka_request(mut conn net.TcpConn, api_key i16, api_version i16, body [
 	conn.write(frame) or { return error('Failed to send request: ${err}') }
 }
 
-// read_kafka_response는 Kafka 응답을 읽습니다.
+// read_kafka_response reads a Kafka response.
 fn read_kafka_response(mut conn net.TcpConn) ![]u8 {
 	conn.set_read_timeout(30 * time.second)
 
-	// 크기 읽기 (4바이트)
+	// Read size (4 bytes)
 	mut size_buf := []u8{len: 4}
 	conn.read(mut size_buf) or { return error('Failed to read response size: ${err}') }
 
@@ -305,7 +305,7 @@ fn read_kafka_response(mut conn net.TcpConn) ![]u8 {
 		return error('Invalid response size: ${size}')
 	}
 
-	// 응답 본문 읽기
+	// Read response body
 	mut response := []u8{len: int(size)}
 	mut total_read := 0
 	for total_read < int(size) {
@@ -324,40 +324,40 @@ fn read_kafka_response(mut conn net.TcpConn) ![]u8 {
 fn build_create_topic_request(name string, partitions int, replication int, timeout_ms int) []u8 {
 	mut body := []u8{}
 
-	// Topics 배열 (비유연 배열)
+	// Topics array (non-flexible array)
 	body << u8(0)
 	body << u8(0)
 	body << u8(0)
 	body << u8(1)
 
-	// 토픽 이름 (string)
+	// Topic name (string)
 	body << u8(name.len >> 8)
 	body << u8(name.len & 0xff)
 	body << name.bytes()
 
-	// 파티션 수 (4바이트)
+	// Number of partitions (4 bytes)
 	body << u8(partitions >> 24)
 	body << u8((partitions >> 16) & 0xff)
 	body << u8((partitions >> 8) & 0xff)
 	body << u8(partitions & 0xff)
 
-	// 복제 계수 (2바이트)
+	// Replication factor (2 bytes)
 	body << u8(replication >> 8)
 	body << u8(replication & 0xff)
 
-	// Assignments (빈 배열)
+	// Assignments (empty array)
 	body << u8(0)
 	body << u8(0)
 	body << u8(0)
 	body << u8(0)
 
-	// Configs (빈 배열)
+	// Configs (empty array)
 	body << u8(0)
 	body << u8(0)
 	body << u8(0)
 	body << u8(0)
 
-	// 타임아웃 ms (4바이트)
+	// Timeout ms (4 bytes)
 	body << u8(timeout_ms >> 24)
 	body << u8((timeout_ms >> 16) & 0xff)
 	body << u8((timeout_ms >> 8) & 0xff)
@@ -366,21 +366,21 @@ fn build_create_topic_request(name string, partitions int, replication int, time
 	return body
 }
 
-// build_metadata_request는 Metadata 요청을 생성합니다.
+// build_metadata_request builds a Metadata request.
 fn build_metadata_request(topics []string) []u8 {
 	mut body := []u8{}
 
-	// Topics 배열 (compact nullable array)
+	// Topics array (compact nullable array)
 	if topics.len == 0 {
 		body << u8(1)
 	} else {
 		body << u8(topics.len + 1)
 		for topic in topics {
-			// 토픽 이름 (compact string)
+			// Topic name (compact string)
 			body << u8(topic.len + 1)
 			body << topic.bytes()
 
-			// Topic ID (v12용 16바이트 0)
+			// Topic ID (16 bytes of zeros for v12)
 			for _ in 0 .. 16 {
 				body << u8(0)
 			}
@@ -390,10 +390,10 @@ fn build_metadata_request(topics []string) []u8 {
 		}
 	}
 
-	// 자동 토픽 생성 허용 (1바이트)
+	// Allow auto topic creation (1 byte)
 	body << u8(0)
 
-	// 토픽 인가 작업 포함 (1바이트, v8+)
+	// Include topic authorized operations (1 byte, v8+)
 	body << u8(0)
 
 	// Tagged fields
@@ -402,32 +402,32 @@ fn build_metadata_request(topics []string) []u8 {
 	return body
 }
 
-// build_delete_topic_request는 DeleteTopics 요청을 생성합니다.
+// build_delete_topic_request builds a DeleteTopics request.
 fn build_delete_topic_request(name string, timeout_ms int) []u8 {
 	mut body := []u8{}
 
-	// Topics 배열 (compact array)
+	// Topics array (compact array)
 	body << u8(2)
 
-	// 토픽 이름 (compact nullable string)
+	// Topic name (compact nullable string)
 	body << u8(name.len + 1)
 	body << name.bytes()
 
-	// Topic ID (이름으로 삭제 시 16바이트 0)
+	// Topic ID (16 bytes of zeros when deleting by name)
 	for _ in 0 .. 16 {
 		body << u8(0)
 	}
 
-	// 토픽용 Tagged fields
+	// Tagged fields for topic
 	body << u8(0)
 
-	// 타임아웃 ms (4바이트)
+	// Timeout ms (4 bytes)
 	body << u8(timeout_ms >> 24)
 	body << u8((timeout_ms >> 16) & 0xff)
 	body << u8((timeout_ms >> 8) & 0xff)
 	body << u8(timeout_ms & 0xff)
 
-	// 요청용 Tagged fields
+	// Tagged fields for request
 	body << u8(0)
 
 	return body
@@ -481,7 +481,7 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 
 	mut pos := 4
 
-	// topics 배열 길이 읽기 (i32)
+	// Read topics array length (i32)
 	if pos + 4 > response.len {
 		return error('Invalid response: cannot read topics array length')
 	}
@@ -492,11 +492,11 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 		return error('Expected 1 topic in response, got ${topics_len}')
 	}
 
-	// 토픽 이름 읽기
+	// Read topic name
 	topic_name, new_pos := read_string_at(response, pos)!
 	pos = new_pos
 
-	// error_code 읽기 (2바이트)
+	// Read error_code (2 bytes)
 	if pos + 2 > response.len {
 		return error('Invalid response: cannot read error code')
 	}
@@ -513,12 +513,12 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 	}
 }
 
-// check_delete_topic_response는 DeleteTopics 응답을 확인합니다.
+// check_delete_topic_response validates a DeleteTopics response.
 fn check_delete_topic_response(response []u8, expected_topic string) ! {
 	if response.len < 10 {
 		return error('Invalid response')
 	}
-	// 간소화된 확인
+	// Simplified validation
 	return
 }
 
@@ -546,13 +546,13 @@ fn parse_single_topic(response []u8, pos int) ?ParseResult {
 	}
 	mut new_pos := pos
 
-	// error_code 건너뛰기 (2바이트)
+	// Skip error_code (2 bytes)
 	new_pos += 2
 	if new_pos >= response.len {
 		return none
 	}
 
-	// 토픽 이름 읽기 (compact string)
+	// Read topic name (compact string)
 	name_len := int(response[new_pos]) - 1
 	new_pos += 1
 	if new_pos + name_len > response.len {
@@ -561,24 +561,24 @@ fn parse_single_topic(response []u8, pos int) ?ParseResult {
 	topic_name := response[new_pos..new_pos + name_len].bytestr()
 	new_pos += name_len
 
-	// topic_id 건너뛰기 (16바이트)
+	// Skip topic_id (16 bytes)
 	new_pos += 16
 	if new_pos >= response.len {
 		return none
 	}
 
-	// is_internal 읽기 (1바이트)
+	// Read is_internal (1 byte)
 	is_internal := response[new_pos] != 0
 	new_pos += 1
 	if new_pos >= response.len {
 		return none
 	}
 
-	// partitions 배열 길이 읽기
+	// Read partitions array length
 	partition_count := int(response[new_pos]) - 1
 	new_pos += 1
 
-	// 파티션 상세 + tagged fields 건너뛰기
+	// Skip partition details + tagged fields
 	new_pos += partition_count * 30 + 10
 
 	return ParseResult{
@@ -591,7 +591,7 @@ fn parse_single_topic(response []u8, pos int) ?ParseResult {
 	}
 }
 
-// parse_metadata_response_topics는 Metadata 응답에서 토픽 정보를 파싱합니다.
+// parse_metadata_response_topics parses topic information from a Metadata response.
 fn parse_metadata_response_topics(response []u8) []TopicInfo {
 	mut topics := []TopicInfo{}
 

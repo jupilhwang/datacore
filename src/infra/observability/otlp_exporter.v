@@ -1,5 +1,5 @@
 // Infra Layer - OTLP (OpenTelemetry Protocol) Exporter
-// 로그, 메트릭, 트레이스를 OpenTelemetry Collector로 내보냄
+// Exports logs, metrics, and traces to OpenTelemetry Collector
 module observability
 
 import net.http
@@ -9,6 +9,7 @@ import time
 // OTLP Exporter Configuration
 
 // OTLPConfig holds OTLP exporter configuration
+/// OTLPConfig holds OTLP exporter configuration.
 pub struct OTLPConfig {
 pub:
 	endpoint          string = 'http://localhost:4318'
@@ -29,6 +30,7 @@ pub:
 // OTLP Exporter
 
 // OTLPExporter exports telemetry data to OpenTelemetry Collector
+/// OTLPExporter exports telemetry data to OpenTelemetry Collector.
 pub struct OTLPExporter {
 	config OTLPConfig
 mut:
@@ -43,6 +45,7 @@ mut:
 }
 
 // new_otlp_exporter creates a new OTLP exporter
+/// new_otlp_exporter creates a new OTLP exporter.
 pub fn new_otlp_exporter(config OTLPConfig) &OTLPExporter {
 	return &OTLPExporter{
 		config:      config
@@ -53,6 +56,7 @@ pub fn new_otlp_exporter(config OTLPConfig) &OTLPExporter {
 }
 
 // start starts the background flush loop
+/// start starts the background flush loop.
 pub fn (mut e OTLPExporter) start() {
 	if e.running {
 		return
@@ -62,6 +66,7 @@ pub fn (mut e OTLPExporter) start() {
 }
 
 // stop stops the exporter and flushes remaining data
+/// stop stops the exporter and flushes remaining data.
 pub fn (mut e OTLPExporter) stop() {
 	e.running = false
 	e.flush()
@@ -78,6 +83,7 @@ fn (mut e OTLPExporter) flush_loop() {
 }
 
 // flush sends all buffered data to OTLP endpoint
+/// flush sends all buffered data to OTLP endpoint.
 pub fn (mut e OTLPExporter) flush() {
 	e.flush_lock.@lock()
 	defer { e.flush_lock.unlock() }
@@ -108,6 +114,7 @@ pub fn (mut e OTLPExporter) flush() {
 // Log Export
 
 // add_log adds a log entry to the buffer
+/// add_log adds a log entry to the buffer.
 pub fn (mut e OTLPExporter) add_log(entry LogEntry) {
 	e.buffer_lock.@lock()
 
@@ -205,6 +212,7 @@ fn (e &OTLPExporter) build_log_record(entry LogEntry) string {
 // Span/Trace Export
 
 // add_span adds a span to the buffer
+/// add_span adds a span to the buffer.
 pub fn (mut e OTLPExporter) add_span(span &Span) {
 	e.buffer_lock.@lock()
 
@@ -398,6 +406,7 @@ mut:
 const otlp_holder = &OTLPExporterHolder{}
 
 // init_otlp_exporter initializes the global OTLP exporter
+/// init_otlp_exporter initializes the global OTLP exporter.
 pub fn init_otlp_exporter(config OTLPConfig) {
 	mut holder := unsafe { otlp_holder }
 	holder.lock.@lock()
@@ -412,6 +421,7 @@ pub fn init_otlp_exporter(config OTLPConfig) {
 }
 
 // get_otlp_exporter returns the global OTLP exporter
+/// get_otlp_exporter returns the global OTLP exporter.
 pub fn get_otlp_exporter() ?&OTLPExporter {
 	holder := unsafe { otlp_holder }
 	if holder.exporter == unsafe { nil } {
@@ -421,6 +431,7 @@ pub fn get_otlp_exporter() ?&OTLPExporter {
 }
 
 // shutdown_otlp_exporter stops and flushes the global exporter
+/// shutdown_otlp_exporter stops and flushes the global exporter.
 pub fn shutdown_otlp_exporter() {
 	mut holder := unsafe { otlp_holder }
 	holder.lock.@lock()

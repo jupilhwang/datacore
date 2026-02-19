@@ -1,12 +1,12 @@
-// Iceberg 카탈로그 통합 및 테이블 관리를 제공합니다.
-// 지원 카탈로그: Hadoop (파일 기반), Glue, REST
+// Provides Iceberg catalog integration and table management.
+// Supported catalogs: Hadoop (file-based), Glue, REST
 module s3
 
 import time
 import json
 import strings
 
-/// IcebergCatalog는 Iceberg 테이블 카탈로그 인터페이스를 정의합니다.
+/// IcebergCatalog defines the Iceberg table catalog interface.
 pub interface IcebergCatalog {
 mut:
 	create_table(identifier IcebergTableIdentifier, schema IcebergSchema, spec IcebergPartitionSpec, location string) !IcebergMetadata
@@ -18,7 +18,7 @@ mut:
 	create_namespace(namespace []string) !
 }
 
-/// HadoopCatalog는 S3 기반 Hadoop 카탈로그 구현입니다.
+/// HadoopCatalog is an S3-based Hadoop catalog implementation.
 pub struct HadoopCatalog {
 pub mut:
 	adapter    &S3StorageAdapter
@@ -26,7 +26,7 @@ pub mut:
 	properties map[string]string
 }
 
-/// new_hadoop_catalog는 새로운 Hadoop 카탈로그를 생성합니다.
+/// new_hadoop_catalog creates a new Hadoop catalog.
 pub fn new_hadoop_catalog(adapter &S3StorageAdapter, warehouse string) &HadoopCatalog {
 	return &HadoopCatalog{
 		adapter:    adapter
@@ -35,21 +35,21 @@ pub fn new_hadoop_catalog(adapter &S3StorageAdapter, warehouse string) &HadoopCa
 	}
 }
 
-/// create_table은 새로운 Iceberg 테이블을 생성합니다.
+/// create_table creates a new Iceberg table.
 pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, schema IcebergSchema, spec IcebergPartitionSpec, location string) !IcebergMetadata {
-	// 테이블 경로 생성
+	// Generate table path
 	table_path := c.table_path(identifier)
 
-	// 테이블이 이미 존재하는지 확인
+	// Check if table already exists
 	if c.table_exists(identifier) {
 		return error('Table already exists: ${identifier.name}')
 	}
 
-	// 테이블 UUID 생성
+	// Generate table UUID
 	table_uuid := generate_table_uuid()
 	now := time.now()
 
-	// 초기 메타데이터 생성
+	// Create initial metadata
 	mut metadata := IcebergMetadata{
 		format_version:      2
 		table_uuid:          table_uuid
@@ -66,25 +66,25 @@ pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, sch
 		}
 	}
 
-	// 메타데이터 파일 경로
+	// Metadata file path
 	metadata_path := '${table_path}/metadata/00001-${table_uuid}.metadata.json'
 
-	// 메타데이터 JSON 생성 및 저장
+	// Generate and save metadata JSON
 	metadata_json := c.encode_metadata(metadata)
 	c.adapter.put_object(metadata_path, metadata_json.bytes())!
 
-	// 버전 힌트 파일 생성 (현재 메타데이터 버전 추적)
+	// Create version hint file (tracks current metadata version)
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, '1'.bytes())!
 
 	return metadata
 }
 
-/// load_table은 기존 Iceberg 테이블을 로드합니다.
+/// load_table loads an existing Iceberg table.
 pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !IcebergMetadata {
 	table_path := c.table_path(identifier)
 
-	// 버전 힌트 파일 조회
+	// Fetch version hint file
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	version_data, _ := c.adapter.get_object(version_hint_path, -1, -1) or {
 		return error('Table not found: ${identifier.name}')
@@ -92,19 +92,19 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 	version := version_data.bytestr().int()
 	_ = version
 
-	// 최신 메타데이터 파일 조회
-	// 메타데이터 파일 패턴: {version:05d}-{uuid}.metadata.json
+	// Fetch latest metadata file
+	// Metadata file pattern: {version:05d}-{uuid}.metadata.json
 	prefix := '${table_path}/metadata/'
 	objects := c.adapter.list_objects(prefix) or { return error('Failed to list metadata files') }
 
-	// 최신 버전의 메타데이터 파일 찾기
+	// Find the latest version metadata file
 	mut latest_metadata_path := ''
 	mut latest_version := 0
 
 	for obj in objects {
 		filename := obj.key.split('/').last()
 		if filename.ends_with('.metadata.json') {
-			// 파일명에서 버전 추출 (예: 00001-uuid.metadata.json -> 1)
+			// Extract version from filename (e.g., 00001-uuid.metadata.json -> 1)
 			version_str := filename[0..5]
 			file_version := version_str.int()
 			if file_version > latest_version {
@@ -118,59 +118,59 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 		return error('No metadata file found for table: ${identifier.name}')
 	}
 
-	// 메타데이터 파일 로드 및 파싱
+	// Load and parse metadata file
 	metadata_data, _ := c.adapter.get_object(latest_metadata_path, -1, -1)!
 	return c.decode_metadata(metadata_data.bytestr())!
 }
 
-/// update_table은 테이블 메타데이터를 업데이트합니다.
+/// update_table updates the table metadata.
 pub fn (mut c HadoopCatalog) update_table(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
 	table_path := c.table_path(identifier)
 
-	// 낙관적 동시성 제어: 새 버전의 메타데이터 파일 생성
+	// Optimistic concurrency control: create new version metadata file
 	new_version := metadata.snapshots.len
 	metadata_path := '${table_path}/metadata/${new_version:05d}-${metadata.table_uuid}.metadata.json'
 
-	// 메타데이터 저장
+	// Save metadata
 	metadata_json := c.encode_metadata(metadata)
 	c.adapter.put_object(metadata_path, metadata_json.bytes())!
 
-	// 버전 힌트 업데이트
+	// Update version hint
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
 }
 
-/// drop_table은 테이블을 삭제합니다.
+/// drop_table drops the table.
 pub fn (mut c HadoopCatalog) drop_table(identifier IcebergTableIdentifier) ! {
 	table_path := c.table_path(identifier)
 
-	// 테이블 존재 확인
+	// Check table existence
 	if !c.table_exists(identifier) {
 		return error('Table not found: ${identifier.name}')
 	}
 
-	// 테이블의 모든 객체 삭제
+	// Delete all objects in the table
 	prefix := '${table_path}/'
 	c.adapter.delete_objects_with_prefix(prefix)!
 }
 
-/// list_tables은 네임스페이스의 모든 테이블을 나열합니다.
+/// list_tables lists all tables in the namespace.
 pub fn (mut c HadoopCatalog) list_tables(namespace []string) ![]IcebergTableIdentifier {
 	mut identifiers := []IcebergTableIdentifier{}
 
-	// 네임스페이스 경로 생성
+	// Generate namespace path
 	ns_path := c.namespace_path(namespace)
 	prefix := '${ns_path}/'
 
-	// 해당 네임스페이스의 모든 객체 목록 조회
+	// Fetch list of all objects in the namespace
 	objects := c.adapter.list_objects(prefix) or { return []IcebergTableIdentifier{} }
 
-	// 테이블 목록 수집 (metadata 폴더가 있는 디렉토리)
+	// Collect table list (directories with a metadata folder)
 	mut seen_tables := map[string]bool{}
 	for obj in objects {
 		parts := obj.key.split('/')
 		if parts.len > namespace.len + 1 {
-			// 테이블 이름은 네임스페이스 다음 첫 번째 폴더
+			// Table name is the first folder after the namespace
 			table_name := parts[namespace.len]
 			if table_name !in seen_tables && table_name != '' {
 				seen_tables[table_name] = true
@@ -185,7 +185,7 @@ pub fn (mut c HadoopCatalog) list_tables(namespace []string) ![]IcebergTableIden
 	return identifiers
 }
 
-/// namespace_exists은 네임스페이스가 존재하는지 확인합니다.
+/// namespace_exists checks whether the namespace exists.
 pub fn (mut c HadoopCatalog) namespace_exists(namespace []string) bool {
 	if namespace.len == 0 {
 		return true
@@ -194,12 +194,12 @@ pub fn (mut c HadoopCatalog) namespace_exists(namespace []string) bool {
 	ns_path := c.namespace_path(namespace)
 	marker := '${ns_path}/.namespace'
 
-	// 네임스페이스 마커 파일 존재 확인
+	// Check for existence of namespace marker file
 	_, _ := c.adapter.get_object(marker, -1, -1) or { return false }
 	return true
 }
 
-/// create_namespace은 새로운 네임스페이스를 생성합니다.
+/// create_namespace creates a new namespace.
 pub fn (mut c HadoopCatalog) create_namespace(namespace []string) ! {
 	if namespace.len == 0 {
 		return
@@ -208,11 +208,11 @@ pub fn (mut c HadoopCatalog) create_namespace(namespace []string) ! {
 	ns_path := c.namespace_path(namespace)
 	marker := '${ns_path}/.namespace'
 
-	// 네임스페이스 마커 파일 생성
+	// Create namespace marker file
 	c.adapter.put_object(marker, '{}'.bytes())!
 }
 
-/// table_exists은 테이블이 존재하는지 확인합니다.
+/// table_exists checks whether the table exists.
 fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {
 	table_path := c.table_path(identifier)
 	metadata_path := '${table_path}/metadata/'
@@ -221,13 +221,13 @@ fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {
 	return objects.len > 0
 }
 
-/// table_path은 테이블의 S3 경로를 반환합니다.
+/// table_path returns the S3 path for the table.
 fn (mut c HadoopCatalog) table_path(identifier IcebergTableIdentifier) string {
 	ns_path := c.namespace_path(identifier.namespace)
 	return '${ns_path}/${identifier.name}'
 }
 
-/// namespace_path은 네임스페이스의 S3 경로를 반환합니다.
+/// namespace_path returns the S3 path for the namespace.
 fn (mut c HadoopCatalog) namespace_path(namespace []string) string {
 	if namespace.len == 0 {
 		return c.warehouse
@@ -235,9 +235,9 @@ fn (mut c HadoopCatalog) namespace_path(namespace []string) string {
 	return '${c.warehouse}/${namespace.join('/')}'
 }
 
-/// encode_metadata은 메타데이터를 JSON 문자열로 인코딩합니다.
+/// encode_metadata encodes metadata as a JSON string.
 fn (mut c HadoopCatalog) encode_metadata(metadata IcebergMetadata) string {
-	// Iceberg 메타데이터 JSON 형식 - 문자열 직접 구성
+	// Iceberg metadata JSON format - build string directly
 	mut sb := strings.new_builder(4096)
 
 	sb.write_string('{')
@@ -311,12 +311,12 @@ fn (mut c HadoopCatalog) encode_metadata(metadata IcebergMetadata) string {
 	return sb.str()
 }
 
-/// decode_metadata은 JSON 문자열을 IcebergMetadata로 디코딩합니다.
+/// decode_metadata decodes a JSON string into IcebergMetadata.
 fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
-	// 간략화된 JSON 파싱 (실제 구현에서는 더 상세한 파싱 필요)
-	// 참고: 이 함수는 실제 Iceberg 메타데이터 JSON 구조에 맞게 확장 필요
+	// Simplified JSON parsing (more detailed parsing needed in real implementation)
+	// Note: this function needs to be extended to match the actual Iceberg metadata JSON structure
 
-	// 기본 메타데이터 생성 (실제로는 JSON 파싱)
+	// Create default metadata (actual implementation would parse JSON)
 	return IcebergMetadata{
 		format_version:      2
 		table_uuid:          generate_table_uuid()
@@ -332,7 +332,7 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 	}
 }
 
-/// GlueCatalog는 AWS Glue Data Catalog 구현 (플레이스홀더).
+/// GlueCatalog is an AWS Glue Data Catalog implementation (placeholder).
 pub struct GlueCatalog {
 pub mut:
 	region    string
@@ -340,7 +340,7 @@ pub mut:
 	adapter   &S3StorageAdapter
 }
 
-/// new_glue_catalog는 새로운 Glue 카탈로그를 생성합니다.
+/// new_glue_catalog creates a new Glue catalog.
 pub fn new_glue_catalog(adapter &S3StorageAdapter, region string, warehouse string) &GlueCatalog {
 	return &GlueCatalog{
 		region:    region
@@ -349,11 +349,11 @@ pub fn new_glue_catalog(adapter &S3StorageAdapter, region string, warehouse stri
 	}
 }
 
-/// create_table은 Glue에 새로운 테이블을 생성합니다.
-/// 참고: 실제 구현에서는 AWS SDK for V가 필요합니다.
+/// create_table creates a new table in Glue.
+/// Note: Real implementation requires AWS SDK for V.
 pub fn (c &GlueCatalog) create_table(identifier IcebergTableIdentifier, schema IcebergSchema, spec IcebergPartitionSpec, location string) !IcebergMetadata {
-	// Glue API 호출 (모킹 구현)
-	// 실제 구현에서는 AWS SDK를 사용하여 Glue CreateTable API 호출
+	// Glue API call (mocked implementation)
+	// Real implementation calls Glue CreateTable API using AWS SDK
 	return IcebergMetadata{
 		format_version:      2
 		table_uuid:          generate_table_uuid()
@@ -369,43 +369,43 @@ pub fn (c &GlueCatalog) create_table(identifier IcebergTableIdentifier, schema I
 	}
 }
 
-/// load_table은 Glue에서 테이블을 로드합니다.
+/// load_table loads a table from Glue.
 pub fn (c &GlueCatalog) load_table(identifier IcebergTableIdentifier) !IcebergMetadata {
-	// Glue API 호출 (모킹 구현)
+	// Glue API call (mocked implementation)
 	return error('Glue catalog not yet implemented')
 }
 
-/// update_table은 Glue 테이블을 업데이트합니다.
+/// update_table updates a Glue table.
 pub fn (c &GlueCatalog) update_table(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
-	// Glue API 호출 (모킹 구현)
+	// Glue API call (mocked implementation)
 	return error('Glue catalog not yet implemented')
 }
 
-/// drop_table은 Glue 테이블을 삭제합니다.
+/// drop_table drops a Glue table.
 pub fn (c &GlueCatalog) drop_table(identifier IcebergTableIdentifier) ! {
-	// Glue API 호출 (모킹 구현)
+	// Glue API call (mocked implementation)
 	return error('Glue catalog not yet implemented')
 }
 
-/// list_tables은 Glue에서 테이블 목록을 조회합니다.
+/// list_tables retrieves the list of tables from Glue.
 pub fn (c &GlueCatalog) list_tables(namespace []string) ![]IcebergTableIdentifier {
-	// Glue API 호출 (모킹 구현)
+	// Glue API call (mocked implementation)
 	return []IcebergTableIdentifier{}
 }
 
-/// namespace_exists은 Glue 네임스페이스 존재 여부를 확인합니다.
+/// namespace_exists checks whether the Glue namespace exists.
 pub fn (c &GlueCatalog) namespace_exists(namespace []string) bool {
-	// Glue API 호출 (모킹 구현)
+	// Glue API call (mocked implementation)
 	return false
 }
 
-/// create_namespace은 Glue에 네임스페이스를 생성합니다.
+/// create_namespace creates a new namespace in Glue.
 pub fn (c &GlueCatalog) create_namespace(namespace []string) ! {
-	// Glue API 호출 (모킹 구현)
+	// Glue API call (mocked implementation)
 	return error('Glue catalog not yet implemented')
 }
 
-/// create_catalog는 카탈로그 타입에 따라 적절한 카탈로그를 생성합니다.
+/// create_catalog creates the appropriate catalog based on catalog type.
 pub fn create_catalog(adapter &S3StorageAdapter, config IcebergCatalogConfig) IcebergCatalog {
 	match config.catalog_type {
 		'glue' {
@@ -415,7 +415,7 @@ pub fn create_catalog(adapter &S3StorageAdapter, config IcebergCatalogConfig) Ic
 			return new_hadoop_catalog(adapter, config.warehouse)
 		}
 		else {
-			// 기본값은 Hadoop 카탈로그
+			// Default to Hadoop catalog
 			return new_hadoop_catalog(adapter, config.warehouse)
 		}
 	}

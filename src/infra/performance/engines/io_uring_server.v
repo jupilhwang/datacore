@@ -1,19 +1,19 @@
-/// io_uring_server - io_uring 기반 네트워크 서버
-/// Linux 5.1+ 에서 고성능 비동기 네트워크 I/O 제공
+/// io_uring_server - io_uring-based network server
+/// Provides high-performance async network I/O on Linux 5.1+
 ///
-/// 기능:
-/// - io_uring을 사용한 비동기 accept/recv/send
-/// - 멀티 accept를 통한 연결 수락 배칭
-/// - 제로카피 데이터 전송 지원
+/// Features:
+/// - Async accept/recv/send using io_uring
+/// - Connection acceptance batching with multi-accept
+/// - Zero-copy data transfer support
 ///
-/// 참고: Linux 5.1+ 에서만 사용 가능, 다른 플랫폼은 폴백 사용
+/// Note: Only available on Linux 5.1+, other platforms use fallback
 module engines
 
 import time
 
-// io_uring 서버 구조체
+// io_uring server structures
 
-/// IoUringServerConfig는 io_uring 서버 설정을 담고 있습니다.
+/// IoUringServerConfig holds io_uring server configuration.
 pub struct IoUringServerConfig {
 pub:
 	host             string = '0.0.0.0'
@@ -26,19 +26,19 @@ pub:
 	use_sqpoll       bool
 }
 
-/// IoUringServer는 io_uring 기반 네트워크 서버입니다.
+/// IoUringServer is an io_uring-based network server.
 pub struct IoUringServer {
 mut:
 	config    IoUringServerConfig
 	ring      IoUring
 	listen_fd int
 	running   bool
-	// 연결 관리
+	// Connection management
 	connections map[int]&IoUringConnection
 	stats       IoUringServerStats
 }
 
-/// IoUringConnection은 클라이언트 연결 정보입니다.
+/// IoUringConnection holds client connection information.
 pub struct IoUringConnection {
 pub mut:
 	fd             int
@@ -52,7 +52,7 @@ pub mut:
 	send_pending   bool
 }
 
-/// IoUringServerStats는 서버 통계입니다.
+/// IoUringServerStats holds server statistics.
 pub struct IoUringServerStats {
 pub mut:
 	total_accepts     u64
@@ -64,7 +64,7 @@ pub mut:
 	total_send_ops    u64
 }
 
-/// IoUringEventType은 io_uring 이벤트 타입입니다.
+/// IoUringEventType is the io_uring event type.
 pub enum IoUringEventType {
 	accept
 	recv
@@ -72,7 +72,7 @@ pub enum IoUringEventType {
 	close
 }
 
-/// IoUringEvent는 io_uring 완료 이벤트입니다.
+/// IoUringEvent is an io_uring completion event.
 pub struct IoUringEvent {
 pub:
 	event_type IoUringEventType
@@ -81,7 +81,7 @@ pub:
 	data       []u8
 }
 
-// user_data 인코딩: 상위 8비트 = 이벤트 타입, 하위 56비트 = fd
+// user_data encoding: upper 8 bits = event type, lower 56 bits = fd
 const event_type_shift = 56
 const fd_mask = u64(0x00FFFFFFFFFFFFFF)
 
@@ -95,19 +95,19 @@ fn decode_user_data(user_data u64) (IoUringEventType, int) {
 	return event_type, fd
 }
 
-// io_uring 서버 구현
+// io_uring server implementation
 
-/// new_io_uring_server는 새 io_uring 서버를 생성합니다.
+/// new_io_uring_server creates a new io_uring server.
 pub fn new_io_uring_server(config IoUringServerConfig) !&IoUringServer {
 	$if linux {
-		// io_uring 설정
+		// io_uring configuration
 		ring_config := IoUringConfig{
 			queue_depth:    config.queue_depth
 			flags:          if config.use_sqpoll { ioring_setup_sqpoll } else { 0 }
 			sq_thread_idle: 1000
 		}
 
-		// io_uring 생성
+		// Create io_uring
 		ring := new_io_uring(ring_config)!
 
 		return &IoUringServer{
@@ -122,22 +122,22 @@ pub fn new_io_uring_server(config IoUringServerConfig) !&IoUringServer {
 	}
 }
 
-/// start는 서버를 시작합니다 (리스닝 소켓 생성 및 accept 준비).
+/// start starts the server (creates listening socket and prepares accept).
 pub fn (mut s IoUringServer) start() ! {
 	$if linux {
 		if s.running {
 			return error('server is already running')
 		}
 
-		// 리스닝 소켓 생성
+		// Create listening socket
 		s.listen_fd = create_listen_socket(s.config.host, s.config.port, s.config.backlog)!
 
-		// multi-accept 준비
+		// Prepare multi-accept
 		for _ in 0 .. s.config.multi_accept {
 			s.prepare_accept()
 		}
 
-		// accept 제출
+		// Submit accept
 		s.ring.submit(0)!
 
 		s.running = true
@@ -146,7 +146,7 @@ pub fn (mut s IoUringServer) start() ! {
 	}
 }
 
-/// stop은 서버를 중지합니다.
+/// stop stops the server.
 pub fn (mut s IoUringServer) stop() {
 	$if linux {
 		if !s.running {
@@ -155,30 +155,30 @@ pub fn (mut s IoUringServer) stop() {
 
 		s.running = false
 
-		// 모든 연결 닫기
+		// Close all connections
 		for fd, _ in s.connections {
 			close_socket(fd)
 		}
 		s.connections.clear()
 
-		// 리스닝 소켓 닫기
+		// Close listening socket
 		if s.listen_fd >= 0 {
 			close_socket(s.listen_fd)
 			s.listen_fd = -1
 		}
 
-		// io_uring 정리
+		// Cleanup io_uring
 		s.ring.close()
 	}
 }
 
-/// poll은 io_uring 완료 이벤트를 폴링합니다.
-/// 완료된 이벤트를 반환하며, 이벤트가 없으면 빈 배열을 반환합니다.
+/// poll polls io_uring completion events.
+/// Returns completed events, or an empty array if no events are available.
 pub fn (mut s IoUringServer) poll() ![]IoUringEvent {
 	$if linux {
 		mut events := []IoUringEvent{cap: 16}
 
-		// 비블로킹으로 완료 확인
+		// Check completions non-blocking
 		for {
 			cqe := s.ring.peek_cqe() or { break }
 
@@ -200,7 +200,7 @@ pub fn (mut s IoUringServer) poll() ![]IoUringEvent {
 					events << event
 				}
 				.close {
-					// 연결 종료 완료
+					// Connection close completed
 					events << IoUringEvent{
 						event_type: .close
 						fd:         fd
@@ -218,10 +218,10 @@ pub fn (mut s IoUringServer) poll() ![]IoUringEvent {
 	}
 }
 
-/// wait은 최소 하나의 완료 이벤트가 있을 때까지 대기합니다.
+/// wait waits until at least one completion event is available.
 pub fn (mut s IoUringServer) wait() ![]IoUringEvent {
 	$if linux {
-		// 최소 1개 완료 대기
+		// Wait for at least 1 completion
 		s.ring.submit(1)!
 		return s.poll()
 	} $else {
@@ -229,7 +229,7 @@ pub fn (mut s IoUringServer) wait() ![]IoUringEvent {
 	}
 }
 
-/// prepare_recv는 fd에 대한 recv 연산을 준비합니다.
+/// prepare_recv prepares a recv operation for fd.
 pub fn (mut s IoUringServer) prepare_recv(fd int) bool {
 	$if linux {
 		if mut conn := s.connections[fd] {
@@ -237,7 +237,7 @@ pub fn (mut s IoUringServer) prepare_recv(fd int) bool {
 				return false
 			}
 
-			// 버퍼가 없으면 생성
+			// Create buffer if not present
 			if conn.recv_buf.len == 0 {
 				conn.recv_buf = []u8{len: s.config.recv_buffer_size}
 			}
@@ -254,12 +254,12 @@ pub fn (mut s IoUringServer) prepare_recv(fd int) bool {
 	}
 }
 
-/// prepare_send는 fd로 데이터 송신을 준비합니다.
+/// prepare_send prepares data transmission to fd.
 pub fn (mut s IoUringServer) prepare_send(fd int, data []u8) bool {
 	$if linux {
 		if mut conn := s.connections[fd] {
 			if conn.send_pending {
-				// 이미 전송 대기 중이면 버퍼에 추가
+				// Already pending send - add to buffer
 				conn.send_buf << data
 				return true
 			}
@@ -276,7 +276,7 @@ pub fn (mut s IoUringServer) prepare_send(fd int, data []u8) bool {
 	}
 }
 
-/// close_connection은 연결을 닫습니다.
+/// close_connection closes a connection.
 pub fn (mut s IoUringServer) close_connection(fd int) {
 	$if linux {
 		if _ := s.connections[fd] {
@@ -287,7 +287,7 @@ pub fn (mut s IoUringServer) close_connection(fd int) {
 	}
 }
 
-/// submit은 대기 중인 모든 연산을 제출합니다.
+/// submit submits all pending operations.
 pub fn (mut s IoUringServer) submit() !int {
 	$if linux {
 		return s.ring.submit(0)
@@ -296,17 +296,17 @@ pub fn (mut s IoUringServer) submit() !int {
 	}
 }
 
-/// get_stats는 서버 통계를 반환합니다.
+/// get_stats returns server statistics.
 pub fn (s &IoUringServer) get_stats() IoUringServerStats {
 	return s.stats
 }
 
-/// is_running은 서버가 실행 중인지 반환합니다.
+/// is_running returns whether the server is running.
 pub fn (s &IoUringServer) is_running() bool {
 	return s.running
 }
 
-// 내부 헬퍼 메서드
+// Internal helper methods
 
 fn (mut s IoUringServer) prepare_accept() {
 	$if linux {
@@ -317,7 +317,7 @@ fn (mut s IoUringServer) prepare_accept() {
 
 fn (mut s IoUringServer) handle_accept_completion(result i32) IoUringEvent {
 	if result < 0 {
-		// accept 실패 - 다시 준비
+		// Accept failed - prepare again
 		s.prepare_accept()
 		return IoUringEvent{
 			event_type: .accept
@@ -326,7 +326,7 @@ fn (mut s IoUringServer) handle_accept_completion(result i32) IoUringEvent {
 		}
 	}
 
-	// 새 연결 등록
+	// Register new connection
 	client_fd := int(result)
 	now := time.now()
 	conn := &IoUringConnection{
@@ -340,10 +340,10 @@ fn (mut s IoUringServer) handle_accept_completion(result i32) IoUringEvent {
 	s.stats.total_connections++
 	s.stats.active_conns = s.connections.len
 
-	// 다음 accept 준비
+	// Prepare next accept
 	s.prepare_accept()
 
-	// 새 연결에 대한 recv 자동 준비
+	// Auto-prepare recv for new connection
 	s.prepare_recv(client_fd)
 
 	return IoUringEvent{
@@ -359,7 +359,7 @@ fn (mut s IoUringServer) handle_recv_completion(fd int, result i32) IoUringEvent
 		conn.last_active_at = time.now()
 
 		if result <= 0 {
-			// 연결 종료 또는 에러
+			// Connection closed or error
 			return IoUringEvent{
 				event_type: .close
 				fd:         fd
@@ -367,12 +367,12 @@ fn (mut s IoUringServer) handle_recv_completion(fd int, result i32) IoUringEvent
 			}
 		}
 
-		// 데이터 수신 성공
+		// Data received successfully
 		conn.bytes_received += u64(result)
 		s.stats.total_recv_bytes += u64(result)
 		s.stats.total_recv_ops++
 
-		// 수신된 데이터 복사
+		// Copy received data
 		data := conn.recv_buf[..result].clone()
 
 		return IoUringEvent{
@@ -396,7 +396,7 @@ fn (mut s IoUringServer) handle_send_completion(fd int, result i32) IoUringEvent
 		conn.last_active_at = time.now()
 
 		if result < 0 {
-			// 전송 에러
+			// Send error
 			return IoUringEvent{
 				event_type: .close
 				fd:         fd
@@ -408,7 +408,7 @@ fn (mut s IoUringServer) handle_send_completion(fd int, result i32) IoUringEvent
 		s.stats.total_send_bytes += u64(result)
 		s.stats.total_send_ops++
 
-		// 대기 중인 데이터가 있으면 전송
+		// Send pending data if any
 		if conn.send_buf.len > 0 {
 			data := conn.send_buf.clone()
 			conn.send_buf.clear()
@@ -429,23 +429,23 @@ fn (mut s IoUringServer) handle_send_completion(fd int, result i32) IoUringEvent
 	}
 }
 
-// 비Linux 폴백 구현
+// Non-Linux fallback implementation
 
-/// IoUringServerFallback은 비Linux 시스템을 위한 폴백입니다.
-/// net 모듈을 사용한 동기 I/O로 대체합니다.
+/// IoUringServerFallback is a fallback for non-Linux systems.
+/// Replaced by synchronous I/O using the net module.
 pub struct IoUringServerFallback {
 pub mut:
 	available bool
 }
 
-/// new_io_uring_server_fallback은 폴백 서버 객체를 생성합니다.
+/// new_io_uring_server_fallback creates a fallback server object.
 pub fn new_io_uring_server_fallback() IoUringServerFallback {
 	return IoUringServerFallback{
 		available: true
 	}
 }
 
-/// is_io_uring_server_available은 io_uring 서버 사용 가능 여부를 확인합니다.
+/// is_io_uring_server_available checks if the io_uring server is available.
 pub fn is_io_uring_server_available() bool {
 	$if linux {
 		return is_io_uring_available()

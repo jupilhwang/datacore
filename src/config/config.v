@@ -1,17 +1,17 @@
-// 설정 관리 모듈
-// TOML 형식의 설정 파일을 로드하고 관리합니다.
+// Configuration management module
+// Loads and manages configuration files in TOML format.
 module config
 
 import os
 import rand
 import toml
 
-/// Config는 DataCore의 전체 설정을 나타냅니다.
-/// broker: 브로커 설정
-/// rest: REST API 설정
-/// storage: 스토리지 설정
-/// schema_registry: 스키마 레지스트리 설정
-/// observability: 관측성 설정 (메트릭, 로깅, 트레이싱)
+/// Config represents the entire configuration for DataCore.
+/// broker: broker configuration
+/// rest: REST API configuration
+/// storage: storage configuration
+/// schema_registry: schema registry configuration
+/// observability: observability configuration (metrics, logging, tracing)
 pub struct Config {
 pub:
 	broker          BrokerConfig
@@ -21,16 +21,16 @@ pub:
 	observability   ObservabilityConfig
 }
 
-/// BrokerConfig는 Kafka 브로커 설정을 나타냅니다.
-/// host: 바인딩할 호스트 주소
-/// port: 바인딩할 포트 번호
-/// broker_id: 브로커 고유 ID
-/// cluster_id: 클러스터 ID
-/// max_connections: 최대 연결 수
-/// max_request_size: 최대 요청 크기 (바이트)
-/// request_timeout_ms: 요청 타임아웃 (밀리초)
-/// idle_timeout_ms: 유휴 연결 타임아웃 (밀리초)
-/// advertised_host: 클라이언트에게 광고할 호스트 주소
+/// BrokerConfig represents the Kafka broker configuration.
+/// host: host address to bind
+/// port: port number to bind
+/// broker_id: unique broker ID
+/// cluster_id: cluster ID
+/// max_connections: maximum number of connections
+/// max_request_size: maximum request size (bytes)
+/// request_timeout_ms: request timeout (milliseconds)
+/// idle_timeout_ms: idle connection timeout (milliseconds)
+/// advertised_host: host address to advertise to clients
 pub struct BrokerConfig {
 pub:
 	host               string = '0.0.0.0'
@@ -44,16 +44,16 @@ pub:
 	advertised_host    string = '127.0.0.1'
 }
 
-/// RestConfig는 REST API 서버 설정을 나타냅니다.
-/// enabled: REST API 활성화 여부
-/// host: 바인딩할 호스트 주소
-/// port: 바인딩할 포트 번호
-/// max_connections: 최대 연결 수
-/// static_dir: 정적 파일 디렉토리
-/// sse_heartbeat_interval_ms: SSE 하트비트 간격 (밀리초)
-/// sse_connection_timeout_ms: SSE 연결 타임아웃 (밀리초)
-/// ws_max_message_size: WebSocket 최대 메시지 크기
-/// ws_ping_interval_ms: WebSocket 핑 간격 (밀리초)
+/// RestConfig represents the REST API server configuration.
+/// enabled: whether REST API is enabled
+/// host: host address to bind
+/// port: port number to bind
+/// max_connections: maximum number of connections
+/// static_dir: static file directory
+/// sse_heartbeat_interval_ms: SSE heartbeat interval (milliseconds)
+/// sse_connection_timeout_ms: SSE connection timeout (milliseconds)
+/// ws_max_message_size: WebSocket maximum message size
+/// ws_ping_interval_ms: WebSocket ping interval (milliseconds)
 pub struct RestConfig {
 pub:
 	enabled                   bool   = true
@@ -67,12 +67,12 @@ pub:
 	ws_ping_interval_ms       int    = 30000
 }
 
-/// StorageConfig는 스토리지 엔진 설정을 나타냅니다.
-/// engine: 스토리지 엔진 유형 ('memory', 's3', 'sqlite', 'postgres')
-/// memory: 메모리 스토리지 설정
-/// s3: S3 스토리지 설정
-/// sqlite: SQLite 스토리지 설정
-/// postgres: PostgreSQL 스토리지 설정
+/// StorageConfig represents the storage engine configuration.
+/// engine: storage engine type ('memory', 's3', 'sqlite', 'postgres')
+/// memory: memory storage configuration
+/// s3: S3 storage configuration
+/// sqlite: SQLite storage configuration
+/// postgres: PostgreSQL storage configuration
 pub struct StorageConfig {
 pub:
 	engine   string = 'memory'
@@ -82,24 +82,24 @@ pub:
 	postgres PostgresStorageConfig
 }
 
-/// MemoryStorageConfig는 메모리 스토리지 설정을 나타냅니다.
-/// max_memory_mb: 최대 메모리 사용량 (MB)
-/// segment_size_bytes: 세그먼트 크기 (바이트)
+/// MemoryStorageConfig represents the memory storage configuration.
+/// max_memory_mb: maximum memory usage (MB)
+/// segment_size_bytes: segment size (bytes)
 pub struct MemoryStorageConfig {
 pub:
 	max_memory_mb      int = 20240
 	segment_size_bytes int = 1073741824
 }
 
-/// IcebergConfig는 S3 Iceberg 테이블 형식 설정을 나타냅니다.
-/// enabled: Iceberg 형식 사용 여부
-/// format: 파일 형식 (parquet, orc, avro)
-/// compression: 압축 방식 (none, snappy, gzip, zstd)
-/// write_mode: 쓰기 모드 (append, overwrite)
-/// partition_by: 파티셔닝 컬럼 목록
-/// max_rows_per_file: 파일당 최대 행 수
-/// max_file_size_mb: 파일당 최대 크기 (MB)
-/// schema_evolution: 스키마 진화 지원 여부
+/// IcebergConfig represents the S3 Iceberg table format configuration.
+/// enabled: whether to use Iceberg format
+/// format: file format (parquet, orc, avro)
+/// compression: compression method (none, snappy, gzip, zstd)
+/// write_mode: write mode (append, overwrite)
+/// partition_by: list of partitioning columns
+/// max_rows_per_file: maximum rows per file
+/// max_file_size_mb: maximum file size (MB)
+/// schema_evolution: whether schema evolution is supported
 pub struct IcebergConfig {
 pub:
 	enabled           bool
@@ -112,19 +112,19 @@ pub:
 	schema_evolution  bool     = true
 }
 
-/// S3StorageConfig는 S3 스토리지 설정을 나타냅니다.
-/// endpoint: S3 엔드포인트 URL
-/// bucket: S3 버킷 이름
-/// access_key: AWS 액세스 키
-/// secret_key: AWS 시크릿 키
-/// region: AWS 리전
-/// prefix: 객체 키 접두사
-/// batch_timeout_ms: 배치 타임아웃 (밀리초)
-/// batch_max_bytes: 배치 최대 크기 (바이트)
-/// compaction_interval_ms: 컴팩션 간격 (밀리초)
-/// target_segment_bytes: 목표 세그먼트 크기 (바이트)
-/// index_cache_ttl_ms: 파티션 인덱스 캐시 TTL (밀리초)
-/// iceberg: Iceberg 테이블 형식 설정
+/// S3StorageConfig represents the S3 storage configuration.
+/// endpoint: S3 endpoint URL
+/// bucket: S3 bucket name
+/// access_key: AWS access key
+/// secret_key: AWS secret key
+/// region: AWS region
+/// prefix: object key prefix
+/// batch_timeout_ms: batch timeout (milliseconds)
+/// batch_max_bytes: maximum batch size (bytes)
+/// compaction_interval_ms: compaction interval (milliseconds)
+/// target_segment_bytes: target segment size (bytes)
+/// index_cache_ttl_ms: partition index cache TTL (milliseconds)
+/// iceberg: Iceberg table format configuration
 pub struct S3StorageConfig {
 pub mut:
 	endpoint   string
@@ -134,38 +134,38 @@ pub mut:
 	region     string = 'us-east-1'
 	prefix     string = 'datacore/'
 	timezone   string = 'UTC'
-	// 배치 설정
+	// batch configuration
 	batch_timeout_ms int = 25
 	batch_max_bytes  i64 = 4096000
-	// 컴팩션 설정
+	// compaction configuration
 	compaction_interval_ms int = 30000
 	target_segment_bytes   i64 = 104857600
-	index_cache_ttl_ms     int = 30000 // 파티션 인덱스 캐시 TTL (기본 30초)
-	// 오프셋 배치 설정
+	index_cache_ttl_ms     int = 30000 // partition index cache TTL (default 30 seconds)
+	// offset batch configuration
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
-	// Iceberg 설정
+	// Iceberg configuration
 	iceberg IcebergConfig
 }
 
-/// SqliteStorageConfig는 SQLite 스토리지 설정을 나타냅니다.
-/// path: 데이터베이스 파일 경로
-/// journal_mode: 저널 모드 ('WAL' 권장)
+/// SqliteStorageConfig represents the SQLite storage configuration.
+/// path: database file path
+/// journal_mode: journal mode ('WAL' recommended)
 pub struct SqliteStorageConfig {
 pub:
 	path         string = 'datacore.db'
 	journal_mode string = 'WAL'
 }
 
-/// PostgresStorageConfig는 PostgreSQL 스토리지 설정을 나타냅니다.
-/// host: 데이터베이스 호스트
-/// port: 데이터베이스 포트
-/// database: 데이터베이스 이름
-/// user: 사용자명
-/// password: 비밀번호
-/// pool_size: 연결 풀 크기
-/// sslmode: SSL 모드 (disable, allow, prefer, require, verify-ca, verify-full)
+/// PostgresStorageConfig represents the PostgreSQL storage configuration.
+/// host: database host
+/// port: database port
+/// database: database name
+/// user: username
+/// password: password
+/// pool_size: connection pool size
+/// sslmode: SSL mode (disable, allow, prefer, require, verify-ca, verify-full)
 pub struct PostgresStorageConfig {
 pub:
 	host      string = 'localhost'
@@ -177,20 +177,20 @@ pub:
 	sslmode   string = 'disable'
 }
 
-/// SchemaRegistryConfig는 스키마 레지스트리 설정을 나타냅니다.
-/// enabled: 스키마 레지스트리 활성화 여부
-/// topic: 스키마를 저장할 내부 토픽 이름
+/// SchemaRegistryConfig represents the schema registry configuration.
+/// enabled: whether schema registry is enabled
+/// topic: internal topic name for storing schemas
 pub struct SchemaRegistryConfig {
 pub:
 	enabled bool   = true
 	topic   string = '__schemas'
 }
 
-/// ObservabilityConfig는 관측성 설정을 나타냅니다.
-/// otel: OpenTelemetry 공통 설정
-/// metrics: 메트릭 설정
-/// logging: 로깅 설정
-/// tracing: 트레이싱 설정
+/// ObservabilityConfig represents the observability configuration.
+/// otel: OpenTelemetry common configuration
+/// metrics: metrics configuration
+/// logging: logging configuration
+/// tracing: tracing configuration
 pub struct ObservabilityConfig {
 pub:
 	otel    OtelConfig
@@ -199,15 +199,15 @@ pub:
 	tracing TracingConfig
 }
 
-/// OtelConfig는 OpenTelemetry 공통 설정을 나타냅니다.
-/// enabled: OTEL 활성화 여부
-/// service_name: 서비스 이름
-/// service_version: 서비스 버전
-/// instance_id: 인스턴스 ID
-/// environment: 환경 (development, staging, production)
-/// otlp_endpoint: OTLP gRPC 엔드포인트
-/// otlp_http_endpoint: OTLP HTTP 엔드포인트
-/// resource_attributes: 추가 리소스 속성
+/// OtelConfig represents the OpenTelemetry common configuration.
+/// enabled: whether OTEL is enabled
+/// service_name: service name
+/// service_version: service version
+/// instance_id: instance ID
+/// environment: environment (development, staging, production)
+/// otlp_endpoint: OTLP gRPC endpoint
+/// otlp_http_endpoint: OTLP HTTP endpoint
+/// resource_attributes: additional resource attributes
 pub struct OtelConfig {
 pub:
 	enabled             bool   = true
@@ -220,12 +220,12 @@ pub:
 	resource_attributes string
 }
 
-/// MetricsConfig는 메트릭 설정을 나타냅니다.
-/// enabled: 메트릭 활성화 여부
-/// exporter: 내보내기 방식 ('prometheus', 'otlp')
-/// prometheus_endpoint: Prometheus 엔드포인트 경로
-/// prometheus_port: Prometheus 메트릭 포트
-/// collection_interval: 수집 간격 (초)
+/// MetricsConfig represents the metrics configuration.
+/// enabled: whether metrics are enabled
+/// exporter: export method ('prometheus', 'otlp')
+/// prometheus_endpoint: Prometheus endpoint path
+/// prometheus_port: Prometheus metrics port
+/// collection_interval: collection interval (seconds)
 pub struct MetricsConfig {
 pub:
 	enabled             bool   = true
@@ -236,32 +236,32 @@ pub:
 	collection_interval int = 15
 }
 
-/// LoggingConfig는 로깅 설정을 나타냅니다.
-/// enabled: 로깅 활성화 여부
-/// level: 로그 레벨 (trace, debug, info, warn, error, fatal)
-/// format: 로그 형식 (json, text)
-/// output: 출력 대상 (stdout, otel, both, none)
-/// inject_trace_context: 트레이스 컨텍스트 주입 여부
+/// LoggingConfig represents the logging configuration.
+/// enabled: whether logging is enabled
+/// level: log level (trace, debug, info, warn, error, fatal)
+/// format: log format (json, text)
+/// output: output destination (stdout, otel, both, none)
+/// inject_trace_context: whether to inject trace context
 pub struct LoggingConfig {
 pub:
 	enabled              bool   = true
 	level                string = 'debug'  // trace, debug, info, warn, error, fatal
 	format               string = 'json'   // json, text
 	output               string = 'stdout' // stdout, otel, both, none
-	otlp_endpoint        string // 로그 내보내기용 OTLP 엔드포인트
-	otlp_export          bool   // Deprecated: output = 'otel' 또는 'both' 사용
-	console_output       bool = true // Deprecated: output = 'stdout' 또는 'both' 사용
+	otlp_endpoint        string // OTLP endpoint for log export
+	otlp_export          bool   // Deprecated: use output = 'otel' or 'both'
+	console_output       bool = true // Deprecated: use output = 'stdout' or 'both'
 	inject_trace_context bool = true
 }
 
-/// TracingConfig는 트레이싱 설정을 나타냅니다.
-/// enabled: 트레이싱 활성화 여부
-/// otlp_endpoint: OTLP 엔드포인트
-/// sampler: 샘플러 유형 ('trace_id_ratio', 'always_on', 'always_off')
-/// sample_rate: 샘플링 비율 (0.0 ~ 1.0)
-/// batch_timeout_ms: 배치 타임아웃 (밀리초)
-/// max_batch_size: 최대 배치 크기
-/// max_queue_size: 최대 큐 크기
+/// TracingConfig represents the tracing configuration.
+/// enabled: whether tracing is enabled
+/// otlp_endpoint: OTLP endpoint
+/// sampler: sampler type ('trace_id_ratio', 'always_on', 'always_off')
+/// sample_rate: sampling rate (0.0 ~ 1.0)
+/// batch_timeout_ms: batch timeout (milliseconds)
+/// max_batch_size: maximum batch size
+/// max_queue_size: maximum queue size
 pub struct TracingConfig {
 pub:
 	enabled                 bool
@@ -276,22 +276,22 @@ pub:
 	max_links_per_span      int    = 128
 }
 
-/// load_config는 TOML 파일에서 설정을 로드합니다.
-/// path: 설정 파일 경로
-/// 반환값: 로드된 Config 또는 에러
+/// load_config loads configuration from a TOML file.
+/// path: path to the configuration file
+/// returns: loaded Config or error
 pub fn load_config(path string) !Config {
 	return load_config_with_args(path, map[string]string{})
 }
 
-/// load_config_with_args는 CLI 인자를 포함하여 설정을 로드합니다.
-/// 우선순위: CLI args > 환경변수 > TOML > 기본값
-/// path: 설정 파일 경로
-/// cli_args: CLI 인자 맵 (parse_cli_args로 파싱된 값)
-/// 반환값: 로드된 Config 또는 에러
+/// load_config_with_args loads configuration including CLI arguments.
+/// Priority: CLI args > environment variables > TOML > defaults
+/// path: path to the configuration file
+/// cli_args: CLI argument map (parsed by parse_cli_args)
+/// returns: loaded Config or error
 pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
-	// 파일 존재 확인
+	// check if file exists
 	if !os.exists(path) {
-		// 파일이 없으면 기본 설정 + CLI/환경변수 오버라이드
+		// if file does not exist, use default config with CLI/env overrides
 		return load_default_config_with_overrides(cli_args)
 	}
 
@@ -299,10 +299,10 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 
 	doc := toml.parse_text(content) or { return error('Failed to parse config file: ${err}') }
 
-	// 브로커 설정 파싱 (우선순위 cascade 적용)
+	// parse broker configuration (with priority cascade)
 	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
 		doc, 'broker.host', '0.0.0.0')
-	// broker_id: 설정/환경변수에 없으면 서버 고유값 기반 deterministic 생성 (기본값 0을 sentinel로 사용)
+	// broker_id: if not set via config/env, generate deterministically from server identity (0 used as sentinel)
 	mut broker_id := get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID', doc,
 		'broker.broker_id', 0)
 	if broker_id == 0 {
@@ -327,7 +327,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			doc, 'broker.advertised_host', broker_host)
 	}
 
-	// REST 설정 파싱 (우선순위 cascade 적용)
+	// parse REST configuration (with priority cascade)
 	rest := RestConfig{
 		enabled:                   get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
 			doc, 'rest.enabled', true)
@@ -345,17 +345,17 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		ws_ping_interval_ms:       get_int(doc, 'rest.ws_ping_interval_ms', 30000)
 	}
 
-	// 스토리지 설정 파싱 (우선순위 cascade 적용)
+	// parse storage configuration (with priority cascade)
 	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
 		doc, 'storage.engine', 'memory')
 
-	// 메모리 설정 파싱
+	// parse memory configuration
 	memory := MemoryStorageConfig{
 		max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 20240)
 		segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
 	}
 
-	// S3 설정 파싱 (우선순위 cascade 적용)
+	// parse S3 configuration (with priority cascade)
 	mut s3 := S3StorageConfig{
 		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
 			doc, 'storage.s3.endpoint', '')
@@ -384,8 +384,8 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		secret_key:                   ''
 	}
 
-	// S3 자격 증명 우선순위: CLI args > 환경변수 > ~/.aws/credentials > config.toml
-	// 1순위: CLI 인자
+	// S3 credentials priority: CLI args > env vars > ~/.aws/credentials > config.toml
+	// priority 1: CLI arguments
 	if cli_access_key := cli_args['s3-access-key'] {
 		s3.access_key = cli_access_key
 	}
@@ -393,7 +393,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		s3.secret_key = cli_secret_key
 	}
 
-	// 2순위: 환경변수
+	// priority 2: environment variables
 	if s3.access_key == '' {
 		s3.access_key = os.getenv('AWS_ACCESS_KEY_ID')
 	}
@@ -401,7 +401,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		s3.secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
 	}
 
-	// 3순위: ~/.aws/credentials 파일
+	// priority 3: ~/.aws/credentials file
 	if s3.access_key == '' || s3.secret_key == '' {
 		file_access, file_secret := load_s3_credentials_from_file()
 		if s3.access_key == '' {
@@ -412,7 +412,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		}
 	}
 
-	// 4순위: config.toml
+	// priority 4: config.toml
 	if s3.access_key == '' {
 		s3.access_key = get_string(doc, 'storage.s3.access_key', '')
 	}
@@ -420,7 +420,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		s3.secret_key = get_string(doc, 'storage.s3.secret_key', '')
 	}
 
-	// Iceberg 설정 파싱
+	// parse Iceberg configuration
 	iceberg_enabled := get_bool(doc, 'storage.s3.iceberg.enabled', false)
 	if iceberg_enabled {
 		mut partition_by := []string{}
@@ -445,13 +445,13 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		}
 	}
 
-	// SQLite 설정 파싱
+	// parse SQLite configuration
 	sqlite := SqliteStorageConfig{
 		path:         get_string(doc, 'storage.sqlite.path', 'datacore.db')
 		journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
 	}
 
-	// PostgreSQL 설정 파싱 (우선순위 cascade 적용)
+	// parse PostgreSQL configuration (with priority cascade)
 	postgres := PostgresStorageConfig{
 		host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
 			doc, 'storage.postgres.host', 'localhost')
@@ -477,13 +477,13 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		postgres: postgres
 	}
 
-	// 스키마 레지스트리 설정 파싱
+	// parse schema registry configuration
 	schema_registry := SchemaRegistryConfig{
 		enabled: get_bool(doc, 'schema_registry.enabled', true)
 		topic:   get_string(doc, 'schema_registry.topic', '__schemas')
 	}
 
-	// 관측성 설정 파싱 - OTel 공통
+	// parse observability configuration - OTel common
 	otel := OtelConfig{
 		enabled:             get_bool(doc, 'observability.otel.enabled', true)
 		service_name:        get_string(doc, 'observability.otel.service_name', 'datacore')
@@ -497,7 +497,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			'')
 	}
 
-	// 메트릭 설정 파싱
+	// parse metrics configuration
 	metrics := MetricsConfig{
 		enabled:             get_bool(doc, 'observability.metrics.enabled', true)
 		exporter:            get_string(doc, 'observability.metrics.exporter', 'prometheus')
@@ -509,7 +509,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			15)
 	}
 
-	// 로깅 설정 파싱
+	// parse logging configuration
 	logging := LoggingConfig{
 		enabled:              get_bool(doc, 'observability.logging.enabled', true)
 		level:                get_string(doc, 'observability.logging.level', 'debug')
@@ -522,7 +522,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			true)
 	}
 
-	// 트레이싱 설정 파싱
+	// parse tracing configuration
 	tracing := TracingConfig{
 		enabled:                 get_bool(doc, 'observability.tracing.enabled', false)
 		otlp_endpoint:           get_string(doc, 'observability.tracing.otlp_endpoint',
@@ -558,157 +558,157 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		observability:   observability
 	}
 
-	// 설정 유효성 검사
+	// validate configuration
 	cfg.validate()!
 
 	return cfg
 }
 
-// 헬퍼 함수
+// helper functions
 
-/// get_string은 TOML 문서에서 문자열 값을 가져옵니다.
+/// get_string retrieves a string value from a TOML document.
 fn get_string(doc toml.Doc, key string, default_val string) string {
 	val := doc.value_opt(key) or { return default_val }
 	return val.string()
 }
 
-/// get_int는 TOML 문서에서 정수 값을 가져옵니다.
+/// get_int retrieves an integer value from a TOML document.
 fn get_int(doc toml.Doc, key string, default_val int) int {
 	val := doc.value_opt(key) or { return default_val }
 	return val.int()
 }
 
-/// get_i64는 TOML 문서에서 64비트 정수 값을 가져옵니다.
+/// get_i64 retrieves a 64-bit integer value from a TOML document.
 fn get_i64(doc toml.Doc, key string, default_val i64) i64 {
 	val := doc.value_opt(key) or { return default_val }
 	return val.i64()
 }
 
-/// get_f64는 TOML 문서에서 실수 값을 가져옵니다.
+/// get_f64 retrieves a floating-point value from a TOML document.
 fn get_f64(doc toml.Doc, key string, default_val f64) f64 {
 	val := doc.value_opt(key) or { return default_val }
 	return val.f64()
 }
 
-/// get_bool은 TOML 문서에서 불리언 값을 가져옵니다.
+/// get_bool retrieves a boolean value from a TOML document.
 fn get_bool(doc toml.Doc, key string, default_val bool) bool {
 	val := doc.value_opt(key) or { return default_val }
 	return val.bool()
 }
 
-// 우선순위 Cascade 헬퍼 함수
-// 설정 값 우선순위: CLI args > 환경변수 > TOML > 기본값
+// Priority cascade helper functions
+// Configuration value priority: CLI args > env vars > TOML > defaults
 
-/// get_config_string은 우선순위에 따라 문자열 설정 값을 가져옵니다.
-/// 1. CLI 인자 (cli_key)
-/// 2. 환경변수 (env_key)
-/// 3. TOML 파일 (toml_key)
-/// 4. 기본값 (default_val)
+/// get_config_string retrieves a string configuration value according to priority.
+/// 1. CLI argument (cli_key)
+/// 2. environment variable (env_key)
+/// 3. TOML file (toml_key)
+/// 4. default value (default_val)
 fn get_config_string(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val string) string {
-	// 1순위: CLI 인자
+	// priority 1: CLI arguments
 	if cli_val := cli_args[cli_key] {
 		return cli_val
 	}
 
-	// 2순위: 환경변수
+	// priority 2: environment variables
 	if env_val := os.getenv_opt(env_key) {
 		return env_val
 	}
 
-	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	// priority 3: TOML file (skip empty keys)
 	if toml_key.len > 0 {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.string()
 		}
 	}
 
-	// 4순위: 기본값
+	// priority 4: default value
 	return default_val
 }
 
-/// get_config_int는 우선순위에 따라 정수 설정 값을 가져옵니다.
+/// get_config_int retrieves an integer configuration value according to priority.
 fn get_config_int(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val int) int {
-	// 1순위: CLI 인자
+	// priority 1: CLI arguments
 	if cli_val := cli_args[cli_key] {
 		return cli_val.int()
 	}
 
-	// 2순위: 환경변수
+	// priority 2: environment variables
 	if env_val := os.getenv_opt(env_key) {
 		return env_val.int()
 	}
 
-	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	// priority 3: TOML file (skip empty keys)
 	if toml_key.len > 0 {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.int()
 		}
 	}
 
-	// 4순위: 기본값
+	// priority 4: default value
 	return default_val
 }
 
-/// get_config_i64는 우선순위에 따라 64비트 정수 설정 값을 가져옵니다.
+/// get_config_i64 retrieves a 64-bit integer configuration value according to priority.
 fn get_config_i64(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val i64) i64 {
-	// 1순위: CLI 인자
+	// priority 1: CLI arguments
 	if cli_val := cli_args[cli_key] {
 		return cli_val.i64()
 	}
 
-	// 2순위: 환경변수
+	// priority 2: environment variables
 	if env_val := os.getenv_opt(env_key) {
 		return env_val.i64()
 	}
 
-	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	// priority 3: TOML file (skip empty keys)
 	if toml_key.len > 0 {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.i64()
 		}
 	}
 
-	// 4순위: 기본값
+	// priority 4: default value
 	return default_val
 }
 
-/// get_config_bool은 우선순위에 따라 불리언 설정 값을 가져옵니다.
+/// get_config_bool retrieves a boolean configuration value according to priority.
 fn get_config_bool(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val bool) bool {
-	// 1순위: CLI 인자
+	// priority 1: CLI arguments
 	if cli_val := cli_args[cli_key] {
 		return cli_val == 'true' || cli_val == '1' || cli_val == 'yes'
 	}
 
-	// 2순위: 환경변수
+	// priority 2: environment variables
 	if env_val := os.getenv_opt(env_key) {
 		return env_val == 'true' || env_val == '1' || env_val == 'yes'
 	}
 
-	// 3순위: TOML 파일 (빈 키는 건너뜀)
+	// priority 3: TOML file (skip empty keys)
 	if toml_key.len > 0 {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.bool()
 		}
 	}
 
-	// 4순위: 기본값
+	// priority 4: default value
 	return default_val
 }
 
-/// parse_cli_args는 커맨드라인 인자를 파싱하여 map으로 반환합니다.
-/// 형식: --key=value 또는 --key value
+/// parse_cli_args parses command-line arguments and returns them as a map.
+/// format: --key=value or --key value
 pub fn parse_cli_args(args []string) map[string]string {
 	mut result := map[string]string{}
 
 	for i := 0; i < args.len; i++ {
 		arg := args[i]
 
-		// --key=value 형식
+		// --key=value format
 		if arg.starts_with('--') && arg.contains('=') {
 			key, val := arg[2..].split_once('=') or { continue }
 			result[key] = val
 		}
-		// --key value 형식
+		// --key value format
 		else if arg.starts_with('--') && i + 1 < args.len {
 			key := arg[2..]
 			value := args[i + 1]
@@ -721,7 +721,7 @@ pub fn parse_cli_args(args []string) map[string]string {
 	return result
 }
 
-/// save는 설정을 TOML 파일로 저장합니다.
+/// save saves the configuration to a TOML file.
 pub fn (c Config) save(path string) ! {
 	mut content := '# DataCore Configuration\n\n'
 
@@ -759,9 +759,9 @@ pub fn (c Config) save(path string) ! {
 	os.write_file(path, content)!
 }
 
-/// validate는 설정의 유효성을 검사합니다.
+/// validate checks the validity of the configuration.
 pub fn (c Config) validate() ! {
-	// 브로커 설정 검증
+	// validate broker configuration
 	if c.broker.port < 1 || c.broker.port > 65535 {
 		return error('Invalid broker port: ${c.broker.port}')
 	}
@@ -769,7 +769,7 @@ pub fn (c Config) validate() ! {
 		return error('Invalid broker_id: ${c.broker.broker_id}')
 	}
 
-	// 스토리지 설정 검증
+	// validate storage configuration
 	match c.storage.engine {
 		'memory' {
 			if c.storage.memory.max_memory_mb < 1 {
@@ -806,37 +806,37 @@ pub fn (c Config) validate() ! {
 	}
 }
 
-/// get_storage_engine은 스토리지 엔진 이름을 반환합니다.
+/// get_storage_engine returns the storage engine name.
 pub fn (c Config) get_storage_engine() string {
 	return c.storage.engine
 }
 
-/// is_s3_storage는 S3 스토리지가 설정되어 있는지 확인합니다.
+/// is_s3_storage checks whether S3 storage is configured.
 pub fn (c Config) is_s3_storage() bool {
 	return c.storage.engine == 's3'
 }
 
-/// is_metrics_enabled는 메트릭이 활성화되어 있는지 확인합니다.
+/// is_metrics_enabled checks whether metrics are enabled.
 pub fn (c Config) is_metrics_enabled() bool {
 	return c.observability.metrics.enabled
 }
 
-/// is_tracing_enabled는 트레이싱이 활성화되어 있는지 확인합니다.
+/// is_tracing_enabled checks whether tracing is enabled.
 pub fn (c Config) is_tracing_enabled() bool {
 	return c.observability.tracing.enabled
 }
 
-/// load_default_config_with_overrides는 설정 파일 없이 CLI/환경변수로 설정을 생성합니다.
-/// cli_args: CLI 인자 맵
-/// 반환값: 기본값 + CLI/환경변수 오버라이드가 적용된 Config
+/// load_default_config_with_overrides creates a configuration without a config file, using CLI/env overrides.
+/// cli_args: CLI argument map
+/// returns: Config with defaults applied and CLI/env overrides
 fn load_default_config_with_overrides(cli_args map[string]string) Config {
-	// 빈 TOML doc 생성
+	// create empty TOML doc
 	empty_doc := toml.Doc{}
 
-	// 브로커 설정 (우선순위 cascade 적용)
+	// broker configuration (with priority cascade)
 	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
 		empty_doc, '', '0.0.0.0')
-	// broker_id: 설정/환경변수에 없으면 서버 고유값 기반 deterministic 생성 (기본값 0을 sentinel로 사용)
+	// broker_id: if not set via config/env, generate deterministically from server identity (0 used as sentinel)
 	mut broker_id := get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID', empty_doc,
 		'', 0)
 	if broker_id == 0 {
@@ -861,7 +861,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 			empty_doc, '', broker_host)
 	}
 
-	// REST 설정 (우선순위 cascade 적용)
+	// REST configuration (with priority cascade)
 	rest := RestConfig{
 		enabled:                   get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
 			empty_doc, '', true)
@@ -879,7 +879,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		ws_ping_interval_ms:       30000
 	}
 
-	// 스토리지 설정 (우선순위 cascade 적용)
+	// storage configuration (with priority cascade)
 	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
 		empty_doc, '', 'memory')
 
@@ -888,7 +888,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		segment_size_bytes: 1073741824
 	}
 
-	// S3 설정 (우선순위 cascade 적용)
+	// S3 configuration (with priority cascade)
 	mut s3 := S3StorageConfig{
 		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
 			empty_doc, '', '')
@@ -912,7 +912,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		secret_key:                   ''
 	}
 
-	// S3 자격 증명 우선순위: CLI args > 환경변수 > ~/.aws/credentials
+	// S3 credentials priority: CLI args > env vars > ~/.aws/credentials
 	if cli_access_key := cli_args['s3-access-key'] {
 		s3.access_key = cli_access_key
 	}
@@ -937,7 +937,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		}
 	}
 
-	// Iceberg 설정 (기본값 - 비활성화)
+	// Iceberg configuration (default - disabled)
 	s3.iceberg = IcebergConfig{
 		enabled:           false
 		format:            'parquet'
@@ -954,7 +954,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		journal_mode: 'WAL'
 	}
 
-	// PostgreSQL 설정 (우선순위 cascade 적용)
+	// PostgreSQL configuration (with priority cascade)
 	postgres := PostgresStorageConfig{
 		host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
 			empty_doc, '', 'localhost')
@@ -980,13 +980,13 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		postgres: postgres
 	}
 
-	// 스키마 레지스트리 설정
+	// schema registry configuration
 	schema_registry := SchemaRegistryConfig{
 		enabled: true
 		topic:   '__schemas'
 	}
 
-	// 관측성 설정 (기본값)
+	// observability configuration (defaults)
 	otel := OtelConfig{
 		enabled:             true
 		service_name:        'datacore'
@@ -1047,41 +1047,41 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	}
 }
 
-/// === 환경 변수 유틸리티 함수들 (대문자/소문자 모두 지원) ===
+/// === Environment variable utility functions (supports both upper and lower case) ===
 
-/// toml_key_to_env_key_upper는 TOML 키를 대문자 환경 변수 이름으로 변환합니다.
-/// 예: broker.host -> BROKER_HOST
+/// toml_key_to_env_key_upper converts a TOML key to an uppercase environment variable name.
+/// example: broker.host -> BROKER_HOST
 fn toml_key_to_env_key_upper(toml_key string) string {
 	mut env_key := toml_key.replace('.', '_')
 	env_key = env_key.to_upper()
 	return env_key
 }
 
-/// toml_key_to_env_key_lower는 TOML 키를 소문자 환경 변수 이름으로 변환합니다.
-/// 예: broker.host -> broker_host
+/// toml_key_to_env_key_lower converts a TOML key to a lowercase environment variable name.
+/// example: broker.host -> broker_host
 fn toml_key_to_env_key_lower(toml_key string) string {
 	mut env_key := toml_key.replace('.', '_')
 	env_key = env_key.to_lower()
 	return env_key
 }
 
-/// get_env_value는 TOML 키로 환경 변수 값을 검색합니다.
-/// 검색 순서: 1) 대문자 버전, 2) 소문자 버전, 3) DATACORE_접두사+대문자
-/// 반환: (값, 발견 여부)
+/// get_env_value searches for an environment variable value by TOML key.
+/// search order: 1) uppercase version, 2) lowercase version, 3) DATACORE_ prefix + uppercase
+/// returns: (value, found)
 fn get_env_value(toml_key string) (string, bool) {
-	// 1. 대문자 버전 검색 (예: BROKER_HOST)
+	// 1. search uppercase version (e.g. BROKER_HOST)
 	env_key_upper := toml_key_to_env_key_upper(toml_key)
 	if env_val := os.getenv_opt(env_key_upper) {
 		return env_val, true
 	}
 
-	// 2. 소문자 버전 검색 (예: broker_host)
+	// 2. search lowercase version (e.g. broker_host)
 	env_key_lower := toml_key_to_env_key_lower(toml_key)
 	if env_val := os.getenv_opt(env_key_lower) {
 		return env_val, true
 	}
 
-	// 3. DATACORE_ 접두사 + 대문자 검색 (예: DATACORE_BROKER_HOST)
+	// 3. search DATACORE_ prefix + uppercase (e.g. DATACORE_BROKER_HOST)
 	env_key_prefixed := 'DATACORE_' + env_key_upper
 	if env_val := os.getenv_opt(env_key_prefixed) {
 		return env_val, true
@@ -1090,98 +1090,98 @@ fn get_env_value(toml_key string) (string, bool) {
 	return '', false
 }
 
-/// print_env_mapping은 TOML 키와 환경 변수 이름의 매핑을 출력합니다.
+/// print_env_mapping prints the mapping between TOML keys and environment variable names.
 pub fn print_env_mapping() {
 	println('=== TOML Key to Environment Variable Mapping ===')
 	println('')
-	println('검색 순서:')
-	println('  1. 대문자 (예: BROKER_HOST)')
-	println('  2. 소문자 (예: broker_host)')
-	println('  3. DATACORE_접두사+대문자 (예: DATACORE_BROKER_HOST)')
+	println('Search order:')
+	println('  1. uppercase (e.g. BROKER_HOST)')
+	println('  2. lowercase (e.g. broker_host)')
+	println('  3. DATACORE_ prefix + uppercase (e.g. DATACORE_BROKER_HOST)')
 	println('')
 
 	// Broker
 	println('[broker]')
-	println('  broker.host        → ' + toml_key_to_env_key_upper('broker.host') + ', ' +
+	println('  broker.host        -> ' + toml_key_to_env_key_upper('broker.host') + ', ' +
 		toml_key_to_env_key_lower('broker.host') + ', DATACORE_' +
 		toml_key_to_env_key_upper('broker.host'))
-	println('  broker.port        → ' + toml_key_to_env_key_upper('broker.port') + ', ' +
+	println('  broker.port        -> ' + toml_key_to_env_key_upper('broker.port') + ', ' +
 		toml_key_to_env_key_lower('broker.port') + ', DATACORE_' +
 		toml_key_to_env_key_upper('broker.port'))
-	println('  broker.cluster_id  → ' + toml_key_to_env_key_upper('broker.cluster_id') + ', ' +
+	println('  broker.cluster_id  -> ' + toml_key_to_env_key_upper('broker.cluster_id') + ', ' +
 		toml_key_to_env_key_lower('broker.cluster_id') + ', DATACORE_' +
 		toml_key_to_env_key_upper('broker.cluster_id'))
 	println('')
 
 	// Storage
 	println('[storage]')
-	println('  storage.engine     → ' + toml_key_to_env_key_upper('storage.engine') + ', ' +
+	println('  storage.engine     -> ' + toml_key_to_env_key_upper('storage.engine') + ', ' +
 		toml_key_to_env_key_lower('storage.engine') + ', DATACORE_' +
 		toml_key_to_env_key_upper('storage.engine'))
 	println('')
 
 	// S3
 	println('[s3]')
-	println('  s3.endpoint   → ' + toml_key_to_env_key_upper('s3.endpoint') + ', ' +
+	println('  s3.endpoint   -> ' + toml_key_to_env_key_upper('s3.endpoint') + ', ' +
 		toml_key_to_env_key_lower('s3.endpoint') + ', DATACORE_' +
 		toml_key_to_env_key_upper('s3.endpoint'))
-	println('  s3.bucket     → ' + toml_key_to_env_key_upper('s3.bucket') + ', ' +
+	println('  s3.bucket     -> ' + toml_key_to_env_key_upper('s3.bucket') + ', ' +
 		toml_key_to_env_key_lower('s3.bucket') + ', DATACORE_' +
 		toml_key_to_env_key_upper('s3.bucket'))
 	println('')
 
 	// PostgreSQL
 	println('[postgres]')
-	println('  postgres.host     → ' + toml_key_to_env_key_upper('postgres.host') + ', ' +
+	println('  postgres.host     -> ' + toml_key_to_env_key_upper('postgres.host') + ', ' +
 		toml_key_to_env_key_lower('postgres.host') + ', DATACORE_' +
 		toml_key_to_env_key_upper('postgres.host'))
-	println('  postgres.password → ' + toml_key_to_env_key_upper('postgres.password') + ', ' +
+	println('  postgres.password -> ' + toml_key_to_env_key_upper('postgres.password') + ', ' +
 		toml_key_to_env_key_lower('postgres.password') + ', DATACORE_' +
 		toml_key_to_env_key_upper('postgres.password'))
 	println('')
 
 	// Logging
 	println('[logging]')
-	println('  logging.level     → ' + toml_key_to_env_key_upper('logging.level') + ', ' +
+	println('  logging.level     -> ' + toml_key_to_env_key_upper('logging.level') + ', ' +
 		toml_key_to_env_key_lower('logging.level') + ', DATACORE_' +
 		toml_key_to_env_key_upper('logging.level'))
 	println('')
 }
 
-// Deterministic Broker ID 생성
-// 서버의 고유 식별자(MAC 주소, IP 주소, 호스트명)를 기반으로
-// 동일 서버에서 항상 같은 broker_id를 생성합니다.
-// Fallback 순서: MAC 주소 → IP 주소 → 호스트명 → 랜덤
+// Deterministic Broker ID generation
+// Generates the same broker_id on the same server every time,
+// based on unique server identifiers (MAC address, IP address, hostname).
+// Fallback order: MAC address -> IP address -> hostname -> random
 
-/// generate_deterministic_broker_id는 서버 고유값을 기반으로 deterministic한 broker_id를 생성합니다.
-/// 같은 서버에서 실행하면 항상 같은 값을 반환합니다.
+/// generate_deterministic_broker_id generates a deterministic broker_id based on server identity.
+/// Always returns the same value when run on the same server.
 fn generate_deterministic_broker_id() int {
-	// 1순위: MAC 주소
+	// priority 1: MAC address
 	mac := get_mac_address()
 	if mac.len > 0 {
 		return string_to_broker_id(mac)
 	}
 
-	// 2순위: IP 주소
+	// priority 2: IP address
 	ip := get_primary_ip()
 	if ip.len > 0 {
 		return string_to_broker_id(ip)
 	}
 
-	// 3순위: 호스트명
+	// priority 3: hostname
 	hostname := os.hostname() or { '' }
 	if hostname.len > 0 {
 		return string_to_broker_id(hostname)
 	}
 
-	// 최후 수단: 랜덤 폴백
+	// last resort: random fallback
 	return rand.int_in_range(1, 99999999) or { 1 }
 }
 
-/// get_mac_address는 시스템의 첫 번째 물리 네트워크 인터페이스 MAC 주소를 반환합니다.
-/// 루프백(00:00:00:00:00:00)이 아닌 첫 번째 유효한 MAC을 선택합니다.
+/// get_mac_address returns the MAC address of the first physical network interface.
+/// Selects the first valid MAC that is not loopback (00:00:00:00:00:00).
 fn get_mac_address() string {
-	// Linux: /sys/class/net/ 디렉토리에서 읽기
+	// Linux: read from /sys/class/net/ directory
 	if os.exists('/sys/class/net') {
 		result := os.execute('for iface in /sys/class/net/*; do cat "\${iface}/address" 2>/dev/null; done')
 		if result.exit_code == 0 && result.output.len > 0 {
@@ -1195,7 +1195,7 @@ fn get_mac_address() string {
 		}
 	}
 
-	// macOS: ifconfig에서 읽기
+	// macOS: read from ifconfig
 	result := os.execute('ifconfig 2>/dev/null | grep ether | head -1')
 	if result.exit_code == 0 && result.output.len > 0 {
 		parts := result.output.trim_space().split(' ')
@@ -1212,9 +1212,9 @@ fn get_mac_address() string {
 	return ''
 }
 
-/// get_primary_ip는 외부 연결에 사용되는 기본 IP 주소를 반환합니다.
+/// get_primary_ip returns the primary IP address used for external connections.
 fn get_primary_ip() string {
-	// Linux: ip route로 기본 출발 IP 확인
+	// Linux: get source IP via ip route
 	result_ip := os.execute("ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \\K[^ ]+'")
 	if result_ip.exit_code == 0 && result_ip.output.len > 0 {
 		ip := result_ip.output.trim_space()
@@ -1223,7 +1223,7 @@ fn get_primary_ip() string {
 		}
 	}
 
-	// macOS: route로 기본 인터페이스 확인 후 IP 추출
+	// macOS: get default interface then extract IP
 	result_mac := os.execute('ipconfig getifaddr en0 2>/dev/null')
 	if result_mac.exit_code == 0 && result_mac.output.len > 0 {
 		ip := result_mac.output.trim_space()
@@ -1235,14 +1235,14 @@ fn get_primary_ip() string {
 	return ''
 }
 
-/// string_to_broker_id는 문자열을 FNV-1a 해시하여 1~99999999 범위의 broker_id로 변환합니다.
+/// string_to_broker_id hashes a string using FNV-1a and maps it to a broker_id in the range 1~99999999.
 fn string_to_broker_id(s string) int {
-	// FNV-1a 32비트 해시
+	// FNV-1a 32-bit hash
 	mut hash := u64(0x811c9dc5)
 	for b in s.bytes() {
 		hash = hash ^ u64(b)
 		hash = (hash * u64(0x01000193)) & u64(0xFFFFFFFF)
 	}
-	// 1 ~ 99999999 범위로 맵핑
+	// map to range 1 ~ 99999999
 	return int(hash % 99999998) + 1
 }

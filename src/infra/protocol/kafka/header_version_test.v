@@ -1,13 +1,13 @@
 module kafka
 
-// Request/Response Header 버전 함수 테스트
-// KIP-511 및 Apache Kafka 공식 사양 기반
+// Request/Response Header version function tests
+// Based on KIP-511 and the official Apache Kafka specification
 
-// Request Header 버전 테스트
+// Request Header version tests
 
 fn test_api_versions_request_header_version() {
-	// ApiVersions Request는 항상 Header v1 사용 (KIP-511)
-	// 본문이 flexible(v3+)이더라도 헤더는 그렇지 않음
+	// ApiVersions Request always uses Header v1 (KIP-511)
+	// Even if the body is flexible (v3+), the header is not
 
 	// v0: non-flexible → Header v1
 	assert get_request_header_version(.api_versions, 0) == 1
@@ -15,16 +15,16 @@ fn test_api_versions_request_header_version() {
 	assert get_request_header_version(.api_versions, 1) == 1
 	// v2: non-flexible → Header v1
 	assert get_request_header_version(.api_versions, 2) == 1
-	// v3+: 본문이 flexible이더라도 Header는 여전히 v1 (KIP-511) - 잘못됨!
-	// ApiVersions Request v3+는 Header v2 (Flexible) 사용
-	// Response Header만 항상 v0
+	// v3+: Header v2 (Flexible) — body is flexible, and so is the header
+	// ApiVersions Request v3+ uses Header v2 (Flexible)
+	// Only the Response Header is always v0
 	assert get_request_header_version(.api_versions, 3) == 2
 	assert get_request_header_version(.api_versions, 4) == 2
 }
 
 fn test_api_versions_response_header_version() {
-	// ApiVersions Response는 항상 Header v0 (KIP-511)
-	// 이 특별한 동작을 가진 유일한 API
+	// ApiVersions Response always uses Header v0 (KIP-511)
+	// This is the only API with this special behavior
 	assert get_response_header_version(.api_versions, 0) == 0
 	assert get_response_header_version(.api_versions, 1) == 0
 	assert get_response_header_version(.api_versions, 2) == 0
@@ -33,9 +33,9 @@ fn test_api_versions_response_header_version() {
 }
 
 fn test_sasl_handshake_header_version() {
-	// SaslHandshake는 절대 flexible하지 않음 (v0-v1)
-	// Request Header: 항상 v1
-	// Response Header: 항상 v0
+	// SaslHandshake is never flexible (v0-v1)
+	// Request Header: always v1
+	// Response Header: always v0
 	assert get_request_header_version(.sasl_handshake, 0) == 1
 	assert get_request_header_version(.sasl_handshake, 1) == 1
 	assert get_response_header_version(.sasl_handshake, 0) == 0
@@ -90,7 +90,7 @@ fn test_fetch_header_version() {
 	assert get_response_header_version(.fetch, 16) == 1
 }
 
-// is_flexible_version 테스트
+// is_flexible_version tests
 
 fn test_is_flexible_version_api_versions() {
 	// ApiVersions: v0-v2 non-flexible, v3+ flexible
@@ -120,7 +120,7 @@ fn test_is_flexible_version_fetch() {
 }
 
 fn test_is_flexible_version_sasl() {
-	// SaslHandshake: 절대 flexible하지 않음
+	// SaslHandshake: never flexible
 	assert is_flexible_version(.sasl_handshake, 0) == false
 	assert is_flexible_version(.sasl_handshake, 1) == false
 
@@ -129,14 +129,14 @@ fn test_is_flexible_version_sasl() {
 	assert is_flexible_version(.sasl_authenticate, 2) == true
 }
 
-// 엣지 케이스 및 회귀 테스트
+// Edge cases and regression tests
 
 fn test_header_version_symmetry_exception() {
-	// ApiVersions는 특별함:
-	// Request: v3+에서 Header v2 (flexible)
-	// Response: Header v0 (항상)
+	// ApiVersions is special:
+	// Request: Header v2 (flexible) for v3+
+	// Response: Header v0 (always)
 
-	// v3의 경우:
+	// For v3:
 	req_header := get_request_header_version(.api_versions, 3)
 	resp_header := get_response_header_version(.api_versions, 3)
 
@@ -146,22 +146,22 @@ fn test_header_version_symmetry_exception() {
 }
 
 fn test_all_other_apis_symmetric_flexibility() {
-	// 다른 모든 API의 경우, Request와 Response 헤더 버전은
-	// flexibility 측면에서 일치해야 함 (둘 다 flexible이거나 둘 다 non-flexible)
+	// For all other APIs, Request and Response header versions should match
+	// in terms of flexibility (both flexible or both non-flexible)
 
-	// Produce v9 테스트 (flexible)
+	// Produce v9 test (flexible)
 	assert get_request_header_version(.produce, 9) == 2
 	assert get_response_header_version(.produce, 9) == 1
 
-	// Fetch v12 테스트 (flexible)
+	// Fetch v12 test (flexible)
 	assert get_request_header_version(.fetch, 12) == 2
 	assert get_response_header_version(.fetch, 12) == 1
 
-	// Metadata v9 테스트 (flexible)
+	// Metadata v9 test (flexible)
 	assert get_request_header_version(.metadata, 9) == 2
 	assert get_response_header_version(.metadata, 9) == 1
 
-	// FindCoordinator v3 테스트 (flexible)
+	// FindCoordinator v3 test (flexible)
 	assert get_request_header_version(.find_coordinator, 3) == 2
 	assert get_response_header_version(.find_coordinator, 3) == 1
 }

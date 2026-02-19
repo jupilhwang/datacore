@@ -1,17 +1,17 @@
-// v3 테이블 포맷 지원
+// v3 table format support
 module s3
 
 import json
 
-// v3 테이블 포맷 추가 타입
+// v3 table format additional types
 
-/// IcebergDeleteFile은 삭제 파일을 나타냅니다 (v3: Binary Deletion Vectors 지원).
-/// ContentType: 삭제 파일 타입 (position_deletes, equality_deletes, dv)
-/// FilePath: 파일 경로
-/// FileFormat: 파일 형식
-/// RecordCount: 삭제 레코드 수
-/// FileSizeInBytes: 파일 크기
-/// ReferencedDataFile: 참조 데이터 파일 (dv 타입에서 사용)
+/// IcebergDeleteFile represents a delete file (v3: Binary Deletion Vectors support).
+/// ContentType: delete file type (position_deletes, equality_deletes, dv)
+/// FilePath: file path
+/// FileFormat: file format
+/// RecordCount: number of deleted records
+/// FileSizeInBytes: file size
+/// ReferencedDataFile: referenced data file (used in dv type)
 pub struct IcebergDeleteFile {
 pub mut:
 	content_type         string
@@ -24,13 +24,13 @@ pub mut:
 	partition            map[string]string
 }
 
-/// IcebergDeletionVector는 바이너리 삭제 벡터를 나타냅니다 (v3 신규).
-/// StorageType: 저장 타입 ('inline', 'path')
-/// Data: 인라인 데이터 (base64 인코딩)
-/// Path: 외부 파일 경로
-/// Offset: 파일 내 오프셋 (path 타입에서 사용)
-/// Length: 데이터 길이
-/// Cardinality: 삭제된 행 수
+/// IcebergDeletionVector represents a binary deletion vector (new in v3).
+/// StorageType: storage type ('inline', 'path')
+/// Data: inline data (base64 encoded)
+/// Path: external file path
+/// Offset: offset within the file (used in path type)
+/// Length: data length
+/// Cardinality: number of deleted rows
 pub struct IcebergDeletionVector {
 pub mut:
 	storage_type string
@@ -41,9 +41,9 @@ pub mut:
 	cardinality  i64
 }
 
-// REST Catalog API 요청/응답 타입
+// REST Catalog API request/response types
 
-/// CatalogConfig는 /v1/config 엔드포인트 응답입니다.
+/// CatalogConfig is the response for the /v1/config endpoint.
 pub struct CatalogConfig {
 pub mut:
 	defaults  map[string]string @[json: 'defaults']
@@ -51,47 +51,47 @@ pub mut:
 	endpoints []string          @[json: 'endpoints']
 }
 
-/// NamespaceIdentifier는 네임스페이스 식별자입니다.
+/// NamespaceIdentifier is a namespace identifier.
 pub struct NamespaceIdentifier {
 pub mut:
 	namespace []string @[json: 'namespace']
 }
 
-/// CreateNamespaceRequest는 네임스페이스 생성 요청입니다.
+/// CreateNamespaceRequest is a namespace creation request.
 pub struct CreateNamespaceRequest {
 pub mut:
 	namespace  []string          @[json: 'namespace']
 	properties map[string]string @[json: 'properties']
 }
 
-/// CreateNamespaceResponse는 네임스페이스 생성 응답입니다.
+/// CreateNamespaceResponse is a namespace creation response.
 pub struct CreateNamespaceResponse {
 pub mut:
 	namespace  []string          @[json: 'namespace']
 	properties map[string]string @[json: 'properties']
 }
 
-/// ListNamespacesResponse는 네임스페이스 목록 응답입니다.
+/// ListNamespacesResponse is a namespace list response.
 pub struct ListNamespacesResponse {
 pub mut:
 	namespaces [][]string @[json: 'namespaces']
 }
 
-/// GetNamespaceResponse는 네임스페이스 조회 응답입니다.
+/// GetNamespaceResponse is a namespace retrieval response.
 pub struct GetNamespaceResponse {
 pub mut:
 	namespace  []string          @[json: 'namespace']
 	properties map[string]string @[json: 'properties']
 }
 
-/// UpdateNamespacePropertiesRequest는 네임스페이스 속성 업데이트 요청입니다.
+/// UpdateNamespacePropertiesRequest is a namespace properties update request.
 pub struct UpdateNamespacePropertiesRequest {
 pub mut:
 	removals []string          @[json: 'removals']
 	updates  map[string]string @[json: 'updates']
 }
 
-/// UpdateNamespacePropertiesResponse는 네임스페이스 속성 업데이트 응답입니다.
+/// UpdateNamespacePropertiesResponse is a namespace properties update response.
 pub struct UpdateNamespacePropertiesResponse {
 pub mut:
 	updated []string @[json: 'updated']
@@ -99,20 +99,20 @@ pub mut:
 	missing []string @[json: 'missing']
 }
 
-/// TableIdentifierRest는 REST API용 테이블 식별자입니다.
+/// TableIdentifierRest is a table identifier for REST API.
 pub struct TableIdentifierRest {
 pub mut:
 	namespace []string @[json: 'namespace']
 	name      string   @[json: 'name']
 }
 
-/// ListTablesResponse는 테이블 목록 응답입니다.
+/// ListTablesResponse is a table list response.
 pub struct ListTablesResponse {
 pub mut:
 	identifiers []TableIdentifierRest @[json: 'identifiers']
 }
 
-/// CreateTableRequest는 테이블 생성 요청입니다.
+/// CreateTableRequest is a table creation request.
 pub struct CreateTableRequest {
 pub mut:
 	name           string            @[json: 'name']
@@ -124,7 +124,7 @@ pub mut:
 	properties     map[string]string @[json: 'properties']
 }
 
-/// SchemaRest는 REST API용 스키마입니다.
+/// SchemaRest is a schema for REST API.
 pub struct SchemaRest {
 pub mut:
 	typ                  string      @[json: 'type']
@@ -133,7 +133,7 @@ pub mut:
 	fields               []FieldRest @[json: 'fields']
 }
 
-/// FieldRest는 REST API용 필드입니다.
+/// FieldRest is a field for REST API.
 pub struct FieldRest {
 pub mut:
 	id              int    @[json: 'id']
@@ -145,14 +145,14 @@ pub mut:
 	write_default   string @[json: 'write-default']
 }
 
-/// PartitionSpecRest는 REST API용 파티션 스펙입니다.
+/// PartitionSpecRest is a partition spec for REST API.
 pub struct PartitionSpecRest {
 pub mut:
 	spec_id int                  @[json: 'spec-id']
 	fields  []PartitionFieldRest @[json: 'fields']
 }
 
-/// PartitionFieldRest는 REST API용 파티션 필드입니다.
+/// PartitionFieldRest is a partition field for REST API.
 pub struct PartitionFieldRest {
 pub mut:
 	field_id       int      @[json: 'field-id']
@@ -162,14 +162,14 @@ pub mut:
 	transform_args []string @[json: 'transform-args']
 }
 
-/// SortOrderRest는 REST API용 정렬 순서입니다.
+/// SortOrderRest is a sort order for REST API.
 pub struct SortOrderRest {
 pub mut:
 	order_id int             @[json: 'order-id']
 	fields   []SortFieldRest @[json: 'fields']
 }
 
-/// SortFieldRest는 REST API용 정렬 필드입니다.
+/// SortFieldRest is a sort field for REST API.
 pub struct SortFieldRest {
 pub mut:
 	transform  string @[json: 'transform']
@@ -178,7 +178,7 @@ pub mut:
 	null_order string @[json: 'null-order']
 }
 
-/// LoadTableResponse는 테이블 로드 응답입니다.
+/// LoadTableResponse is a table load response.
 pub struct LoadTableResponse {
 pub mut:
 	metadata_location string            @[json: 'metadata-location']
@@ -186,7 +186,7 @@ pub mut:
 	config            map[string]string @[json: 'config']
 }
 
-/// TableMetadataRest는 REST API용 테이블 메타데이터입니다.
+/// TableMetadataRest is table metadata for REST API.
 pub struct TableMetadataRest {
 pub mut:
 	format_version        int                 @[json: 'format-version']
@@ -207,7 +207,7 @@ pub mut:
 	properties            map[string]string   @[json: 'properties']
 }
 
-/// SnapshotRest는 REST API용 스냅샷입니다.
+/// SnapshotRest is a snapshot for REST API.
 pub struct SnapshotRest {
 pub mut:
 	snapshot_id     i64               @[json: 'snapshot-id']
@@ -219,14 +219,14 @@ pub mut:
 	schema_id       int               @[json: 'schema-id']
 }
 
-/// SnapshotLogEntry는 스냅샷 로그 항목입니다.
+/// SnapshotLogEntry is a snapshot log entry.
 pub struct SnapshotLogEntry {
 pub mut:
 	timestamp_ms i64 @[json: 'timestamp-ms']
 	snapshot_id  i64 @[json: 'snapshot-id']
 }
 
-/// CommitTableRequest는 테이블 커밋 요청입니다.
+/// CommitTableRequest is a table commit request.
 pub struct CommitTableRequest {
 pub mut:
 	identifier   TableIdentifierRest @[json: 'identifier']
@@ -234,7 +234,7 @@ pub mut:
 	updates      []TableUpdate       @[json: 'updates']
 }
 
-/// TableRequirement는 테이블 커밋 요구사항입니다.
+/// TableRequirement is a table commit requirement.
 pub struct TableRequirement {
 pub mut:
 	typ         string @[json: 'type']
@@ -244,7 +244,7 @@ pub mut:
 	schema_id   int    @[json: 'last-assigned-field-id']
 }
 
-/// TableUpdate는 테이블 업데이트 작업입니다.
+/// TableUpdate is a table update operation.
 pub struct TableUpdate {
 pub mut:
 	action     string            @[json: 'action']
@@ -257,28 +257,28 @@ pub mut:
 	removals   []string          @[json: 'removals']
 }
 
-/// CommitTableResponse는 테이블 커밋 응답입니다.
+/// CommitTableResponse is a table commit response.
 pub struct CommitTableResponse {
 pub mut:
 	metadata_location string            @[json: 'metadata-location']
 	metadata          TableMetadataRest @[json: 'metadata']
 }
 
-/// RegisterTableRequest는 테이블 등록 요청입니다.
+/// RegisterTableRequest is a table registration request.
 pub struct RegisterTableRequest {
 pub mut:
 	name              string @[json: 'name']
 	metadata_location string @[json: 'metadata-location']
 }
 
-/// RenameTableRequest는 테이블 이름 변경 요청입니다.
+/// RenameTableRequest is a table rename request.
 pub struct RenameTableRequest {
 pub mut:
 	source      TableIdentifierRest @[json: 'source']
 	destination TableIdentifierRest @[json: 'destination']
 }
 
-/// ReportMetricsRequest는 메트릭 보고 요청입니다.
+/// ReportMetricsRequest is a metrics report request.
 pub struct ReportMetricsRequest {
 pub mut:
 	report_type           string            @[json: 'report-type']
@@ -291,7 +291,7 @@ pub mut:
 	metrics               map[string]string @[json: 'metrics']
 }
 
-/// IcebergErrorResponse는 오류 응답입니다.
+/// IcebergErrorResponse is an error response.
 pub struct IcebergErrorResponse {
 pub mut:
 	error_type string   @[json: 'type']
@@ -300,7 +300,7 @@ pub mut:
 	stack      []string @[json: 'stack']
 }
 
-/// new_catalog_config는 기본 카탈로그 설정을 생성합니다.
+/// new_catalog_config creates a default catalog configuration.
 pub fn new_catalog_config(warehouse string, format_version int) CatalogConfig {
 	return CatalogConfig{
 		defaults:  {
@@ -327,7 +327,7 @@ pub fn new_catalog_config(warehouse string, format_version int) CatalogConfig {
 	}
 }
 
-/// iceberg_error는 Iceberg 오류 응답을 생성합니다.
+/// iceberg_error creates an Iceberg error response.
 pub fn iceberg_error(code int, message string) IcebergErrorResponse {
 	error_type := match code {
 		400 { 'BadRequestException' }
@@ -348,44 +348,52 @@ pub fn iceberg_error(code int, message string) IcebergErrorResponse {
 	}
 }
 
-/// to_json은 구조체를 JSON 문자열로 변환합니다.
+/// to_json converts the struct to a JSON string.
 pub fn (c CatalogConfig) to_json() string {
 	return json.encode(c)
 }
 
+/// to_json returns a JSON string.
 pub fn (r ListNamespacesResponse) to_json() string {
 	return json.encode(r)
 }
 
+/// to_json returns a JSON string.
 pub fn (r CreateNamespaceResponse) to_json() string {
 	return json.encode(r)
 }
 
+/// to_json returns a JSON string.
 pub fn (r GetNamespaceResponse) to_json() string {
 	return json.encode(r)
 }
 
+/// to_json returns a JSON string.
 pub fn (r ListTablesResponse) to_json() string {
 	return json.encode(r)
 }
 
+/// to_json returns a JSON string.
 pub fn (r LoadTableResponse) to_json() string {
 	return json.encode(r)
 }
 
+/// to_json returns a JSON string.
 pub fn (r CommitTableResponse) to_json() string {
 	return json.encode(r)
 }
 
+/// to_json returns a JSON string.
 pub fn (e IcebergErrorResponse) to_json() string {
 	return json.encode(e)
 }
 
+/// to_json returns a JSON string.
 pub fn (r UpdateNamespacePropertiesResponse) to_json() string {
 	return json.encode(r)
 }
 
-/// schema_to_rest는 IcebergSchema를 REST API 형식으로 변환합니다.
+/// schema_to_rest converts IcebergSchema to REST API format.
 pub fn schema_to_rest(schema IcebergSchema) SchemaRest {
 	mut fields := []FieldRest{}
 	for field in schema.fields {
@@ -406,7 +414,7 @@ pub fn schema_to_rest(schema IcebergSchema) SchemaRest {
 	}
 }
 
-/// partition_spec_to_rest는 IcebergPartitionSpec을 REST API 형식으로 변환합니다.
+/// partition_spec_to_rest converts IcebergPartitionSpec to REST API format.
 pub fn partition_spec_to_rest(spec IcebergPartitionSpec) PartitionSpecRest {
 	mut fields := []PartitionFieldRest{}
 	for field in spec.fields {
@@ -424,7 +432,7 @@ pub fn partition_spec_to_rest(spec IcebergPartitionSpec) PartitionSpecRest {
 	}
 }
 
-/// snapshot_to_rest는 IcebergSnapshot을 REST API 형식으로 변환합니다.
+/// snapshot_to_rest converts IcebergSnapshot to REST API format.
 pub fn snapshot_to_rest(snapshot IcebergSnapshot) SnapshotRest {
 	return SnapshotRest{
 		snapshot_id:   snapshot.snapshot_id
@@ -435,7 +443,7 @@ pub fn snapshot_to_rest(snapshot IcebergSnapshot) SnapshotRest {
 	}
 }
 
-/// metadata_to_rest는 IcebergMetadata를 REST API 형식으로 변환합니다.
+/// metadata_to_rest converts IcebergMetadata to REST API format.
 pub fn metadata_to_rest(metadata IcebergMetadata, location string) TableMetadataRest {
 	mut schemas := []SchemaRest{}
 	for schema in metadata.schemas {

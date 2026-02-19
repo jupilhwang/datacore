@@ -212,16 +212,16 @@ fn test_log_segment_structure() {
 	assert segment.size_bytes == 1048576
 }
 
-// 실제 S3 통합 테스트 (실제 버킷에 객체 생성/조회/삭제)
-// 환경: ~/.aws/credentials 사용, ap-northeast-2, jhwang-s3
-// 주의: 테스트 후 객체가 남을 수 있음
+// Real S3 integration test (create/read/delete objects in a real bucket)
+// Environment: uses ~/.aws/credentials, ap-northeast-2, jhwang-s3
+// Note: Objects may remain after the test
 // fn test_s3_real_object_lifecycle() {
-// 	// config.toml 경로
+// 	// config.toml path
 // 	config_path := '../../../../../config.toml'
-// 	app_config := config.load_config(config_path) or { panic('config.toml 읽기 실패: ${err}') }
+// 	app_config := config.load_config(config_path) or { panic('Failed to read config.toml: ${err}') }
 // 	s3 := app_config.storage.s3
 
-// 	// 디버그: config.toml에서 읽은 S3 필드 전체 출력
+// 	// Debug: print all S3 fields loaded from config.toml
 // 	println('Loaded S3 config from TOML:')
 // 	println('  region   : ${s3.region}')
 // 	println('  endpoint : ${s3.endpoint}')
@@ -247,10 +247,10 @@ fn test_log_segment_structure() {
 
 // 	adapter.put_object(key, value) or { panic('S3 put_object failed: ${err}') }
 
-// 	// get_object (조회)
+// 	// get_object
 // 	data, _ := adapter.get_object(key) or { panic('S3 get_object failed: ${err}') }
 // 	assert data == value
 
-// 	// delete_object (삭제)
+// 	// delete_object
 // 	adapter.delete_object(key) or { panic('S3 delete_object failed: ${err}') }
 // }

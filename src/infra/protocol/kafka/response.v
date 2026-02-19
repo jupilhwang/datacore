@@ -1,60 +1,60 @@
-// 공통 응답 헤더 및 응답 빌드 함수
+// Common response headers and response builder functions
 module kafka
 
-/// 응답 헤더 v0 (non-flexible)
-/// 사용처: ApiVersions (항상), non-flexible API들
+/// Response header v0 (non-flexible)
+/// Used by: ApiVersions (always), non-flexible APIs
 pub struct ResponseHeader {
 pub:
 	correlation_id i32
 }
 
-/// 응답 헤더 v1 (flexible)
-/// 사용처: flexible API들
-/// correlation_id 뒤에 tag_buffer 포함
+/// Response header v1 (flexible)
+/// Used by: flexible APIs
+/// Includes tag_buffer after correlation_id
 pub struct ResponseHeaderV1 {
 pub:
 	correlation_id i32
-	// tag_buffer는 별도로 작성됨 (최소 1바이트: 빈 경우 0x00)
+	// tag_buffer is written separately (minimum 1 byte: 0x00 when empty)
 }
 
-/// 헤더가 있는 응답을 빌드합니다 (non-flexible, 응답 헤더 v0).
-/// 사용처: ApiVersions (항상), SaslHandshake, non-flexible API 버전들
-/// 참고: 헤더에 tag_buffer 없음!
+/// Builds a response with a header (non-flexible, Response Header v0).
+/// Used by: ApiVersions (always), SaslHandshake, non-flexible API versions
+/// Note: no tag_buffer in the header!
 pub fn build_response(correlation_id i32, body []u8) []u8 {
 	mut writer := new_writer_with_capacity(4 + 4 + body.len)
 
-	// 크기 (size 필드 자체를 제외한 전체 길이)
+	// Size (total length excluding the size field itself)
 	writer.write_i32(i32(4 + body.len))
 	// Correlation ID
 	writer.write_i32(correlation_id)
-	// non-flexible 응답 헤더에는 tag_buffer 없음!
-	// 본문
+	// No tag_buffer in non-flexible response header!
+	// Body
 	writer.write_raw(body)
 
 	return writer.bytes()
 }
 
-/// flexible 응답을 빌드합니다 (응답 헤더 v1, tag_buffer 포함).
-/// 사용처: flexible API 버전들 (항상 non-flexible인 ApiVersions 제외)
-/// 중요: tag_buffer는 최소 1바이트 (빈 태그의 경우 0x00)
+/// Builds a flexible response (Response Header v1, includes tag_buffer).
+/// Used by: flexible API versions (except ApiVersions which is always non-flexible)
+/// Important: tag_buffer is at least 1 byte (0x00 for empty tags)
 pub fn build_flexible_response(correlation_id i32, body []u8) []u8 {
 	mut writer := new_writer_with_capacity(4 + 4 + 1 + body.len)
 
-	// 크기 (size 필드 자체를 제외한 전체 길이)
-	// = correlation_id(4) + tag_buffer(1, 최소) + body
+	// Size (total length excluding the size field itself)
+	// = correlation_id(4) + tag_buffer(1, minimum) + body
 	writer.write_i32(i32(4 + 1 + body.len))
 	// Correlation ID
 	writer.write_i32(correlation_id)
-	// Tag buffer (빈 경우 = 0x00, num_tags=0을 의미)
+	// Tag buffer (0x00 when empty, meaning num_tags=0)
 	writer.write_uvarint(0)
-	// 본문
+	// Body
 	writer.write_raw(body)
 
 	return writer.bytes()
 }
 
-/// API 키와 버전에 따라 적절한 헤더로 응답을 빌드합니다.
-/// 응답 빌드에 권장되는 함수입니다.
+/// Builds a response with the appropriate header based on API key and version.
+/// This is the recommended function for building responses.
 pub fn build_response_auto(api_key ApiKey, api_version i16, correlation_id i32, body []u8) []u8 {
 	response_header_version := get_response_header_version(api_key, api_version)
 	if response_header_version >= 1 {

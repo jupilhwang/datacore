@@ -1,34 +1,34 @@
-/// 인프라 레이어 - 압축 메트릭
-/// 압축 작업의 성능 및 효율성 모니터링을 위한 메트릭 수집
+/// Infrastructure layer - Compression metrics
+/// Metric collection for monitoring performance and efficiency of compression operations
 module compression
 
 import infra.observability
 import time
 
-/// 압축 작업에 대한 메트릭 수집.
+/// Metric collection for compression operations.
 pub struct CompressionMetrics {
 pub mut:
-	// 압축 작업 카운터
+	// Compression operation counters
 	compress_total   &observability.Metric
 	decompress_total &observability.Metric
 
-	// 압축 실패 카운터
+	// Compression error counters
 	compress_errors   &observability.Metric
 	decompress_errors &observability.Metric
 
-	// 압축 시간 (히스토그램)
+	// Compression duration (histogram)
 	compress_duration   &observability.Metric
 	decompress_duration &observability.Metric
 
-	// 압축률 (원본 크기 / 압축 크기)
+	// Compression ratio (original size / compressed size)
 	compression_ratio &observability.Metric
 
-	// 바이트 처리량
+	// Byte throughput
 	bytes_compressed   &observability.Metric
 	bytes_decompressed &observability.Metric
 }
 
-/// 새 압축 메트릭 생성.
+/// Creates new compression metrics.
 pub fn new_compression_metrics() CompressionMetrics {
 	mut reg := observability.get_registry()
 
@@ -54,7 +54,7 @@ pub fn new_compression_metrics() CompressionMetrics {
 	}
 }
 
-/// 압축 작업 기록.
+/// Records a compression operation.
 pub fn (mut m CompressionMetrics) record_compress(original_size i64, compressed_size i64, duration time.Duration, success bool) {
 	m.compress_total.inc()
 	m.bytes_compressed.inc_by(f64(original_size))
@@ -73,7 +73,7 @@ pub fn (mut m CompressionMetrics) record_compress(original_size i64, compressed_
 	}
 }
 
-/// 해제 작업 기록.
+/// Records a decompression operation.
 pub fn (mut m CompressionMetrics) record_decompress(compressed_size i64, decompressed_size i64, duration time.Duration, success bool) {
 	m.decompress_total.inc()
 	m.bytes_decompressed.inc_by(f64(compressed_size))
@@ -87,7 +87,7 @@ pub fn (mut m CompressionMetrics) record_decompress(compressed_size i64, decompr
 	m.decompress_duration.observe(seconds)
 }
 
-/// 압축 작업 시간 측정을 위한 타이머.
+/// Timer for measuring compression operation duration.
 pub struct CompressionTimer {
 	start_time time.Time
 	metrics    &CompressionMetrics
@@ -95,7 +95,7 @@ pub struct CompressionTimer {
 	size       i64
 }
 
-/// start_compress_timer는 압축 타이머를 시작합니다.
+/// start_compress_timer starts a compression timer.
 pub fn (mut m CompressionMetrics) start_compress_timer(size i64) CompressionTimer {
 	return CompressionTimer{
 		start_time: time.now()
@@ -105,7 +105,7 @@ pub fn (mut m CompressionMetrics) start_compress_timer(size i64) CompressionTime
 	}
 }
 
-/// start_decompress_timer는 해제 타이머를 시작합니다.
+/// start_decompress_timer starts a decompression timer.
 pub fn (mut m CompressionMetrics) start_decompress_timer(size i64) CompressionTimer {
 	return CompressionTimer{
 		start_time: time.now()
@@ -115,7 +115,7 @@ pub fn (mut m CompressionMetrics) start_decompress_timer(size i64) CompressionTi
 	}
 }
 
-/// stop은 타이머를 중지하고 메트릭을 기록합니다.
+/// stop stops the timer and records the metric.
 pub fn (mut t CompressionTimer) stop(result_size i64, success bool) {
 	duration := time.since(t.start_time)
 	unsafe {

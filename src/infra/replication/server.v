@@ -7,6 +7,7 @@ import time
 import log
 
 // Server handles incoming replication connections
+/// Server handles incoming replication connections.
 pub struct Server {
 mut:
 	port     int
@@ -19,9 +20,11 @@ mut:
 }
 
 // MessageHandler is a callback interface for handling messages
+/// MessageHandler type.
 pub type MessageHandler = fn (domain.ReplicationMessage) !domain.ReplicationMessage
 
 // Server.new creates a new replication Server on the given port with the specified message handler.
+/// Server.
 pub fn Server.new(port int, handler MessageHandler) Server {
 	return Server{
 		port:     port
@@ -33,6 +36,7 @@ pub fn Server.new(port int, handler MessageHandler) Server {
 }
 
 // start begins listening on the configured port
+/// start begins listening on the configured port.
 pub fn (mut s Server) start() ! {
 	s.mtx.@lock()
 	if s.running {
@@ -51,6 +55,7 @@ pub fn (mut s Server) start() ! {
 }
 
 // stop shuts down the server
+/// stop shuts down the server.
 pub fn (mut s Server) stop() ! {
 	s.mtx.@lock()
 	if !s.running {
@@ -141,6 +146,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 }
 
 // is_running checks if server is running
+/// is_running returns whether the server is running.
 pub fn (s Server) is_running() bool {
 	return s.running
 }

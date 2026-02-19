@@ -25,6 +25,7 @@ pub enum CoordinatorKeyType as i8 {
 	share       = 2
 }
 
+/// FindCoordinatorRequest는 관련 데이터를 담는 구조체입니다.
 pub struct FindCoordinatorRequest {
 pub:
 	key              string
@@ -32,6 +33,7 @@ pub:
 	coordinator_keys []string
 }
 
+/// FindCoordinatorResponse는 관련 데이터를 담는 구조체입니다.
 pub struct FindCoordinatorResponse {
 pub:
 	throttle_time_ms i32
@@ -43,6 +45,7 @@ pub:
 	coordinators     []FindCoordinatorResponseNode
 }
 
+/// FindCoordinatorResponseNode는 관련 데이터를 담는 구조체입니다.
 pub struct FindCoordinatorResponseNode {
 pub:
 	key           string
@@ -85,6 +88,7 @@ fn parse_find_coordinator_request(mut reader BinaryReader, version i16, is_flexi
 	}
 }
 
+/// encode를 수행합니다.
 pub fn (r FindCoordinatorResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()

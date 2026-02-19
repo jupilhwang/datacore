@@ -1,13 +1,13 @@
 module kafka
 
-// 응답 프레이밍 단위 테스트
+// Response framing unit tests
 fn test_flexible_response_correlation_id_endianness() {
-	// 간단한 검증을 위한 작은 본문
+	// Small body for simple validation
 	body := [u8(0), u8(1), u8(2), u8(3)]
 	resp := build_flexible_response(1, body)
 
-	// resp 레이아웃: [size:4][correlation_id:4][body...]
-	// correlation_id == 1은 빅엔디안으로 인코딩: 00 00 00 01
+	// resp layout: [size:4][correlation_id:4][body...]
+	// correlation_id == 1 encoded as big-endian: 00 00 00 01
 	assert resp.len >= 8
 	assert resp[4] == 0
 	assert resp[5] == 0

@@ -2,7 +2,7 @@ module cluster
 
 import domain
 
-// 초기 할당 테스트
+// Initial Assignment Tests
 
 fn test_assign_partitions_round_robin() {
 	// Given
@@ -38,7 +38,7 @@ fn test_assign_partitions_round_robin() {
 	// Then
 	assert assignments.len == 6, 'Expected 6 assignments, got ${assignments.len}'
 
-	// 라운드로빈 검증: 0->1, 1->2, 2->3, 3->1, 4->2, 5->3
+	// Verify round-robin: 0->1, 1->2, 2->3, 3->1, 4->2, 5->3
 	assert assignments[0].preferred_broker == 1, 'Partition 0 should be on broker 1'
 	assert assignments[1].preferred_broker == 2, 'Partition 1 should be on broker 2'
 	assert assignments[2].preferred_broker == 3, 'Partition 2 should be on broker 3'
@@ -119,10 +119,10 @@ fn test_assign_partitions_zero_partitions() {
 	assert failed == true, 'Should fail with zero partitions'
 }
 
-// 리밸런싱 테스트
+// Rebalancing Tests
 
 fn test_rebalance_partitions_new_broker_joined() {
-	// Given - 3개 파티션을 2개 브로커에 할당
+	// Given - assign 3 partitions to 2 brokers
 	config := PartitionAssignerServiceConfig{
 		broker_id:     1
 		strategy:      .round_robin
@@ -130,7 +130,7 @@ fn test_rebalance_partitions_new_broker_joined() {
 	}
 	mut assigner := new_partition_assigner(config, none)
 
-	// 초기 할당: 2개 브로커
+	// Initial assignment: 2 brokers
 	initial_brokers := [
 		domain.BrokerInfo{
 			broker_id: 1
@@ -151,7 +151,7 @@ fn test_rebalance_partitions_new_broker_joined() {
 	assert initial_assignments[2].preferred_broker == 1
 	assert initial_assignments[3].preferred_broker == 2
 
-	// When - 새 브로커 추가
+	// When - new broker added
 	new_brokers := [
 		domain.BrokerInfo{
 			broker_id: 1
@@ -170,13 +170,13 @@ fn test_rebalance_partitions_new_broker_joined() {
 		},
 	]
 
-	// Note: 리밸런싱은 metadata_port가 필요하므로 이 테스트는 실제로는 동작하지 않음
-	// 대신 라운드로빈 로직을 직접 테스트
+	// Note: Rebalancing requires metadata_port so this test does not fully execute
+	// Instead, directly test the round-robin logic
 	new_assignments := assigner.do_rebalance('test-topic', initial_assignments, new_brokers)
 
-	// Then - 4개 파티션을 3개 브로커에 재할당
+	// Then - reassign 4 partitions to 3 brokers
 	assert new_assignments.len == 4
-	// 라운드로빈: 0->1, 1->2, 2->3, 3->1
+	// Round-robin: 0->1, 1->2, 2->3, 3->1
 	assert new_assignments[0].preferred_broker == 1
 	assert new_assignments[1].preferred_broker == 2
 	assert new_assignments[2].preferred_broker == 3
@@ -184,7 +184,7 @@ fn test_rebalance_partitions_new_broker_joined() {
 }
 
 fn test_rebalance_partitions_broker_left() {
-	// Given - 4개 파티션을 3개 브로커에 할당
+	// Given - 4 partitions assigned to 3 brokers
 	config := PartitionAssignerServiceConfig{
 		broker_id:     1
 		strategy:      .round_robin
@@ -213,7 +213,7 @@ fn test_rebalance_partitions_broker_left() {
 		panic('initial assignment failed')
 	}
 
-	// When - 브로커 3이 떠남
+	// When - broker 3 leaves
 	remaining_brokers := [
 		domain.BrokerInfo{
 			broker_id: 1
@@ -229,16 +229,16 @@ fn test_rebalance_partitions_broker_left() {
 
 	new_assignments := assigner.do_rebalance('test-topic', initial_assignments, remaining_brokers)
 
-	// Then - 4개 파티션을 2개 브로커에 재할당
+	// Then - reassign 4 partitions to 2 brokers
 	assert new_assignments.len == 4
-	// 라운드로빈: 0->1, 1->2, 2->1, 3->2
+	// Round-robin: 0->1, 1->2, 2->1, 3->2
 	assert new_assignments[0].preferred_broker == 1
 	assert new_assignments[1].preferred_broker == 2
 	assert new_assignments[2].preferred_broker == 1
 	assert new_assignments[3].preferred_broker == 2
 }
 
-// 스티키 리밸런싱 테스트
+// Sticky Rebalancing Tests
 
 fn test_rebalance_sticky_preserves_existing() {
 	// Given
@@ -249,7 +249,7 @@ fn test_rebalance_sticky_preserves_existing() {
 	}
 	mut assigner := new_partition_assigner(config, none)
 
-	// 초기 할당
+	// Initial assignment
 	initial_brokers := [
 		domain.BrokerInfo{
 			broker_id: 1
@@ -266,7 +266,7 @@ fn test_rebalance_sticky_preserves_existing() {
 		panic('initial assignment failed')
 	}
 
-	// When - 새 브로커 추가 (스티키 모드)
+	// When - new broker added (sticky mode)
 	new_brokers := [
 		domain.BrokerInfo{
 			broker_id: 1
@@ -287,13 +287,13 @@ fn test_rebalance_sticky_preserves_existing() {
 
 	new_assignments := assigner.rebalance_sticky('test-topic', initial_assignments, new_brokers)
 
-	// Then - 기존 할당은 유지되어야 함
+	// Then - existing assignments should be preserved
 	assert new_assignments.len == 4
-	// 스티키 모드에서는 기존 브로커(1, 2)의 할당이 유지됨
-	// 단, 불균형이 심하면 일부 이동할 수 있음
+	// In sticky mode, assignments for existing brokers (1, 2) are maintained
+	// However, some may be moved if imbalance is severe
 }
 
-// 범위 기반 할당 테스트
+// Range-based Assignment Tests
 
 fn test_rebalance_range_assignment() {
 	// Given
@@ -316,7 +316,7 @@ fn test_rebalance_range_assignment() {
 		},
 	]
 
-	// 초기 할당 생성
+	// Create initial assignments
 	initial_assignments := [
 		domain.PartitionAssignment{
 			topic_name:       'test-topic'
@@ -348,7 +348,7 @@ fn test_rebalance_range_assignment() {
 	// When
 	new_assignments := assigner.rebalance_range('test-topic', initial_assignments, brokers)
 
-	// Then - 범위 기반: 5개 파티션, 2개 브로커
+	// Then - range-based: 5 partitions, 2 brokers
 	// broker 0: 5/2 + (0<1 ? 1 : 0) = 2 + 1 = 3 partitions (0, 1, 2)
 	// broker 1: 5/2 + (1<1 ? 1 : 0) = 2 + 0 = 2 partitions (3, 4)
 	assert new_assignments.len == 5
@@ -359,7 +359,7 @@ fn test_rebalance_range_assignment() {
 	assert new_assignments[4].preferred_broker == 2
 }
 
-// 설정 변경 테스트
+// Configuration Change Tests
 
 fn test_set_strategy() {
 	// Given
@@ -372,8 +372,8 @@ fn test_set_strategy() {
 	// When
 	assigner.set_strategy(.sticky)
 
-	// Then - unsafe 블록으로 인해 설정이 변경되지 않을 수 있음 (V 언어 제한)
-	// 이 테스트는 설정 변경이 가능한 경우만 통과
+	// Then - config may not change due to unsafe block (V language limitation)
+	// This test only passes if config change is possible
 	// assert assigner.config.strategy == .sticky
 }
 
@@ -388,12 +388,12 @@ fn test_set_sticky_assign() {
 	// When
 	assigner.set_sticky_assign(true)
 
-	// Then - unsafe 블록으로 인해 설정이 변경되지 않을 수 있음 (V 언어 제한)
-	// 이 테스트는 설정 변경이 가능한 경우만 통과
+	// Then - config may not change due to unsafe block (V language limitation)
+	// This test only passes if config change is possible
 	// assert assigner.config.sticky_assign == true
 }
 
-// 전략 문자열 변환 테스트
+// Strategy String Conversion Tests
 
 fn test_assignment_strategy_to_string() {
 	assert assignment_strategy_to_string(.round_robin) == 'round_robin'

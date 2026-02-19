@@ -1,17 +1,17 @@
-// Connection Manager 단위 테스트
+// Connection Manager unit tests
 module server
 
 import time
 
 fn test_extract_ip_ipv4() {
-	// IPv4 주소 추출 테스트
+	// IPv4 address extraction test
 	assert extract_ip('127.0.0.1:9092') == '127.0.0.1'
 	assert extract_ip('192.168.1.100:8080') == '192.168.1.100'
 	assert extract_ip('10.0.0.1:443') == '10.0.0.1'
 }
 
 fn test_extract_ip_ipv6() {
-	// IPv6 주소 추출 테스트
+	// IPv6 address extraction test
 	assert extract_ip('[::1]:9092') == '::1'
 	assert extract_ip('[fe80::1]:8080') == 'fe80::1'
 	assert extract_ip('[2001:db8::1]:443') == '2001:db8::1'
@@ -42,7 +42,7 @@ fn test_connection_metrics() {
 
 	mut cm := new_connection_manager(config)
 
-	// 초기 메트릭
+	// Initial metrics
 	metrics := cm.get_metrics()
 	assert metrics.active_connections == 0
 	assert metrics.total_connections == 0

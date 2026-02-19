@@ -8,12 +8,14 @@ import time
 
 // DescribeConfigs (API Key 32)
 
+/// DescribeConfigsRequest은 DescribeConfigs (API Key 32).
 pub struct DescribeConfigsRequest {
 pub:
 	resources        []DescribeConfigsResource
 	include_synonyms bool
 }
 
+/// DescribeConfigsResource는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeConfigsResource {
 pub:
 	resource_type i8
@@ -21,12 +23,14 @@ pub:
 	config_names  ?[]string
 }
 
+/// DescribeConfigsResponse는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeConfigsResponse {
 pub:
 	throttle_time_ms i32
 	results          []DescribeConfigsResult
 }
 
+/// DescribeConfigsResult는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeConfigsResult {
 pub:
 	error_code    i16
@@ -36,6 +40,7 @@ pub:
 	configs       []DescribeConfigsEntry
 }
 
+/// DescribeConfigsEntry는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeConfigsEntry {
 pub:
 	name          string
@@ -49,6 +54,7 @@ pub:
 	documentation ?string
 }
 
+/// DescribeConfigsSynonym는 관련 데이터를 담는 구조체입니다.
 pub struct DescribeConfigsSynonym {
 pub:
 	name          string
@@ -98,6 +104,7 @@ fn parse_describe_configs_request(mut reader BinaryReader, version i16, is_flexi
 	}
 }
 
+/// encode를 수행합니다.
 pub fn (r DescribeConfigsResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()

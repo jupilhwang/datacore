@@ -9,18 +9,21 @@ import service.offset
 import time
 
 // OffsetCommit 요청
+/// OffsetCommitRequest은 OffsetCommit 요청.
 pub struct OffsetCommitRequest {
 pub:
 	group_id string
 	topics   []OffsetCommitRequestTopic
 }
 
+/// OffsetCommitRequestTopic는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetCommitRequestTopic {
 pub:
 	name       string
 	partitions []OffsetCommitRequestPartition
 }
 
+/// OffsetCommitRequestPartition는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetCommitRequestPartition {
 pub:
 	partition_index    i32
@@ -84,6 +87,7 @@ fn parse_offset_commit_request(mut reader BinaryReader, version i16, is_flexible
 	}
 }
 
+/// OffsetFetchRequest는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchRequest {
 pub:
 	group_id       string
@@ -92,12 +96,14 @@ pub:
 	require_stable bool
 }
 
+/// OffsetFetchRequestTopic는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchRequestTopic {
 pub:
 	name       string
 	partitions []i32
 }
 
+/// OffsetFetchRequestGroup는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchRequestGroup {
 pub:
 	group_id     string
@@ -106,6 +112,7 @@ pub:
 	topics       []OffsetFetchRequestGroupTopic
 }
 
+/// OffsetFetchRequestGroupTopic는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchRequestGroupTopic {
 pub:
 	name       string
@@ -196,24 +203,28 @@ fn parse_offset_fetch_request(mut reader BinaryReader, version i16, is_flexible 
 
 // OffsetCommit Response (API Key 8)
 
+/// OffsetCommitResponse은 OffsetCommit Response (API Key 8).
 pub struct OffsetCommitResponse {
 pub:
 	throttle_time_ms i32
 	topics           []OffsetCommitResponseTopic
 }
 
+/// OffsetCommitResponseTopic는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetCommitResponseTopic {
 pub:
 	name       string
 	partitions []OffsetCommitResponsePartition
 }
 
+/// OffsetCommitResponsePartition는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetCommitResponsePartition {
 pub:
 	partition_index i32
 	error_code      i16
 }
 
+/// encode를 수행합니다.
 pub fn (r OffsetCommitResponse) encode(version i16) []u8 {
 	is_flexible := version >= 8
 	mut writer := new_writer()
@@ -257,6 +268,7 @@ pub fn (r OffsetCommitResponse) encode(version i16) []u8 {
 
 // OffsetFetch Response (API Key 9)
 
+/// OffsetFetchResponse은 OffsetFetch Response (API Key 9).
 pub struct OffsetFetchResponse {
 pub:
 	throttle_time_ms i32
@@ -265,12 +277,14 @@ pub:
 	groups           []OffsetFetchResponseGroup
 }
 
+/// OffsetFetchResponseTopic는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchResponseTopic {
 pub:
 	name       string
 	partitions []OffsetFetchResponsePartition
 }
 
+/// OffsetFetchResponsePartition는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchResponsePartition {
 pub:
 	partition_index        i32
@@ -280,6 +294,7 @@ pub:
 	error_code             i16
 }
 
+/// OffsetFetchResponseGroup는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchResponseGroup {
 pub:
 	group_id   string
@@ -287,12 +302,14 @@ pub:
 	error_code i16
 }
 
+/// OffsetFetchResponseGroupTopic는 관련 데이터를 담는 구조체입니다.
 pub struct OffsetFetchResponseGroupTopic {
 pub:
 	name       string
 	partitions []OffsetFetchResponsePartition
 }
 
+/// encode를 수행합니다.
 pub fn (r OffsetFetchResponse) encode(version i16) []u8 {
 	is_flexible := version >= 6
 	mut writer := new_writer()

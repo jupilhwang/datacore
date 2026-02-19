@@ -10,6 +10,7 @@ import time
 // SSE Service
 
 // SSEService manages SSE connections and subscriptions
+/// SSEService manages SSE connections and subscriptions.
 pub struct SSEService {
 	config domain.SSEConfig
 mut:
@@ -32,6 +33,7 @@ pub mut:
 }
 
 // new_sse_service creates a new SSE service
+/// new_sse_service creates a new SSE service.
 pub fn new_sse_service(storage port.StoragePort, config domain.SSEConfig) &SSEService {
 	return &SSEService{
 		config:      config
@@ -46,6 +48,7 @@ pub fn new_sse_service(storage port.StoragePort, config domain.SSEConfig) &SSESe
 // Connection Management
 
 // register_connection registers a new SSE connection
+/// register_connection registers a new SSE connection.
 pub fn (mut s SSEService) register_connection(conn domain.SSEConnection) !string {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -75,6 +78,7 @@ pub fn (mut s SSEService) register_connection(conn domain.SSEConnection) !string
 }
 
 // unregister_connection removes an SSE connection
+/// unregister_connection removes an SSE connection.
 pub fn (mut s SSEService) unregister_connection(conn_id string) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -95,6 +99,7 @@ pub fn (mut s SSEService) unregister_connection(conn_id string) ! {
 }
 
 // get_connection returns connection info
+/// get_connection returns connection info.
 pub fn (mut s SSEService) get_connection(conn_id string) !domain.SSEConnection {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -104,6 +109,7 @@ pub fn (mut s SSEService) get_connection(conn_id string) !domain.SSEConnection {
 }
 
 // list_connections returns all active connections
+/// list_connections returns all active connections.
 pub fn (mut s SSEService) list_connections() []domain.SSEConnection {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -116,6 +122,7 @@ pub fn (mut s SSEService) list_connections() []domain.SSEConnection {
 }
 
 // set_writer sets the SSE writer for a connection
+/// set_writer sets the SSE writer for a connection.
 pub fn (mut s SSEService) set_writer(conn_id string, writer &port.SSEWriterPort) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -129,6 +136,7 @@ pub fn (mut s SSEService) set_writer(conn_id string, writer &port.SSEWriterPort)
 // Subscription Management
 
 // subscribe adds a subscription to a connection
+/// subscribe adds a subscription to a connection.
 pub fn (mut s SSEService) subscribe(conn_id string, sub domain.Subscription) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -157,6 +165,7 @@ pub fn (mut s SSEService) subscribe(conn_id string, sub domain.Subscription) ! {
 }
 
 // unsubscribe removes a subscription from a connection
+/// unsubscribe removes a subscription from a connection.
 pub fn (mut s SSEService) unsubscribe(conn_id string, topic string, partition ?i32) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -199,6 +208,7 @@ pub fn (mut s SSEService) unsubscribe(conn_id string, topic string, partition ?i
 }
 
 // get_subscriptions returns all subscriptions for a connection
+/// get_subscriptions returns all subscriptions for a connection.
 pub fn (mut s SSEService) get_subscriptions(conn_id string) []domain.Subscription {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -210,6 +220,7 @@ pub fn (mut s SSEService) get_subscriptions(conn_id string) []domain.Subscriptio
 // Message Streaming
 
 // send_event sends an SSE event to a specific connection
+/// send_event sends an SSE event to a specific connection.
 pub fn (mut s SSEService) send_event(conn_id string, event domain.SSEEvent) ! {
 	s.mutex.rlock()
 	state := s.connections[conn_id] or {
@@ -234,6 +245,7 @@ pub fn (mut s SSEService) send_event(conn_id string, event domain.SSEEvent) ! {
 }
 
 // broadcast_event sends an SSE event to all connections subscribed to a topic/partition
+/// broadcast_event sends an SSE event to all connections subscribed to a topic/partition.
 pub fn (mut s SSEService) broadcast_event(topic string, partition i32, event domain.SSEEvent) ! {
 	s.mutex.rlock()
 	conn_ids := s.topic_subs[topic] or {
@@ -248,6 +260,7 @@ pub fn (mut s SSEService) broadcast_event(topic string, partition i32, event dom
 }
 
 // stream_messages starts streaming messages for a subscription
+/// stream_messages starts streaming messages for a subscription.
 pub fn (mut s SSEService) stream_messages(conn_id string, sub_id string) ! {
 	// Get subscription
 	s.mutex.rlock()
@@ -286,6 +299,7 @@ pub fn (mut s SSEService) stream_messages(conn_id string, sub_id string) ! {
 }
 
 // poll_messages fetches and sends new messages for all subscriptions
+/// poll_messages fetches and sends new messages for all subscriptions.
 pub fn (mut s SSEService) poll_messages() ! {
 	s.mutex.rlock()
 	connections := s.connections.clone()
@@ -340,7 +354,8 @@ fn (mut s SSEService) poll_subscription(conn_id string, sub_id string, sub domai
 }
 
 // poll_messages_for_connection fetches and sends new messages for a specific connection
-// 통계를 위해 (messages_sent, bytes_sent) 반환
+// Returns (messages_sent, bytes_sent) for statistics
+/// poll_messages_for_connection fetches and sends new messages for a specific connection.
 pub fn (mut s SSEService) poll_messages_for_connection(conn_id string) !(int, i64) {
 	s.mutex.rlock()
 	state := s.connections[conn_id] or {
@@ -404,6 +419,7 @@ pub fn (mut s SSEService) poll_messages_for_connection(conn_id string) !(int, i6
 // Heartbeat Management
 
 // send_heartbeats sends heartbeat events to all connections
+/// send_heartbeats sends heartbeat events to all connections.
 pub fn (mut s SSEService) send_heartbeats() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
@@ -428,6 +444,7 @@ pub fn (mut s SSEService) send_heartbeats() {
 }
 
 // cleanup_stale_connections removes connections that have timed out
+/// cleanup_stale_connections removes connections that have timed out.
 pub fn (mut s SSEService) cleanup_stale_connections() {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -470,6 +487,7 @@ pub fn (mut s SSEService) cleanup_stale_connections() {
 // Statistics
 
 // get_stats returns streaming statistics
+/// get_stats returns streaming statistics.
 pub fn (mut s SSEService) get_stats() port.StreamingStats {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }

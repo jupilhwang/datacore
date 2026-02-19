@@ -2,45 +2,45 @@ module domain
 
 import time
 
-/// Record는 Kafka의 단일 메시지를 나타냅니다.
-/// key: 메시지 키 (파티셔닝에 사용)
-/// value: 메시지 본문
-/// headers: 메시지 헤더 (메타데이터)
-/// timestamp: 메시지 타임스탬프
+/// Record represents a single Kafka message.
+/// key: message key (used for partitioning)
+/// value: message body
+/// headers: message headers (metadata)
+/// timestamp: message timestamp
 pub struct Record {
 pub:
 	key       []u8
 	value     []u8
 	headers   map[string][]u8
 	timestamp time.Time
-	// 원본 압축 타입 (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
-	// 크로스 브로커 fetch 시 원본 압축 정보를 보존하기 위해 사용
+	// original compression type (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
+	// used to preserve original compression info during cross-broker fetch
 	compression_type u8
-	// 트랜잭션 제어 레코드 메타데이터
-	// is_control_record가 true이면 이 레코드는 트랜잭션 마커(commit/abort)입니다.
+	// transaction control record metadata
+	// if is_control_record is true, this record is a transaction marker (commit/abort)
 	is_control_record bool
-	// 제어 레코드의 경우: true = COMMIT, false = ABORT
+	// for control records: true = COMMIT, false = ABORT
 	control_type ControlRecordType = .none
-	// 트랜잭션 레코드를 위한 Producer ID
+	// Producer ID for transactional records
 	producer_id i64 = -1
-	// 트랜잭션 레코드를 위한 Producer Epoch
+	// Producer Epoch for transactional records
 	producer_epoch i16 = -1
 }
 
-/// ControlRecordType은 제어 레코드의 유형을 나타냅니다.
-/// none: 제어 레코드가 아님
-/// abort: 트랜잭션 롤백 마커
-/// commit: 트랜잭션 커밋 마커
+/// ControlRecordType represents the type of a control record.
+/// none: not a control record
+/// abort: transaction rollback marker
+/// commit: transaction commit marker
 pub enum ControlRecordType {
 	none   = 0
 	abort  = 1
 	commit = 2
 }
 
-/// RecordBatch는 레코드의 배치를 나타냅니다.
-/// 참고: DataCore Stateless 아키텍처
-/// - partition_leader_epoch: 항상 0 (리더 선출 없음)
-/// - producer_id/producer_epoch: 멱등성을 위해 사용, 스토리지 레벨에서 처리
+/// RecordBatch represents a batch of records.
+/// Note: DataCore Stateless architecture
+/// - partition_leader_epoch: always 0 (no leader election)
+/// - producer_id/producer_epoch: used for idempotency, handled at storage level
 pub struct RecordBatch {
 pub:
 	base_offset            i64
@@ -57,11 +57,11 @@ pub:
 	records                []Record
 }
 
-/// AppendResult는 레코드 추가 결과를 나타냅니다.
-/// base_offset: 첫 번째 레코드의 오프셋
-/// log_append_time: 로그 추가 시간
-/// log_start_offset: 로그 시작 오프셋
-/// record_count: 추가된 레코드 수
+/// AppendResult represents the result of appending records.
+/// base_offset: offset of the first record
+/// log_append_time: log append time
+/// log_start_offset: log start offset
+/// record_count: number of records appended
 pub struct AppendResult {
 pub:
 	base_offset      i64
@@ -70,12 +70,12 @@ pub:
 	record_count     int
 }
 
-/// FetchResult는 레코드 조회 결과를 나타냅니다.
-/// records: 조회된 레코드 목록
-/// first_offset: 반환된 첫 번째 레코드의 실제 오프셋 (v0.41.1)
-/// high_watermark: 하이 워터마크 오프셋
-/// last_stable_offset: 마지막 안정 오프셋 (트랜잭션용)
-/// log_start_offset: 로그 시작 오프셋
+/// FetchResult represents the result of fetching records.
+/// records: list of fetched records
+/// first_offset: actual offset of the first returned record (v0.41.1)
+/// high_watermark: high watermark offset
+/// last_stable_offset: last stable offset (for transactions)
+/// log_start_offset: log start offset
 pub struct FetchResult {
 pub:
 	records            []Record

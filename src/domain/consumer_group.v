@@ -1,13 +1,13 @@
 module domain
 
-/// ConsumerGroup은 컨슈머 그룹을 나타냅니다.
-/// group_id: 그룹 식별자
-/// generation_id: 세대 ID (리밸런싱마다 증가)
-/// protocol_type: 프로토콜 유형 ('consumer')
-/// protocol: 할당 프로토콜 ('range', 'roundrobin' 등)
-/// leader: 리더 멤버 ID
-/// state: 그룹 상태
-/// members: 그룹 멤버 목록
+/// ConsumerGroup represents a consumer group.
+/// group_id: group identifier
+/// generation_id: generation ID (incremented on each rebalance)
+/// protocol_type: protocol type ('consumer')
+/// protocol: assignment protocol ('range', 'roundrobin', etc.)
+/// leader: leader member ID
+/// state: group state
+/// members: list of group members
 pub struct ConsumerGroup {
 pub:
 	group_id      string
@@ -19,12 +19,12 @@ pub:
 	members       []GroupMember
 }
 
-/// GroupState는 컨슈머 그룹의 상태를 나타냅니다.
-/// empty: 멤버 없음
-/// preparing_rebalance: 리밸런싱 준비 중
-/// completing_rebalance: 리밸런싱 완료 중
-/// stable: 안정 상태
-/// dead: 그룹 삭제됨
+/// GroupState represents the state of a consumer group.
+/// empty: no members
+/// preparing_rebalance: preparing for rebalance
+/// completing_rebalance: completing rebalance
+/// stable: stable state
+/// dead: group deleted
 pub enum GroupState {
 	empty
 	preparing_rebalance
@@ -33,13 +33,13 @@ pub enum GroupState {
 	dead
 }
 
-/// GroupMember는 컨슈머 그룹의 멤버를 나타냅니다.
-/// member_id: 멤버 고유 식별자
-/// group_instance_id: 정적 멤버십을 위한 인스턴스 ID
-/// client_id: 클라이언트 ID
-/// client_host: 클라이언트 호스트
-/// metadata: 멤버 메타데이터 (구독 토픽 등)
-/// assignment: 파티션 할당 정보
+/// GroupMember represents a member of a consumer group.
+/// member_id: unique member identifier
+/// group_instance_id: instance ID for static membership
+/// client_id: client ID
+/// client_host: client host
+/// metadata: member metadata (subscribed topics, etc.)
+/// assignment: partition assignment information
 pub struct GroupMember {
 pub:
 	member_id         string
@@ -50,8 +50,8 @@ pub:
 	assignment        []u8
 }
 
-/// GroupInfo는 컨슈머 그룹의 간략한 정보입니다.
-/// 그룹 목록 조회 시 사용됩니다.
+/// GroupInfo is a summary of consumer group information.
+/// Used when listing groups.
 pub struct GroupInfo {
 pub:
 	group_id      string

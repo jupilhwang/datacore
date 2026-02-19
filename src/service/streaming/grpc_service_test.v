@@ -3,7 +3,7 @@ module streaming
 import domain
 import service.port
 
-// 테스트용 Mock storage
+// Mock storage for testing
 struct MockStorage {
 mut:
 	topics     map[string]domain.TopicMetadata

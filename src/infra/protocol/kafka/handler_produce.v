@@ -1,8 +1,8 @@
-// Produce 요청/응답 타입, 파싱, 인코딩 및 핸들러 구현
+// Produce request/response types, parsing, encoding, and handler implementation
 //
-// 이 모듈은 Kafka Produce API를 구현합니다.
-// 프로듀서가 브로커에 메시지를 전송할 때 사용되며,
-// 트랜잭션 지원 및 다양한 acks 설정을 지원합니다.
+// This module implements the Kafka Produce API.
+// Used by producers to send messages to the broker.
+// Supports transactional producers and various acks configurations.
 module kafka
 
 import domain
@@ -10,10 +10,10 @@ import infra.compression
 import infra.observability
 import time
 
-/// Produce 요청 - 프로듀서가 브로커에 메시지를 전송하기 위한 요청
+/// ProduceRequest is sent by a producer to deliver messages to the broker.
 ///
-/// 여러 토픽과 파티션에 동시에 메시지를 전송할 수 있으며,
-/// 트랜잭션 프로듀서의 경우 transactional_id를 포함합니다.
+/// Supports sending to multiple topics and partitions simultaneously.
+/// Transactional producers include a transactional_id.
 pub struct ProduceRequest {
 pub:
 	transactional_id ?string
@@ -22,37 +22,37 @@ pub:
 	topic_data       []ProduceRequestTopic
 }
 
-/// Produce 요청 토픽 - 전송할 토픽 데이터
+/// ProduceRequestTopic holds the topic data to be produced.
 pub struct ProduceRequestTopic {
 pub:
 	name           string
-	topic_id       []u8 // 토픽 UUID (v13+, 16바이트)
+	topic_id       []u8 // Topic UUID (v13+, 16 bytes)
 	partition_data []ProduceRequestPartition
 }
 
-/// Produce 요청 파티션 - 전송할 파티션 데이터
+/// ProduceRequestPartition holds the partition data to be produced.
 pub struct ProduceRequestPartition {
 pub:
 	index   i32
 	records []u8
 }
 
-/// Produce 응답 - 메시지 전송 결과
+/// ProduceResponse contains the result of a produce operation.
 pub struct ProduceResponse {
 pub:
 	topics           []ProduceResponseTopic
 	throttle_time_ms i32
 }
 
-/// Produce 응답 토픽 - 토픽별 전송 결과
+/// ProduceResponseTopic contains per-topic produce results.
 pub struct ProduceResponseTopic {
 pub:
 	name       string
-	topic_id   []u8 // 토픽 UUID (v13+)
+	topic_id   []u8 // Topic UUID (v13+)
 	partitions []ProduceResponsePartition
 }
 
-/// Produce 응답 파티션 - 파티션별 전송 결과
+/// ProduceResponsePartition contains per-partition produce results.
 pub struct ProduceResponsePartition {
 pub:
 	index            i32
@@ -62,10 +62,10 @@ pub:
 	log_start_offset i64
 }
 
-// Produce 요청을 파싱합니다.
-// 버전에 따라 다른 필드들을 읽어 ProduceRequest 구조체를 생성합니다.
+// parse_produce_request parses a Produce request.
+// Reads different fields depending on the version to build the ProduceRequest struct.
 fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool) !ProduceRequest {
-	// v3+에서 transactional_id 필드 추가
+	// transactional_id field added in v3+
 	mut transactional_id := ?string(none)
 	if version >= 3 {
 		if is_flexible {
@@ -80,7 +80,7 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 	acks := reader.read_i16()!
 	timeout_ms := reader.read_i32()!
 
-	// 토픽 배열 파싱
+	// Parse topic array
 	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	mut topic_data := []ProduceRequestTopic{}
@@ -88,7 +88,7 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 		mut name := ''
 		mut topic_id := []u8{}
 
-		// v13+에서는 토픽 이름 대신 UUID 사용
+		// v13+ uses topic UUID instead of topic name
 		if version >= 13 {
 			topic_id = reader.read_uuid()!
 		} else if is_flexible {
@@ -97,13 +97,13 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 			name = reader.read_string()!
 		}
 
-		// 파티션 배열 파싱
+		// Parse partition array
 		partition_count := reader.read_flex_array_len(is_flexible)!
 
 		mut partition_data := []ProduceRequestPartition{}
 		for _ in 0 .. partition_count {
 			index := reader.read_i32()!
-			// 레코드 배치 데이터 읽기
+			// Read record batch data
 			records := if is_flexible {
 				reader.read_compact_bytes()!
 			} else {
@@ -135,13 +135,13 @@ fn parse_produce_request(mut reader BinaryReader, version i16, is_flexible bool)
 	}
 }
 
-/// Produce 응답을 바이트 배열로 인코딩합니다.
-/// 버전에 따라 flexible 또는 non-flexible 형식으로 인코딩합니다.
+/// encode serializes the ProduceResponse to bytes.
+/// Uses flexible or non-flexible format depending on the version.
 pub fn (r ProduceResponse) encode(version i16) []u8 {
 	is_flexible := version >= 9
 	mut writer := new_writer()
 
-	// 토픽 배열 인코딩
+	// Encode topic array
 	if is_flexible {
 		writer.write_compact_array_len(r.topics.len)
 	} else {
@@ -149,7 +149,7 @@ pub fn (r ProduceResponse) encode(version i16) []u8 {
 	}
 
 	for t in r.topics {
-		// v13+에서는 토픽 이름 대신 UUID 사용
+		// v13+ uses topic UUID instead of topic name
 		if version >= 13 {
 			writer.write_uuid(t.topic_id)
 		} else if is_flexible {

@@ -1,14 +1,14 @@
-// Share Group은 컨슈머들이 레코드 수준의 확인 및 자동 재전송을 통해
-// 협력적으로 레코드를 소비할 수 있게 합니다.
+// Share Group allows consumers to cooperatively consume records
+// with record-level acknowledgement and automatic redelivery.
 module domain
 
 import time
 
-/// ShareGroup은 Share Group (KIP-932)을 나타냅니다.
-/// Share Group은 Consumer Group과 다음과 같은 점에서 다릅니다:
-/// - 파티션이 여러 컨슈머에게 할당될 수 있음
-/// - 레코드가 개별적으로 확인됨
-/// - 독 메시지 처리를 위해 전송 시도 횟수가 추적됨
+/// ShareGroup represents a Share Group (KIP-932).
+/// Share Group differs from Consumer Group in the following ways:
+/// - partitions can be assigned to multiple consumers
+/// - records are acknowledged individually
+/// - delivery attempt count is tracked for poison message handling
 pub struct ShareGroup {
 pub mut:
 	group_id                string
@@ -27,14 +27,14 @@ pub mut:
 	updated_at              i64
 }
 
-/// ShareGroupState는 Share Group의 상태를 나타냅니다.
+/// ShareGroupState represents the state of a Share Group.
 pub enum ShareGroupState {
 	empty
 	stable
 	dead
 }
 
-/// ShareMember는 Share Group의 멤버를 나타냅니다.
+/// ShareMember represents a member of a Share Group.
 pub struct ShareMember {
 pub mut:
 	member_id              string
@@ -49,7 +49,7 @@ pub mut:
 	joined_at              i64
 }
 
-/// ShareMemberState는 Share Group 멤버의 상태를 나타냅니다.
+/// ShareMemberState represents the state of a Share Group member.
 pub enum ShareMemberState {
 	joining
 	stable
@@ -57,16 +57,16 @@ pub enum ShareMemberState {
 	fenced
 }
 
-/// SharePartitionAssignment는 Share Group을 위한 파티션 할당을 나타냅니다.
+/// SharePartitionAssignment represents a partition assignment for a Share Group.
 pub struct SharePartitionAssignment {
 pub:
-	topic_id   []u8 // UUID (16바이트)
+	topic_id   []u8 // UUID (16 bytes)
 	topic_name string
 	partitions []i32
 }
 
-/// SharePartition은 토픽-파티션에 대한 Share Group의 뷰를 나타냅니다.
-/// SPSO와 SPEO 사이의 진행 중 레코드를 관리합니다.
+/// SharePartition represents a Share Group's view of a topic-partition.
+/// Manages in-flight records between SPSO and SPEO.
 pub struct SharePartition {
 pub mut:
 	topic_name         string
@@ -82,7 +82,7 @@ pub mut:
 	total_rejected     i64
 }
 
-/// RecordState는 Share Partition 내 레코드의 상태를 나타냅니다.
+/// RecordState represents the state of a record within a Share Partition.
 pub enum RecordState {
 	available
 	acquired
@@ -90,7 +90,7 @@ pub enum RecordState {
 	archived
 }
 
-/// AcquiredRecord는 레코드의 획득 정보를 추적합니다.
+/// AcquiredRecord tracks acquisition information for a record.
 pub struct AcquiredRecord {
 pub mut:
 	offset          i64
@@ -100,8 +100,8 @@ pub mut:
 	lock_expires_at i64
 }
 
-/// ShareSession은 컨슈머의 Share 세션을 나타냅니다.
-/// 세션은 fetch 컨텍스트와 획득된 레코드를 추적합니다.
+/// ShareSession represents a consumer's Share session.
+/// A session tracks the fetch context and acquired records.
 pub struct ShareSession {
 pub mut:
 	group_id       string
@@ -113,7 +113,7 @@ pub mut:
 	last_used      i64
 }
 
-/// ShareSessionPartition은 Share 세션 내의 파티션을 나타냅니다.
+/// ShareSessionPartition represents a partition within a Share session.
 pub struct ShareSessionPartition {
 pub:
 	topic_id   []u8
@@ -121,14 +121,14 @@ pub:
 	partition  i32
 }
 
-/// AcknowledgeType은 레코드를 어떻게 확인할지 나타냅니다.
+/// AcknowledgeType indicates how a record should be acknowledged.
 pub enum AcknowledgeType {
 	accept
 	release
 	reject
 }
 
-/// AcknowledgementBatch는 확인 배치를 나타냅니다.
+/// AcknowledgementBatch represents an acknowledgement batch.
 pub struct AcknowledgementBatch {
 pub:
 	topic_name       string
@@ -139,7 +139,7 @@ pub:
 	gap_offsets      []i64
 }
 
-/// ShareFetchResult는 Share Fetch의 결과를 나타냅니다.
+/// ShareFetchResult represents the result of a Share Fetch.
 pub struct ShareFetchResult {
 pub:
 	topic_name          string
@@ -152,7 +152,7 @@ pub:
 	last_fetched_offset i64
 }
 
-/// AcquiredRecordInfo는 획득된 레코드에 대한 정보를 포함합니다.
+/// AcquiredRecordInfo contains information about an acquired record.
 pub struct AcquiredRecordInfo {
 pub:
 	offset         i64
@@ -160,7 +160,7 @@ pub:
 	timestamp      i64
 }
 
-/// ShareAcknowledgeResult는 확인의 결과를 나타냅니다.
+/// ShareAcknowledgeResult represents the result of an acknowledgement.
 pub struct ShareAcknowledgeResult {
 pub:
 	topic_name    string
@@ -169,7 +169,7 @@ pub:
 	error_message string
 }
 
-/// ShareGroupConfig는 Share Group 설정을 보관합니다.
+/// ShareGroupConfig holds Share Group configuration.
 pub struct ShareGroupConfig {
 pub:
 	record_lock_duration_ms i32 = 30000
@@ -180,7 +180,7 @@ pub:
 	max_share_sessions      i32 = 1000
 }
 
-/// new_share_group은 새로운 Share Group을 생성합니다.
+/// new_share_group creates a new Share Group.
 pub fn new_share_group(group_id string, config ShareGroupConfig) ShareGroup {
 	now := time.now().unix_milli()
 	return ShareGroup{
@@ -201,7 +201,7 @@ pub fn new_share_group(group_id string, config ShareGroupConfig) ShareGroup {
 	}
 }
 
-/// new_share_partition은 새로운 Share Partition을 생성합니다.
+/// new_share_partition creates a new Share Partition.
 pub fn new_share_partition(topic_name string, partition i32, group_id string, start_offset i64) SharePartition {
 	return SharePartition{
 		topic_name:       topic_name
@@ -214,7 +214,7 @@ pub fn new_share_partition(topic_name string, partition i32, group_id string, st
 	}
 }
 
-/// str은 ShareGroupState를 문자열로 변환합니다.
+/// str converts ShareGroupState to a string.
 pub fn (s ShareGroupState) str() string {
 	return match s {
 		.empty { 'EMPTY' }
@@ -223,7 +223,7 @@ pub fn (s ShareGroupState) str() string {
 	}
 }
 
-/// str은 ShareMemberState를 문자열로 변환합니다.
+/// str converts ShareMemberState to a string.
 pub fn (s ShareMemberState) str() string {
 	return match s {
 		.joining { 'JOINING' }
@@ -233,7 +233,7 @@ pub fn (s ShareMemberState) str() string {
 	}
 }
 
-/// str은 RecordState를 문자열로 변환합니다.
+/// str converts RecordState to a string.
 pub fn (s RecordState) str() string {
 	return match s {
 		.available { 'AVAILABLE' }
@@ -243,7 +243,7 @@ pub fn (s RecordState) str() string {
 	}
 }
 
-/// str은 AcknowledgeType을 문자열로 변환합니다.
+/// str converts AcknowledgeType to a string.
 pub fn (t AcknowledgeType) str() string {
 	return match t {
 		.accept { 'ACCEPT' }
@@ -252,7 +252,7 @@ pub fn (t AcknowledgeType) str() string {
 	}
 }
 
-/// acknowledge_type_from_value는 API 값을 AcknowledgeType으로 변환합니다.
+/// acknowledge_type_from_value converts an API value to an AcknowledgeType.
 pub fn acknowledge_type_from_value(value u8) !AcknowledgeType {
 	return match value {
 		1 { .accept }
@@ -262,7 +262,7 @@ pub fn acknowledge_type_from_value(value u8) !AcknowledgeType {
 	}
 }
 
-/// is_share_group_type은 그룹 타입 문자열이 Share Group을 나타내는지 확인합니다.
+/// is_share_group_type checks whether a group type string represents a Share Group.
 pub fn is_share_group_type(group_type string) bool {
 	return group_type == 'share'
 }

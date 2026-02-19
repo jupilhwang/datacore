@@ -1,22 +1,22 @@
-/// 설정 핫 리로드 감시자 모듈
-/// 설정 파일의 변경을 모니터링하고 리로드 콜백을 트리거합니다.
+/// Configuration hot-reload watcher module
+/// Monitors configuration file changes and triggers reload callbacks.
 module config
 
 import os
 import sync
 import time
 
-/// ConfigCallback은 리로드 콜백 함수 타입입니다.
+/// ConfigCallback is the reload callback function type.
 pub type ConfigCallback = fn (Config)
 
-/// ConfigWatcher는 설정 파일의 변경을 모니터링합니다.
-/// file_path: 감시할 설정 파일 경로
-/// check_interval: 파일 변경 확인 간격
-/// last_modified: 마지막 수정 시간
-/// running: 감시자 실행 상태
-/// callbacks: 등록된 콜백 함수 목록
-/// lock: 스레드 안전을 위한 뮤텍스
-/// current_config: 현재 로드된 설정
+/// ConfigWatcher monitors changes to the configuration file.
+/// file_path: path to the configuration file to watch
+/// check_interval: interval to check for file changes
+/// last_modified: last modified timestamp
+/// running: watcher running state
+/// callbacks: list of registered callback functions
+/// lock: mutex for thread safety
+/// current_config: currently loaded configuration
 pub struct ConfigWatcher {
 	file_path      string
 	check_interval time.Duration
@@ -28,23 +28,23 @@ mut:
 	current_config Config
 }
 
-/// WatcherConfig는 설정 감시자의 설정을 담습니다.
-/// file_path: 감시할 설정 파일 경로
-/// check_interval: 파일 변경 확인 간격 (기본값: 2초)
+/// WatcherConfig holds the configuration for the config watcher.
+/// file_path: path to the configuration file to watch
+/// check_interval: interval to check for file changes (default: 2 seconds)
 pub struct WatcherConfig {
 pub:
 	file_path      string        = 'config.toml'
 	check_interval time.Duration = 2 * time.second
 }
 
-/// new_config_watcher는 새로운 설정 감시자를 생성합니다.
-/// watcher_config: 감시자 설정
-/// 반환값: ConfigWatcher 포인터 또는 에러
+/// new_config_watcher creates a new configuration watcher.
+/// watcher_config: watcher configuration
+/// returns: pointer to ConfigWatcher or error
 pub fn new_config_watcher(watcher_config WatcherConfig) !&ConfigWatcher {
-	// 초기 설정 로드
+	// load initial configuration
 	initial_config := load_config(watcher_config.file_path)!
 
-	// 초기 파일 수정 시간 가져오기
+	// get initial file modification time
 	file_info := os.stat(watcher_config.file_path) or {
 		return error('Failed to stat config file: ${err}')
 	}
@@ -59,23 +59,23 @@ pub fn new_config_watcher(watcher_config WatcherConfig) !&ConfigWatcher {
 	}
 }
 
-/// on_reload는 설정이 리로드될 때 호출될 콜백을 등록합니다.
-/// callback: 리로드 시 호출될 함수
+/// on_reload registers a callback to be called when the configuration is reloaded.
+/// callback: function to call on reload
 pub fn (mut w ConfigWatcher) on_reload(callback ConfigCallback) {
 	w.lock.@lock()
 	defer { w.lock.unlock() }
 	w.callbacks << callback
 }
 
-/// get_config는 현재 설정을 반환합니다. (스레드 안전)
-/// 반환값: 현재 Config
+/// get_config returns the current configuration. (thread-safe)
+/// returns: current Config
 pub fn (mut w ConfigWatcher) get_config() Config {
 	w.lock.@lock()
 	defer { w.lock.unlock() }
 	return w.current_config
 }
 
-/// start는 백그라운드에서 설정 감시자를 시작합니다. (스레드 안전)
+/// start starts the configuration watcher in the background. (thread-safe)
 pub fn (mut w ConfigWatcher) start() {
 	w.lock.@lock()
 	if w.running {
@@ -89,7 +89,7 @@ pub fn (mut w ConfigWatcher) start() {
 	println('[ConfigWatcher] Started watching ${w.file_path} (interval: ${w.check_interval})')
 }
 
-/// stop은 설정 감시자를 중지합니다. (스레드 안전)
+/// stop stops the configuration watcher. (thread-safe)
 pub fn (mut w ConfigWatcher) stop() {
 	w.lock.@lock()
 	w.running = false
@@ -97,14 +97,14 @@ pub fn (mut w ConfigWatcher) stop() {
 	println('[ConfigWatcher] Stopped')
 }
 
-/// is_running은 감시자가 실행 중인지 반환합니다. (스레드 안전)
+/// is_running returns whether the watcher is running. (thread-safe)
 fn (mut w ConfigWatcher) is_running() bool {
 	w.lock.@lock()
 	defer { w.lock.unlock() }
 	return w.running
 }
 
-/// watch_loop는 파일 변경을 확인하는 메인 루프입니다.
+/// watch_loop is the main loop that checks for file changes.
 fn (mut w ConfigWatcher) watch_loop() {
 	for w.is_running() {
 		time.sleep(w.check_interval)
@@ -113,9 +113,9 @@ fn (mut w ConfigWatcher) watch_loop() {
 			break
 		}
 
-		// 파일 수정 여부 확인
+		// check whether the file has been modified
 		file_info := os.stat(w.file_path) or {
-			// 쓰기 중에 파일이 일시적으로 사용 불가능할 수 있음
+			// file may be temporarily unavailable while being written
 			continue
 		}
 
@@ -124,20 +124,20 @@ fn (mut w ConfigWatcher) watch_loop() {
 		w.lock.unlock()
 
 		if file_info.mtime != last_mod {
-			// 파일이 수정됨
+			// file has been modified
 			w.lock.@lock()
 			w.last_modified = file_info.mtime
 			w.lock.unlock()
 
-			// 설정 리로드 시도
+			// attempt to reload configuration
 			w.reload_config()
 		}
 	}
 }
 
-/// reload_config는 설정 파일을 리로드하고 콜백들에게 알립니다.
+/// reload_config reloads the configuration file and notifies callbacks.
 fn (mut w ConfigWatcher) reload_config() {
-	// 파일 쓰기가 완료되도록 약간의 지연
+	// brief delay to ensure the file write is complete
 	time.sleep(100 * time.millisecond)
 
 	new_config := load_config(w.file_path) or {
@@ -145,7 +145,7 @@ fn (mut w ConfigWatcher) reload_config() {
 		return
 	}
 
-	// 변경 사항 감지 및 리로드 가능 여부 확인
+	// detect changes and check whether reload is possible
 	changes := detect_config_changes(w.current_config, new_config)
 
 	if changes.has_non_reloadable {
@@ -156,7 +156,7 @@ fn (mut w ConfigWatcher) reload_config() {
 	}
 
 	if changes.has_reloadable {
-		// 현재 설정 업데이트
+		// update current configuration
 		w.lock.@lock()
 		w.current_config = new_config
 		callbacks := w.callbacks.clone()
@@ -167,18 +167,18 @@ fn (mut w ConfigWatcher) reload_config() {
 			println('[ConfigWatcher]   - ${item}')
 		}
 
-		// 모든 콜백에 알림
+		// notify all callbacks
 		for callback in callbacks {
 			callback(new_config)
 		}
 	}
 }
 
-/// ConfigChanges는 감지된 설정 변경 사항을 나타냅니다.
-/// has_reloadable: 리로드 가능한 변경 사항 존재 여부
-/// has_non_reloadable: 리로드 불가능한 변경 사항 존재 여부
-/// reloadable_items: 리로드 가능한 변경 항목 목록
-/// non_reloadable_items: 리로드 불가능한 변경 항목 목록
+/// ConfigChanges represents detected configuration changes.
+/// has_reloadable: whether there are reloadable changes
+/// has_non_reloadable: whether there are non-reloadable changes
+/// reloadable_items: list of reloadable changed items
+/// non_reloadable_items: list of non-reloadable changed items
 struct ConfigChanges {
 mut:
 	has_reloadable       bool
@@ -187,14 +187,14 @@ mut:
 	non_reloadable_items []string
 }
 
-/// detect_config_changes는 두 설정을 비교하여 변경 사항을 감지합니다.
-/// old_config: 이전 설정
-/// new_config: 새 설정
-/// 반환값: 감지된 변경 사항
+/// detect_config_changes compares two configurations and detects changes.
+/// old_config: previous configuration
+/// new_config: new configuration
+/// returns: detected changes
 fn detect_config_changes(old_config Config, new_config Config) ConfigChanges {
 	mut changes := ConfigChanges{}
 
-	// 리로드 불가능한 설정 (재시작 필요)
+	// non-reloadable settings (require restart)
 	if old_config.broker.port != new_config.broker.port {
 		changes.has_non_reloadable = true
 		changes.non_reloadable_items << 'broker.port'
@@ -228,7 +228,7 @@ fn detect_config_changes(old_config Config, new_config Config) ConfigChanges {
 		changes.non_reloadable_items << 'observability.metrics.prometheus_port'
 	}
 
-	// 리로드 가능한 설정 (런타임에 변경 가능)
+	// reloadable settings (can be changed at runtime)
 	if old_config.broker.max_connections != new_config.broker.max_connections {
 		changes.has_reloadable = true
 		changes.reloadable_items << 'broker.max_connections: ${old_config.broker.max_connections} -> ${new_config.broker.max_connections}'
@@ -289,15 +289,15 @@ fn detect_config_changes(old_config Config, new_config Config) ConfigChanges {
 	return changes
 }
 
-/// ReloadableConfig는 핫 리로드를 지원하는 컴포넌트를 위한 인터페이스입니다.
+/// ReloadableConfig is an interface for components that support hot reload.
 pub interface ReloadableConfig {
 mut:
-	/// on_config_reload는 설정이 리로드될 때 호출됩니다.
+	/// on_config_reload is called when the configuration is reloaded.
 	on_config_reload(new_config Config)
 }
 
-/// get_reloadable_settings는 런타임에 리로드 가능한 설정 목록을 반환합니다.
-/// 반환값: 리로드 가능한 설정 키 목록
+/// get_reloadable_settings returns the list of settings that can be reloaded at runtime.
+/// returns: list of reloadable configuration keys
 pub fn get_reloadable_settings() []string {
 	return [
 		'broker.max_connections',
@@ -317,8 +317,8 @@ pub fn get_reloadable_settings() []string {
 	]
 }
 
-/// get_non_reloadable_settings는 재시작이 필요한 설정 목록을 반환합니다.
-/// 반환값: 리로드 불가능한 설정 키 목록
+/// get_non_reloadable_settings returns the list of settings that require a restart.
+/// returns: list of non-reloadable configuration keys
 pub fn get_non_reloadable_settings() []string {
 	return [
 		'broker.host',

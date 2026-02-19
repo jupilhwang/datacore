@@ -1,5 +1,5 @@
-// 스키마 등록, 버전 관리, 호환성 검사를 관리합니다.
-// Confluent Schema Registry와 호환되는 API를 제공합니다.
+// Manages schema registration, versioning, and compatibility checks.
+// Provides an API compatible with Confluent Schema Registry.
 module schema
 
 import domain
@@ -8,34 +8,34 @@ import sync
 import time
 import crypto.md5
 
-/// SchemaRegistry는 스키마 관리 기능을 제공합니다.
-/// 스키마 등록, 조회, 버전 관리, 호환성 검사를 담당합니다.
+/// SchemaRegistry provides schema management functionality.
+/// Responsible for schema registration, retrieval, versioning, and compatibility checks.
 pub struct SchemaRegistry {
 mut:
-	// 인메모리 캐시
+	// In-memory cache
 	schemas         map[int]domain.Schema
 	subjects        map[string][]domain.SchemaVersion
 	subject_configs map[string]domain.SubjectConfig
-	// 버전 조회 캐시 (v0.28.0 최적화)
+	// Version lookup cache (v0.28.0 optimization)
 	version_map map[string]map[int]int
 
-	// 전역 상태
+	// Global state
 	next_id       int
 	global_config domain.SubjectConfig
 
-	// 스레드 안전성
+	// Thread safety
 	lock sync.RwMutex
 
-	// 영구 저장을 위한 스토리지
+	// Storage for persistence
 	storage port.StoragePort
 
 	default_compat domain.CompatibilityLevel
 
-	// 부팅 복구 상태
+	// Boot recovery state
 	recovered bool
 }
 
-/// RegistryConfig는 레지스트리 설정을 담습니다.
+/// RegistryConfig holds the registry configuration.
 pub struct RegistryConfig {
 pub:
 	default_compatibility domain.CompatibilityLevel = .backward
@@ -43,7 +43,7 @@ pub:
 	normalize_schemas     bool                      = true
 }
 
-/// RegistryStats는 레지스트리 통계를 담습니다.
+/// RegistryStats holds registry statistics.
 pub struct RegistryStats {
 pub:
 	total_schemas  int
@@ -51,10 +51,11 @@ pub:
 	next_id        int
 }
 
-// 스키마 저장을 위한 내부 토픽
+// Internal topic for schema storage
+/// schemas_topic constant.
 pub const schemas_topic = '__schemas'
 
-/// new_registry는 새로운 스키마 레지스트리를 생성합니다.
+/// new_registry creates a new schema registry.
 pub fn new_registry(storage port.StoragePort, config RegistryConfig) &SchemaRegistry {
 	return &SchemaRegistry{
 		schemas:         map[int]domain.Schema{}
@@ -72,8 +73,8 @@ pub fn new_registry(storage port.StoragePort, config RegistryConfig) &SchemaRegi
 	}
 }
 
-/// load_from_storage는 __schemas 토픽에서 스키마 레지스트리 상태를 복구합니다.
-/// 요청을 받기 전 브로커 시작 시 호출해야 합니다.
+/// load_from_storage recovers schema registry state from the __schemas topic.
+/// Should be called at broker startup before accepting requests.
 pub fn (mut r SchemaRegistry) load_from_storage() ! {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -82,28 +83,28 @@ pub fn (mut r SchemaRegistry) load_from_storage() ! {
 		return
 	}
 
-	// __schemas 토픽에서 읽기 시도
+	// Try reading from the __schemas topic
 	r.storage.get_topic(schemas_topic) or {
-		// 토픽이 아직 없음 - 첫 부팅
+		// Topic does not exist yet - first boot
 		r.recovered = true
 		return
 	}
 
-	// __schemas 토픽에서 모든 레코드 가져오기
+	// Fetch all records from the __schemas topic
 	fetch_result := r.storage.fetch(schemas_topic, 0, 0, 100 * 1024 * 1024) or {
-		// 비어있거나 오류 - 새로 시작
+		// Empty or error - start fresh
 		r.recovered = true
 		return
 	}
 
 	mut max_id := 0
 
-	// 각 레코드를 처리하여 상태 재구성
+	// Process each record to reconstruct state
 	for record in fetch_result.records {
 		record_str := record.value.bytestr()
 
-		// 저장된 스키마 레코드 파싱
-		// 형식: {"subject":"...", "version":..., "id":..., "schemaType":"...", "schema":"..."}
+		// Parse stored schema record
+		// Format: {"subject":"...", "version":..., "id":..., "schemaType":"...", "schema":"..."}
 
 		subject := extract_json_string(record_str, 'subject') or { continue }
 		version := extract_json_int(record_str, 'version') or { continue }
@@ -113,12 +114,12 @@ pub fn (mut r SchemaRegistry) load_from_storage() ! {
 
 		schema_type := domain.schema_type_from_str(schema_type_str) or { domain.SchemaType.avro }
 
-		// next_id를 위해 최대 ID 추적
+		// Track max ID for next_id
 		if schema_id > max_id {
 			max_id = schema_id
 		}
 
-		// 스키마 캐시 재구성
+		// Reconstruct schema cache
 		if schema_id !in r.schemas {
 			r.schemas[schema_id] = domain.Schema{
 				id:          schema_id
@@ -128,7 +129,7 @@ pub fn (mut r SchemaRegistry) load_from_storage() ! {
 			}
 		}
 
-		// subject 버전 재구성
+		// Reconstruct subject versions
 		schema_version := domain.SchemaVersion{
 			version:       version
 			schema_id:     schema_id
@@ -138,7 +139,7 @@ pub fn (mut r SchemaRegistry) load_from_storage() ! {
 		}
 
 		if subject in r.subjects {
-			// 버전이 이미 존재하는지 확인
+			// Check if version already exists
 			mut exists := false
 			for v in r.subjects[subject] {
 				if v.version == version {
@@ -154,19 +155,19 @@ pub fn (mut r SchemaRegistry) load_from_storage() ! {
 		}
 	}
 
-	// next_id를 복구된 최대 ID 이후로 설정
+	// Set next_id to after the max recovered ID
 	r.next_id = max_id + 1
 	r.recovered = true
 }
 
-/// get_global_config는 전역 호환성 설정을 반환합니다.
+/// get_global_config returns the global compatibility configuration.
 pub fn (mut r SchemaRegistry) get_global_config() domain.SubjectConfig {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 	return r.global_config
 }
 
-/// set_global_config는 전역 호환성 설정을 업데이트합니다.
+/// set_global_config updates the global compatibility configuration.
 pub fn (mut r SchemaRegistry) set_global_config(config domain.SubjectConfig) {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -174,31 +175,31 @@ pub fn (mut r SchemaRegistry) set_global_config(config domain.SubjectConfig) {
 	r.default_compat = config.compatibility
 }
 
-/// register는 subject에 새 스키마를 등록합니다.
-/// 반환값: 스키마 ID (중복이면 기존 ID, 새로우면 새 ID)
+/// register registers a new schema under a subject.
+/// Returns: schema ID (existing ID if duplicate, new ID if new)
 pub fn (mut r SchemaRegistry) register(subject string, schema_str string, schema_type domain.SchemaType) !int {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
 
-	// 스키마 유효성 검사
+	// Validate schema
 	validate_schema(schema_type, schema_str)!
 
-	// 정규화 및 지문 계산
+	// Normalize and compute fingerprint
 	normalized := normalize_schema(schema_str)
 	fingerprint := compute_fingerprint(normalized)
 
-	// 이 subject에 동일한 스키마가 이미 존재하는지 확인
+	// Check if an identical schema already exists for this subject
 	if existing_id := r.find_schema_by_fingerprint(subject, fingerprint) {
 		return existing_id
 	}
 
-	// 호환성 수준 가져오기
+	// Get compatibility level
 	config := r.subject_configs[subject] or { r.global_config }
 
-	// 기존 버전과의 호환성 검사
+	// Check compatibility against existing versions
 	r.check_compatibility_internal(subject, schema_str, schema_type, config.compatibility)!
 
-	// 새 스키마 생성
+	// Create new schema
 	schema_id := r.next_id
 	r.next_id += 1
 
@@ -209,7 +210,7 @@ pub fn (mut r SchemaRegistry) register(subject string, schema_str string, schema
 		fingerprint: fingerprint
 	}
 
-	// 버전 번호 결정
+	// Determine version number
 	versions := r.subjects[subject] or { []domain.SchemaVersion{} }
 	version_num := versions.len + 1
 
@@ -221,7 +222,7 @@ pub fn (mut r SchemaRegistry) register(subject string, schema_str string, schema
 		created_at:    time.now()
 	}
 
-	// 스키마 및 버전 저장
+	// Store schema and version
 	r.schemas[schema_id] = schema
 
 	if subject in r.subjects {
@@ -230,21 +231,21 @@ pub fn (mut r SchemaRegistry) register(subject string, schema_str string, schema
 		r.subjects[subject] = [version]
 	}
 
-	// O(1) 조회를 위한 version_map 업데이트 (v0.28.0 최적화)
+	// Update version_map for O(1) lookup (v0.28.0 optimization)
 	if subject !in r.version_map {
 		r.version_map[subject] = map[int]int{}
 	}
 	r.version_map[subject][version_num] = versions.len
 
-	// 스토리지에 영구 저장 (잠금 해제 작업)
+	// Persist to storage (unlocked operation)
 	r.persist_schema(subject, schema, version) or {
-		// 오류 로그 남기지만 실패하지 않음 - 인메모리 상태는 업데이트됨
+		// Log error but do not fail - in-memory state is updated
 	}
 
 	return schema_id
 }
 
-/// get_schema는 ID로 스키마를 조회합니다.
+/// get_schema retrieves a schema by ID.
 pub fn (mut r SchemaRegistry) get_schema(schema_id int) !domain.Schema {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
@@ -252,15 +253,15 @@ pub fn (mut r SchemaRegistry) get_schema(schema_id int) !domain.Schema {
 	return r.schemas[schema_id] or { return error('schema not found: ${schema_id}') }
 }
 
-/// get_schema_by_subject는 subject와 버전으로 스키마를 조회합니다.
-/// version -1을 사용하면 최신 버전을 가져옵니다.
+/// get_schema_by_subject retrieves a schema by subject and version.
+/// Use version -1 to get the latest version.
 pub fn (mut r SchemaRegistry) get_schema_by_subject(subject string, version int) !domain.Schema {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 
 	versions := r.subjects[subject] or { return error('subject not found: ${subject}') }
 
-	// version -1은 최신을 의미
+	// version -1 means latest
 	if version == -1 {
 		if versions.len == 0 {
 			return error('no versions for subject: ${subject}')
@@ -269,7 +270,7 @@ pub fn (mut r SchemaRegistry) get_schema_by_subject(subject string, version int)
 		return r.schemas[latest.schema_id] or { return error('schema not found') }
 	}
 
-	// version_map을 사용한 O(1) 조회 (v0.28.0 최적화)
+	// O(1) lookup using version_map (v0.28.0 optimization)
 	if vm := r.version_map[subject] {
 		if idx := vm[version] {
 			if idx < versions.len {
@@ -278,7 +279,7 @@ pub fn (mut r SchemaRegistry) get_schema_by_subject(subject string, version int)
 		}
 	}
 
-	// 하위 호환성을 위한 선형 검색 폴백
+	// Linear search fallback for backwards compatibility
 	for v in versions {
 		if v.version == version {
 			return r.schemas[v.schema_id] or { return error('schema not found') }
@@ -288,7 +289,7 @@ pub fn (mut r SchemaRegistry) get_schema_by_subject(subject string, version int)
 	return error('version ${version} not found for subject ${subject}')
 }
 
-/// get_latest_version은 subject의 최신 스키마 버전을 조회합니다.
+/// get_latest_version retrieves the latest schema version for a subject.
 pub fn (mut r SchemaRegistry) get_latest_version(subject string) !domain.SchemaVersion {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
@@ -301,7 +302,7 @@ pub fn (mut r SchemaRegistry) get_latest_version(subject string) !domain.SchemaV
 	return versions[versions.len - 1]
 }
 
-/// list_subjects는 등록된 모든 subject를 반환합니다.
+/// list_subjects returns all registered subjects.
 pub fn (mut r SchemaRegistry) list_subjects() []string {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
@@ -313,7 +314,7 @@ pub fn (mut r SchemaRegistry) list_subjects() []string {
 	return result
 }
 
-/// list_versions는 subject의 모든 버전을 반환합니다.
+/// list_versions returns all versions for a subject.
 pub fn (mut r SchemaRegistry) list_versions(subject string) ![]int {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
@@ -327,7 +328,7 @@ pub fn (mut r SchemaRegistry) list_versions(subject string) ![]int {
 	return result
 }
 
-/// delete_subject는 subject와 모든 버전을 삭제합니다.
+/// delete_subject deletes a subject and all its versions.
 pub fn (mut r SchemaRegistry) delete_subject(subject string) ![]int {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -346,7 +347,7 @@ pub fn (mut r SchemaRegistry) delete_subject(subject string) ![]int {
 	return deleted
 }
 
-/// delete_version은 subject의 특정 버전을 삭제합니다.
+/// delete_version deletes a specific version of a subject.
 pub fn (mut r SchemaRegistry) delete_version(subject string, version int) !int {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
@@ -358,10 +359,10 @@ pub fn (mut r SchemaRegistry) delete_version(subject string, version int) !int {
 			versions.delete(i)
 			r.subjects[subject] = versions
 
-			// 이 subject의 version_map 재구성 (v0.28.0)
+			// Rebuild version_map for this subject (v0.28.0)
 			if subject in r.version_map {
 				r.version_map[subject].delete(version)
-				// 삭제된 버전 이후의 인덱스 업데이트
+				// Update indices for versions after the deleted one
 				for j := i; j < versions.len; j++ {
 					r.version_map[subject][versions[j].version] = j
 				}
@@ -374,7 +375,7 @@ pub fn (mut r SchemaRegistry) delete_version(subject string, version int) !int {
 	return error('version ${version} not found for subject ${subject}')
 }
 
-/// get_compatibility는 subject의 호환성 수준을 반환합니다.
+/// get_compatibility returns the compatibility level for a subject.
 pub fn (mut r SchemaRegistry) get_compatibility(subject string) domain.CompatibilityLevel {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
@@ -383,13 +384,13 @@ pub fn (mut r SchemaRegistry) get_compatibility(subject string) domain.Compatibi
 	return config.compatibility
 }
 
-/// set_compatibility는 subject의 호환성 수준을 설정합니다.
+/// set_compatibility sets the compatibility level for a subject.
 pub fn (mut r SchemaRegistry) set_compatibility(subject string, level domain.CompatibilityLevel) {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
 
 	existing := r.subject_configs[subject] or { domain.SubjectConfig{} }
-	// 업데이트된 호환성으로 새 설정 생성 (SubjectConfig 필드는 불변)
+	// Create new config with updated compatibility (SubjectConfig fields are immutable)
 	r.subject_configs[subject] = domain.SubjectConfig{
 		compatibility: level
 		alias:         existing.alias
@@ -397,7 +398,7 @@ pub fn (mut r SchemaRegistry) set_compatibility(subject string, level domain.Com
 	}
 }
 
-/// test_compatibility는 스키마가 subject와 호환되는지 테스트합니다.
+/// test_compatibility tests whether a schema is compatible with a subject.
 pub fn (mut r SchemaRegistry) test_compatibility(subject string, schema_str string, schema_type domain.SchemaType) !bool {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
@@ -413,11 +414,11 @@ pub fn (mut r SchemaRegistry) test_compatibility(subject string, schema_str stri
 		}
 	}
 
-	// 잠금을 다시 획득하지 않고 check_compatibility_internal 사용
+	// Use check_compatibility_internal without re-acquiring lock
 	return r.check_compatibility_internal(subject, schema_str, schema_type, config.compatibility)
 }
 
-/// get_stats는 레지스트리 통계를 반환합니다.
+/// get_stats returns registry statistics.
 pub fn (mut r SchemaRegistry) get_stats() RegistryStats {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
@@ -429,9 +430,9 @@ pub fn (mut r SchemaRegistry) get_stats() RegistryStats {
 	}
 }
 
-// 비공개 헬퍼 메서드
+// Private helper methods
 
-/// find_schema_by_fingerprint는 지문으로 스키마를 찾습니다.
+/// find_schema_by_fingerprint finds a schema by its fingerprint.
 fn (r &SchemaRegistry) find_schema_by_fingerprint(subject string, fingerprint string) ?int {
 	versions := r.subjects[subject] or { return none }
 
@@ -445,7 +446,7 @@ fn (r &SchemaRegistry) find_schema_by_fingerprint(subject string, fingerprint st
 	return none
 }
 
-/// check_compatibility_internal은 내부 호환성 검사를 수행합니다.
+/// check_compatibility_internal performs an internal compatibility check.
 fn (r &SchemaRegistry) check_compatibility_internal(subject string, schema_str string, schema_type domain.SchemaType, level domain.CompatibilityLevel) !bool {
 	if level == .none {
 		return true
@@ -456,14 +457,14 @@ fn (r &SchemaRegistry) check_compatibility_internal(subject string, schema_str s
 		return true
 	}
 
-	// 호환성 수준에 따라 검사할 스키마 가져오기
+	// Get schemas to check based on compatibility level
 	schemas_to_check := match level {
 		.backward, .forward, .full {
-			// 최신 버전만 검사
+			// Check latest version only
 			[versions[versions.len - 1]]
 		}
 		.backward_transitive, .forward_transitive, .full_transitive {
-			// 모든 버전 검사
+			// Check all versions
 			versions
 		}
 		.none {
@@ -476,15 +477,15 @@ fn (r &SchemaRegistry) check_compatibility_internal(subject string, schema_str s
 
 		compatible := match level {
 			.backward, .backward_transitive {
-				// 새 스키마가 이전 스키마로 작성된 데이터를 읽을 수 있음
+				// New schema can read data written with the old schema
 				check_backward_compatible(existing.schema_str, schema_str, schema_type)
 			}
 			.forward, .forward_transitive {
-				// 이전 스키마가 새 스키마로 작성된 데이터를 읽을 수 있음
+				// Old schema can read data written with the new schema
 				check_forward_compatible(existing.schema_str, schema_str, schema_type)
 			}
 			.full, .full_transitive {
-				// 양방향
+				// Both directions
 
 				check_backward_compatible(existing.schema_str, schema_str, schema_type)
 					&& check_forward_compatible(existing.schema_str, schema_str, schema_type)
@@ -502,10 +503,10 @@ fn (r &SchemaRegistry) check_compatibility_internal(subject string, schema_str s
 	return true
 }
 
-/// persist_schema는 스키마를 __schemas 토픽에 저장합니다.
+/// persist_schema saves a schema to the __schemas topic.
 fn (mut r SchemaRegistry) persist_schema(subject string, schema domain.Schema, version domain.SchemaVersion) ! {
-	// __schemas 토픽에 저장할 레코드 생성
-	// 형식: 스키마 세부 정보가 포함된 JSON
+	// Create record to store in the __schemas topic
+	// Format: JSON with schema details
 	record_data := '{"subject":"${subject}","version":${version.version},"id":${schema.id},"schemaType":"${schema.schema_type.str()}","schema":${escape_json_string(schema.schema_str)}}'
 
 	record := domain.Record{
@@ -514,32 +515,32 @@ fn (mut r SchemaRegistry) persist_schema(subject string, schema domain.Schema, v
 		timestamp: time.now()
 	}
 
-	// __schemas 토픽 존재 확인 (없으면 생성)
+	// Ensure __schemas topic exists (create if missing)
 	r.storage.get_topic(schemas_topic) or {
-		// 단일 파티션으로 내부 토픽 생성
+		// Create internal topic with a single partition
 		r.storage.create_topic(schemas_topic, 1, domain.TopicConfig{
 			retention_ms:   -1
 			cleanup_policy: 'compact'
 		}) or {
-			// 다른 스레드에서 이미 생성되었을 수 있음
+			// May have already been created by another thread
 		}
 	}
 
-	// __schemas 토픽에 추가
+	// Append to the __schemas topic
 	r.storage.append(schemas_topic, 0, [record], i16(1)) or {
 		return error('failed to persist schema: ${err}')
 	}
 }
 
-// 유틸리티 함수
+// Utility functions
 
-/// normalize_schema는 일관된 지문 생성을 위해 공백을 제거합니다.
+/// normalize_schema strips whitespace for consistent fingerprint generation.
 fn normalize_schema(schema_str string) string {
 	return schema_str.replace(' ', '').replace('\n', '').replace('\t', '').replace('\r',
 		'')
 }
 
-/// compute_fingerprint는 스키마 문자열의 MD5 해시를 계산합니다.
+/// compute_fingerprint calculates the MD5 hash of a schema string.
 fn compute_fingerprint(schema_str string) string {
 	hash := md5.sum(schema_str.bytes())
 	return hash.hex()

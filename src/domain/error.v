@@ -1,16 +1,16 @@
 module domain
 
-/// DomainError는 도메인 수준 에러를 나타냅니다.
-/// code: Kafka 에러 코드
-/// message: 에러 메시지
+/// DomainError represents a domain-level error.
+/// code: Kafka error code
+/// message: error message
 pub struct DomainError {
 pub:
 	code    ErrorCode
 	message string
 }
 
-/// ErrorCode는 Kafka 호환 에러 코드를 나타냅니다.
-/// Kafka 프로토콜 스펙에 정의된 에러 코드와 동일합니다.
+/// ErrorCode represents Kafka-compatible error codes.
+/// Matches the error codes defined in the Kafka protocol specification.
 pub enum ErrorCode {
 	none                             = 0
 	unknown_server_error             = -1
@@ -61,7 +61,7 @@ pub enum ErrorCode {
 	unknown_topic_id                 = 100
 }
 
-/// message는 에러 코드에 해당하는 메시지를 반환합니다.
+/// message returns the message corresponding to an error code.
 pub fn (e ErrorCode) message() string {
 	return match e {
 		.none { 'Success' }

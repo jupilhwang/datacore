@@ -1,24 +1,24 @@
-// 토픽 관리 비즈니스 로직을 처리합니다.
-// 토픽 생성, 삭제, 조회, 파티션 추가 등의 기능을 제공합니다.
+// Handles topic management business logic.
+// Provides functionality for creating, deleting, listing topics, and adding partitions.
 module topic
 
 import domain
 import service.port
 
-/// TopicManager는 토픽 관리 비즈니스 로직을 처리합니다.
-/// 토픽 생명주기 관리 및 설정 검증을 담당합니다.
+/// TopicManager handles topic management business logic.
+/// Responsible for topic lifecycle management and configuration validation.
 pub struct TopicManager {
 	storage port.StoragePort
 }
 
-/// new_topic_manager는 새로운 TopicManager를 생성합니다.
+/// new_topic_manager creates a new TopicManager.
 pub fn new_topic_manager(storage port.StoragePort) &TopicManager {
 	return &TopicManager{
 		storage: storage
 	}
 }
 
-/// CreateTopicRequest는 토픽 생성 요청을 나타냅니다.
+/// CreateTopicRequest represents a topic creation request.
 pub struct CreateTopicRequest {
 pub:
 	name               string
@@ -27,7 +27,7 @@ pub:
 	configs            map[string]string
 }
 
-/// CreateTopicResponse는 토픽 생성 응답을 나타냅니다.
+/// CreateTopicResponse represents a topic creation response.
 pub struct CreateTopicResponse {
 pub:
 	name               string
@@ -37,11 +37,11 @@ pub:
 	replication_factor i16
 }
 
-/// create_topic은 새로운 토픽을 생성합니다.
-/// 토픽 이름 및 파티션 수 유효성 검사를 수행합니다.
+/// create_topic creates a new topic.
+/// Performs validation on topic name and partition count.
 pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicResponse {
-	// 토픽 이름 유효성 검사
-	// 내부 토픽(__로 시작)은 __schemas만 허용
+	// Validate topic name
+	// Internal topics (prefixed with __) are only allowed for __schemas
 	if req.name.len == 0 || req.name.starts_with('__') && req.name != '__schemas' {
 		return CreateTopicResponse{
 			name:          req.name
@@ -50,7 +50,7 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 		}
 	}
 
-	// 파티션 수 유효성 검사
+	// Validate partition count
 	if req.num_partitions <= 0 {
 		return CreateTopicResponse{
 			name:          req.name
@@ -59,7 +59,7 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 		}
 	}
 
-	// 토픽 중복 확인
+	// Check for duplicate topic
 	if _ := m.storage.get_topic(req.name) {
 		return CreateTopicResponse{
 			name:          req.name
@@ -68,7 +68,7 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 		}
 	}
 
-	// 토픽 설정 구성
+	// Build topic configuration
 	config := domain.TopicConfig{
 		retention_ms:    parse_config_i64(req.configs, 'retention.ms', 604800000)
 		retention_bytes: parse_config_i64(req.configs, 'retention.bytes', -1)
@@ -76,7 +76,7 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 		cleanup_policy:  req.configs['cleanup.policy'] or { 'delete' }
 	}
 
-	// 토픽 생성
+	// Create topic
 	m.storage.create_topic(req.name, req.num_partitions, config) or {
 		return CreateTopicResponse{
 			name:          req.name
@@ -93,10 +93,10 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 	}
 }
 
-/// delete_topic은 토픽을 삭제합니다.
-/// 내부 토픽(__로 시작)은 __schemas를 제외하고 삭제할 수 없습니다.
+/// delete_topic deletes a topic.
+/// Internal topics (prefixed with __) cannot be deleted except for __schemas.
 pub fn (m &TopicManager) delete_topic(name string) ! {
-	// 내부 토픽 삭제 방지
+	// Prevent deletion of internal topics
 	if name.starts_with('__') && name != '__schemas' {
 		return error('Cannot delete internal topic')
 	}
@@ -104,23 +104,23 @@ pub fn (m &TopicManager) delete_topic(name string) ! {
 	m.storage.delete_topic(name)!
 }
 
-/// list_topics는 모든 토픽 목록을 반환합니다.
+/// list_topics returns a list of all topics.
 pub fn (m &TopicManager) list_topics() ![]domain.TopicMetadata {
 	return m.storage.list_topics()
 }
 
-/// get_topic은 토픽 메타데이터를 조회합니다.
+/// get_topic retrieves topic metadata.
 pub fn (m &TopicManager) get_topic(name string) !domain.TopicMetadata {
 	return m.storage.get_topic(name)
 }
 
-/// add_partitions는 토픽에 파티션을 추가합니다.
-/// 새 파티션 수는 현재 파티션 수보다 커야 합니다.
+/// add_partitions adds partitions to a topic.
+/// The new partition count must be greater than the current count.
 pub fn (m &TopicManager) add_partitions(name string, new_count int) ! {
-	// 현재 토픽 정보 조회
+	// Retrieve current topic information
 	topic := m.storage.get_topic(name)!
 
-	// 새 파티션 수 유효성 검사
+	// Validate new partition count
 	if new_count <= topic.partition_count {
 		return error('New partition count must be greater than current')
 	}
@@ -128,8 +128,8 @@ pub fn (m &TopicManager) add_partitions(name string, new_count int) ! {
 	m.storage.add_partitions(name, new_count)!
 }
 
-/// parse_config_i64는 설정 맵에서 i64 값을 파싱합니다.
-/// 키가 없거나 파싱 실패 시 기본값을 반환합니다.
+/// parse_config_i64 parses an i64 value from a configuration map.
+/// Returns the default value if the key is missing or parsing fails.
 fn parse_config_i64(configs map[string]string, key string, default_val i64) i64 {
 	if val := configs[key] {
 		return val.i64()

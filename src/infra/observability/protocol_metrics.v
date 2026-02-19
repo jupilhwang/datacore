@@ -1,29 +1,29 @@
-// Kafka API 요청/응답 메트릭 수집
+// Collects Kafka API request/response metrics
 module observability
 
 import sync
 
-// Kafka 프로토콜 메트릭
+// Kafka protocol metrics
 
-/// ProtocolMetrics는 Kafka 프로토콜 핸들러의 메트릭을 추적합니다.
+/// ProtocolMetrics tracks metrics for the Kafka protocol handler.
 pub struct ProtocolMetrics {
 mut:
-	// API 요청 메트릭
+	// API request metrics
 	api_requests_total  map[string]i64
 	api_requests_failed map[string]i64
-	// 처리 시간 메트릭 (밀리초)
+	// Processing time metrics (milliseconds)
 	api_latency_sum   map[string]i64
 	api_latency_count map[string]i64
-	// 에러 메트릭
+	// Error metrics
 	errors_total i64
-	// 바이트 메트릭
+	// Byte metrics
 	bytes_received_total i64
 	bytes_sent_total     i64
-	// 락
+	// Lock
 	lock sync.Mutex
 }
 
-/// 새로운 ProtocolMetrics를 생성합니다.
+/// Creates a new ProtocolMetrics instance.
 pub fn new_protocol_metrics() &ProtocolMetrics {
 	return &ProtocolMetrics{
 		api_requests_total:  map[string]i64{}
@@ -33,18 +33,18 @@ pub fn new_protocol_metrics() &ProtocolMetrics {
 	}
 }
 
-/// API 요청을 기록합니다.
+/// Records an API request.
 pub fn (mut m ProtocolMetrics) record_request(api_name string, latency_ms i64, success bool, bytes_received int, bytes_sent int) {
 	m.lock.lock()
 	defer { m.lock.unlock() }
 
-	// 총 요청 수 증가
+	// Increment total request count
 	if api_name !in m.api_requests_total {
 		m.api_requests_total[api_name] = 0
 	}
 	m.api_requests_total[api_name]++
 
-	// 실패 요청 수 증가
+	// Increment failed request count
 	if !success {
 		if api_name !in m.api_requests_failed {
 			m.api_requests_failed[api_name] = 0
@@ -53,7 +53,7 @@ pub fn (mut m ProtocolMetrics) record_request(api_name string, latency_ms i64, s
 		m.errors_total++
 	}
 
-	// 지연 시간 기록
+	// Record latency
 	if api_name !in m.api_latency_sum {
 		m.api_latency_sum[api_name] = 0
 		m.api_latency_count[api_name] = 0
@@ -61,12 +61,12 @@ pub fn (mut m ProtocolMetrics) record_request(api_name string, latency_ms i64, s
 	m.api_latency_sum[api_name] += latency_ms
 	m.api_latency_count[api_name]++
 
-	// 바이트 수 기록
+	// Record byte count
 	m.bytes_received_total += i64(bytes_received)
 	m.bytes_sent_total += i64(bytes_sent)
 }
 
-/// 메트릭을 초기화합니다.
+/// Resets all metrics.
 pub fn (mut m ProtocolMetrics) reset() {
 	m.lock.lock()
 	defer { m.lock.unlock() }
@@ -80,7 +80,7 @@ pub fn (mut m ProtocolMetrics) reset() {
 	m.bytes_sent_total = 0
 }
 
-/// 메트릭 요약을 문자열로 반환합니다.
+/// Returns a string summary of metrics.
 pub fn (mut m ProtocolMetrics) get_summary() string {
 	m.lock.lock()
 	defer { m.lock.unlock() }
@@ -94,7 +94,7 @@ pub fn (mut m ProtocolMetrics) get_summary() string {
 		failed := m.api_requests_failed[api_name] or { 0 }
 		success_rate := if count > 0 { (f64(count - failed) / f64(count)) * 100.0 } else { 0.0 }
 
-		// 평균 지연 시간 계산
+		// Calculate average latency
 		avg_latency := if api_name in m.api_latency_count && m.api_latency_count[api_name] > 0 {
 			f64(m.api_latency_sum[api_name]) / f64(m.api_latency_count[api_name])
 		} else {
@@ -107,7 +107,7 @@ pub fn (mut m ProtocolMetrics) get_summary() string {
 	return result
 }
 
-/// 특정 API의 평균 지연 시간을 반환합니다 (밀리초).
+/// Returns the average latency of a specific API (in milliseconds).
 pub fn (mut m ProtocolMetrics) get_avg_latency(api_name string) f64 {
 	m.lock.lock()
 	defer { m.lock.unlock() }
@@ -118,7 +118,7 @@ pub fn (mut m ProtocolMetrics) get_avg_latency(api_name string) f64 {
 	return 0.0
 }
 
-/// 특정 API의 성공률을 반환합니다 (0.0 ~ 1.0).
+/// Returns the success rate of a specific API (0.0 to 1.0).
 pub fn (mut m ProtocolMetrics) get_success_rate(api_name string) f64 {
 	m.lock.lock()
 	defer { m.lock.unlock() }

@@ -1,20 +1,20 @@
 // Interface Layer - CLI Commands
 //
-// DataCore 브로커 관리 및 운영을 위한 CLI 애플리케이션입니다.
-// 브로커 시작/중지, 토픽 관리, 메시지 생산/소비 등의
-// 명령어를 제공합니다.
+// CLI application for managing and operating the DataCore broker.
+// Provides commands for broker start/stop, topic management,
+// message production/consumption, etc.
 //
-// 주요 기능:
-// - 브로커 시작, 중지, 상태 확인
-// - 토픽 생성, 삭제, 조회
-// - 메시지 생산 및 소비
-// - 컨슈머 그룹 관리
+// Key features:
+// - Broker start, stop, status check
+// - Topic create, delete, list
+// - Message production and consumption
+// - Consumer group management
 module cli
 
 import os
 import time
 
-/// App은 CLI 애플리케이션을 나타내는 구조체입니다.
+/// App is a struct representing the CLI application.
 pub struct App {
 pub:
 	name        string = 'datacore'
@@ -22,12 +22,12 @@ pub:
 	description string = 'Kafka-compatible message broker written in V'
 }
 
-/// new_app은 새로운 CLI 애플리케이션을 생성합니다.
+/// new_app creates a new CLI application.
 pub fn new_app() &App {
 	return &App{}
 }
 
-/// print_help는 도움말 정보를 출력합니다.
+/// print_help prints help information.
 pub fn (app &App) print_help() {
 	println('\x1b[36m${app.name}\x1b[0m - ${app.description}')
 	println('')
@@ -63,7 +63,7 @@ pub fn (app &App) print_help() {
 	println('  ${app.name} consume my-topic --group my-group')
 }
 
-/// print_broker_help는 브로커 명령어 도움말을 출력합니다.
+/// print_broker_help prints broker command help.
 pub fn (app &App) print_broker_help() {
 	println('\x1b[33mBroker Commands:\x1b[0m')
 	println('')
@@ -89,7 +89,7 @@ pub fn (app &App) print_broker_help() {
 	println('  ${app.name} broker status')
 }
 
-/// print_version은 버전 정보를 출력합니다.
+/// print_version prints version information.
 pub fn (app &App) print_version() {
 	println('\x1b[36m${app.name}\x1b[0m version \x1b[32mv${app.version}\x1b[0m')
 	println('')
@@ -100,7 +100,7 @@ pub fn (app &App) print_version() {
 	println('  Platform:       ${os.user_os()}/${os.uname().machine}')
 }
 
-/// CliOptions는 CLI 옵션을 담는 구조체입니다.
+/// CliOptions is a struct holding CLI options.
 pub struct CliOptions {
 pub:
 	config_path string = 'config.toml'
@@ -111,7 +111,7 @@ pub:
 	force       bool
 }
 
-/// get_config_path는 인자에서 설정 파일 경로를 가져옵니다.
+/// get_config_path retrieves the configuration file path from arguments.
 pub fn get_config_path(args []string) string {
 	for i, arg in args {
 		if arg == '-c' || arg == '--config' {
@@ -123,7 +123,7 @@ pub fn get_config_path(args []string) string {
 	return 'config.toml'
 }
 
-/// parse_options는 CLI 옵션을 파싱합니다.
+/// parse_options parses CLI options.
 pub fn parse_options(args []string) CliOptions {
 	mut opts := CliOptions{}
 
@@ -175,13 +175,13 @@ pub fn parse_options(args []string) CliOptions {
 	return opts
 }
 
-/// write_pid는 현재 프로세스 PID를 파일에 씁니다.
+/// write_pid writes the current process PID to a file.
 pub fn write_pid(path string) ! {
 	pid := os.getpid()
 	os.write_file(path, '${pid}')!
 }
 
-/// read_pid는 파일에서 PID를 읽습니다.
+/// read_pid reads a PID from a file.
 pub fn read_pid(path string) !int {
 	if !os.exists(path) {
 		return error('PID file not found: ${path}')
@@ -190,16 +190,16 @@ pub fn read_pid(path string) !int {
 	return content.trim_space().int()
 }
 
-/// remove_pid는 PID 파일을 삭제합니다.
+/// remove_pid removes the PID file.
 pub fn remove_pid(path string) {
 	if os.exists(path) {
 		os.rm(path) or {}
 	}
 }
 
-/// check_pid_running은 해당 PID의 프로세스가 실행 중인지 확인합니다.
+/// check_pid_running checks whether the process with the given PID is running.
 pub fn check_pid_running(pid int) bool {
-	// 시그널 0을 보내 프로세스 존재 여부 확인
+	// Send signal 0 to check if the process exists
 	$if linux || macos {
 		result := os.execute('kill -0 ${pid} 2>/dev/null')
 		return result.exit_code == 0
@@ -207,7 +207,7 @@ pub fn check_pid_running(pid int) bool {
 	return false
 }
 
-/// print_banner는 시작 배너를 출력합니다.
+/// print_banner prints the startup banner.
 pub fn print_banner(app &App) {
 	println('')
 	println('\x1b[36m ____        _         ____')
@@ -221,7 +221,7 @@ pub fn print_banner(app &App) {
 	println('')
 }
 
-/// print_startup_info는 시작 정보를 출력합니다.
+/// print_startup_info prints startup information.
 pub fn print_startup_info(host string, port int, broker_id int, cluster_id string) {
 	println('\x1b[32m✓\x1b[0m Broker Configuration:')
 	println('  • Broker ID:  ${broker_id}')
@@ -230,18 +230,18 @@ pub fn print_startup_info(host string, port int, broker_id int, cluster_id strin
 	println('')
 }
 
-/// print_shutdown은 종료 메시지를 출력합니다.
+/// print_shutdown prints the shutdown message.
 pub fn print_shutdown() {
 	println('')
 	println('\x1b[33m⚡\x1b[0m Shutting down broker...')
 }
 
-/// print_shutdown_complete는 종료 완료 메시지를 출력합니다.
+/// print_shutdown_complete prints the shutdown completion message.
 pub fn print_shutdown_complete() {
 	println('\x1b[32m✓\x1b[0m Broker stopped.')
 }
 
-/// BrokerStatus는 브로커 상태 정보를 담는 구조체입니다.
+/// BrokerStatus is a struct holding broker status information.
 pub struct BrokerStatus {
 pub:
 	running     bool
@@ -256,7 +256,7 @@ pub:
 	connections int
 }
 
-/// print_status는 브로커 상태를 출력합니다.
+/// print_status prints broker status.
 pub fn print_status(status BrokerStatus) {
 	if status.running {
 		println('\x1b[32m●\x1b[0m Broker is \x1b[32mrunning\x1b[0m')
@@ -275,7 +275,7 @@ pub fn print_status(status BrokerStatus) {
 	}
 }
 
-// format_duration은 Duration을 읽기 쉬운 형식으로 변환합니다.
+// format_duration converts a Duration to a human-readable format.
 fn format_duration(d time.Duration) string {
 	total_secs := d / time.second
 	days := total_secs / 86400
@@ -293,23 +293,23 @@ fn format_duration(d time.Duration) string {
 	return '${secs}s'
 }
 
-/// print_progress는 진행 상태 표시기를 출력합니다.
+/// print_progress prints a progress indicator.
 pub fn print_progress(message string) {
 	print('\x1b[90m⏳ ${message}...\x1b[0m')
 }
 
-/// print_done은 완료 메시지를 출력합니다.
+/// print_done prints a completion message.
 pub fn print_done() {
 	println(' \x1b[32m✓\x1b[0m')
 }
 
-/// print_failed는 실패 메시지를 출력합니다.
+/// print_failed prints a failure message.
 pub fn print_failed(err string) {
 	println(' \x1b[31m✗\x1b[0m')
 	println('\x1b[31mError:\x1b[0m ${err}')
 }
 
-/// confirm은 사용자 확인을 요청합니다.
+/// confirm requests user confirmation.
 pub fn confirm(message string) bool {
 	print('${message} [y/N]: ')
 	response := os.get_line()

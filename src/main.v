@@ -211,7 +211,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 		if mut s3_adapter := s3.new_s3_adapter(s_config) {
 			storage_opt = port.StoragePort(s3_adapter)
 			s3_adapter_ref = s3_adapter
-			s3_adapter.start_workers() // S3 Compaction Worker 시작
+			s3_adapter.start_workers() // Start S3 compaction workers
 		} else {
 			cli.print_failed('Failed to init S3 storage: ${err}')
 			cli.print_failed('Falling back to memory storage')
@@ -252,12 +252,12 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	if capability.supports_multi_broker {
 		cli.print_progress('Initializing multi-broker cluster registry')
 
-		// S3 스토리지의 경우 V 인터페이스를 통한 호출 시 config 유실 문제를 방지하기 위해
-		// 기존 adapter 참조를 사용하여 cluster metadata adapter를 생성 (config 자체 보유)
+		// For S3 storage, use the existing adapter reference to create the cluster metadata adapter
+		// to avoid losing config when calling through the V interface (the adapter holds its own config)
 		mut cluster_port_opt := ?&port.ClusterMetadataPort(none)
 		if engine == 's3' {
 			if mut s3_ref := s3_adapter_ref {
-				// 기존 adapter 참조를 사용 (mutex 등 이미 초기화됨)
+				// Use the existing adapter reference (mutex and other fields already initialized)
 				cluster_port_opt = s3.new_s3_cluster_metadata_adapter(s3_ref)
 			}
 		} else {
@@ -287,7 +287,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 						observability.field_int('broker_id', conf.broker.broker_id), observability.field_string('cluster_id',
 						conf.broker.cluster_id), observability.field_string('error', err.msg()))
 					if reg_attempt < 2 {
-						// 지수 백오프: 2s, 4s
+						// Exponential backoff: 2s, 4s
 						wait_secs := 2 * (1 << reg_attempt)
 						logger.info('Waiting ${wait_secs}s before next registration attempt')
 						time.sleep(wait_secs * time.second)

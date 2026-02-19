@@ -1,34 +1,34 @@
-/// 인프라 레이어 - Zstd 압축 (C 라이브러리 사용)
-/// Facebook Zstd C 라이브러리를 사용한 고성능 압축/해제 (Kafka 호환)
+/// Infrastructure layer - Zstd compression (using C library)
+/// High-performance compression/decompression using the Facebook Zstd C library (Kafka compatible)
 module compression
 
 import infra.observability
 
-// C 라이브러리 링크
+// Link C library
 #flag -L/opt/homebrew/lib -lzstd
 #flag -I/opt/homebrew/include
 #include <zstd.h>
 
-// ZSTD 특수 반환값 상수
+// ZSTD special return value constants
 const zstd_contentsize_unknown = u64(0) - 1
 const zstd_contentsize_error = u64(0) - 2
 
-/// ZstdCompressorC는 C 라이브러리를 사용한 Zstd 압축기입니다.
-/// Kafka와 호환되는 ZSTD Frame Format을 사용합니다.
+/// ZstdCompressorC is a Zstd compressor using the C library.
+/// Uses ZSTD Frame Format compatible with Kafka.
 pub struct ZstdCompressorC {
 	level int
 }
 
-/// new_zstd_compressor_c는 C 라이브러리를 사용하는 새 ZstdCompressorC를 생성합니다.
-/// 기본 압축 레벨은 3입니다.
+/// new_zstd_compressor_c creates a new ZstdCompressorC using the C library.
+/// The default compression level is 3.
 pub fn new_zstd_compressor_c() &ZstdCompressorC {
 	return &ZstdCompressorC{
 		level: 3
 	}
 }
 
-/// new_zstd_compressor_c_with_level은 지정된 압축 레벨로 ZstdCompressorC를 생성합니다.
-/// 레벨: 1-22 (1=최고속도, 22=최고압축)
+/// new_zstd_compressor_c_with_level creates a ZstdCompressorC with the specified compression level.
+/// Level: 1-22 (1=fastest, 22=best compression)
 pub fn new_zstd_compressor_c_with_level(level int) &ZstdCompressorC {
 	mut lvl := level
 	if lvl < 1 {
@@ -42,18 +42,18 @@ pub fn new_zstd_compressor_c_with_level(level int) &ZstdCompressorC {
 	}
 }
 
-/// compress는 데이터를 Zstd Frame 형식으로 압축합니다.
-/// Kafka와 호환되는 ZSTD Frame Format (Magic: 0xFD2FB528)을 생성합니다.
+/// compress compresses data into Zstd Frame format.
+/// Produces ZSTD Frame Format (Magic: 0xFD2FB528) compatible with Kafka.
 pub fn (c &ZstdCompressorC) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 출력 버퍼 크기 계산
+	// Calculate output buffer size
 	max_dst_size := C.ZSTD_compressBound(usize(data.len))
 	mut result := []u8{len: int(max_dst_size), cap: int(max_dst_size)}
 
-	// C 호출 - ZSTD_compress는 프레임 형식으로 압축
+	// C call - ZSTD_compress compresses in frame format
 	compressed_size := C.ZSTD_compress(result.data, max_dst_size, data.data, usize(data.len),
 		c.level)
 
@@ -72,29 +72,29 @@ pub fn (c &ZstdCompressorC) compress(data []u8) ![]u8 {
 	return result
 }
 
-/// decompress는 Zstd Frame 형식의 데이터를 해제합니다.
-/// Kafka에서 생성된 ZSTD 압축 데이터를 처리할 수 있습니다.
+/// decompress decompresses Zstd Frame format data.
+/// Can handle ZSTD-compressed data produced by Kafka.
 pub fn (c &ZstdCompressorC) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
-	// 프레임에서 원본 크기 읽기
+	// Read original size from frame
 	content_size := C.ZSTD_getFrameContentSize(data.data, usize(data.len))
 
-	// 특수 반환값 처리
+	// Handle special return values
 	if content_size == zstd_contentsize_error {
 		return error('zstd decompression failed: invalid frame header')
 	}
 
-	// 원본 크기 미포함 시 스트리밍 압축 해제 사용
+	// Use streaming decompression when original size is unknown
 	if content_size == zstd_contentsize_unknown || content_size == 0 {
 		return c.decompress_streaming(data)
 	}
 
 	mut result := []u8{len: int(content_size), cap: int(content_size)}
 
-	// C 호출
+	// C call
 	decompressed_size := C.ZSTD_decompress(result.data, usize(content_size), data.data,
 		usize(data.len))
 
@@ -112,9 +112,9 @@ pub fn (c &ZstdCompressorC) decompress(data []u8) ![]u8 {
 	return result
 }
 
-/// decompress_streaming은 원본 크기를 알 수 없는 경우 스트리밍 방식으로 압축 해제합니다.
+/// decompress_streaming decompresses data using streaming mode when the original size is unknown.
 fn (c &ZstdCompressorC) decompress_streaming(data []u8) ![]u8 {
-	// 스트리밍 압축 해제 컨텍스트 생성
+	// Create streaming decompression context
 	dctx := C.ZSTD_createDCtx()
 	if dctx == unsafe { nil } {
 		return error('zstd: failed to create decompression context')
@@ -123,7 +123,7 @@ fn (c &ZstdCompressorC) decompress_streaming(data []u8) ![]u8 {
 		C.ZSTD_freeDCtx(dctx)
 	}
 
-	// 초기 버퍼 크기 (압축률 1:4 가정, 최소 64KB)
+	// Initial buffer size (assume 1:4 ratio, minimum 64KB)
 	mut estimated_size := data.len * 4
 	if estimated_size < 65536 {
 		estimated_size = 65536
@@ -131,7 +131,7 @@ fn (c &ZstdCompressorC) decompress_streaming(data []u8) ![]u8 {
 
 	mut result := []u8{len: estimated_size, cap: estimated_size}
 
-	// 입출력 버퍼 설정
+	// Set up input/output buffers
 	mut in_buf := ZstdInBuffer{
 		src:  data.data
 		size: usize(data.len)
@@ -144,7 +144,7 @@ fn (c &ZstdCompressorC) decompress_streaming(data []u8) ![]u8 {
 		pos:  0
 	}
 
-	// 스트리밍 압축 해제
+	// Streaming decompression
 	for {
 		ret := C.ZSTD_decompressStream(dctx, &out_buf, &in_buf)
 
@@ -153,16 +153,16 @@ fn (c &ZstdCompressorC) decompress_streaming(data []u8) ![]u8 {
 			return error('zstd streaming decompression failed: ${cstring_to_string(err_name)}')
 		}
 
-		// 완료
+		// Complete
 		if ret == 0 {
 			break
 		}
 
-		// 출력 버퍼가 가득 찬 경우 확장
+		// Expand buffer if full
 		if out_buf.pos == out_buf.size {
 			new_size := result.len * 2
 			if new_size > 268435456 {
-				// 256MB 제한
+				// 256MB limit
 				return error('zstd: decompressed data too large')
 			}
 			mut new_result := []u8{len: new_size, cap: new_size}
@@ -179,12 +179,12 @@ fn (c &ZstdCompressorC) decompress_streaming(data []u8) ![]u8 {
 	return result
 }
 
-/// compression_type은 압축 타입을 반환합니다.
+/// compression_type returns the compression type.
 pub fn (c &ZstdCompressorC) compression_type() CompressionType {
 	return CompressionType.zstd
 }
 
-/// cstring_to_string은 C 문자열을 V 문자열로 변환합니다.
+/// cstring_to_string converts a C string to a V string.
 fn cstring_to_string(cstr &u8) string {
 	if isnulptr(cstr) {
 		return ''
@@ -200,12 +200,12 @@ fn cstring_to_string(cstr &u8) string {
 	return res.bytestr()
 }
 
-/// isnulptr은 포인터가 nullptr인지 확인합니다.
+/// isnulptr checks whether a pointer is nullptr.
 fn isnulptr(ptr &u8) bool {
 	return ptr == unsafe { nil }
 }
 
-// ZstdInBuffer 구조체 (snake_case)
+// ZstdInBuffer struct (snake_case)
 struct ZstdInBuffer {
 	src  voidptr
 	size usize
@@ -213,7 +213,7 @@ mut:
 	pos usize
 }
 
-// ZstdOutBuffer 구조체 (snake_case)
+// ZstdOutBuffer struct (snake_case)
 struct ZstdOutBuffer {
 mut:
 	dst  voidptr
@@ -221,7 +221,7 @@ mut:
 	pos  usize
 }
 
-// C 함수 선언 (zstd.h에서 제공)
+// C function declarations (provided by zstd.h)
 fn C.ZSTD_compress(dst &u8, dstCapacity usize, src &u8, srcSize usize, compressionLevel int) usize
 fn C.ZSTD_decompress(dst &u8, dstCapacity usize, src &u8, compressedSize usize) usize
 fn C.ZSTD_compressBound(srcSize usize) usize

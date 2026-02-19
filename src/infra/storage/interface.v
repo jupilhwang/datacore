@@ -1,6 +1,6 @@
 module storage
 
-/// StorageAdapter는 port.StoragePort를 구현합니다.
-/// 이 구조체는 마커 구조체이며, 실제 구현은 plugins/ 디렉토리에 있습니다.
+/// StorageAdapter implements port.StoragePort.
+/// This struct is a marker struct; the actual implementation is in the plugins/ directory.
 pub struct StorageAdapter {
 }

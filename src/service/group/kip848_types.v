@@ -1,11 +1,11 @@
-// KIP-848 타입 정의
-// KIP-848 새 컨슈머 프로토콜 구현을 위한 공유 타입입니다.
-// 서버 측 파티션 할당과 점진적 리밸런싱을 지원합니다.
+// KIP-848 type definitions
+// Shared types for implementing the KIP-848 new consumer protocol.
+// Supports server-side partition assignment and incremental rebalancing.
 module group
 
-// KIP-848 멤버 상태 머신
+// KIP-848 member state machine
 
-/// MemberState는 새 프로토콜에서 멤버의 상태를 나타냅니다.
+/// MemberState represents the state of a member in the new protocol.
 pub enum MemberState {
 	unsubscribed
 	subscribing
@@ -16,7 +16,7 @@ pub enum MemberState {
 	fenced
 }
 
-/// KIP848Member는 KIP-848 프로토콜을 사용하는 컨슈머 그룹 멤버를 나타냅니다.
+/// KIP848Member represents a consumer group member using the KIP-848 protocol.
 pub struct KIP848Member {
 pub mut:
 	member_id              string
@@ -39,17 +39,17 @@ pub mut:
 	joined_at              i64
 }
 
-/// TopicPartition은 토픽-파티션 쌍을 나타냅니다.
+/// TopicPartition represents a topic-partition pair.
 pub struct TopicPartition {
 pub:
-	topic_id   []u8 // UUID (16바이트)
+	topic_id   []u8 // UUID (16 bytes)
 	topic_name string
 	partition  i32
 }
 
-// KIP-848 컨슈머 그룹
+// KIP-848 consumer group
 
-/// KIP848ConsumerGroup은 새 프로토콜을 사용하는 컨슈머 그룹을 나타냅니다.
+/// KIP848ConsumerGroup represents a consumer group using the new protocol.
 pub struct KIP848ConsumerGroup {
 pub mut:
 	group_id           string
@@ -66,7 +66,7 @@ pub mut:
 	updated_at         i64
 }
 
-/// KIP848GroupState는 KIP-848 그룹의 상태를 나타냅니다.
+/// KIP848GroupState represents the state of a KIP-848 group.
 pub enum KIP848GroupState {
 	empty
 	assigning
@@ -75,18 +75,18 @@ pub enum KIP848GroupState {
 	dead
 }
 
-// 서버 측 할당자 인터페이스 및 타입
+// Server-side assignor interface and types
 
-/// ServerAssignor는 서버 측에서 파티션 할당을 계산합니다.
+/// ServerAssignor computes partition assignments on the server side.
 pub interface ServerAssignor {
-	/// 할당자 이름을 반환합니다.
+	/// Returns the assignor name.
 	name() string
 
-	/// 파티션 할당을 계산합니다.
+	/// Computes partition assignments.
 	assign(members []MemberSubscription, topics map[string]TopicMetadata) !map[string][]TopicPartition
 }
 
-/// MemberSubscription은 할당을 위한 멤버의 구독 정보를 담습니다.
+/// MemberSubscription holds a member's subscription information for assignment.
 pub struct MemberSubscription {
 pub:
 	member_id        string
@@ -96,7 +96,7 @@ pub:
 	owned_partitions []TopicPartition
 }
 
-/// TopicMetadata는 할당을 위한 토픽 정보를 담습니다.
+/// TopicMetadata holds topic information for assignment.
 pub struct TopicMetadata {
 pub:
 	topic_id        []u8

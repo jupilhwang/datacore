@@ -1,17 +1,19 @@
 // Infra Layer - Prometheus HTTP Exporter
-// Prometheus 스크래핑을 위한 /metrics 엔드포인트 제공
+// Provides /metrics endpoint for Prometheus scraping
 module observability
 
 import net
 import io
 
 // MetricsServer serves metrics over HTTP
+/// MetricsServer serves metrics over HTTP.
 pub struct MetricsServer {
 	host string
 	port int
 }
 
 // new_metrics_server creates a new metrics server
+/// new_metrics_server creates a new metrics server.
 pub fn new_metrics_server(host string, port int) MetricsServer {
 	return MetricsServer{
 		host: host
@@ -20,6 +22,7 @@ pub fn new_metrics_server(host string, port int) MetricsServer {
 }
 
 // start starts the metrics HTTP server (blocking)
+/// start starts the metrics HTTP server (blocking).
 pub fn (s MetricsServer) start() ! {
 	mut listener := net.listen_tcp(.ip, '${s.host}:${s.port}')!
 	eprintln('[Metrics] Starting Prometheus exporter on http://${s.host}:${s.port}/metrics')
@@ -31,6 +34,7 @@ pub fn (s MetricsServer) start() ! {
 }
 
 // start_background starts the metrics HTTP server in background
+/// start_background starts the metrics HTTP server in background.
 pub fn (s MetricsServer) start_background() {
 	spawn fn [s] () {
 		s.start() or { eprintln('[Metrics] Failed to start metrics server: ${err}') }

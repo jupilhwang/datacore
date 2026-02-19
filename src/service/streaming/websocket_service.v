@@ -10,6 +10,7 @@ import time
 // WebSocket Service
 
 // WebSocketService manages WebSocket connections and subscriptions
+/// WebSocketService manages WebSocket connections and subscriptions.
 pub struct WebSocketService {
 	config domain.WebSocketConfig
 mut:
@@ -21,7 +22,7 @@ mut:
 	running     bool
 }
 
-// WebSocketConnectionState는 WebSocket 연결 상태를 보관합니다
+// WebSocketConnectionState holds WebSocket connection state
 @[heap]
 struct WebSocketConnectionState {
 pub mut:
@@ -32,6 +33,7 @@ pub mut:
 }
 
 // WebSocketStats holds WebSocket service statistics
+/// WebSocketStats holds WebSocket service statistics.
 pub struct WebSocketStats {
 pub mut:
 	active_connections  int
@@ -45,6 +47,7 @@ pub mut:
 }
 
 // new_websocket_service creates a new WebSocket service
+/// new_websocket_service creates a new WebSocket service.
 pub fn new_websocket_service(storage port.StoragePort, config domain.WebSocketConfig) &WebSocketService {
 	return &WebSocketService{
 		config:      config
@@ -59,6 +62,7 @@ pub fn new_websocket_service(storage port.StoragePort, config domain.WebSocketCo
 // Connection Management
 
 // register_connection registers a new WebSocket connection
+/// register_connection registers a new WebSocket connection.
 pub fn (mut s WebSocketService) register_connection(conn domain.WebSocketConnection) !string {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -85,6 +89,7 @@ pub fn (mut s WebSocketService) register_connection(conn domain.WebSocketConnect
 }
 
 // unregister_connection removes a WebSocket connection
+/// unregister_connection removes a WebSocket connection.
 pub fn (mut s WebSocketService) unregister_connection(conn_id string) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -105,6 +110,7 @@ pub fn (mut s WebSocketService) unregister_connection(conn_id string) ! {
 }
 
 // get_connection returns connection info
+/// get_connection returns connection info.
 pub fn (mut s WebSocketService) get_connection(conn_id string) !domain.WebSocketConnection {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -114,6 +120,7 @@ pub fn (mut s WebSocketService) get_connection(conn_id string) !domain.WebSocket
 }
 
 // list_connections returns all active connections
+/// list_connections returns all active connections.
 pub fn (mut s WebSocketService) list_connections() []domain.WebSocketConnection {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -126,6 +133,7 @@ pub fn (mut s WebSocketService) list_connections() []domain.WebSocketConnection 
 }
 
 // get_send_channel returns the send channel for a connection
+/// get_send_channel returns the send channel for a connection.
 pub fn (mut s WebSocketService) get_send_channel(conn_id string) !chan string {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
@@ -137,6 +145,7 @@ pub fn (mut s WebSocketService) get_send_channel(conn_id string) !chan string {
 // Message Handling
 
 // handle_message processes an incoming WebSocket message
+/// handle_message processes an incoming WebSocket message.
 pub fn (mut s WebSocketService) handle_message(conn_id string, msg domain.WebSocketMessage) !domain.WebSocketResponse {
 	// Update last activity
 	s.mutex.@lock()
@@ -321,6 +330,7 @@ fn (mut s WebSocketService) handle_ping(conn_id string) !domain.WebSocketRespons
 // Message Broadcasting
 
 // send_message sends a message to a specific connection
+/// send_message sends a message to a specific connection.
 pub fn (mut s WebSocketService) send_message(conn_id string, response domain.WebSocketResponse) ! {
 	s.mutex.rlock()
 	state := s.connections[conn_id] or {
@@ -349,6 +359,7 @@ pub fn (mut s WebSocketService) send_message(conn_id string, response domain.Web
 }
 
 // broadcast_to_topic sends a message to all connections subscribed to a topic
+/// broadcast_to_topic sends a message to all connections subscribed to a topic.
 pub fn (mut s WebSocketService) broadcast_to_topic(topic string, partition i32, response domain.WebSocketResponse) {
 	s.mutex.rlock()
 	conn_ids := s.topic_subs[topic] or {
@@ -363,6 +374,7 @@ pub fn (mut s WebSocketService) broadcast_to_topic(topic string, partition i32, 
 }
 
 // poll_and_send polls for new messages and sends them to subscribers
+/// poll_and_send polls for new messages and sends them to subscribers.
 pub fn (mut s WebSocketService) poll_and_send() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
@@ -410,6 +422,7 @@ fn (mut s WebSocketService) poll_subscription(conn_id string, sub_id string, sub
 // Ping/Pong Management
 
 // send_pings sends ping messages to all connections
+/// send_pings sends ping messages to all connections.
 pub fn (mut s WebSocketService) send_pings() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
@@ -432,6 +445,7 @@ pub fn (mut s WebSocketService) send_pings() {
 }
 
 // cleanup_stale_connections removes connections that have timed out
+/// cleanup_stale_connections removes connections that have timed out.
 pub fn (mut s WebSocketService) cleanup_stale_connections() []string {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
@@ -475,6 +489,7 @@ pub fn (mut s WebSocketService) cleanup_stale_connections() []string {
 // Statistics
 
 // get_stats returns WebSocket service statistics
+/// get_stats returns WebSocket service statistics.
 pub fn (mut s WebSocketService) get_stats() WebSocketStats {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }

@@ -1,11 +1,11 @@
 module domain
 
-/// Partition은 토픽 파티션을 나타냅니다.
-/// 참고: DataCore Stateless 아키텍처
-/// - leader_id: 항상 응답하는 브로커 (모든 브로커가 동등)
-/// - leader_epoch: 항상 0 (Stateless 모델에서는 리더 선출 없음)
-/// - replica_nodes/isr_nodes: 항상 [broker_id] (복제 없음, 공유 스토리지)
-/// 이 필드들은 Kafka 프로토콜 호환성을 위해서만 유지됩니다.
+/// Partition represents a topic partition.
+/// Note: DataCore Stateless architecture
+/// - leader_id: the broker that always responds (all brokers are equal)
+/// - leader_epoch: always 0 (no leader election in Stateless model)
+/// - replica_nodes/isr_nodes: always [broker_id] (no replication, shared storage)
+/// These fields are maintained only for Kafka protocol compatibility.
 pub struct Partition {
 pub:
 	topic         string
@@ -16,12 +16,12 @@ pub:
 	isr_nodes     []i32
 }
 
-/// PartitionInfo는 파티션 오프셋 정보를 포함합니다.
-/// topic: 토픽 이름
-/// partition: 파티션 번호
-/// earliest_offset: 가장 이른 오프셋
-/// latest_offset: 가장 최근 오프셋
-/// high_watermark: 하이 워터마크
+/// PartitionInfo contains partition offset information.
+/// topic: topic name
+/// partition: partition number
+/// earliest_offset: earliest available offset
+/// latest_offset: most recent offset
+/// high_watermark: high watermark
 pub struct PartitionInfo {
 pub:
 	topic           string
@@ -31,8 +31,8 @@ pub:
 	high_watermark  i64
 }
 
-/// TopicPartition은 토픽-파티션 쌍입니다.
-/// 토픽과 파티션을 함께 식별하는 데 사용됩니다.
+/// TopicPartition is a topic-partition pair.
+/// Used to jointly identify a topic and partition.
 pub struct TopicPartition {
 pub:
 	topic     string

@@ -1,8 +1,8 @@
-/// 인프라 레이어 - 성능 설정
-/// 성능 관련 모든 설정을 담고 있는 모듈
+/// Infrastructure layer - Performance configuration
+/// Module containing all performance-related configuration
 module core
 
-/// PerformanceConfig는 모든 성능 관련 설정을 담고 있습니다.
+/// PerformanceConfig holds all performance-related configuration.
 pub struct PerformanceConfig {
 pub:
 	buffer_pool_max_tiny       int  = 1000
@@ -20,7 +20,7 @@ pub:
 	enable_linux_optimizations bool = true
 }
 
-/// PerformanceStats는 엔진의 통합 통계를 담고 있습니다.
+/// PerformanceStats holds aggregated statistics for an engine.
 pub struct PerformanceStats {
 pub:
 	engine_name   string

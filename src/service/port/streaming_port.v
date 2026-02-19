@@ -1,44 +1,44 @@
-// 실시간 메시지 스트리밍 기능을 추상화합니다.
+// Abstracts real-time message streaming functionality.
 module port
 
 import domain
 
-// 스트리밍 포트 인터페이스
+// Streaming port interfaces
 
-/// StreamingPort는 메시지 스트리밍 작업을 정의합니다.
-/// SSE, WebSocket, gRPC 등 다양한 스트리밍 메커니즘을 추상화합니다.
+/// StreamingPort defines message streaming operations.
+/// Abstracts various streaming mechanisms such as SSE, WebSocket, and gRPC.
 pub interface StreamingPort {
 mut:
-	/// 새로운 연결을 등록합니다.
-	/// 반환값: 연결 ID
+	/// Registers a new connection.
+	/// Returns the connection ID.
 	register_connection(conn domain.SSEConnection) !string
 
-	/// 연결을 해제합니다.
+	/// Unregisters a connection.
 	unregister_connection(conn_id string) !
 
-	/// 연결 정보를 조회합니다.
+	/// Retrieves connection information.
 	get_connection(conn_id string) !domain.SSEConnection
 
-	/// 모든 활성 연결 목록을 반환합니다.
+	/// Returns a list of all active connections.
 	list_connections() []domain.SSEConnection
-	/// 토픽/파티션을 구독합니다.
+	/// Subscribes to a topic/partition.
 	subscribe(conn_id string, sub domain.Subscription) !
 
-	/// 구독을 해제합니다.
+	/// Unsubscribes from a topic.
 	unsubscribe(conn_id string, topic string, partition ?i32) !
 
-	/// 연결의 모든 구독 목록을 반환합니다.
+	/// Returns all subscriptions for a connection.
 	get_subscriptions(conn_id string) []domain.Subscription
-	/// 특정 연결에 이벤트를 전송합니다.
+	/// Sends an event to a specific connection.
 	send_event(conn_id string, event domain.SSEEvent) !
 
-	/// 토픽/파티션을 구독 중인 모든 연결에 이벤트를 브로드캐스트합니다.
+	/// Broadcasts an event to all connections subscribed to a topic/partition.
 	broadcast_event(topic string, partition i32, event domain.SSEEvent) !
-	/// 스트리밍 통계를 반환합니다.
+	/// Returns streaming statistics.
 	get_stats() StreamingStats
 }
 
-/// StreamingStats는 스트리밍 통계 정보를 담습니다.
+/// StreamingStats holds streaming statistics.
 pub struct StreamingStats {
 pub:
 	active_connections  int
@@ -49,49 +49,49 @@ pub:
 	connections_closed  i64
 }
 
-// 메시지 컨슈머 포트 (메시지 조회용)
+// Message consumer port (for message retrieval)
 
-/// MessageConsumerPort는 메시지 소비 작업을 정의합니다.
-/// 스트리밍 서비스에서 스토리지로부터 메시지를 가져올 때 사용합니다.
+/// MessageConsumerPort defines message consumption operations.
+/// Used by the streaming service to fetch messages from storage.
 pub interface MessageConsumerPort {
 mut:
-	/// 토픽/파티션에서 지정된 오프셋부터 메시지를 가져옵니다.
+	/// Fetches messages from a topic/partition starting at the specified offset.
 	consume(topic string, partition i32, offset i64, max_messages int) ![]domain.Record
 
-	/// 가장 이른 사용 가능한 오프셋을 반환합니다.
+	/// Returns the earliest available offset.
 	get_earliest_offset(topic string, partition i32) !i64
 
-	/// 최신 오프셋을 반환합니다 (다음에 기록될 오프셋).
+	/// Returns the latest offset (the next offset to be written).
 	get_latest_offset(topic string, partition i32) !i64
 
-	/// 컨슈머 그룹의 오프셋을 커밋합니다.
+	/// Commits offsets for a consumer group.
 	commit_offset(group_id string, topic string, partition i32, offset i64) !
 
-	/// 컨슈머 그룹의 커밋된 오프셋을 조회합니다.
+	/// Retrieves the committed offset for a consumer group.
 	get_committed_offset(group_id string, topic string, partition i32) !i64
 }
 
-// SSE 라이터 포트
+// SSE writer port
 
-/// SSEWriterPort는 HTTP 응답에 SSE 이벤트를 쓰기 위한 인터페이스입니다.
+/// SSEWriterPort is an interface for writing SSE events to an HTTP response.
 pub interface SSEWriterPort {
 mut:
-	/// SSE 이벤트를 응답에 씁니다.
+	/// Writes an SSE event to the response.
 	write_event(event domain.SSEEvent) !
 
-	/// 응답 버퍼를 플러시합니다.
+	/// Flushes the response buffer.
 	flush() !
 
-	/// 연결이 아직 살아있는지 확인합니다.
+	/// Checks whether the connection is still alive.
 	is_alive() bool
 
-	/// 연결을 종료합니다.
+	/// Closes the connection.
 	close() !
 }
 
-// 구독 필터
+// Subscription filter
 
-/// SubscriptionFilter는 메시지 필터링 조건을 정의합니다.
+/// SubscriptionFilter defines message filtering conditions.
 pub struct SubscriptionFilter {
 pub:
 	key_pattern    ?string
@@ -99,20 +99,20 @@ pub:
 	value_contains ?string
 }
 
-/// matches는 레코드가 필터 조건에 맞는지 확인합니다.
+/// matches checks whether a record satisfies the filter conditions.
 pub fn (f &SubscriptionFilter) matches(record domain.Record) bool {
-	// 키 패턴 매칭
+	// Key pattern matching
 	if pattern := f.key_pattern {
 		if record.key.len == 0 {
 			return false
 		}
-		// 간단한 glob 매칭 (TODO: 적절한 glob/정규식 구현)
+		// Simple glob matching (TODO: implement proper glob/regex)
 		if !simple_match(pattern, record.key.bytestr()) {
 			return false
 		}
 	}
 
-	// 헤더 필터 (record.headers는 map[string][]u8 타입)
+	// Header filter (record.headers is of type map[string][]u8)
 	for key, expected_value in f.header_filters {
 		if header_value := record.headers[key] {
 			if header_value.bytestr() != expected_value {
@@ -123,7 +123,7 @@ pub fn (f &SubscriptionFilter) matches(record domain.Record) bool {
 		}
 	}
 
-	// 값 포함 여부
+	// Value contains check
 	if contains := f.value_contains {
 		if !record.value.bytestr().contains(contains) {
 			return false
@@ -133,7 +133,7 @@ pub fn (f &SubscriptionFilter) matches(record domain.Record) bool {
 	return true
 }
 
-/// simple_match는 간단한 와일드카드 매칭을 수행합니다.
+/// simple_match performs simple wildcard matching.
 fn simple_match(pattern string, value string) bool {
 	if pattern == '*' {
 		return true
@@ -150,9 +150,9 @@ fn simple_match(pattern string, value string) bool {
 	return pattern == value
 }
 
-// 스트리밍 오류
+// Streaming errors
 
-/// StreamingError는 스트리밍 관련 오류를 나타냅니다.
+/// StreamingError represents streaming-related errors.
 pub enum StreamingError {
 	connection_not_found
 	subscription_not_found
@@ -165,7 +165,7 @@ pub enum StreamingError {
 	write_failed
 }
 
-/// streaming_error_message는 StreamingError에 대한 오류 메시지를 반환합니다.
+/// streaming_error_message returns the error message for a StreamingError.
 pub fn streaming_error_message(err StreamingError) string {
 	return match err {
 		.connection_not_found { 'Connection not found' }

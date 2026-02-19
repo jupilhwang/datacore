@@ -1,17 +1,17 @@
-// KIP-848 새 컨슈머 프로토콜 - 그룹 코디네이터
-// 점진적 리밸런싱을 지원하는 서버 측 파티션 할당
+// KIP-848 new consumer protocol - Group Coordinator
+// Server-side partition assignment with support for incremental rebalancing
 //
 
-// DataCore 무상태 아키텍처 참고
+// DataCore Stateless Architecture Note
 
-// DataCore는 모든 브로커가 공유 스토리지(S3, PostgreSQL 등)에 접근하는
-// 무상태 브로커 아키텍처를 사용합니다. 이는 파티션 할당을 단순화합니다:
+// DataCore uses a stateless broker architecture where all brokers access
+// shared storage (S3, PostgreSQL, etc.). This simplifies partition assignment:
 //
-// - 브로커-파티션 친화성 없음: 모든 브로커가 모든 파티션을 서비스 가능
-// - 리밸런싱 비용 없음: 할당 변경이 데이터 이동을 유발하지 않음
-// - 단순 할당자: Sticky/Cooperative 알고리즘이 이점을 제공하지 않음
+// - No broker-partition affinity: all brokers can serve all partitions
+// - No rebalancing cost: assignment changes do not cause data movement
+// - Simple assignors: Sticky/Cooperative algorithms provide no benefit
 //
-// 타입 정의는 kip848_types.v, 할당자 구현은 kip848_assignors.v를 참조하세요.
+// See kip848_types.v for type definitions and kip848_assignors.v for assignor implementations.
 
 module group
 
@@ -19,10 +19,10 @@ import service.port
 import time
 import rand
 
-// KIP-848 그룹 코디네이터
+// KIP-848 Group Coordinator
 
-/// KIP848GroupCoordinator는 새 프로토콜을 사용하는 컨슈머 그룹을 관리합니다.
-/// 서버 측 파티션 할당과 점진적 리밸런싱을 지원합니다.
+/// KIP848GroupCoordinator manages consumer groups using the new protocol.
+/// Supports server-side partition assignment and incremental rebalancing.
 pub struct KIP848GroupCoordinator {
 	assignors        map[string]ServerAssignor
 	default_assignor string
@@ -34,7 +34,7 @@ mut:
 	rebalance_timeout_ms  i32
 }
 
-/// new_kip848_coordinator는 새로운 KIP-848 그룹 코디네이터를 생성합니다.
+/// new_kip848_coordinator creates a new KIP-848 group coordinator.
 pub fn new_kip848_coordinator(storage port.StoragePort) &KIP848GroupCoordinator {
 	mut assignors := map[string]ServerAssignor{}
 	assignors['range'] = new_range_assignor()
@@ -54,7 +54,7 @@ pub fn new_kip848_coordinator(storage port.StoragePort) &KIP848GroupCoordinator 
 	}
 }
 
-/// HeartbeatResult는 하트비트 작업의 결과를 나타냅니다.
+/// HeartbeatResult represents the result of a heartbeat operation.
 pub struct HeartbeatResult {
 pub:
 	error_code            i16
@@ -65,8 +65,8 @@ pub:
 	assignment            ?[]TopicPartition
 }
 
-/// process_heartbeat는 ConsumerGroupHeartbeat 요청을 처리합니다.
-/// 새 멤버 참가, 탈퇴, 일반 하트비트를 처리합니다.
+/// process_heartbeat handles a ConsumerGroupHeartbeat request.
+/// Handles new member joins, leaves, and regular heartbeats.
 pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	member_id string,
 	member_epoch i32,
@@ -77,7 +77,7 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	server_assignor ?string) !HeartbeatResult {
 	now := time.now().unix_milli()
 
-	// group_id 유효성 검사
+	// Validate group_id
 	if group_id == '' {
 		return HeartbeatResult{
 			error_code:    24
@@ -86,23 +86,23 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 		}
 	}
 
-	// 그룹 가져오기 또는 생성
+	// Get or create group
 	mut group := c.get_or_create_group(group_id)
 
-	// member_epoch에 따라 처리
+	// Process based on member_epoch
 	if member_epoch == 0 && member_id == '' {
-		// 새 멤버 참가
+		// New member joining
 		return c.handle_join(mut group, instance_id, rack_id, rebalance_timeout_ms, subscribed_topic_names,
 			server_assignor, now)
 	} else if member_epoch == -1 {
-		// 멤버 탈퇴
+		// Member leaving
 		return c.handle_leave(mut group, member_id, now)
 	} else if member_epoch > 0 {
-		// 일반 하트비트
+		// Regular heartbeat
 		return c.handle_heartbeat(mut group, member_id, member_epoch, subscribed_topic_names,
 			now)
 	} else {
-		// 유효하지 않은 에포크
+		// Invalid epoch
 		return HeartbeatResult{
 			error_code:    25
 			error_message: 'Invalid member epoch'
@@ -111,9 +111,9 @@ pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	}
 }
 
-/// get_or_create_group은 기존 그룹을 반환하거나 새로 생성합니다.
+/// get_or_create_group returns an existing group or creates a new one.
 fn (mut c KIP848GroupCoordinator) get_or_create_group(group_id string) &KIP848ConsumerGroup {
-	// 그룹이 존재하면 반환
+	// Return group if it exists
 	if group := c.groups[group_id] {
 		return group
 	}
@@ -137,7 +137,7 @@ fn (mut c KIP848GroupCoordinator) get_or_create_group(group_id string) &KIP848Co
 	return group
 }
 
-/// handle_join은 새 멤버 참가를 처리합니다.
+/// handle_join handles a new member joining.
 fn (mut c KIP848GroupCoordinator) handle_join(mut group KIP848ConsumerGroup,
 	instance_id ?string,
 	rack_id ?string,
@@ -145,17 +145,17 @@ fn (mut c KIP848GroupCoordinator) handle_join(mut group KIP848ConsumerGroup,
 	subscribed_topic_names []string,
 	server_assignor ?string,
 	now i64) !HeartbeatResult {
-	// 새 member_id 생성
+	// Generate new member_id
 	member_id := 'consumer-${group.group_id}-${rand.i64()}'
 
-	// 정적 멤버 (instance_id) 확인
+	// Check for static member (instance_id)
 	if inst_id := instance_id {
-		// 정적 멤버 - 동일한 instance_id를 가진 기존 멤버 확인
+		// Static member - check for existing member with the same instance_id
 		for member_key, _ in group.members {
 			if mut existing_member := group.members[member_key] {
 				if m_inst := existing_member.instance_id {
 					if m_inst == inst_id {
-						// 이전 멤버 펜스 및 재사용
+						// Fence and reuse previous member
 						existing_member.state = .fenced
 					}
 				}
@@ -163,7 +163,7 @@ fn (mut c KIP848GroupCoordinator) handle_join(mut group KIP848ConsumerGroup,
 		}
 	}
 
-	// 새 멤버 생성
+	// Create new member
 	member := &KIP848Member{
 		member_id:              member_id
 		instance_id:            instance_id
@@ -184,24 +184,24 @@ fn (mut c KIP848GroupCoordinator) handle_join(mut group KIP848ConsumerGroup,
 
 	group.members[member_id] = member
 
-	// 구독 토픽 업데이트
+	// Update subscribed topics
 	for topic in subscribed_topic_names {
 		group.subscribed_topics[topic] = true
 	}
 
-	// 지정된 경우 할당자 설정
+	// Set assignor if specified
 	if assignor := server_assignor {
 		if assignor in c.assignors {
 			group.server_assignor = assignor
 		}
 	}
 
-	// 리밸런싱 트리거
+	// Trigger rebalancing
 	group.group_epoch++
 	group.state = .assigning
 	group.updated_at = now
 
-	// 새 할당 계산
+	// Compute new assignment
 	c.compute_assignment(mut group) or {
 		return HeartbeatResult{
 			error_code:    -1
@@ -211,7 +211,7 @@ fn (mut c KIP848GroupCoordinator) handle_join(mut group KIP848ConsumerGroup,
 		}
 	}
 
-	// 이 멤버의 할당 가져오기
+	// Get this member's assignment
 	assignment := group.target_assignment[member_id] or { []TopicPartition{} }
 
 	return HeartbeatResult{
@@ -223,22 +223,22 @@ fn (mut c KIP848GroupCoordinator) handle_join(mut group KIP848ConsumerGroup,
 	}
 }
 
-/// handle_leave는 멤버 탈퇴를 처리합니다.
+/// handle_leave handles a member leaving.
 fn (mut c KIP848GroupCoordinator) handle_leave(mut group KIP848ConsumerGroup,
 	member_id string,
 	now i64) !HeartbeatResult {
-	// 멤버 제거
+	// Remove member
 	if member_id in group.members {
 		group.members.delete(member_id)
 		group.target_assignment.delete(member_id)
 		group.current_assignment.delete(member_id)
 	}
 
-	// 그룹 상태 업데이트
+	// Update group state
 	if group.members.len == 0 {
 		group.state = .empty
 	} else {
-		// 리밸런싱 트리거
+		// Trigger rebalancing
 		group.group_epoch++
 		group.state = .assigning
 		c.compute_assignment(mut group)!
@@ -254,13 +254,13 @@ fn (mut c KIP848GroupCoordinator) handle_leave(mut group KIP848ConsumerGroup,
 	}
 }
 
-/// handle_heartbeat는 일반 하트비트를 처리합니다.
+/// handle_heartbeat handles a regular heartbeat.
 fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup,
 	member_id string,
 	member_epoch i32,
 	subscribed_topic_names []string,
 	now i64) !HeartbeatResult {
-	// 멤버 찾기
+	// Find member
 	mut member := group.members[member_id] or {
 		return HeartbeatResult{
 			error_code:    25
@@ -269,7 +269,7 @@ fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup
 		}
 	}
 
-	// 에포크 확인
+	// Verify epoch
 	if member_epoch < member.member_epoch {
 		return HeartbeatResult{
 			error_code:    82
@@ -279,10 +279,10 @@ fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup
 		}
 	}
 
-	// 마지막 하트비트 업데이트
+	// Update last heartbeat
 	member.last_heartbeat = now
 
-	// 구독 변경 확인
+	// Check for subscription changes
 	mut subscription_changed := false
 	if subscribed_topic_names.len != member.subscribed_topic_names.len {
 		subscription_changed = true
@@ -299,7 +299,7 @@ fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup
 		member.subscribed_topic_names = subscribed_topic_names.clone()
 		member.member_epoch++
 
-		// 그룹 구독 토픽 업데이트
+		// Update group subscribed topics
 		group.subscribed_topics.clear()
 		for _, m in group.members {
 			for topic in m.subscribed_topic_names {
@@ -307,16 +307,16 @@ fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup
 			}
 		}
 
-		// 리밸런싱 트리거
+		// Trigger rebalancing
 		group.group_epoch++
 		group.state = .assigning
 		c.compute_assignment(mut group)!
 	}
 
-	// 현재 할당 가져오기
+	// Get current assignment
 	assignment := group.target_assignment[member_id] or { []TopicPartition{} }
 
-	// 할당 변경 확인
+	// Check for assignment changes
 	if assignment.len != member.assigned_partitions.len {
 		member.state = .reconciling
 	} else {
@@ -332,7 +332,7 @@ fn (mut c KIP848GroupCoordinator) handle_heartbeat(mut group KIP848ConsumerGroup
 	}
 }
 
-/// compute_assignment는 모든 멤버에 대한 새 파티션 할당을 계산합니다.
+/// compute_assignment computes a new partition assignment for all members.
 fn (mut c KIP848GroupCoordinator) compute_assignment(mut group KIP848ConsumerGroup) ! {
 	if group.members.len == 0 {
 		group.target_assignment.clear()
@@ -341,7 +341,7 @@ fn (mut c KIP848GroupCoordinator) compute_assignment(mut group KIP848ConsumerGro
 		return
 	}
 
-	// 멤버 구독 구성
+	// Build member subscriptions
 	mut subscriptions := []MemberSubscription{}
 	for member_id, member in group.members {
 		subscriptions << MemberSubscription{
@@ -353,7 +353,7 @@ fn (mut c KIP848GroupCoordinator) compute_assignment(mut group KIP848ConsumerGro
 		}
 	}
 
-	// 토픽 메타데이터 구성
+	// Build topic metadata
 	mut topics := map[string]TopicMetadata{}
 	for topic_name, _ in group.subscribed_topics {
 		topic_meta := c.storage.get_topic(topic_name) or { continue }
@@ -364,26 +364,26 @@ fn (mut c KIP848GroupCoordinator) compute_assignment(mut group KIP848ConsumerGro
 		}
 	}
 
-	// 할당자 가져오기
+	// Get assignor
 	assignor := c.assignors[group.server_assignor] or {
 		c.assignors[c.default_assignor] or { return error('No assignor available') }
 	}
 
-	// 할당 계산
+	// Compute assignment
 	assignment := assignor.assign(subscriptions, topics)!
 
-	// 대상 할당 업데이트
+	// Update target assignment
 	group.target_assignment = assignment.clone()
 	group.assignment_epoch = group.group_epoch
 
-	// 멤버 할당 업데이트
+	// Update member assignments
 	for member_id, partitions in assignment {
 		if mut member := group.members[member_id] {
 			member.pending_partitions = partitions
 		}
 	}
 
-	// 모든 멤버가 안정 상태인지 확인
+	// Check if all members are stable
 	mut all_stable := true
 	for _, member in group.members {
 		if member.state != .stable {
@@ -400,12 +400,12 @@ fn (mut c KIP848GroupCoordinator) compute_assignment(mut group KIP848ConsumerGro
 	}
 }
 
-/// get_group은 ID로 그룹을 반환합니다.
+/// get_group returns a group by ID.
 pub fn (c &KIP848GroupCoordinator) get_group(group_id string) ?&KIP848ConsumerGroup {
 	return c.groups[group_id] or { return none }
 }
 
-/// list_groups는 모든 그룹을 반환합니다.
+/// list_groups returns all groups.
 pub fn (c &KIP848GroupCoordinator) list_groups() []&KIP848ConsumerGroup {
 	mut result := []&KIP848ConsumerGroup{}
 	for _, g in c.groups {
@@ -414,7 +414,7 @@ pub fn (c &KIP848GroupCoordinator) list_groups() []&KIP848ConsumerGroup {
 	return result
 }
 
-/// expire_members는 하트비트를 보내지 않은 멤버를 제거합니다.
+/// expire_members removes members that have not sent a heartbeat.
 pub fn (mut c KIP848GroupCoordinator) expire_members() {
 	now := time.now().unix_milli()
 
@@ -443,7 +443,7 @@ pub fn (mut c KIP848GroupCoordinator) expire_members() {
 			}
 		}
 
-		// 타임아웃 후 빈 그룹 제거
+		// Remove empty group after timeout
 		if group.state == .empty && now - group.updated_at > 300000 {
 			c.groups.delete(group_id)
 		}

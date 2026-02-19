@@ -1,23 +1,27 @@
-// Service Layer - JSON 스키마 인코더
-// JSON Schema를 위한 검증 기반 인코딩/디코딩을 제공합니다
+// Service Layer - JSON Schema encoder
+// Provides validation-based encoding/decoding for JSON Schema
 module schema
 
 import regex
 
 // JsonEncoder provides JSON schema validation and encoding
+/// JsonEncoder provides JSON schema validation and encoding.
 pub struct JsonEncoder {}
 
 // new_json_encoder creates a new JSON encoder
+/// new_json_encoder creates a new JSON encoder.
 pub fn new_json_encoder() !JsonEncoder {
 	return JsonEncoder{}
 }
 
 // format returns the encoding format
+/// format returns the encoding format.
 pub fn (mut e JsonEncoder) format() Format {
 	return Format.json
 }
 
 // encode validates and encodes JSON data (passthrough for JSON)
+/// encode validates and encodes JSON data (passthrough for JSON).
 pub fn (mut e JsonEncoder) encode(data []u8, schema_str string) ![]u8 {
 	// Parse and validate the schema
 	schema := parse_json_schema(schema_str) or {
@@ -33,6 +37,7 @@ pub fn (mut e JsonEncoder) encode(data []u8, schema_str string) ![]u8 {
 }
 
 // decode decodes JSON data (passthrough for JSON)
+/// decode decodes JSON data (passthrough for JSON).
 pub fn (mut e JsonEncoder) decode(data []u8, schema_str string) ![]u8 {
 	// Parse and validate the schema
 	_ = parse_json_schema(schema_str) or { return error('failed to parse JSON schema: ${err}') }

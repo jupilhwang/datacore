@@ -1,23 +1,23 @@
-// Kafka 프로토콜 - Share Group 파서 (KIP-932)
+// Kafka protocol - Share Group parser (KIP-932)
 // ShareGroupHeartbeat (API Key 76), ShareFetch (API Key 78), ShareAcknowledge (API Key 79)
-// 요청 파싱 함수
+// Request parsing functions
 module kafka
 
-/// parse_share_group_heartbeat_request는 ShareGroupHeartbeat 요청을 파싱합니다.
+/// parse_share_group_heartbeat_request parses a ShareGroupHeartbeat request.
 fn parse_share_group_heartbeat_request(mut reader BinaryReader, version i16, is_flexible bool) !ShareGroupHeartbeatRequest {
-	// GroupId - 그룹 ID
+	// GroupId - group ID
 	group_id := reader.read_flex_string(is_flexible)!
 
-	// MemberId - 멤버 ID
+	// MemberId - member ID
 	member_id := reader.read_flex_string(is_flexible)!
 
-	// MemberEpoch - 멤버 에포크
+	// MemberEpoch - member epoch
 	member_epoch := reader.read_i32()!
 
-	// RackId (nullable) - 랙 ID
+	// RackId (nullable) - rack ID
 	rack_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
-	// SubscribedTopicNames (nullable array) - 구독 토픽 목록
+	// SubscribedTopicNames (nullable array) - subscribed topic list
 	mut subscribed_topic_names := []string{}
 	topic_count := reader.read_flex_array_len(is_flexible)!
 	if topic_count >= 0 {
@@ -27,7 +27,7 @@ fn parse_share_group_heartbeat_request(mut reader BinaryReader, version i16, is_
 		}
 	}
 
-	// flexible인 경우 태그된 필드 건너뛰기
+	// skip tagged fields if flexible
 	reader.skip_flex_tagged_fields(is_flexible)!
 
 	return ShareGroupHeartbeatRequest{
@@ -39,59 +39,59 @@ fn parse_share_group_heartbeat_request(mut reader BinaryReader, version i16, is_
 	}
 }
 
-/// parse_share_fetch_request는 ShareFetch 요청을 파싱합니다.
+/// parse_share_fetch_request parses a ShareFetch request.
 fn parse_share_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !ShareFetchRequest {
-	// GroupId (nullable) - 그룹 ID
+	// GroupId (nullable) - group ID
 	group_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
-	// MemberId (nullable) - 멤버 ID
+	// MemberId (nullable) - member ID
 	member_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
-	// ShareSessionEpoch - Share 세션 에포크
+	// ShareSessionEpoch - share session epoch
 	share_session_epoch := reader.read_i32()!
 
-	// MaxWaitMs - 최대 대기 시간
+	// MaxWaitMs - maximum wait time in milliseconds
 	max_wait_ms := reader.read_i32()!
 
-	// MinBytes - 최소 바이트 수
+	// MinBytes - minimum byte count
 	min_bytes := reader.read_i32()!
 
-	// MaxBytes - 최대 바이트 수
+	// MaxBytes - maximum byte count
 	max_bytes := reader.read_i32()!
 
-	// MaxRecords (v1+) - 최대 레코드 수
+	// MaxRecords (v1+) - maximum record count
 	mut max_records := i32(0)
 	if version >= 1 {
 		max_records = reader.read_i32()!
 	}
 
-	// BatchSize (v1+) - 배치 크기
+	// BatchSize (v1+) - batch size
 	mut batch_size := i32(0)
 	if version >= 1 {
 		batch_size = reader.read_i32()!
 	}
 
-	// Topics 배열 - 조회할 토픽 목록
+	// Topics array - list of topics to fetch
 	mut topics := []ShareFetchTopic{}
 	topics_count := reader.read_flex_array_len(is_flexible)!
 	for _ in 0 .. topics_count {
-		// TopicId (UUID) - 토픽 UUID
+		// TopicId (UUID) - topic UUID
 		topic_id := reader.read_uuid()!
 
-		// Partitions 배열 - 파티션 목록
+		// Partitions array - partition list
 		mut partitions := []ShareFetchPartition{}
 		partitions_count := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. partitions_count {
 			partition_index := reader.read_i32()!
 
-			// AcknowledgementBatches 배열 - 확인 배치
+			// AcknowledgementBatches array - acknowledgement batches
 			mut ack_batches := []ShareAcknowledgementBatch{}
 			ack_count := reader.read_flex_array_len(is_flexible)!
 			for _ in 0 .. ack_count {
 				first_offset := reader.read_i64()!
 				last_offset := reader.read_i64()!
 
-				// AcknowledgeTypes 배열 - 확인 유형
+				// AcknowledgeTypes array - acknowledgement types
 				mut ack_types := []u8{}
 				ack_types_count := reader.read_flex_array_len(is_flexible)!
 				for _ in 0 .. ack_types_count {
@@ -117,7 +117,7 @@ fn parse_share_fetch_request(mut reader BinaryReader, version i16, is_flexible b
 		}
 	}
 
-	// ForgottenTopicsData 배열 - 세션에서 제거할 토픽
+	// ForgottenTopicsData array - topics to remove from the session
 	mut forgotten_topics := []ShareForgottenTopic{}
 	forgotten_count := reader.read_flex_array_len(is_flexible)!
 	for _ in 0 .. forgotten_count {
@@ -150,30 +150,30 @@ fn parse_share_fetch_request(mut reader BinaryReader, version i16, is_flexible b
 	}
 }
 
-/// parse_share_acknowledge_request는 ShareAcknowledge 요청을 파싱합니다.
+/// parse_share_acknowledge_request parses a ShareAcknowledge request.
 fn parse_share_acknowledge_request(mut reader BinaryReader, version i16, is_flexible bool) !ShareAcknowledgeRequest {
-	// GroupId (nullable) - 그룹 ID
+	// GroupId (nullable) - group ID
 	group_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
-	// MemberId (nullable) - 멤버 ID
+	// MemberId (nullable) - member ID
 	member_id := reader.read_flex_nullable_string(is_flexible) or { '' }
 
-	// ShareSessionEpoch - Share 세션 에포크
+	// ShareSessionEpoch - share session epoch
 	share_session_epoch := reader.read_i32()!
 
-	// Topics 배열 - 확인할 토픽 목록
+	// Topics array - list of topics to acknowledge
 	mut topics := []ShareAcknowledgeTopic{}
 	topics_count := reader.read_flex_array_len(is_flexible)!
 	for _ in 0 .. topics_count {
 		topic_id := reader.read_uuid()!
 
-		// Partitions 배열 - 파티션 목록
+		// Partitions array - partition list
 		mut partitions := []ShareAcknowledgePartition{}
 		parts_count := reader.read_flex_array_len(is_flexible)!
 		for _ in 0 .. parts_count {
 			partition_index := reader.read_i32()!
 
-			// AcknowledgementBatches - 확인 배치
+			// AcknowledgementBatches - acknowledgement batches
 			mut ack_batches := []ShareAcknowledgementBatch{}
 			ack_count := reader.read_flex_array_len(is_flexible)!
 			for _ in 0 .. ack_count {

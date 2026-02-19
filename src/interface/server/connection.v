@@ -1,15 +1,14 @@
 /// Interface Layer - Connection Manager
-/// 인터페이스 레이어 - 연결 관리자
 ///
-/// 이 모듈은 클라이언트 연결을 스레드 안전하게 관리합니다.
-/// 연결 수 제한, IP별 제한, 유휴 연결 정리 등의 기능을 제공합니다.
+/// This module manages client connections in a thread-safe manner.
+/// Provides connection limiting, per-IP limits, idle connection cleanup, and more.
 ///
-/// 주요 기능:
-/// - 스레드 안전한 연결 등록/해제
-/// - 최대 연결 수 및 IP별 연결 수 제한
-/// - 유휴 연결 자동 정리
-/// - 연결 메트릭 수집
-/// - 인증 상태 관리
+/// Key features:
+/// - Thread-safe connection registration/deregistration
+/// - Maximum total connections and per-IP connection limits
+/// - Automatic idle connection cleanup
+/// - Connection metrics collection
+/// - Authentication state management
 module server
 
 import domain
@@ -17,8 +16,8 @@ import net
 import sync
 import time
 
-/// ClientConnection은 클라이언트 연결 정보를 담는 구조체입니다.
-/// 연결 상태, 통계, 인증 정보 등을 포함합니다.
+/// ClientConnection is a struct holding client connection information.
+/// Includes connection state, statistics, and authentication info.
 pub struct ClientConnection {
 pub mut:
 	fd             int
@@ -32,13 +31,13 @@ pub mut:
 	api_version    i16
 	client_sw_name string
 	client_sw_ver  string
-	// 인증 상태
+	// Authentication state
 	auth_state     domain.AuthState
 	principal      ?domain.Principal
 	sasl_mechanism ?string
 }
 
-/// ConnectionMetrics는 연결 통계를 추적하는 구조체입니다.
+/// ConnectionMetrics is a struct tracking connection statistics.
 pub struct ConnectionMetrics {
 pub mut:
 	active_connections   int
@@ -51,8 +50,8 @@ pub mut:
 	total_requests       u64
 }
 
-/// ConnectionManager는 스레드 안전하게 클라이언트 연결을 관리합니다.
-/// RwMutex를 사용하여 동시 읽기와 배타적 쓰기를 지원합니다.
+/// ConnectionManager manages client connections in a thread-safe manner.
+/// Uses RwMutex to support concurrent reads and exclusive writes.
 pub struct ConnectionManager {
 mut:
 	connections map[int]&ClientConnection
@@ -62,7 +61,7 @@ mut:
 	lock        sync.RwMutex
 }
 
-/// new_connection_manager는 새로운 연결 관리자를 생성합니다.
+/// new_connection_manager creates a new connection manager.
 pub fn new_connection_manager(config ServerConfig) &ConnectionManager {
 	return &ConnectionManager{
 		config:      config
@@ -72,13 +71,13 @@ pub fn new_connection_manager(config ServerConfig) &ConnectionManager {
 	}
 }
 
-/// accept는 새로운 연결을 수락합니다 (스레드 안전).
-/// 최대 연결 수 또는 IP별 제한에 도달하면 에러를 반환합니다.
+/// accept accepts a new connection (thread-safe).
+/// Returns an error if max connections or per-IP limit is reached.
 pub fn (mut cm ConnectionManager) accept(mut conn net.TcpConn) !&ClientConnection {
 	cm.lock.@lock()
 	defer { cm.lock.unlock() }
 
-	// 최대 연결 수 제한 확인
+	// Check max connections limit
 	if cm.connections.len >= cm.config.max_connections {
 		cm.metrics.rejected_connections += 1
 		cm.metrics.rejected_max_total += 1
@@ -86,11 +85,11 @@ pub fn (mut cm ConnectionManager) accept(mut conn net.TcpConn) !&ClientConnectio
 		return error('max connections reached: ${cm.connections.len}/${cm.config.max_connections}')
 	}
 
-	// 피어 주소 가져오기
+	// Get peer address
 	addr := conn.peer_addr() or { return error('cannot get peer address') }
 	ip := extract_ip(addr.str())
 
-	// IP별 연결 제한 확인
+	// Check per-IP connection limit
 	ip_count := cm.ip_counts[ip] or { 0 }
 	if ip_count >= cm.config.max_connections_per_ip {
 		cm.metrics.rejected_connections += 1
@@ -99,7 +98,7 @@ pub fn (mut cm ConnectionManager) accept(mut conn net.TcpConn) !&ClientConnectio
 		return error('max connections per IP reached: ${ip} has ${ip_count}/${cm.config.max_connections_per_ip}')
 	}
 
-	// 클라이언트 연결 생성
+	// Create client connection
 	fd := conn.sock.handle
 	now := time.now()
 	client := &ClientConnection{
@@ -109,7 +108,7 @@ pub fn (mut cm ConnectionManager) accept(mut conn net.TcpConn) !&ClientConnectio
 		last_active_at: now
 	}
 
-	// 연결 등록
+	// Register connection
 	cm.connections[fd] = client
 	cm.ip_counts[ip] = ip_count + 1
 	cm.metrics.active_connections = cm.connections.len
@@ -118,7 +117,7 @@ pub fn (mut cm ConnectionManager) accept(mut conn net.TcpConn) !&ClientConnectio
 	return client
 }
 
-/// close는 연결을 닫습니다 (스레드 안전).
+/// close closes a connection (thread-safe).
 pub fn (mut cm ConnectionManager) close(fd int) {
 	cm.lock.@lock()
 	defer { cm.lock.unlock() }
@@ -126,17 +125,17 @@ pub fn (mut cm ConnectionManager) close(fd int) {
 	cm.close_internal(fd)
 }
 
-/// close_internal은 락 없이 연결을 닫습니다.
-/// 주의: 이 함수는 락이 이미 획득된 상태에서만 호출해야 합니다.
-/// 내부 헬퍼 함수로, 외부에서 직접 호출하면 안 됩니다.
+/// close_internal closes a connection without holding the lock.
+/// Caution: this function must only be called while the lock is already held.
+/// It is an internal helper and must not be called externally.
 fn (mut cm ConnectionManager) close_internal(fd int) {
 	if client := cm.connections[fd] {
-		// 제거 전 총 통계 업데이트
+		// Update totals before removing
 		cm.metrics.total_bytes_received += client.bytes_received
 		cm.metrics.total_bytes_sent += client.bytes_sent
 		cm.metrics.total_requests += client.request_count
 
-		// IP 카운트 감소
+		// Decrement IP count
 		ip := extract_ip(client.remote_addr)
 		if count := cm.ip_counts[ip] {
 			if count > 1 {
@@ -151,14 +150,14 @@ fn (mut cm ConnectionManager) close_internal(fd int) {
 	}
 }
 
-/// cleanup_idle는 유휴 연결을 제거합니다 (스레드 안전).
-/// 제거된 연결 수를 반환합니다.
+/// cleanup_idle removes idle connections (thread-safe).
+/// Returns the number of connections removed.
 pub fn (mut cm ConnectionManager) cleanup_idle() int {
 	cm.lock.@lock()
 	defer { cm.lock.unlock() }
 
 	now := time.now()
-	// 일반적으로 소수의 연결만 타임아웃되므로 작은 초기 용량 사용
+	// Use small initial capacity since only a few connections typically time out at once
 	mut to_close := []int{cap: 8}
 
 	for fd, client in cm.connections {
@@ -175,7 +174,7 @@ pub fn (mut cm ConnectionManager) cleanup_idle() int {
 	return to_close.len
 }
 
-/// get_connection은 fd로 연결을 반환합니다 (스레드 안전, 읽기 전용).
+/// get_connection returns a connection by fd (thread-safe, read-only).
 pub fn (mut cm ConnectionManager) get_connection(fd int) ?&ClientConnection {
 	cm.lock.rlock()
 	defer { cm.lock.runlock() }
@@ -183,7 +182,7 @@ pub fn (mut cm ConnectionManager) get_connection(fd int) ?&ClientConnection {
 	return cm.connections[fd] or { return none }
 }
 
-/// update_client_info는 클라이언트 메타데이터를 업데이트합니다 (스레드 안전).
+/// update_client_info updates client metadata (thread-safe).
 pub fn (mut cm ConnectionManager) update_client_info(fd int, client_id string, sw_name string, sw_version string) {
 	cm.lock.@lock()
 	defer { cm.lock.unlock() }
@@ -195,7 +194,7 @@ pub fn (mut cm ConnectionManager) update_client_info(fd int, client_id string, s
 	}
 }
 
-/// active_count는 활성 연결 수를 반환합니다 (스레드 안전).
+/// active_count returns the number of active connections (thread-safe).
 pub fn (mut cm ConnectionManager) active_count() int {
 	cm.lock.rlock()
 	defer { cm.lock.runlock() }
@@ -203,7 +202,7 @@ pub fn (mut cm ConnectionManager) active_count() int {
 	return cm.connections.len
 }
 
-/// get_metrics는 연결 메트릭의 스냅샷을 반환합니다 (스레드 안전).
+/// get_metrics returns a snapshot of connection metrics (thread-safe).
 pub fn (mut cm ConnectionManager) get_metrics() ConnectionMetrics {
 	cm.lock.rlock()
 	defer { cm.lock.runlock() }
@@ -211,7 +210,7 @@ pub fn (mut cm ConnectionManager) get_metrics() ConnectionMetrics {
 	return cm.metrics
 }
 
-/// get_all_connections는 모든 활성 연결을 반환합니다 (스레드 안전).
+/// get_all_connections returns all active connections (thread-safe).
 pub fn (mut cm ConnectionManager) get_all_connections() []ClientConnection {
 	cm.lock.rlock()
 	defer { cm.lock.runlock() }
@@ -223,8 +222,8 @@ pub fn (mut cm ConnectionManager) get_all_connections() []ClientConnection {
 	return result
 }
 
-/// close_all은 모든 연결을 닫습니다 (종료 시 사용).
-/// 닫힌 연결 수를 반환합니다.
+/// close_all closes all connections (used during shutdown).
+/// Returns the number of connections closed.
 pub fn (mut cm ConnectionManager) close_all() int {
 	cm.lock.@lock()
 	defer { cm.lock.unlock() }
@@ -238,16 +237,16 @@ pub fn (mut cm ConnectionManager) close_all() int {
 	return count
 }
 
-/// extract_ip는 주소 문자열에서 IP를 추출합니다.
-/// IPv4 (예: 127.0.0.1:9092) 및 IPv6 (예: [::1]:9092) 형식을 지원합니다.
+/// extract_ip extracts the IP address from an address string.
+/// Supports IPv4 (e.g. 127.0.0.1:9092) and IPv6 (e.g. [::1]:9092) formats.
 fn extract_ip(addr string) string {
-	// IPv6 주소 처리 (예: [::1]:9092 -> ::1)
+	// Handle IPv6 address (e.g. [::1]:9092 -> ::1)
 	if addr.starts_with('[') {
 		if end := addr.index(']:') {
 			return addr[1..end]
 		}
 	}
-	// IPv4 주소 처리 (예: 127.0.0.1:9092 -> 127.0.0.1)
+	// Handle IPv4 address (e.g. 127.0.0.1:9092 -> 127.0.0.1)
 	parts := addr.split(':')
 	if parts.len >= 1 {
 		return parts[0]
@@ -255,39 +254,39 @@ fn extract_ip(addr string) string {
 	return addr
 }
 
-// 인증 헬퍼 메서드
+// Authentication helper methods
 
-/// is_authenticated는 연결이 인증되었는지 확인합니다.
+/// is_authenticated checks whether the connection is authenticated.
 pub fn (c &ClientConnection) is_authenticated() bool {
 	return c.auth_state == .authenticated
 }
 
-/// set_authenticated는 연결을 주어진 주체로 인증된 상태로 설정합니다.
+/// set_authenticated marks the connection as authenticated with the given principal.
 pub fn (mut c ClientConnection) set_authenticated(principal domain.Principal) {
 	c.auth_state = .authenticated
 	c.principal = principal
 }
 
-/// set_handshake_complete는 SASL 핸드셰이크가 완료되었음을 표시합니다.
+/// set_handshake_complete marks the SASL handshake as complete.
 pub fn (mut c ClientConnection) set_handshake_complete(mechanism string) {
 	c.auth_state = .handshake_complete
 	c.sasl_mechanism = mechanism
 }
 
-/// reset_auth는 인증 상태를 초기화합니다.
+/// reset_auth resets the authentication state.
 pub fn (mut c ClientConnection) reset_auth() {
 	c.auth_state = .initial
 	c.principal = none
 	c.sasl_mechanism = none
 }
 
-/// get_principal은 인증된 주체를 반환합니다.
+/// get_principal returns the authenticated principal.
 pub fn (c &ClientConnection) get_principal() ?domain.Principal {
 	return c.principal
 }
 
-/// requires_auth는 연결에 인증이 필요한지 확인합니다.
-/// 요청 처리 전 SASL이 필요한지 판단하는 데 사용됩니다.
+/// requires_auth checks whether the connection requires authentication.
+/// Used to determine whether SASL is required before processing a request.
 pub fn (c &ClientConnection) requires_auth(auth_required bool) bool {
 	if !auth_required {
 		return false

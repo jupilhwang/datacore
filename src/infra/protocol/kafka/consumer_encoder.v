@@ -1,9 +1,10 @@
-// Kafka 프로토콜 - 컨슈머 그룹 응답 인코더
-// JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat 인코딩 메서드
+// Kafka protocol - Consumer group response encoder
+// Encoding methods for JoinGroup, SyncGroup, Heartbeat, LeaveGroup, ConsumerGroupHeartbeat
 module kafka
 
 // JoinGroup 응답 인코더 (API Key 11)
 
+/// encode은 JoinGroup 응답 인코더 (API Key 11).
 pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 6
 	mut writer := new_writer()
@@ -74,6 +75,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 
 // SyncGroup 응답 인코더 (API Key 14)
 
+/// encode은 SyncGroup 응답 인코더 (API Key 14).
 pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -105,6 +107,7 @@ pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 
 // Heartbeat 응답 인코더 (API Key 12)
 
+/// encode은 Heartbeat 응답 인코더 (API Key 12).
 pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -122,6 +125,7 @@ pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 
 // LeaveGroup 응답 인코더 (API Key 13)
 
+/// encode은 LeaveGroup 응답 인코더 (API Key 13).
 pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
@@ -161,6 +165,7 @@ pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
 
 // ConsumerGroupHeartbeat 응답 인코더 (API Key 68) - KIP-848
 
+/// encode은 ConsumerGroupHeartbeat 응답 인코더 (API Key 68) - KIP-848.
 pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
 	// ConsumerGroupHeartbeat는 항상 flexible (v0+)
 	mut writer := new_writer()
@@ -218,6 +223,7 @@ pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
 
 // ConsumerGroupDescribe 응답 인코더 (API Key 69) - KIP-848
 
+/// encode은 ConsumerGroupDescribe 응답 인코더 (API Key 69) - KIP-848.
 pub fn (r ConsumerGroupDescribeResponse) encode(version i16) []u8 {
 	// ConsumerGroupDescribe는 항상 flexible (v0+)
 	mut writer := new_writer()

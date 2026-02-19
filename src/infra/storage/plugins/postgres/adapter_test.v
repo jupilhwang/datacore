@@ -1,15 +1,15 @@
-// Infra Layer - PostgreSQL 스토리지 어댑터 테스트
-// 실행 중인 PostgreSQL 인스턴스가 필요한 통합 테스트
+// Infra Layer - PostgreSQL storage adapter tests
+// Integration tests that require a running PostgreSQL instance
 module postgres
 
 import domain
 import os
 import time
 
-// 테스트 설정 - 테스트 실행을 위해 환경 변수 설정 필요
+// Test configuration - requires environment variables to be set for test execution
 // DATACORE_PG_HOST, DATACORE_PG_PORT, DATACORE_PG_USER, DATACORE_PG_PASSWORD, DATACORE_PG_DATABASE, DATACORE_PG_SSLMODE
 fn get_test_config() ?PostgresConfig {
-	// PostgreSQL이 설정되지 않으면 테스트 건너뜀
+	// Skip tests if PostgreSQL is not configured
 	host := os.getenv_opt('DATACORE_PG_HOST') or { return none }
 	port_str := os.getenv_opt('DATACORE_PG_PORT') or { '5432' }
 	user := os.getenv_opt('DATACORE_PG_USER') or { return none }
@@ -57,7 +57,7 @@ fn test_topic_lifecycle() {
 
 	topic_name := 'test-topic-${time.now().unix_milli()}'
 
-	// 토픽 생성
+	// Create topic
 	metadata := adapter.create_topic(topic_name, 3, domain.TopicConfig{}) or {
 		assert false, 'Failed to create topic: ${err}'
 		return
@@ -67,7 +67,7 @@ fn test_topic_lifecycle() {
 	assert metadata.partition_count == 3
 	assert metadata.topic_id.len == 16
 
-	// 토픽 조회
+	// Get topic
 	retrieved := adapter.get_topic(topic_name) or {
 		assert false, 'Failed to get topic: ${err}'
 		return
@@ -76,7 +76,7 @@ fn test_topic_lifecycle() {
 	assert retrieved.name == topic_name
 	assert retrieved.partition_count == 3
 
-	// ID로 토픽 조회
+	// Get topic by ID
 	by_id := adapter.get_topic_by_id(metadata.topic_id) or {
 		assert false, 'Failed to get topic by ID: ${err}'
 		return
@@ -84,7 +84,7 @@ fn test_topic_lifecycle() {
 
 	assert by_id.name == topic_name
 
-	// 토픽 목록 조회
+	// List topics
 	topics := adapter.list_topics() or {
 		assert false, 'Failed to list topics: ${err}'
 		return
@@ -99,7 +99,7 @@ fn test_topic_lifecycle() {
 	}
 	assert found == true
 
-	// 파티션 추가
+	// Add partitions
 	adapter.add_partitions(topic_name, 5) or {
 		assert false, 'Failed to add partitions: ${err}'
 		return
@@ -111,13 +111,13 @@ fn test_topic_lifecycle() {
 	}
 	assert updated.partition_count == 5
 
-	// 토픽 삭제
+	// Delete topic
 	adapter.delete_topic(topic_name) or {
 		assert false, 'Failed to delete topic: ${err}'
 		return
 	}
 
-	// 삭제 확인
+	// Verify deletion
 	_ := adapter.get_topic(topic_name) or {
 		assert err.msg() == 'topic not found'
 		return
@@ -139,14 +139,14 @@ fn test_record_operations() {
 
 	topic_name := 'test-records-${time.now().unix_milli()}'
 
-	// 토픽 생성
+	// Create topic
 	adapter.create_topic(topic_name, 2, domain.TopicConfig{}) or {
 		assert false, 'Failed to create topic: ${err}'
 		return
 	}
 	defer { adapter.delete_topic(topic_name) or {} }
 
-	// 레코드 추가
+	// Append records
 	records := [
 		domain.Record{
 			key:       'key1'.bytes()
@@ -170,7 +170,7 @@ fn test_record_operations() {
 	assert result.base_offset == 0
 	assert result.record_count == 2
 
-	// 레코드 조회
+	// Fetch records
 	fetch_result := adapter.fetch(topic_name, 0, 0, 1024 * 1024) or {
 		assert false, 'Failed to fetch records: ${err}'
 		return
@@ -181,7 +181,7 @@ fn test_record_operations() {
 	assert fetch_result.records[0].key == 'key1'.bytes()
 	assert fetch_result.records[1].value == 'value2'.bytes()
 
-	// 파티션 정보 조회
+	// Get partition info
 	info := adapter.get_partition_info(topic_name, 0) or {
 		assert false, 'Failed to get partition info: ${err}'
 		return
@@ -191,13 +191,13 @@ fn test_record_operations() {
 	assert info.latest_offset == 2
 	assert info.high_watermark == 2
 
-	// 레코드 삭제
+	// Delete records
 	adapter.delete_records(topic_name, 0, 1) or {
 		assert false, 'Failed to delete records: ${err}'
 		return
 	}
 
-	// 삭제 확인
+	// Verify deletion
 	info_after := adapter.get_partition_info(topic_name, 0) or {
 		assert false, 'Failed to get partition info after delete: ${err}'
 		return
@@ -220,7 +220,7 @@ fn test_consumer_group_operations() {
 
 	group_id := 'test-group-${time.now().unix_milli()}'
 
-	// 그룹 저장
+	// Save group
 	group := domain.ConsumerGroup{
 		group_id:      group_id
 		protocol_type: 'consumer'
@@ -236,7 +236,7 @@ fn test_consumer_group_operations() {
 		return
 	}
 
-	// 그룹 로드
+	// Load group
 	loaded := adapter.load_group(group_id) or {
 		assert false, 'Failed to load group: ${err}'
 		return
@@ -246,7 +246,7 @@ fn test_consumer_group_operations() {
 	assert loaded.protocol_type == 'consumer'
 	assert loaded.state == .stable
 
-	// 그룹 목록 조회
+	// List groups
 	groups := adapter.list_groups() or {
 		assert false, 'Failed to list groups: ${err}'
 		return
@@ -262,13 +262,13 @@ fn test_consumer_group_operations() {
 	}
 	assert found == true
 
-	// 그룹 삭제
+	// Delete group
 	adapter.delete_group(group_id) or {
 		assert false, 'Failed to delete group: ${err}'
 		return
 	}
 
-	// 삭제 확인
+	// Verify deletion
 	_ := adapter.load_group(group_id) or {
 		assert err.msg() == 'group not found'
 		return
@@ -291,7 +291,7 @@ fn test_offset_commit_fetch() {
 	group_id := 'test-offsets-${time.now().unix_milli()}'
 	topic_name := 'test-topic-offsets'
 
-	// 먼저 그룹 생성
+	// Create group first
 	group := domain.ConsumerGroup{
 		group_id:      group_id
 		protocol_type: 'consumer'
@@ -304,7 +304,7 @@ fn test_offset_commit_fetch() {
 	adapter.save_group(group) or {}
 	defer { adapter.delete_group(group_id) or {} }
 
-	// 오프셋 커밋
+	// Commit offsets
 	offsets := [
 		domain.PartitionOffset{
 			topic:     topic_name
@@ -325,7 +325,7 @@ fn test_offset_commit_fetch() {
 		return
 	}
 
-	// 오프셋 조회
+	// Fetch offsets
 	partitions := [
 		domain.TopicPartition{
 			topic:     topic_name
@@ -411,12 +411,12 @@ fn test_cluster_metadata_port() {
 		return
 	}
 
-	// ClusterMetadataPort 사용 가능
+	// ClusterMetadataPort is available
 	assert true
 }
 
 fn test_ssl_connection_disable() {
-	// SSL 비활성화 모드 테스트
+	// Test SSL disabled mode
 	config := get_test_config() or {
 		println('Skipping PostgreSQL SSL tests')
 		return
@@ -433,7 +433,7 @@ fn test_ssl_connection_disable() {
 	}
 	defer { adapter.close() }
 
-	// 헬스 체크로 연결 확인
+	// Verify connection with health check
 	status := adapter.health_check() or {
 		assert false, 'Health check failed with sslmode=disable: ${err}'
 		return
@@ -443,7 +443,7 @@ fn test_ssl_connection_disable() {
 }
 
 fn test_ssl_connection_require() {
-	// SSL 필수 모드 테스트 (서버가 SSL을 지원하는 경우에만 성공)
+	// Test SSL required mode (only succeeds if server supports SSL)
 	config := get_test_config() or {
 		println('Skipping PostgreSQL SSL tests')
 		return
@@ -454,15 +454,15 @@ fn test_ssl_connection_require() {
 		sslmode: 'require'
 	}
 
-	// SSL 필수 모드로 연결 시도
-	// 서버가 SSL을 지원하지 않으면 실패할 수 있음
+	// Attempt connection with SSL required mode
+	// May fail if server does not support SSL
 	mut adapter := new_postgres_adapter(ssl_config) or {
 		println('Note: sslmode=require failed - server may not support SSL: ${err}')
 		return
 	}
 	defer { adapter.close() }
 
-	// 헬스 체크로 연결 확인
+	// Verify connection with health check
 	status := adapter.health_check() or {
 		assert false, 'Health check failed with sslmode=require: ${err}'
 		return
@@ -473,7 +473,7 @@ fn test_ssl_connection_require() {
 }
 
 fn test_ssl_connection_prefer() {
-	// SSL 선호 모드 테스트 (가능하면 SSL 사용)
+	// Test SSL preferred mode (use SSL if available)
 	config := get_test_config() or {
 		println('Skipping PostgreSQL SSL tests')
 		return
@@ -490,7 +490,7 @@ fn test_ssl_connection_prefer() {
 	}
 	defer { adapter.close() }
 
-	// 헬스 체크로 연결 확인
+	// Verify connection with health check
 	status := adapter.health_check() or {
 		assert false, 'Health check failed with sslmode=prefer: ${err}'
 		return
@@ -501,13 +501,13 @@ fn test_ssl_connection_prefer() {
 }
 
 fn test_ssl_config_validation() {
-	// SSL 설정 검증 테스트
+	// SSL configuration validation test
 	config := get_test_config() or {
 		println('Skipping PostgreSQL SSL tests')
 		return
 	}
 
-	// 유효한 SSL 모드들
+	// Valid SSL modes
 	valid_modes := ['disable', 'allow', 'prefer', 'require']
 
 	for mode in valid_modes {
@@ -516,9 +516,9 @@ fn test_ssl_config_validation() {
 			sslmode: mode
 		}
 
-		// 각 모드로 어댑터 생성 시도
+		// Attempt to create adapter with each mode
 		mut adapter := new_postgres_adapter(ssl_config) or {
-			// 모든 모드에서 실패 가능 (서버 설정에 따라)
+			// May fail with any mode depending on server configuration
 			println('Note: sslmode=${mode} skipped - server configuration may not support this mode')
 			continue
 		}

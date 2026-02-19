@@ -1,61 +1,61 @@
 // Interface Layer - Schema Registry REST API
 //
-// Kafka Schema Registry 호환 REST 엔드포인트를 제공합니다.
-// Avro, JSON Schema, Protobuf 스키마의 등록, 조회, 호환성 검사를
-// 지원합니다.
+// Provides Kafka Schema Registry compatible REST endpoints.
+// Supports registration, retrieval, and compatibility checking
+// for Avro, JSON Schema, and Protobuf schemas.
 //
-// 주요 엔드포인트:
-// - /subjects - 서브젝트 관리
-// - /schemas - 스키마 조회
-// - /config - 호환성 설정
-// - /compatibility - 호환성 검사
+// Key endpoints:
+// - /subjects - subject management
+// - /schemas - schema retrieval
+// - /config - compatibility configuration
+// - /compatibility - compatibility checking
 module rest
 
 import domain
 import service.schema
 import json
 
-/// SchemaAPI는 Schema Registry용 REST API 핸들러를 제공합니다.
+/// SchemaAPI provides REST API handlers for the Schema Registry.
 pub struct SchemaAPI {
 mut:
 	registry &schema.SchemaRegistry
 }
 
-/// new_schema_api는 새로운 Schema REST API 핸들러를 생성합니다.
+/// new_schema_api creates a new Schema REST API handler.
 pub fn new_schema_api(registry &schema.SchemaRegistry) &SchemaAPI {
 	return &SchemaAPI{
 		registry: registry
 	}
 }
 
-// API 요청/응답 구조체
+// API request/response structs
 
-// RegisterSchemaRequest는 POST /subjects/{subject}/versions 요청 구조체입니다.
+// RegisterSchemaRequest is the request struct for POST /subjects/{subject}/versions.
 struct RegisterSchemaRequest {
 	schema      string             @[json: 'schema']
 	schema_type string             @[json: 'schemaType']
 	references  []ReferenceRequest @[json: 'references']
 }
 
-// ReferenceRequest는 스키마 참조 정보를 담는 구조체입니다.
+// ReferenceRequest is a struct holding schema reference information.
 struct ReferenceRequest {
 	name    string @[json: 'name']
 	subject string @[json: 'subject']
 	version int    @[json: 'version']
 }
 
-// SchemaResponse는 GET /schemas/ids/{id} 응답 구조체입니다.
+// SchemaResponse is the response struct for GET /schemas/ids/{id}.
 struct SchemaResponse {
 	schema      string @[json: 'schema']
 	schema_type string @[json: 'schemaType']
 }
 
-// RegisterResponse는 POST /subjects/{subject}/versions 응답 구조체입니다.
+// RegisterResponse is the response struct for POST /subjects/{subject}/versions.
 struct RegisterResponse {
 	id int @[json: 'id']
 }
 
-// VersionResponse는 GET /subjects/{subject}/versions/{version} 응답 구조체입니다.
+// VersionResponse is the response struct for GET /subjects/{subject}/versions/{version}.
 struct VersionResponse {
 	subject     string @[json: 'subject']
 	id          int    @[json: 'id']
@@ -64,32 +64,32 @@ struct VersionResponse {
 	schema_type string @[json: 'schemaType']
 }
 
-// CompatibilityRequest는 PUT /config/{subject} 요청 구조체입니다.
+// CompatibilityRequest is the request struct for PUT /config/{subject}.
 struct CompatibilityRequest {
 	compatibility string @[json: 'compatibility']
 }
 
-// CompatibilityResponse는 GET /config/{subject} 응답 구조체입니다.
+// CompatibilityResponse is the response struct for GET /config/{subject}.
 struct CompatibilityResponse {
 	compatibility_level string @[json: 'compatibilityLevel']
 }
 
-// CompatibilityCheckResponse는 POST /compatibility/subjects/{subject}/versions/{version} 응답 구조체입니다.
+// CompatibilityCheckResponse is the response struct for POST /compatibility/subjects/{subject}/versions/{version}.
 struct CompatibilityCheckResponse {
 	is_compatible bool @[json: 'is_compatible']
 }
 
-// ErrorResponse는 에러 응답 구조체입니다.
+// ErrorResponse is the error response struct.
 struct ErrorResponse {
 	error_code int    @[json: 'error_code']
 	message    string @[json: 'message']
 }
 
-// HTTP 엔드포인트 핸들러
+// HTTP endpoint handlers
 
-/// handle_request는 요청을 적절한 핸들러로 라우팅합니다.
+/// handle_request routes the request to the appropriate handler.
 pub fn (mut api SchemaAPI) handle_request(method string, path string, body string) (int, string) {
-	// 경로 구성요소 파싱
+	// Parse path components
 	parts := path.trim_left('/').split('/')
 
 	if parts.len == 0 {
@@ -105,11 +105,11 @@ pub fn (mut api SchemaAPI) handle_request(method string, path string, body strin
 	}
 }
 
-// Subjects 엔드포인트
+// Subjects endpoints
 
-// handle_subjects는 /subjects 엔드포인트를 처리합니다.
+// handle_subjects handles the /subjects endpoint.
 fn (mut api SchemaAPI) handle_subjects(method string, parts []string, body string) (int, string) {
-	// GET /subjects - 모든 서브젝트 목록
+	// GET /subjects - list all subjects
 	if parts.len == 0 {
 		if method == 'GET' {
 			return api.list_subjects()
@@ -159,9 +159,9 @@ fn (mut api SchemaAPI) handle_subjects(method string, parts []string, body strin
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// Schemas 엔드포인트
+// Schemas endpoints
 
-// handle_schemas는 /schemas 엔드포인트를 처리합니다.
+// handle_schemas handles the /schemas endpoint.
 fn (mut api SchemaAPI) handle_schemas(method string, parts []string, body string) (int, string) {
 	// /schemas/ids/{id}
 	if parts.len == 2 && parts[0] == 'ids' {
@@ -184,11 +184,11 @@ fn (mut api SchemaAPI) handle_schemas(method string, parts []string, body string
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// Config 엔드포인트
+// Config endpoints
 
-// handle_config는 /config 엔드포인트를 처리합니다.
+// handle_config handles the /config endpoint.
 fn (mut api SchemaAPI) handle_config(method string, parts []string, body string) (int, string) {
-	// GET/PUT /config - 전역 설정
+	// GET/PUT /config - global configuration
 	if parts.len == 0 {
 		return match method {
 			'GET' { api.get_global_config() }
@@ -197,7 +197,7 @@ fn (mut api SchemaAPI) handle_config(method string, parts []string, body string)
 		}
 	}
 
-	// GET/PUT /config/{subject} - 서브젝트 설정
+	// GET/PUT /config/{subject} - subject configuration
 	if parts.len == 1 {
 		subject := parts[0]
 		return match method {
@@ -210,9 +210,9 @@ fn (mut api SchemaAPI) handle_config(method string, parts []string, body string)
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// Compatibility 엔드포인트
+// Compatibility endpoints
 
-// handle_compatibility는 /compatibility 엔드포인트를 처리합니다.
+// handle_compatibility handles the /compatibility endpoint.
 fn (mut api SchemaAPI) handle_compatibility(method string, parts []string, body string) (int, string) {
 	// POST /compatibility/subjects/{subject}/versions/{version}
 	if parts.len >= 4 && parts[0] == 'subjects' && parts[2] == 'versions' {
@@ -227,15 +227,15 @@ fn (mut api SchemaAPI) handle_compatibility(method string, parts []string, body 
 	return api.error_response(404, 40401, 'Not found')
 }
 
-// 핸들러 구현
+// Handler implementations
 
-// list_subjects는 모든 서브젝트 목록을 반환합니다.
+// list_subjects returns a list of all subjects.
 fn (mut api SchemaAPI) list_subjects() (int, string) {
 	subjects := api.registry.list_subjects()
 	return 200, json.encode(subjects)
 }
 
-// get_subject는 서브젝트의 버전 목록을 반환합니다.
+// get_subject returns the version list for a subject.
 fn (mut api SchemaAPI) get_subject(subject string) (int, string) {
 	versions := api.registry.list_versions(subject) or {
 		return api.error_response(404, 40401, 'Subject not found: ${subject}')
@@ -243,7 +243,7 @@ fn (mut api SchemaAPI) get_subject(subject string) (int, string) {
 	return 200, json.encode(versions)
 }
 
-// delete_subject는 서브젝트를 삭제합니다.
+// delete_subject deletes a subject.
 fn (mut api SchemaAPI) delete_subject(subject string) (int, string) {
 	deleted := api.registry.delete_subject(subject) or {
 		return api.error_response(404, 40401, 'Subject not found: ${subject}')
@@ -251,7 +251,7 @@ fn (mut api SchemaAPI) delete_subject(subject string) (int, string) {
 	return 200, json.encode(deleted)
 }
 
-// list_versions는 서브젝트의 버전 목록을 반환합니다.
+// list_versions returns the version list for a subject.
 fn (mut api SchemaAPI) list_versions(subject string) (int, string) {
 	versions := api.registry.list_versions(subject) or {
 		return api.error_response(404, 40401, 'Subject not found: ${subject}')
@@ -259,7 +259,7 @@ fn (mut api SchemaAPI) list_versions(subject string) (int, string) {
 	return 200, json.encode(versions)
 }
 
-// register_schema는 새 스키마를 등록합니다.
+// register_schema registers a new schema.
 fn (mut api SchemaAPI) register_schema(subject string, body string) (int, string) {
 	req := json.decode(RegisterSchemaRequest, body) or {
 		return api.error_response(400, 40001, 'Invalid request: ${err}')
@@ -281,13 +281,13 @@ fn (mut api SchemaAPI) register_schema(subject string, body string) (int, string
 	return 200, json.encode(resp)
 }
 
-// get_schema_by_version은 버전으로 스키마를 조회합니다.
+// get_schema_by_version retrieves a schema by version.
 fn (mut api SchemaAPI) get_schema_by_version(subject string, version int) (int, string) {
 	schema_data := api.registry.get_schema_by_subject(subject, version) or {
 		return api.error_response(404, 40402, 'Version not found: ${subject}/${version}')
 	}
 
-	// 버전 정보 가져오기
+	// Get version information
 	versions := api.registry.list_versions(subject) or { []int{} }
 	actual_version := if version == -1 { versions.len } else { version }
 
@@ -301,7 +301,7 @@ fn (mut api SchemaAPI) get_schema_by_version(subject string, version int) (int, 
 	return 200, json.encode(resp)
 }
 
-// delete_version은 특정 버전을 삭제합니다.
+// delete_version deletes a specific version.
 fn (mut api SchemaAPI) delete_version(subject string, version int) (int, string) {
 	schema_id := api.registry.delete_version(subject, version) or {
 		return api.error_response(404, 40402, 'Version not found')
@@ -309,7 +309,7 @@ fn (mut api SchemaAPI) delete_version(subject string, version int) (int, string)
 	return 200, json.encode(schema_id)
 }
 
-// get_raw_schema는 원시 스키마 문자열을 반환합니다.
+// get_raw_schema returns the raw schema string.
 fn (mut api SchemaAPI) get_raw_schema(subject string, version int) (int, string) {
 	schema_data := api.registry.get_schema_by_subject(subject, version) or {
 		return api.error_response(404, 40402, 'Version not found')
@@ -317,7 +317,7 @@ fn (mut api SchemaAPI) get_raw_schema(subject string, version int) (int, string)
 	return 200, schema_data.schema_str
 }
 
-// get_schema_by_id는 ID로 스키마를 조회합니다.
+// get_schema_by_id retrieves a schema by ID.
 fn (mut api SchemaAPI) get_schema_by_id(schema_id int) (int, string) {
 	schema_data := api.registry.get_schema(schema_id) or {
 		return api.error_response(404, 40403, 'Schema not found')
@@ -330,7 +330,7 @@ fn (mut api SchemaAPI) get_schema_by_id(schema_id int) (int, string) {
 	return 200, json.encode(resp)
 }
 
-// get_raw_schema_by_id는 ID로 원시 스키마 문자열을 반환합니다.
+// get_raw_schema_by_id returns the raw schema string by ID.
 fn (mut api SchemaAPI) get_raw_schema_by_id(schema_id int) (int, string) {
 	schema_data := api.registry.get_schema(schema_id) or {
 		return api.error_response(404, 40403, 'Schema not found')
@@ -338,9 +338,9 @@ fn (mut api SchemaAPI) get_raw_schema_by_id(schema_id int) (int, string) {
 	return 200, schema_data.schema_str
 }
 
-// get_global_config는 전역 호환성 설정을 반환합니다.
+// get_global_config returns the global compatibility configuration.
 fn (mut api SchemaAPI) get_global_config() (int, string) {
-	// 전역 호환성 설정 반환
+	// Return global compatibility configuration
 	config := api.registry.get_global_config()
 	resp := CompatibilityResponse{
 		compatibility_level: config.compatibility.str()
@@ -348,7 +348,7 @@ fn (mut api SchemaAPI) get_global_config() (int, string) {
 	return 200, json.encode(resp)
 }
 
-// set_global_config는 전역 호환성 설정을 변경합니다.
+// set_global_config updates the global compatibility configuration.
 fn (mut api SchemaAPI) set_global_config(body string) (int, string) {
 	req := json.decode(CompatibilityRequest, body) or {
 		return api.error_response(400, 40001, 'Invalid request: ${err}')
@@ -358,7 +358,7 @@ fn (mut api SchemaAPI) set_global_config(body string) (int, string) {
 		return api.error_response(400, 40001, 'Invalid compatibility level: ${req.compatibility}')
 	}
 
-	// 전역 설정 업데이트
+	// Update global configuration
 	api.registry.set_global_config(domain.SubjectConfig{
 		compatibility: level
 	})
@@ -369,7 +369,7 @@ fn (mut api SchemaAPI) set_global_config(body string) (int, string) {
 	return 200, json.encode(resp)
 }
 
-// get_subject_config는 서브젝트의 호환성 설정을 반환합니다.
+// get_subject_config returns the compatibility configuration for a subject.
 fn (mut api SchemaAPI) get_subject_config(subject string) (int, string) {
 	compat := api.registry.get_compatibility(subject)
 	resp := CompatibilityResponse{
@@ -378,7 +378,7 @@ fn (mut api SchemaAPI) get_subject_config(subject string) (int, string) {
 	return 200, json.encode(resp)
 }
 
-// set_subject_config는 서브젝트의 호환성 설정을 변경합니다.
+// set_subject_config updates the compatibility configuration for a subject.
 fn (mut api SchemaAPI) set_subject_config(subject string, body string) (int, string) {
 	req := json.decode(CompatibilityRequest, body) or {
 		return api.error_response(400, 40001, 'Invalid request')
@@ -396,7 +396,7 @@ fn (mut api SchemaAPI) set_subject_config(subject string, body string) (int, str
 	return 200, json.encode(resp)
 }
 
-// check_compatibility는 스키마 호환성을 검사합니다.
+// check_compatibility checks schema compatibility.
 fn (mut api SchemaAPI) check_compatibility(subject string, version int, body string) (int, string) {
 	_ = version
 	req := json.decode(RegisterSchemaRequest, body) or {
@@ -422,7 +422,7 @@ fn (mut api SchemaAPI) check_compatibility(subject string, version int, body str
 	return 200, json.encode(resp)
 }
 
-// error_response는 에러 응답을 생성합니다.
+// error_response creates an error response.
 fn (api &SchemaAPI) error_response(status int, error_code int, message string) (int, string) {
 	resp := ErrorResponse{
 		error_code: error_code

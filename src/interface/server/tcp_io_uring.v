@@ -1,37 +1,37 @@
-/// Interface Layer - io_uring 기반 TCP 서버
-/// Linux 5.1+ 에서 io_uring을 사용한 고성능 TCP 서버
+/// Interface Layer - io_uring based TCP Server
+/// High-performance TCP server using io_uring on Linux 5.1+
 ///
-/// 이 모듈은 Linux에서 io_uring을 사용하여 네트워크 I/O를 처리합니다.
-/// 비-Linux 플랫폼에서는 자동으로 기존 net 모듈 기반 서버로 폴백됩니다.
+/// This module handles network I/O using io_uring on Linux.
+/// On non-Linux platforms, automatically falls back to the standard net module based server.
 ///
-/// 주요 기능:
-/// - io_uring 기반 비동기 accept/recv/send
-/// - 기존 RequestHandler 인터페이스와 호환
-/// - 플랫폼 자동 감지 및 폴백
+/// Key features:
+/// - Asynchronous accept/recv/send via io_uring
+/// - Compatible with the existing RequestHandler interface
+/// - Automatic platform detection and fallback
 module server
 
 import infra.performance.engines
 import sync
 import time
 
-// io_uring 통합 서버
+// io_uring integrated server
 
-/// IoUringTcpServer는 io_uring 기반 TCP 서버입니다.
-/// Linux에서는 io_uring을 사용하고, 다른 플랫폼에서는 폴백을 사용합니다.
+/// IoUringTcpServer is an io_uring based TCP server.
+/// Uses io_uring on Linux, falls back on other platforms.
 pub struct IoUringTcpServer {
 mut:
 	config     ServerConfig
 	state      ServerState
 	handler    RequestHandler
 	state_lock sync.Mutex
-	// io_uring 관련 (Linux 전용)
+	// io_uring related (Linux only)
 	uring_server ?&engines.IoUringServer
-	// 연결 정보 관리
+	// Connection information management
 	conn_info map[int]&IoUringConnInfo
 	metrics   IoUringServerMetrics
 }
 
-/// IoUringConnInfo는 io_uring 서버의 연결 정보입니다.
+/// IoUringConnInfo holds connection information for the io_uring server.
 struct IoUringConnInfo {
 mut:
 	fd             int
@@ -41,13 +41,13 @@ mut:
 	request_count  u64
 	bytes_received u64
 	bytes_sent     u64
-	// 요청 파싱 상태
+	// Request parsing state
 	recv_buf      []u8
 	recv_offset   int
 	expected_size int
 }
 
-/// IoUringServerMetrics는 io_uring 서버 메트릭입니다.
+/// IoUringServerMetrics holds io_uring server metrics.
 pub struct IoUringServerMetrics {
 pub mut:
 	active_connections   int
@@ -81,7 +81,7 @@ pub fn (mut s IoUringTcpServer) start() ! {
 	s.state = .starting
 	s.state_lock.unlock()
 
-	// io_uring 사용 가능 여부 확인
+	// Check io_uring availability
 	$if linux {
 		if s.config.use_io_uring && engines.is_io_uring_server_available() {
 			s.start_io_uring_mode()!
@@ -89,17 +89,17 @@ pub fn (mut s IoUringTcpServer) start() ! {
 		}
 	}
 
-	// io_uring 사용 불가 - 에러 반환 (기존 서버 사용 권장)
+	// io_uring unavailable - return error (recommend using standard server)
 	s.state_lock.@lock()
 	s.state = .stopped
 	s.state_lock.unlock()
 	return error('io_uring not available, use standard Server instead')
 }
 
-/// start_io_uring_mode는 io_uring 모드로 서버를 시작합니다.
+/// start_io_uring_mode starts the server in io_uring mode.
 fn (mut s IoUringTcpServer) start_io_uring_mode() ! {
 	$if linux {
-		// io_uring 서버 설정
+		// Configure io_uring server
 		uring_config := engines.IoUringServerConfig{
 			host:             s.config.host
 			port:             s.config.port
@@ -111,7 +111,7 @@ fn (mut s IoUringTcpServer) start_io_uring_mode() ! {
 			use_sqpoll:       s.config.io_uring_sqpoll
 		}
 
-		// io_uring 서버 생성 및 시작
+		// Create and start io_uring server
 		mut uring_server := engines.new_io_uring_server(uring_config)!
 		uring_server.start()!
 
@@ -131,18 +131,18 @@ fn (mut s IoUringTcpServer) start_io_uring_mode() ! {
 		println('║  Queue Depth: ${s.config.io_uring_queue_depth}                                        ║')
 		println('╚═══════════════════════════════════════════════════════════╝')
 
-		// 이벤트 루프 실행
+		// Run event loop
 		s.io_uring_event_loop()
 	}
 }
 
-/// io_uring_event_loop는 io_uring 이벤트 루프입니다.
+/// io_uring_event_loop is the io_uring event loop.
 fn (mut s IoUringTcpServer) io_uring_event_loop() {
 	$if linux {
 		mut uring := s.uring_server or { return }
 
 		for s.is_running() {
-			// 이벤트 대기
+			// Wait for events
 			events := uring.wait() or {
 				if s.is_running() {
 					eprintln('[io_uring] wait error: ${err}')
@@ -159,7 +159,7 @@ fn (mut s IoUringTcpServer) io_uring_event_loop() {
 						s.handle_io_uring_recv(event.fd, event.data)
 					}
 					.send {
-						// 송신 완료 처리 (추가 작업 불필요)
+						// Send completion handling (no additional action needed)
 					}
 					.close {
 						s.handle_io_uring_close(event.fd)
@@ -167,13 +167,13 @@ fn (mut s IoUringTcpServer) io_uring_event_loop() {
 				}
 			}
 
-			// 제출
+			// Submit
 			uring.submit() or {}
 		}
 	}
 }
 
-/// handle_io_uring_accept는 새 연결을 처리합니다.
+/// handle_io_uring_accept handles a new connection.
 fn (mut s IoUringTcpServer) handle_io_uring_accept(client_fd int) {
 	if client_fd < 0 {
 		return
@@ -196,19 +196,19 @@ fn (mut s IoUringTcpServer) handle_io_uring_accept(client_fd int) {
 	println('[io_uring] New connection: fd=${client_fd}')
 }
 
-/// handle_io_uring_recv는 수신 데이터를 처리합니다.
+/// handle_io_uring_recv handles received data.
 fn (mut s IoUringTcpServer) handle_io_uring_recv(fd int, data []u8) {
 	$if linux {
 		mut uring := s.uring_server or { return }
 
 		if data.len == 0 {
-			// 연결 종료
+			// Connection closed
 			s.handle_io_uring_close(fd)
 			return
 		}
 
 		mut conn := s.conn_info[fd] or {
-			// 알 수 없는 연결
+			// Unknown connection
 			uring.close_connection(fd)
 			return
 		}
@@ -217,27 +217,27 @@ fn (mut s IoUringTcpServer) handle_io_uring_recv(fd int, data []u8) {
 		conn.bytes_received += u64(data.len)
 		s.metrics.total_bytes_received += u64(data.len)
 
-		// 버퍼에 데이터 추가
+		// Append data to buffer
 		conn.recv_buf << data
 
-		// 완전한 요청이 있는지 확인하고 처리
+		// Check for complete requests and process them
 		s.process_recv_buffer(fd, mut conn, mut uring)
 
-		// 다음 recv 준비
+		// Prepare next recv
 		uring.prepare_recv(fd)
 	}
 }
 
-/// process_recv_buffer는 수신 버퍼에서 완전한 요청을 처리합니다.
+/// process_recv_buffer processes complete requests from the receive buffer.
 fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo, mut uring engines.IoUringServer) {
 	for {
-		// 요청 크기를 아직 모르는 경우
+		// Request size not yet known
 		if conn.expected_size < 0 {
 			if conn.recv_buf.len < 4 {
 				break
 			}
 
-			// 빅엔디안으로 요청 크기 읽기
+			// Read request size in big-endian
 			conn.expected_size = int(u32(conn.recv_buf[0]) << 24 | u32(conn.recv_buf[1]) << 16 | u32(conn.recv_buf[2]) << 8 | u32(conn.recv_buf[3]))
 
 			if conn.expected_size <= 0 || conn.expected_size > s.config.max_request_size {
@@ -249,37 +249,37 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 			}
 		}
 
-		// 완전한 요청이 도착했는지 확인
+		// Check whether a complete request has arrived
 		total_needed := 4 + conn.expected_size
 		if conn.recv_buf.len < total_needed {
 			break
 		}
 
-		// 요청 데이터 추출
+		// Extract request data
 		request_data := conn.recv_buf[4..total_needed].clone()
 
-		// 버퍼에서 처리된 데이터 제거
+		// Remove processed data from buffer
 		conn.recv_buf = conn.recv_buf[total_needed..].clone()
 		conn.expected_size = -1
 
-		// 요청 처리
+		// Process request
 		conn.request_count++
 		s.metrics.total_requests++
 
 		response := s.handler.handle_request(request_data) or {
 			eprintln('[io_uring] Error handling request from fd=${fd}: ${err}')
-			// 최소 에러 응답 생성
+			// Generate minimal error response
 			s.create_error_response(request_data)
 		}
 
-		// 응답 전송
+		// Send response
 		conn.bytes_sent += u64(response.len)
 		s.metrics.total_bytes_sent += u64(response.len)
 		uring.prepare_send(fd, response)
 	}
 }
 
-/// create_error_response는 에러 응답을 생성합니다.
+/// create_error_response creates an error response.
 fn (s &IoUringTcpServer) create_error_response(request_data []u8) []u8 {
 	if request_data.len < 8 {
 		return []u8{}
@@ -299,7 +299,7 @@ fn (s &IoUringTcpServer) create_error_response(request_data []u8) []u8 {
 	return error_resp
 }
 
-/// handle_io_uring_close는 연결 종료를 처리합니다.
+/// handle_io_uring_close handles connection closure.
 fn (mut s IoUringTcpServer) handle_io_uring_close(fd int) {
 	$if linux {
 		if mut uring := s.uring_server {
@@ -360,7 +360,7 @@ pub fn (s &IoUringTcpServer) get_metrics() IoUringServerMetrics {
 	return s.metrics
 }
 
-// io_uring 사용 가능 여부 확인 함수
+// io_uring availability check functions
 
 /// is_io_uring_available - checks if io_uring is available on the current platform
 /// is_io_uring_available - checks if io_uring is available on the current platform

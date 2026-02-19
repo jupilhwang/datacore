@@ -1,55 +1,55 @@
-// 분산 스토리지 어댑터(PostgreSQL, etcd 등)에서 구현됩니다.
+// Implemented in distributed storage adapters (PostgreSQL, etcd, etc.).
 module port
 
 import domain
 
-/// ClusterMetadataPort는 클러스터 조정을 위한 작업을 정의합니다.
-/// 멀티 브로커 모드를 지원하는 스토리지 어댑터에서 구현됩니다.
+/// ClusterMetadataPort defines operations for cluster coordination.
+/// Implemented in storage adapters that support multi-broker mode.
 pub interface ClusterMetadataPort {
 mut:
-	/// 클러스터에 브로커를 등록합니다.
-	/// 반환값: 할당된 broker_id (충돌 시 요청과 다를 수 있음)
+	/// Registers a broker with the cluster.
+	/// Returns the assigned broker_id (may differ from the request on conflict).
 	register_broker(info domain.BrokerInfo) !domain.BrokerInfo
 
-	/// 클러스터에서 브로커를 제거합니다.
+	/// Removes a broker from the cluster.
 	deregister_broker(broker_id i32) !
 
-	/// 브로커의 마지막 하트비트 시간을 업데이트합니다.
+	/// Updates the last heartbeat timestamp for a broker.
 	update_broker_heartbeat(heartbeat domain.BrokerHeartbeat) !
 
-	/// 특정 브로커의 정보를 반환합니다.
+	/// Returns information for a specific broker.
 	get_broker(broker_id i32) !domain.BrokerInfo
 
-	/// 등록된 모든 브로커 목록을 반환합니다.
+	/// Returns a list of all registered brokers.
 	list_brokers() ![]domain.BrokerInfo
 
-	/// 활성 상태의 브로커만 반환합니다 (dead/shutdown 제외).
+	/// Returns only active brokers (excluding dead/shutdown).
 	list_active_brokers() ![]domain.BrokerInfo
-	/// 현재 클러스터 메타데이터를 반환합니다.
+	/// Returns the current cluster metadata.
 	get_cluster_metadata() !domain.ClusterMetadata
 
-	/// 낙관적 잠금을 사용하여 클러스터 메타데이터를 업데이트합니다.
-	/// 버전 불일치 시 (동시 수정) 오류를 반환합니다.
+	/// Updates cluster metadata using optimistic locking.
+	/// Returns an error on version mismatch (concurrent modification).
 	update_cluster_metadata(metadata domain.ClusterMetadata) !
-	/// 특정 파티션의 할당 정보를 반환합니다.
+	/// Returns the assignment information for a specific partition.
 	get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment
 
-	/// 토픽의 모든 파티션 할당 정보를 반환합니다.
+	/// Returns all partition assignment information for a topic.
 	list_partition_assignments(topic_name string) ![]domain.PartitionAssignment
 
-	/// 파티션 할당 정보를 업데이트합니다.
+	/// Updates partition assignment information.
 	update_partition_assignment(assignment domain.PartitionAssignment) !
-	/// 분산 잠금 획득을 시도합니다.
-	/// 반환값: 잠금 획득 성공 시 true, 다른 곳에서 보유 중이면 false
+	/// Attempts to acquire a distributed lock.
+	/// Returns true on success, false if already held elsewhere.
 	try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool
 
-	/// 분산 잠금을 해제합니다.
+	/// Releases a distributed lock.
 	release_lock(lock_name string, holder_id string) !
 
-	/// 보유 중인 잠금의 TTL을 연장합니다.
+	/// Extends the TTL of a held lock.
 	refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool
-	/// 브로커를 dead 상태로 표시합니다 (하트비트 누락).
+	/// Marks a broker as dead (missed heartbeat).
 	mark_broker_dead(broker_id i32) !
-	/// 스토리지 기능 정보를 반환합니다.
+	/// Returns storage capability information.
 	get_capability() domain.StorageCapability
 }

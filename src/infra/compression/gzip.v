@@ -1,24 +1,24 @@
-/// 인프라 레이어 - Gzip 압축
-/// V 표준 라이브러리 compress.gzip을 사용한 Gzip Compressor 구현
+/// Infrastructure layer - Gzip compression
+/// Gzip Compressor implementation using the V standard library compress.gzip
 module compression
 
 import compress.gzip
 
-/// Gzip 압축 알고리즘 구현.
+/// Gzip compression algorithm implementation.
 pub struct GzipCompressor {
 	level int
 }
 
-/// new_gzip_compressor는 새 GzipCompressor를 생성합니다.
-/// 기본 압축 레벨은 6 (균형)입니다.
+/// new_gzip_compressor creates a new GzipCompressor.
+/// The default compression level is 6 (balanced).
 pub fn new_gzip_compressor() &GzipCompressor {
 	return &GzipCompressor{
 		level: 6
 	}
 }
 
-/// new_gzip_compressor_with_level은 지정된 압축 레벨로 GzipCompressor를 생성합니다.
-/// 레벨: 1-9 (1=최고속도, 9=최고압축)
+/// new_gzip_compressor_with_level creates a GzipCompressor with the specified compression level.
+/// Level: 1-9 (1=fastest, 9=best compression)
 pub fn new_gzip_compressor_with_level(level int) &GzipCompressor {
 	mut lvl := level
 	if lvl < 1 {
@@ -32,7 +32,7 @@ pub fn new_gzip_compressor_with_level(level int) &GzipCompressor {
 	}
 }
 
-/// compress는 데이터를 Gzip으로 압축합니다.
+/// compress compresses data using Gzip.
 pub fn (c &GzipCompressor) compress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
@@ -43,7 +43,7 @@ pub fn (c &GzipCompressor) compress(data []u8) ![]u8 {
 	return compressed
 }
 
-/// decompress는 Gzip으로 압축된 데이터를 해제합니다.
+/// decompress decompresses Gzip-compressed data.
 pub fn (c &GzipCompressor) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
@@ -54,7 +54,7 @@ pub fn (c &GzipCompressor) decompress(data []u8) ![]u8 {
 	return decompressed
 }
 
-/// compression_type은 압축 타입을 반환합니다.
+/// compression_type returns the compression type.
 pub fn (c &GzipCompressor) compression_type() CompressionType {
 	return CompressionType.gzip
 }
