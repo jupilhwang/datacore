@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: datacore-rules
+  namespace: datacore
+  labels:
+    app: datacore
+    release: prometheus
+spec:
+  groups:
+  - name: datacore.rules
+    rules:
+    - alert: DataCoreHighErrorRate
+      expr: rate(datacore_requests_failed_total[5m]) / rate(datacore_requests_total[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: High error rate on DataCore (instance {{ $labels.instance }})
+        description: "Error rate is > 5% for the last 5 minutes. Current rate is {{ $value }}."
+    - alert: DataCoreInstanceDown
+      expr: up{app="datacore"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: DataCore instance down (instance {{ $labels.instance }})
+        description: "DataCore instance has been down for more than 1 minute."
