@@ -9,6 +9,7 @@ pub enum ReplicationType {
 	replicate_ack
 	flush_ack
 	heartbeat
+	recover
 }
 
 /// ReplicationMessage is a struct holding related data.
@@ -40,7 +41,7 @@ pub mut:
 pub struct ReplicationConfig {
 pub mut:
 	enabled                    bool
-	replication_port           int // TCP port for replication (default: 9093)
+	replication_port           int // TCP port for replication (default: 9094)
 	replica_count              int
 	replica_timeout_ms         int // Timeout for replica response (default: 5000)
 	heartbeat_interval_ms      int // Heartbeat interval (default: 3000)
@@ -89,6 +90,7 @@ pub fn (msg ReplicationMessage) to_json() string {
 		.replicate_ack { 'replicate_ack' }
 		.flush_ack { 'flush_ack' }
 		.heartbeat { 'heartbeat' }
+		.recover { 'recover' }
 	}
 
 	m := {
@@ -107,7 +109,7 @@ pub fn (msg ReplicationMessage) to_json() string {
 
 // default returns a ReplicationConfig with sensible default values.
 // - Replication disabled by default
-// - Port: 9093
+// - Port: 9094
 // - Replica count: 2
 // - Timeouts: 5000ms (replica), 3000ms (heartbeat)
 // - Reassignment interval: 30000ms
@@ -118,7 +120,7 @@ pub fn (msg ReplicationMessage) to_json() string {
 pub fn (cfg ReplicationConfig) default() ReplicationConfig {
 	return ReplicationConfig{
 		enabled:                    false
-		replication_port:           9093
+		replication_port:           9094
 		replica_count:              2
 		replica_timeout_ms:         5000
 		heartbeat_interval_ms:      3000

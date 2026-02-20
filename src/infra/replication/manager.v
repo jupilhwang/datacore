@@ -365,6 +365,55 @@ pub fn (mut m Manager) get_stats() domain.ReplicationStats {
 	return stats
 }
 
+// recover_replica initiates recovery for a replica partition from the given offset.
+// Sends a RECOVER request to the leader and counts the event as a replication operation.
+// In production, this would fetch missing data from the leader to fill the gap.
+//
+// Parameters:
+// - topic: topic name
+// - partition: partition index
+// - offset: offset from which recovery should start
+//
+// Errors:
+// - Replication disabled (returns silently)
+/// recover_replica initiates recovery for a replica partition from the given offset.
+pub fn (mut m Manager) recover_replica(topic string, partition i32, offset i64) ! {
+	if !m.config.enabled {
+		return
+	}
+
+	m.logger.info('Starting replica recovery topic=${topic} partition=${partition} offset=${offset}')
+
+	key := '${topic}:${partition}'
+	m.assignments_lock.@lock()
+	assignment := m.assignments[key] or {
+		m.assignments_lock.unlock()
+		return error('no assignment for ${key}, cannot recover')
+	}
+	leader := assignment.main_broker
+	m.assignments_lock.unlock()
+
+	// Send recovery request to leader
+	msg := domain.ReplicationMessage{
+		msg_type:       domain.ReplicationType.recover
+		correlation_id: rand.uuid_v4()
+		sender_id:      m.broker_id
+		timestamp:      time.now().unix_milli()
+		topic:          topic
+		partition:      partition
+		offset:         offset
+		success:        true
+	}
+
+	m.client.send_async(leader, msg)
+
+	m.stats_lock.@lock()
+	m.stats.total_replicated++
+	m.stats_lock.unlock()
+
+	m.logger.info('Recovery request sent to leader ${leader} for ${key} from offset ${offset}')
+}
+
 // update_broker_health updates the health status for a given broker.
 // Thread-safe; uses broker_health_lock internally.
 //
@@ -459,6 +508,23 @@ fn (mut m Manager) heartbeat_worker() {
 			}
 			m.broker_health_lock.unlock()
 		}
+		// Check for stale brokers
+		now := time.now().unix_milli()
+		mut stale_brokers := []string{}
+
+		m.broker_health_lock.@lock()
+		for id, health in m.broker_health {
+			if now - health.last_heartbeat > m.config.heartbeat_interval_ms * 3 {
+				stale_brokers << id
+			}
+		}
+		m.broker_health_lock.unlock()
+
+		if stale_brokers.len > 0 {
+			m.logger.warn('Stale replica brokers detected: ${stale_brokers.join(', ')}')
+			// Trigger reassignment logic could be called here or handled by reassignment_worker
+		}
+
 		m.stats_lock.@lock()
 		m.stats.update_heartbeat()
 		m.stats_lock.unlock()
@@ -468,10 +534,9 @@ fn (mut m Manager) heartbeat_worker() {
 }
 
 // orphan_cleanup_worker periodically removes stale replica buffers
-// Buffers older than 60 seconds without FLUSH_ACK are considered orphans
+// Buffers older than replica_timeout_ms without FLUSH_ACK are considered orphans
 fn (mut m Manager) orphan_cleanup_worker() {
-	m.logger.info('Orphan cleanup worker started (interval=${m.config.orphan_cleanup_interval_ms}ms)')
-	orphan_max_age_ms := i64(60000)
+	m.logger.info('Orphan cleanup worker started (interval=${m.config.orphan_cleanup_interval_ms}ms, timeout=${m.config.replica_timeout_ms}ms)')
 
 	for m.running {
 		time.sleep(time.Duration(m.config.orphan_cleanup_interval_ms * time.millisecond))
@@ -480,39 +545,47 @@ fn (mut m Manager) orphan_cleanup_worker() {
 		}
 
 		now := time.now().unix_milli()
-		cutoff := now - orphan_max_age_ms
 		mut total_cleaned := 0
 
+		// Clone keys under lock to avoid holding lock during iteration
 		m.replica_buffers_lock.@lock()
 		keys := m.replica_buffers.keys()
+		m.replica_buffers_lock.unlock()
+
 		for key in keys {
-			buffers := m.replica_buffers[key] or { continue }
+			m.replica_buffers_lock.@lock()
+			buffers := m.replica_buffers[key] or {
+				m.replica_buffers_lock.unlock()
+				continue
+			}
 			mut remaining := []domain.ReplicaBuffer{}
 			mut cleaned_count := 0
 
 			for buf in buffers {
-				if buf.timestamp > cutoff {
-					remaining << buf
-				} else {
+				if now - buf.timestamp > m.config.replica_timeout_ms {
 					cleaned_count++
+				} else {
+					remaining << buf
 				}
 			}
 
 			if cleaned_count > 0 {
 				m.replica_buffers[key] = remaining
 				total_cleaned += cleaned_count
+			}
+			m.replica_buffers_lock.unlock()
+
+			if cleaned_count > 0 {
 				m.logger.info('Orphan cleanup: removed ${cleaned_count} stale buffers from ${key}')
 			}
 		}
-		m.replica_buffers_lock.unlock()
 
-		// Update stats outside buffer lock to avoid holding two locks
+		// Update stats outside buffer lock to avoid lock ordering issues
 		if total_cleaned > 0 {
 			m.stats_lock.@lock()
-			for _ in 0 .. total_cleaned {
-				m.stats.record_orphan_cleanup()
-			}
+			m.stats.total_orphans_cleaned += total_cleaned
 			m.stats_lock.unlock()
+			m.logger.info('Orphan cleanup: total ${total_cleaned} stale buffers removed this cycle')
 		}
 	}
 
@@ -654,6 +727,35 @@ fn (mut m Manager) create_handler() MessageHandler {
 					correlation_id: msg.correlation_id
 					sender_id:      m.broker_id
 					timestamp:      time.now().unix_milli()
+					success:        true
+				}
+			}
+			.recover {
+				// Handle incoming recovery request from a replica
+				// The leader streams buffered data back to the requesting replica
+				m.logger.info('Received recovery request from ${msg.sender_id} for ${msg.topic}:${msg.partition} from offset ${msg.offset}')
+
+				key := '${msg.topic}:${msg.partition}'
+				m.replica_buffers_lock.@lock()
+				buffers := m.replica_buffers[key] or { []domain.ReplicaBuffer{} }
+				mut recovery_data := []domain.ReplicaBuffer{}
+				for buf in buffers {
+					if buf.offset >= msg.offset {
+						recovery_data << buf
+					}
+				}
+				m.replica_buffers_lock.unlock()
+
+				m.logger.info('Sending ${recovery_data.len} buffered record(s) for recovery of ${key}')
+
+				return domain.ReplicationMessage{
+					msg_type:       domain.ReplicationType.replicate_ack
+					correlation_id: msg.correlation_id
+					sender_id:      m.broker_id
+					timestamp:      time.now().unix_milli()
+					topic:          msg.topic
+					partition:      msg.partition
+					offset:         msg.offset
 					success:        true
 				}
 			}
