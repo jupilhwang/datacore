@@ -21,11 +21,15 @@ pub mut:
 	assignments     map[string]domain.ReplicaAssignment
 	broker_health   map[string]domain.ReplicationHealth
 	stats           domain.ReplicationStats
+	metrics         domain.ReplicationMetrics
 	// Locks for shared mutable state
 	replica_buffers_lock sync.Mutex
 	assignments_lock     sync.Mutex
 	broker_health_lock   sync.Mutex
 	stats_lock           sync.Mutex
+	// Per-partition metrics (keyed by "topic:partition")
+	partition_metrics      map[string]domain.PartitionMetrics
+	partition_metrics_lock sync.Mutex
 	// Cluster info (injected from outside)
 	// cluster_broker_refs stores the stable ID and current address of every peer broker.
 	// When broker_id is set, matching uses ID-based logic. When empty, falls back to addr comparison.
@@ -48,6 +52,8 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 		assignments:         map[string]domain.ReplicaAssignment{}
 		broker_health:       map[string]domain.ReplicationHealth{}
 		stats:               domain.ReplicationStats{}
+		metrics:             domain.new_replication_metrics()
+		partition_metrics:   map[string]domain.PartitionMetrics{}
 		cluster_broker_refs: cluster_broker_refs
 		logger:              log.Log{}
 		running:             false
@@ -151,6 +157,16 @@ pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, r
 		spawn m.send_replicate_async(broker_addr, msg)
 	}
 
+	// Record incoming bytes and per-partition metrics
+	m.metrics.record_bytes_in(i64(records_data.len))
+	key2 := '${topic}:${partition}'
+	m.partition_metrics_lock.@lock()
+	if key2 !in m.partition_metrics {
+		m.partition_metrics[key2] = domain.new_partition_metrics(topic, partition)
+	}
+	m.partition_metrics[key2].record_sent(i64(records_data.len))
+	m.partition_metrics_lock.unlock()
+
 	m.stats_lock.@lock()
 	m.stats.record_replicate()
 	m.stats_lock.unlock()
@@ -167,6 +183,13 @@ pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, r
 fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.ReplicationMessage) {
 	max_attempts := if m.config.retry_count > 0 { m.config.retry_count } else { 1 }
 
+	m.metrics.increment_pending()
+	defer {
+		m.metrics.decrement_pending()
+	}
+
+	send_start := time.now()
+
 	for attempt in 0 .. max_attempts {
 		response := m.client.send(broker_addr, msg) or {
 			if attempt < max_attempts - 1 {
@@ -174,10 +197,12 @@ fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.Replicati
 				backoff_ms := i64(100) * i64(u64(1) << u64(attempt))
 				sleep_ms := if backoff_ms > 5000 { i64(5000) } else { backoff_ms }
 				m.logger.warn('Replication to ${broker_addr} failed (attempt ${attempt + 1}/${max_attempts}): ${err}; retrying in ${sleep_ms}ms')
+				m.metrics.record_retried_request()
 				time.sleep(time.Duration(sleep_ms * time.millisecond))
 				continue
 			}
 			m.logger.error('Replication to ${broker_addr} failed after ${max_attempts} attempt(s): ${err}')
+			m.metrics.record_failed_request()
 			m.stats_lock.@lock()
 			m.stats.record_retry_exhausted()
 			m.stats_lock.unlock()
@@ -189,15 +214,31 @@ fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.Replicati
 				backoff_ms := i64(100) * i64(u64(1) << u64(attempt))
 				sleep_ms := if backoff_ms > 5000 { i64(5000) } else { backoff_ms }
 				m.logger.warn('Replication to ${broker_addr} returned failure (attempt ${attempt + 1}/${max_attempts}): ${response.error_msg}; retrying in ${sleep_ms}ms')
+				m.metrics.record_retried_request()
 				time.sleep(time.Duration(sleep_ms * time.millisecond))
 				continue
 			}
 			m.logger.error('Replication to ${broker_addr} failed after ${max_attempts} attempt(s): ${response.error_msg}')
+			m.metrics.record_failed_request()
 			m.stats_lock.@lock()
 			m.stats.record_retry_exhausted()
 			m.stats_lock.unlock()
 			return
 		}
+
+		lag_ms := f64(time.since(send_start).milliseconds())
+		m.metrics.record_lag_sample(lag_ms)
+		m.metrics.record_bytes_out(i64(msg.records_data.len))
+
+		// Update per-partition metrics
+		key := '${msg.topic}:${msg.partition}'
+		m.partition_metrics_lock.@lock()
+		if key !in m.partition_metrics {
+			m.partition_metrics[key] = domain.new_partition_metrics(msg.topic, msg.partition)
+		}
+		m.partition_metrics[key].record_acked()
+		m.partition_metrics[key].record_lag(lag_ms)
+		m.partition_metrics_lock.unlock()
 
 		m.stats_lock.@lock()
 		m.stats.record_ack()
@@ -460,6 +501,37 @@ pub fn (mut m Manager) get_stats() domain.ReplicationStats {
 	stats := m.stats
 	m.stats_lock.unlock()
 	return stats
+}
+
+// get_metrics returns a snapshot of the comprehensive replication metrics.
+// Thread-safe.
+//
+// Returns: ReplicationMetricsSnapshot with throughput, latency, queue, and connection metrics
+/// get_metrics returns a snapshot of the comprehensive replication metrics.
+pub fn (mut m Manager) get_metrics() domain.ReplicationMetricsSnapshot {
+	return m.metrics.snapshot()
+}
+
+// get_partition_metrics returns a copy of the per-partition metrics map.
+// Thread-safe; uses partition_metrics_lock internally.
+//
+// Returns: map of "topic:partition" -> PartitionMetrics
+/// get_partition_metrics returns per-partition replication metrics.
+pub fn (mut m Manager) get_partition_metrics() map[string]domain.PartitionMetrics {
+	m.partition_metrics_lock.@lock()
+	mut result := map[string]domain.PartitionMetrics{}
+	for k, v in m.partition_metrics {
+		result[k] = v
+	}
+	m.partition_metrics_lock.unlock()
+	return result
+}
+
+// flush_metrics_rates recomputes per-second throughput rates.
+// Should be called periodically (e.g., every second) from a background task.
+/// flush_metrics_rates recomputes per-second throughput rates.
+pub fn (mut m Manager) flush_metrics_rates() {
+	m.metrics.flush_rates()
 }
 
 // recover_replica initiates recovery for a replica partition from the given offset.
