@@ -13,7 +13,7 @@ V_FLAGS_DEV = -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -
 # Platforms
 PLATFORMS = linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
 
-.PHONY: all build build-dev clean test fmt lint release docker help test-multibroker test-multibroker-compat test-multibroker-perf
+.PHONY: all build build-dev clean test fmt lint release docker help test-multibroker test-multibroker-compat test-multibroker-perf bench bench-replication
 
 ## Default target
 all: build
@@ -51,7 +51,12 @@ test-bench:
 ## Run compatibility tests (requires Kafka CLI tools)
 test-compat:
 	@echo "Running compatibility tests..."
-	./scripts/run_compat_test.sh
+	@./scripts/run_compat_test.sh
+
+## Run replication compatibility tests (requires 2+ brokers with replication enabled)
+test-replication-compat:
+	@echo "Running replication compatibility tests..."
+	@./tests/compat/test_replication_compat.sh
 
 ## Run storage engine tests
 test-storage:
@@ -74,7 +79,7 @@ test-longrunning:
 	./scripts/test_longrunning.sh
 
 ## Run all tests (unit + compat + storage + security)
-test-all: test test-compat test-storage test-security
+test-all: test test-compat test-replication-compat test-storage test-security
 
 ## Run multi-broker S3 integration tests (all)
 test-multibroker:
@@ -90,6 +95,25 @@ test-multibroker-compat:
 test-multibroker-perf:
 	@echo "Running multi-broker performance benchmarks..."
 	@./tests/multibroker/run_multibroker_test.sh --test=perf
+
+## Run all replication benchmarks
+bench:
+	@echo "Building replication benchmarks..."
+	@mkdir -p $(BUILD_DIR)
+	cd $(SRC_DIR) && v $(V_FLAGS_DEV) -o ../$(BUILD_DIR)/bench_replication ../tests/bench/
+	@echo "Running all replication benchmarks..."
+	@./$(BUILD_DIR)/bench_replication
+
+## Run replication benchmarks only (throughput + latency + election + follower)
+bench-replication:
+	@echo "Building replication benchmarks..."
+	@mkdir -p $(BUILD_DIR)
+	cd $(SRC_DIR) && v $(V_FLAGS_DEV) -o ../$(BUILD_DIR)/bench_replication ../tests/bench/
+	@echo "Running replication benchmarks..."
+	@RUN_BENCH=throughput ./$(BUILD_DIR)/bench_replication
+	@RUN_BENCH=latency ./$(BUILD_DIR)/bench_replication
+	@RUN_BENCH=election ./$(BUILD_DIR)/bench_replication
+	@RUN_BENCH=follower ./$(BUILD_DIR)/bench_replication
 
 ## Format code
 fmt:
@@ -184,6 +208,7 @@ help:
 	@echo "  test-perf       Run performance tests (requires -enable-globals)"
 	@echo "  test-bench      Run benchmark tests (requires -enable-globals)"
 	@echo "  test-compat     Run compatibility tests (requires Kafka CLI)"
+	@echo "  test-replication-compat Run replication CLI tests (2+ brokers)"
 	@echo "  test-storage    Run storage engine tests (Memory, PostgreSQL, S3)"
 	@echo "  test-performance Run performance regression tests"
 	@echo "  test-security   Run security tests (SSL, SASL)"
@@ -192,6 +217,8 @@ help:
 	@echo "  test-multibroker       Run multi-broker S3 integration tests"
 	@echo "  test-multibroker-compat Run multi-broker compatibility tests"
 	@echo "  test-multibroker-perf  Run multi-broker performance benchmarks"
+	@echo "  bench                  Run all replication benchmarks"
+	@echo "  bench-replication      Run replication benchmarks (throughput/latency/election/follower)"
 	@echo ""
 	@echo "Code Quality Targets:"
 	@echo "  fmt         Format code"
