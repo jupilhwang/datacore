@@ -57,6 +57,10 @@ pub mut:
 	heartbeat_interval_ms      int // Heartbeat interval (default: 3000)
 	reassignment_interval_ms   int // Replica reassignment interval (default: 30000)
 	orphan_cleanup_interval_ms int // Orphan buffer cleanup interval (default: 60000)
+	// Replication limits
+	retry_count                   int = 3     // Maximum number of failed replication attempts before giving up (default: 3)
+	replica_buffer_ttl_ms         i64 = 60000 // Maximum age (ms) of a message in the replica buffer; older messages are dropped (default: 60000)
+	max_replica_buffer_size_bytes i64 // Maximum total bytes allowed in the replica buffer; 0 = unlimited (default: 0)
 }
 
 /// ReplicationStats is a struct holding related data.
@@ -68,6 +72,10 @@ pub mut:
 	total_orphans_cleaned i64
 	last_heartbeat_time   i64
 	replica_lag_ms        i64
+	// Limit-related counters
+	total_retry_exhausted i64 // How many times all retries were exhausted for a single replication attempt
+	total_ttl_dropped     i64 // Messages dropped from replica buffer due to TTL expiry
+	total_buffer_overflow i64 // How many times the buffer size limit was exceeded (resulting in message rejection)
 }
 
 /// ReplicaAssignment is a struct holding related data.
@@ -129,13 +137,16 @@ pub fn (msg ReplicationMessage) to_json() string {
 /// default returns a ReplicationConfig with sensible default values.
 pub fn (cfg ReplicationConfig) default() ReplicationConfig {
 	return ReplicationConfig{
-		enabled:                    false
-		replication_port:           9094
-		replica_count:              2
-		replica_timeout_ms:         5000
-		heartbeat_interval_ms:      3000
-		reassignment_interval_ms:   30000
-		orphan_cleanup_interval_ms: 60000
+		enabled:                       false
+		replication_port:              9094
+		replica_count:                 2
+		replica_timeout_ms:            5000
+		heartbeat_interval_ms:         3000
+		reassignment_interval_ms:      30000
+		orphan_cleanup_interval_ms:    60000
+		retry_count:                   3
+		replica_buffer_ttl_ms:         60000
+		max_replica_buffer_size_bytes: 0
 	}
 }
 
@@ -172,4 +183,25 @@ pub fn (mut stats ReplicationStats) record_orphan_cleanup() {
 /// update_heartbeat updates the last_heartbeat_time to the current time.
 pub fn (mut stats ReplicationStats) update_heartbeat() {
 	stats.last_heartbeat_time = time.now().unix_milli()
+}
+
+// record_retry_exhausted increments the total_retry_exhausted counter by one.
+// Called when a replication attempt fails and all retries are exhausted.
+/// record_retry_exhausted increments the total_retry_exhausted counter by one.
+pub fn (mut stats ReplicationStats) record_retry_exhausted() {
+	stats.total_retry_exhausted++
+}
+
+// record_ttl_dropped increments total_ttl_dropped by the given count.
+// Called when messages are dropped from the replica buffer due to TTL expiry.
+/// record_ttl_dropped increments total_ttl_dropped by count.
+pub fn (mut stats ReplicationStats) record_ttl_dropped(count i64) {
+	stats.total_ttl_dropped += count
+}
+
+// record_buffer_overflow increments the total_buffer_overflow counter by one.
+// Called when a new replica buffer entry is rejected because the buffer is full.
+/// record_buffer_overflow increments the total_buffer_overflow counter by one.
+pub fn (mut stats ReplicationStats) record_buffer_overflow() {
+	stats.total_buffer_overflow++
 }

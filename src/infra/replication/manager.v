@@ -156,28 +156,55 @@ pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, r
 	m.stats_lock.unlock()
 }
 
-// send_replicate_async sends a REPLICATE message to a single broker and handles the response.
+// send_replicate_async sends a REPLICATE message to a single broker with exponential backoff retry.
 // Intended to be called via `spawn` for parallel replication.
-// On success, increments the ack counter; on failure, logs the error.
+// Retries up to config.retry_count times before giving up. On success increments ack counter;
+// on final failure logs the error and records a retry_exhausted metric.
 //
 // Parameters:
 // - broker_addr: target broker address in "host:port" format
 // - msg: ReplicationMessage to send
 fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.ReplicationMessage) {
-	response := m.client.send(broker_addr, msg) or {
-		m.logger.error('Failed to replicate to ${broker_addr}: ${err}')
+	max_attempts := if m.config.retry_count > 0 { m.config.retry_count } else { 1 }
+
+	for attempt in 0 .. max_attempts {
+		response := m.client.send(broker_addr, msg) or {
+			if attempt < max_attempts - 1 {
+				// Exponential backoff: 100ms * 2^attempt, capped at 5000ms
+				backoff_ms := i64(100) * i64(u64(1) << u64(attempt))
+				sleep_ms := if backoff_ms > 5000 { i64(5000) } else { backoff_ms }
+				m.logger.warn('Replication to ${broker_addr} failed (attempt ${attempt + 1}/${max_attempts}): ${err}; retrying in ${sleep_ms}ms')
+				time.sleep(time.Duration(sleep_ms * time.millisecond))
+				continue
+			}
+			m.logger.error('Replication to ${broker_addr} failed after ${max_attempts} attempt(s): ${err}')
+			m.stats_lock.@lock()
+			m.stats.record_retry_exhausted()
+			m.stats_lock.unlock()
+			return
+		}
+
+		if !response.success {
+			if attempt < max_attempts - 1 {
+				backoff_ms := i64(100) * i64(u64(1) << u64(attempt))
+				sleep_ms := if backoff_ms > 5000 { i64(5000) } else { backoff_ms }
+				m.logger.warn('Replication to ${broker_addr} returned failure (attempt ${attempt + 1}/${max_attempts}): ${response.error_msg}; retrying in ${sleep_ms}ms')
+				time.sleep(time.Duration(sleep_ms * time.millisecond))
+				continue
+			}
+			m.logger.error('Replication to ${broker_addr} failed after ${max_attempts} attempt(s): ${response.error_msg}')
+			m.stats_lock.@lock()
+			m.stats.record_retry_exhausted()
+			m.stats_lock.unlock()
+			return
+		}
+
+		m.stats_lock.@lock()
+		m.stats.record_ack()
+		m.stats_lock.unlock()
+		m.logger.debug('Replicated offset ${msg.offset} to ${broker_addr} (attempt ${attempt + 1})')
 		return
 	}
-
-	if !response.success {
-		m.logger.error('Replication to ${broker_addr} failed: ${response.error_msg}')
-		return
-	}
-
-	m.stats_lock.@lock()
-	m.stats.record_ack()
-	m.stats_lock.unlock()
-	m.logger.debug('Replicated offset ${msg.offset} to ${broker_addr}')
 }
 
 // send_flush_ack notifies all replica brokers that data up to the given offset
@@ -308,19 +335,73 @@ fn (mut m Manager) assign_replicas(topic string, partition i32) ! {
 // Thread-safe; uses replica_buffers_lock internally.
 // Buffers are keyed by "topic:partition" and appended in arrival order.
 //
+// Returns an error if the buffer size limit (max_replica_buffer_size_bytes) would be exceeded.
+// TTL-expired messages are pruned from the partition buffer before the size check.
+//
 // Parameters:
 // - buffer: ReplicaBuffer containing the replicated data to store
 /// store_replica_buffer stores replicated record data in the in-memory buffer.
 pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 	key := '${buffer.topic}:${buffer.partition}'
+	now := time.now().unix_milli()
 
 	m.replica_buffers_lock.@lock()
 	if key !in m.replica_buffers {
 		m.replica_buffers[key] = []domain.ReplicaBuffer{}
 	}
+
+	// Prune TTL-expired entries from this partition before inserting.
+	// Only applies when replica_buffer_ttl_ms > 0.
+	mut ttl_dropped := i64(0)
+	if m.config.replica_buffer_ttl_ms > 0 {
+		cutoff := now - m.config.replica_buffer_ttl_ms
+		existing := m.replica_buffers[key] or { []domain.ReplicaBuffer{} }
+		mut kept := []domain.ReplicaBuffer{}
+		for b in existing {
+			if b.timestamp >= cutoff {
+				kept << b
+			} else {
+				ttl_dropped++
+			}
+		}
+		m.replica_buffers[key] = kept
+	}
+
+	// Enforce max_replica_buffer_size_bytes when limit is set (> 0).
+	if m.config.max_replica_buffer_size_bytes > 0 {
+		mut total_bytes := i64(0)
+		for _, bufs in m.replica_buffers {
+			for b in bufs {
+				total_bytes += i64(b.records_data.len)
+			}
+		}
+		if total_bytes + i64(buffer.records_data.len) > m.config.max_replica_buffer_size_bytes {
+			m.replica_buffers_lock.unlock()
+			m.stats_lock.@lock()
+			if ttl_dropped > 0 {
+				m.stats.record_ttl_dropped(ttl_dropped)
+			}
+			m.stats.record_buffer_overflow()
+			m.stats_lock.unlock()
+			if ttl_dropped > 0 {
+				m.logger.warn('TTL: dropped ${ttl_dropped} expired buffer(s) from ${key}')
+			}
+			return error('replica buffer size limit exceeded for ${key}: limit=${m.config.max_replica_buffer_size_bytes} bytes')
+		}
+	}
+
 	m.replica_buffers[key] << buffer
 	m.replica_buffers_lock.unlock()
 
+	m.stats_lock.@lock()
+	if ttl_dropped > 0 {
+		m.stats.record_ttl_dropped(ttl_dropped)
+	}
+	m.stats_lock.unlock()
+
+	if ttl_dropped > 0 {
+		m.logger.warn('TTL: dropped ${ttl_dropped} expired buffer(s) from ${key} before insert')
+	}
 	m.logger.debug('Stored replica buffer for ${key}, offset ${buffer.offset}')
 }
 
@@ -568,10 +649,17 @@ fn (mut m Manager) heartbeat_worker() {
 	m.logger.info('Heartbeat worker stopped')
 }
 
-// orphan_cleanup_worker periodically removes stale replica buffers
-// Buffers older than replica_timeout_ms without FLUSH_ACK are considered orphans
+// orphan_cleanup_worker periodically removes stale replica buffers.
+// Effective TTL: replica_buffer_ttl_ms when > 0, otherwise falls back to replica_timeout_ms.
+// Cleaned entries are counted in total_orphans_cleaned and total_ttl_dropped stats.
 fn (mut m Manager) orphan_cleanup_worker() {
-	m.logger.info('Orphan cleanup worker started (interval=${m.config.orphan_cleanup_interval_ms}ms, timeout=${m.config.replica_timeout_ms}ms)')
+	// Use replica_buffer_ttl_ms when configured; fall back to replica_timeout_ms.
+	ttl_ms := if m.config.replica_buffer_ttl_ms > 0 {
+		m.config.replica_buffer_ttl_ms
+	} else {
+		i64(m.config.replica_timeout_ms)
+	}
+	m.logger.info('Orphan cleanup worker started (interval=${m.config.orphan_cleanup_interval_ms}ms, ttl=${ttl_ms}ms)')
 
 	for m.running {
 		time.sleep(time.Duration(m.config.orphan_cleanup_interval_ms * time.millisecond))
@@ -597,7 +685,7 @@ fn (mut m Manager) orphan_cleanup_worker() {
 			mut cleaned_count := 0
 
 			for buf in buffers {
-				if now - buf.timestamp > m.config.replica_timeout_ms {
+				if now - buf.timestamp > ttl_ms {
 					cleaned_count++
 				} else {
 					remaining << buf
@@ -619,6 +707,7 @@ fn (mut m Manager) orphan_cleanup_worker() {
 		if total_cleaned > 0 {
 			m.stats_lock.@lock()
 			m.stats.total_orphans_cleaned += total_cleaned
+			m.stats.record_ttl_dropped(i64(total_cleaned))
 			m.stats_lock.unlock()
 			m.logger.info('Orphan cleanup: total ${total_cleaned} stale buffers removed this cycle')
 		}
