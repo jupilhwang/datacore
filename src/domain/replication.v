@@ -3,6 +3,16 @@ module domain
 import time
 import json
 
+/// BrokerRef holds a broker's stable ID and its current network address.
+/// Used by the ReplicationManager to identify brokers independently of address changes.
+/// If broker_id is empty, the implementation falls back to address-based matching
+/// for backward compatibility with older configurations.
+pub struct BrokerRef {
+pub mut:
+	broker_id string // Stable unique identifier (e.g., "broker-1" or UUID). Empty means legacy mode.
+	addr      string // Current network address in "host:port" format.
+}
+
 /// ReplicationType defines an enumeration of related values.
 pub enum ReplicationType {
 	replicate

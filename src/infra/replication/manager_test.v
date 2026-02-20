@@ -28,17 +28,26 @@ fn create_test_manager() &Manager {
 	mut srv := Server.new(config.replication_port, handler)
 	mut cli := Client.new(config.replica_timeout_ms)
 	mut m := &Manager{
-		broker_id:       'broker-test-1'
-		config:          config
-		server:          &srv
-		client:          &cli
-		replica_buffers: map[string][]domain.ReplicaBuffer{}
-		assignments:     map[string]domain.ReplicaAssignment{}
-		broker_health:   map[string]domain.ReplicationHealth{}
-		stats:           domain.ReplicationStats{}
-		cluster_brokers: ['localhost:19094', 'localhost:19095']
-		logger:          log.Log{}
-		running:         false
+		broker_id:           'broker-test-1'
+		config:              config
+		server:              &srv
+		client:              &cli
+		replica_buffers:     map[string][]domain.ReplicaBuffer{}
+		assignments:         map[string]domain.ReplicaAssignment{}
+		broker_health:       map[string]domain.ReplicationHealth{}
+		stats:               domain.ReplicationStats{}
+		cluster_broker_refs: [
+			domain.BrokerRef{
+				broker_id: 'broker-test-2'
+				addr:      'localhost:19094'
+			},
+			domain.BrokerRef{
+				broker_id: 'broker-test-3'
+				addr:      'localhost:19095'
+			},
+		]
+		logger:              log.Log{}
+		running:             false
 	}
 	return m
 }
@@ -222,17 +231,17 @@ fn test_flush_ack_failure_triggers_reassignment() {
 		assigned_time:   time.now().unix_milli()
 	}
 
-	// Setup: mark one broker as alive and another as dead
-	// (simulating that FLUSH_ACK to 19094 failed -> heartbeat detects it as dead)
-	m.broker_health['localhost:19094'] = domain.ReplicationHealth{
-		broker_id:      'localhost:19094'
+	// Setup: mark one broker as alive and another as dead using stable broker_id as key.
+	// (simulating that FLUSH_ACK to broker-test-2 failed -> heartbeat detects it as dead)
+	m.broker_health['broker-test-2'] = domain.ReplicationHealth{
+		broker_id:      'broker-test-2'
 		is_alive:       false
 		last_heartbeat: time.now().unix_milli() - 30000
 		lag_ms:         0
 		pending_count:  0
 	}
-	m.broker_health['localhost:19095'] = domain.ReplicationHealth{
-		broker_id:      'localhost:19095'
+	m.broker_health['broker-test-3'] = domain.ReplicationHealth{
+		broker_id:      'broker-test-3'
 		is_alive:       true
 		last_heartbeat: time.now().unix_milli()
 		lag_ms:         0
@@ -241,20 +250,39 @@ fn test_flush_ack_failure_triggers_reassignment() {
 
 	// Verify dead broker detected
 	mut dead_brokers := []string{}
-	for broker_id, health in m.broker_health {
+	for bid, health in m.broker_health {
 		if !health.is_alive {
-			dead_brokers << broker_id
+			dead_brokers << bid
 		}
 	}
 	assert dead_brokers.len == 1, 'expected 1 dead broker, got ${dead_brokers.len}'
-	assert dead_brokers[0] == 'localhost:19094'
+	// broker_health is now keyed by stable broker_id
+	assert dead_brokers[0] == 'broker-test-2'
 
-	// Simulate reassignment logic (same as worker body)
+	// Simulate reassignment logic (same as worker body).
+	// Build id_to_addr map so broker_health keys (broker_id) can be mapped to addr.
+	mut id_to_addr := map[string]string{}
+	for ref in m.cluster_broker_refs {
+		if ref.broker_id != '' {
+			id_to_addr[ref.broker_id] = ref.addr
+		}
+	}
+
+	// Translate dead broker ids to addresses
+	mut dead_broker_addrs := []string{}
+	for bid, health in m.broker_health {
+		if !health.is_alive {
+			addr := id_to_addr[bid] or { bid }
+			dead_broker_addrs << addr
+		}
+	}
+
 	mut alive_brokers := []string{}
-	for broker_addr in m.cluster_brokers {
-		health := m.broker_health[broker_addr] or { continue }
+	for ref in m.cluster_broker_refs {
+		health_key := if ref.broker_id != '' { ref.broker_id } else { ref.addr }
+		health := m.broker_health[health_key] or { continue }
 		if health.is_alive {
-			alive_brokers << broker_addr
+			alive_brokers << ref.addr
 		}
 	}
 
@@ -264,8 +292,8 @@ fn test_flush_ack_failure_triggers_reassignment() {
 		mut new_replicas := []string{}
 		mut changed := false
 
-		for broker in assignment.replica_brokers {
-			if broker in dead_brokers {
+		for broker_addr in assignment.replica_brokers {
+			if broker_addr in dead_broker_addrs {
 				changed = true
 				mut found_replacement := false
 				for alive in alive_brokers {
@@ -279,7 +307,7 @@ fn test_flush_ack_failure_triggers_reassignment() {
 					// No replacement available, just skip the dead broker
 				}
 			} else {
-				new_replicas << broker
+				new_replicas << broker_addr
 			}
 		}
 
@@ -291,13 +319,14 @@ fn test_flush_ack_failure_triggers_reassignment() {
 		}
 	}
 
-	// Verify: dead broker removed from assignment
+	// Verify: dead broker address removed from assignment
 	updated_assignment := m.assignments['topic-x:0'] or {
 		assert false, 'assignment not found after reassignment'
 		return
 	}
-	assert 'localhost:19094' !in updated_assignment.replica_brokers, 'dead broker should be removed from replicas'
-	assert 'localhost:19095' in updated_assignment.replica_brokers, 'alive broker should remain in replicas'
+	assert 'localhost:19094' !in updated_assignment.replica_brokers, 'dead broker addr should be removed from replicas'
+
+	assert 'localhost:19095' in updated_assignment.replica_brokers, 'alive broker addr should remain in replicas'
 
 	// Store stale buffer (simulating data that was replicated but FLUSH_ACK failed)
 	old_timestamp := time.now().unix_milli() - 61000
@@ -360,17 +389,17 @@ fn test_manager_worker_lifecycle() {
 	mut srv := Server.new(config.replication_port, handler)
 	mut cli := Client.new(config.replica_timeout_ms)
 	mut m := &Manager{
-		broker_id:       'broker-lifecycle'
-		config:          config
-		server:          &srv
-		client:          &cli
-		replica_buffers: map[string][]domain.ReplicaBuffer{}
-		assignments:     map[string]domain.ReplicaAssignment{}
-		broker_health:   map[string]domain.ReplicationHealth{}
-		stats:           domain.ReplicationStats{}
-		cluster_brokers: []
-		logger:          log.Log{}
-		running:         true
+		broker_id:           'broker-lifecycle'
+		config:              config
+		server:              &srv
+		client:              &cli
+		replica_buffers:     map[string][]domain.ReplicaBuffer{}
+		assignments:         map[string]domain.ReplicaAssignment{}
+		broker_health:       map[string]domain.ReplicationHealth{}
+		stats:               domain.ReplicationStats{}
+		cluster_broker_refs: []domain.BrokerRef{}
+		logger:              log.Log{}
+		running:             true
 	}
 
 	// Start workers (no cluster_brokers, so workers run but do minimal work)
@@ -462,7 +491,20 @@ fn test_delete_replica_buffer_on_flush_ack() {
 
 fn test_assign_replicas() {
 	mut m := create_test_manager()
-	m.cluster_brokers = ['broker-a:19094', 'broker-b:19094', 'broker-c:19094']
+	m.cluster_broker_refs = [
+		domain.BrokerRef{
+			broker_id: 'broker-a'
+			addr:      'broker-a:19094'
+		},
+		domain.BrokerRef{
+			broker_id: 'broker-b'
+			addr:      'broker-b:19094'
+		},
+		domain.BrokerRef{
+			broker_id: 'broker-c'
+			addr:      'broker-c:19094'
+		},
+	]
 
 	m.assign_replicas('assign-topic', 0) or {
 		assert false, 'assign_replicas failed: ${err}'
@@ -479,6 +521,149 @@ fn test_assign_replicas() {
 	assert assignment.main_broker == 'broker-test-1'
 	assert assignment.replica_brokers.len == 2, 'expected 2 replicas, got ${assignment.replica_brokers.len}'
 	assert assignment.assigned_time > 0
+}
+
+// --- Test: Broker ID-based self-exclusion during replica assignment ---
+// Scenario: The manager's own broker_id matches one of the cluster_broker_refs entries.
+// Verify: assign_replicas correctly excludes the local broker by ID regardless of its address.
+
+fn test_assign_replicas_excludes_self_by_broker_id() {
+	config := create_test_config()
+	handler := fn (msg domain.ReplicationMessage) !domain.ReplicationMessage {
+		return msg
+	}
+	mut srv := Server.new(config.replication_port, handler)
+	mut cli := Client.new(config.replica_timeout_ms)
+	// The manager's own broker_id is 'self-broker'.
+	// It is also listed in cluster_broker_refs but with a different address
+	// (simulating an address change or multi-interface scenario).
+	mut m := &Manager{
+		broker_id:           'self-broker'
+		config:              config
+		server:              &srv
+		client:              &cli
+		replica_buffers:     map[string][]domain.ReplicaBuffer{}
+		assignments:         map[string]domain.ReplicaAssignment{}
+		broker_health:       map[string]domain.ReplicationHealth{}
+		stats:               domain.ReplicationStats{}
+		cluster_broker_refs: [
+			domain.BrokerRef{
+				broker_id: 'self-broker'
+				addr:      '10.0.0.1:19093' // different addr - should still be excluded
+			},
+			domain.BrokerRef{
+				broker_id: 'peer-broker-1'
+				addr:      '10.0.0.2:19093'
+			},
+			domain.BrokerRef{
+				broker_id: 'peer-broker-2'
+				addr:      '10.0.0.3:19093'
+			},
+		]
+		logger:              log.Log{}
+		running:             false
+	}
+
+	m.assign_replicas('id-topic', 0) or {
+		assert false, 'assign_replicas failed: ${err}'
+		return
+	}
+
+	assignment := m.assignments['id-topic:0'] or {
+		assert false, 'assignment not found'
+		return
+	}
+
+	// Self broker must not appear in replica_brokers
+	assert '10.0.0.1:19093' !in assignment.replica_brokers, 'self broker address must not be in replica_brokers'
+
+	// Peers must be selected
+	assert assignment.replica_brokers.len == 2, 'expected 2 replicas from peers, got ${assignment.replica_brokers.len}'
+
+	assert assignment.main_broker == 'self-broker'
+}
+
+// --- Test: Backward-compatible address-based self-exclusion ---
+// Scenario: BrokerRef entries have empty broker_id (legacy configuration).
+// Verify: assign_replicas falls back to address-based exclusion when broker_id is absent.
+
+fn test_assign_replicas_legacy_addr_fallback() {
+	config := create_test_config()
+	handler := fn (msg domain.ReplicationMessage) !domain.ReplicationMessage {
+		return msg
+	}
+	mut srv := Server.new(config.replication_port, handler)
+	mut cli := Client.new(config.replica_timeout_ms)
+	mut m := &Manager{
+		broker_id:       'legacy-broker'
+		config:          config
+		server:          &srv
+		client:          &cli
+		replica_buffers: map[string][]domain.ReplicaBuffer{}
+		assignments:     map[string]domain.ReplicaAssignment{}
+		broker_health:   map[string]domain.ReplicationHealth{}
+		stats:           domain.ReplicationStats{}
+		// Legacy mode: no broker_id set; self is identified by its replication port
+		cluster_broker_refs: [
+			domain.BrokerRef{
+				broker_id: '' // legacy: no stable ID
+				addr:      'localhost:${config.replication_port}'
+			},
+			domain.BrokerRef{
+				broker_id: '' // legacy: no stable ID
+				addr:      'peer-a:19094'
+			},
+		]
+		logger:              log.Log{}
+		running:             false
+	}
+
+	m.assign_replicas('legacy-topic', 0) or {
+		assert false, 'assign_replicas failed: ${err}'
+		return
+	}
+
+	assignment := m.assignments['legacy-topic:0'] or {
+		assert false, 'assignment not found'
+		return
+	}
+
+	// The local replication port address must not appear in replica_brokers
+	assert 'localhost:${config.replication_port}' !in assignment.replica_brokers, 'self address must not be in replica_brokers in legacy mode'
+
+	assert assignment.replica_brokers.len == 1, 'expected 1 replica (only peer-a), got ${assignment.replica_brokers.len}'
+
+	assert assignment.replica_brokers[0] == 'peer-a:19094'
+}
+
+// --- Test: update_cluster_broker_refs replaces peer list ---
+// Verify that the broker list can be updated at runtime.
+
+fn test_update_cluster_broker_refs() {
+	mut m := create_test_manager()
+
+	initial_refs := m.cluster_broker_refs.clone()
+	assert initial_refs.len == 2
+
+	new_refs := [
+		domain.BrokerRef{
+			broker_id: 'new-peer-1'
+			addr:      '192.168.1.1:19094'
+		},
+		domain.BrokerRef{
+			broker_id: 'new-peer-2'
+			addr:      '192.168.1.2:19094'
+		},
+		domain.BrokerRef{
+			broker_id: 'new-peer-3'
+			addr:      '192.168.1.3:19094'
+		},
+	]
+	m.update_cluster_broker_refs(new_refs)
+
+	assert m.cluster_broker_refs.len == 3
+	assert m.cluster_broker_refs[0].broker_id == 'new-peer-1'
+	assert m.cluster_broker_refs[2].addr == '192.168.1.3:19094'
 }
 
 // --- Test: Concurrent store and read of replica buffers ---
