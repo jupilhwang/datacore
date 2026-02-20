@@ -318,7 +318,7 @@ pub fn (mut m Manager) send_flush_ack(topic string, partition i32, offset i64) !
 fn (mut m Manager) assign_replicas(topic string, partition i32) ! {
 	// Filter out self using broker_id when available; otherwise fall back to address matching.
 	mut available_refs := []domain.BrokerRef{}
-	for ref in m.cluster_broker_refs {
+	for ref in m.cluster_broker_refs.clone() {
 		is_self := if ref.broker_id != '' {
 			// ID-based: exact match on stable broker_id
 			ref.broker_id == m.broker_id
