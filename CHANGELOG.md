@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.44.2] - 2026-02-20
+
+### Changed
+
+- **Code Comments Cleanup** - Korean comments translated to English across entire codebase
+  - 126+ source files cleaned up
+  - Removed trivial and obvious inline comments
+  - Improved code readability for international contributors
+
 ## [0.44.1] - 2026-02-18
 
 ### Fixed
