@@ -230,7 +230,9 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 		return err
 	}
 
-	api_key := unsafe { ApiKey(req.header.api_key) }
+	api_key := api_key_from_i16(req.header.api_key) or {
+		return error('Unsupported API key ${req.header.api_key}: ${err}')
+	}
 	version := req.header.api_version
 	correlation_id := req.header.correlation_id
 

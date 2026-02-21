@@ -86,6 +86,90 @@ pub enum ApiKey {
 	delete_share_group_state        = 86
 }
 
+/// api_key_from_i16 safely converts an i16 value to an ApiKey enum.
+/// Returns an error for unknown API keys instead of triggering undefined behavior.
+pub fn api_key_from_i16(val i16) !ApiKey {
+	return match val {
+		0 { .produce }
+		1 { .fetch }
+		2 { .list_offsets }
+		3 { .metadata }
+		4 { .leader_and_isr }
+		5 { .stop_replica }
+		6 { .update_metadata }
+		7 { .controlled_shutdown }
+		8 { .offset_commit }
+		9 { .offset_fetch }
+		10 { .find_coordinator }
+		11 { .join_group }
+		12 { .heartbeat }
+		13 { .leave_group }
+		14 { .sync_group }
+		15 { .describe_groups }
+		16 { .list_groups }
+		17 { .sasl_handshake }
+		18 { .api_versions }
+		19 { .create_topics }
+		20 { .delete_topics }
+		21 { .delete_records }
+		22 { .init_producer_id }
+		23 { .offset_for_leader_epoch }
+		24 { .add_partitions_to_txn }
+		25 { .add_offsets_to_txn }
+		26 { .end_txn }
+		27 { .write_txn_markers }
+		28 { .txn_offset_commit }
+		29 { .describe_acls }
+		30 { .create_acls }
+		31 { .delete_acls }
+		32 { .describe_configs }
+		33 { .alter_configs }
+		34 { .alter_replica_log_dirs }
+		35 { .describe_log_dirs }
+		36 { .sasl_authenticate }
+		37 { .create_partitions }
+		38 { .create_delegation_token }
+		39 { .renew_delegation_token }
+		40 { .expire_delegation_token }
+		41 { .describe_delegation_token }
+		42 { .delete_groups }
+		43 { .elect_leaders }
+		44 { .incremental_alter_configs }
+		45 { .alter_partition_reassignments }
+		46 { .list_partition_reassignments }
+		47 { .offset_delete }
+		48 { .describe_client_quotas }
+		49 { .alter_client_quotas }
+		50 { .describe_user_scram_credentials }
+		51 { .alter_user_scram_credentials }
+		55 { .describe_quorum }
+		56 { .alter_partition }
+		57 { .update_features }
+		58 { .envelope }
+		60 { .describe_cluster }
+		61 { .describe_producers }
+		64 { .unregister_broker }
+		65 { .describe_transactions }
+		66 { .list_transactions }
+		67 { .allocate_producer_ids }
+		68 { .consumer_group_heartbeat }
+		69 { .consumer_group_describe }
+		71 { .get_telemetry_subscriptions }
+		72 { .push_telemetry }
+		74 { .list_client_metrics_resources }
+		75 { .describe_topic_partitions }
+		76 { .share_group_heartbeat }
+		77 { .share_group_describe }
+		78 { .share_fetch }
+		79 { .share_acknowledge }
+		83 { .initialize_share_group_state }
+		84 { .read_share_group_state }
+		85 { .write_share_group_state }
+		86 { .delete_share_group_state }
+		else { error('Unknown API key: ${val}') }
+	}
+}
+
 /// Error Codes - Kafka protocol
 pub enum ErrorCode {
 	none                                  = 0

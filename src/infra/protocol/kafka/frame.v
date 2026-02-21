@@ -89,7 +89,8 @@ pub fn frame_from_bytes(data []u8) !Frame {
 	api_version := reader.read_i16()!
 	correlation_id := reader.read_i32()!
 
-	api_key := unsafe { ApiKey(api_key_raw) }
+	// Use safe conversion; fall back to metadata for unknown API keys
+	api_key := api_key_from_i16(api_key_raw) or { ApiKey.metadata }
 
 	// ApiVersions is always non-flexible in the header (client does not yet know the server version)
 	is_flexible := api_key != .api_versions && is_flexible_version(api_key, api_version)

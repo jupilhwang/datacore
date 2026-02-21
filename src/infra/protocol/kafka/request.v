@@ -87,7 +87,8 @@ pub fn parse_request(data []u8) !Request {
 	correlation_id := reader.read_i32()!
 
 	// Check whether this is a flexible version (v2 header)
-	api_key_enum := unsafe { ApiKey(api_key) }
+	// Use safe conversion; fall back to metadata key for unknown API keys
+	api_key_enum := api_key_from_i16(api_key) or { ApiKey.metadata }
 	header_version := get_request_header_version(api_key_enum, api_version)
 	is_flexible_header := header_version >= 2
 
