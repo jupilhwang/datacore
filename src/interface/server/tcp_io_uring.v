@@ -10,6 +10,7 @@
 /// - Automatic platform detection and fallback
 module server
 
+import domain
 import infra.performance.engines
 import sync
 import time
@@ -41,10 +42,24 @@ mut:
 	request_count  u64
 	bytes_received u64
 	bytes_sent     u64
+	// Authentication state
+	auth_state domain.AuthState
+	principal  ?domain.Principal
 	// Request parsing state
 	recv_buf      []u8
 	recv_offset   int
 	expected_size int
+}
+
+/// is_authenticated checks whether the connection is authenticated.
+pub fn (c &IoUringConnInfo) is_authenticated() bool {
+	return c.auth_state == .authenticated
+}
+
+/// set_authenticated marks the connection as authenticated with the given principal.
+pub fn (mut c IoUringConnInfo) set_authenticated(principal domain.Principal) {
+	c.auth_state = .authenticated
+	c.principal = principal
 }
 
 /// IoUringServerMetrics holds io_uring server metrics.
@@ -266,7 +281,7 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 		conn.request_count++
 		s.metrics.total_requests++
 
-		response := s.handler.handle_request(request_data) or {
+		response := s.handler.handle_request(request_data, mut conn) or {
 			eprintln('[io_uring] Error handling request from fd=${fd}: ${err}')
 			// Generate minimal error response
 			s.create_error_response(request_data)

@@ -68,6 +68,14 @@ pub enum AuthState {
 	failed
 }
 
+/// AuthConnection is an interface for connection types that support authentication.
+/// This interface is implemented by connection types in the interface layer.
+pub interface AuthConnection {
+	is_authenticated() bool
+mut:
+	set_authenticated(principal Principal)
+}
+
 /// User represents a stored user for authentication.
 /// username: username
 /// password_hash: password hash (stored as plaintext for PLAIN; hashing required in production)

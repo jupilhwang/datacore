@@ -15,7 +15,7 @@ import service.schema
 import service.transaction
 import time
 import domain
-import infra.performance.core
+import common
 
 /// PartitionAssignerPtr is a pointer type for the partition assignment service,
 /// referencing PartitionAssigner from the service.cluster module.
@@ -177,7 +177,8 @@ fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 		// Look up schema configuration from topic metadata
 		if topic_meta := h.storage.get_topic(topic_name) {
 			schema_subject := topic_meta.config['schema.subject'] or { return none }
-			schema_version := core.parse_config_int(topic_meta.config, 'schema.version', 1)
+			schema_version := common.parse_config_int(topic_meta.config, 'schema.version',
+				1)
 
 			// Retrieve schema (version -1 means latest)
 			return registry.get_schema_by_subject(schema_subject, schema_version) or { return none }
@@ -216,11 +217,12 @@ pub fn (mut h Handler) set_partition_assigner(assigner PartitionAssignerPtr) {
 	h.partition_assigner = assigner
 }
 
-/// handle_request processes a received request and returns response bytes (legacy method).
+/// handle_request processes a received request and returns response bytes.
 ///
 /// Accepts raw byte data, parses it, routes it to the appropriate API handler,
 /// and produces a response.
-pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
+/// Requires connection context for authentication verification.
+pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnection) ![]u8 {
 	start_time := time.now()
 
 	// Parse request
@@ -237,6 +239,20 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 	h.logger.debug('Processing request', observability.field_string('api', api_key.str()),
 		observability.field_int('version', version), observability.field_int('correlation_id',
 		correlation_id), observability.field_bytes('request_size', data.len))
+
+	// Security: Check authentication for protected APIs
+	// Only enforce authentication if auth_manager is configured
+	// If auth_manager is none, authentication is disabled (optional)
+	is_public_api := api_key in [.api_versions, .sasl_handshake, .sasl_authenticate]
+	mut is_authenticated := false
+	if c := conn {
+		is_authenticated = c.is_authenticated()
+	}
+	if h.auth_manager != none && !is_public_api && !is_authenticated {
+		h.logger.warn('Unauthorized request', observability.field_string('api', api_key.str()),
+			observability.field_int('correlation_id', correlation_id))
+		return error('${int(domain.ErrorCode.sasl_authentication_failed)}: Authentication required for ${api_key.str()}')
+	}
 
 	// Dispatch based on API key
 	mut response_body := []u8{}
@@ -397,7 +413,7 @@ pub fn (mut h Handler) handle_request(data []u8) ![]u8 {
 			}
 		}
 		.sasl_authenticate {
-			h.handle_sasl_authenticate(req.body, version) or {
+			h.handle_sasl_authenticate(mut conn, req.body, version) or {
 				success = false
 				return err
 			}
@@ -572,7 +588,7 @@ fn empty_consumer_assignment() []u8 {
 	return writer.bytes()
 }
 
-// parse_config_i64, parse_config_int, and generate_uuid are now moved to core/utils.v.
+// parse_config_i64, parse_config_int are now in common/config_utils.v. generate_uuid remains in core/utils.v.
 
 /// get_metrics_summary returns a summary of protocol metrics.
 pub fn (mut h Handler) get_metrics_summary() string {

@@ -3,7 +3,7 @@ module kafka
 
 import domain
 import infra.compression
-import infra.performance.core
+import common
 import service.port
 
 // Mock storage for testing
@@ -480,9 +480,9 @@ fn test_parse_config_i64() {
 		'segment.bytes': '1073741824'
 	}
 
-	assert core.parse_config_i64(configs, 'retention.ms', 0) == 86400000
-	assert core.parse_config_i64(configs, 'segment.bytes', 0) == 1073741824
-	assert core.parse_config_i64(configs, 'nonexistent', 999) == 999
+	assert common.parse_config_i64(configs, 'retention.ms', 0) == 86400000
+	assert common.parse_config_i64(configs, 'segment.bytes', 0) == 1073741824
+	assert common.parse_config_i64(configs, 'nonexistent', 999) == 999
 }
 
 fn test_parse_config_int() {
@@ -491,9 +491,9 @@ fn test_parse_config_int() {
 		'max.message.bytes':   '1048576'
 	}
 
-	assert core.parse_config_int(configs, 'min.insync.replicas', 1) == 2
-	assert core.parse_config_int(configs, 'max.message.bytes', 0) == 1048576
-	assert core.parse_config_int(configs, 'nonexistent', 42) == 42
+	assert common.parse_config_int(configs, 'min.insync.replicas', 1) == 2
+	assert common.parse_config_int(configs, 'max.message.bytes', 0) == 1048576
+	assert common.parse_config_int(configs, 'nonexistent', 42) == 42
 }
 
 // Test parsing ListGroups request

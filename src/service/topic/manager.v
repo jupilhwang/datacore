@@ -4,7 +4,7 @@ module topic
 
 import domain
 import service.port
-import infra.performance.core
+import common
 
 /// TopicManager handles topic management business logic.
 /// Responsible for topic lifecycle management and configuration validation.
@@ -71,9 +71,9 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 
 	// Build topic configuration
 	config := domain.TopicConfig{
-		retention_ms:    core.parse_config_i64(req.configs, 'retention.ms', 604800000)
-		retention_bytes: core.parse_config_i64(req.configs, 'retention.bytes', -1)
-		segment_bytes:   core.parse_config_i64(req.configs, 'segment.bytes', 1073741824)
+		retention_ms:    common.parse_config_i64(req.configs, 'retention.ms', 604800000)
+		retention_bytes: common.parse_config_i64(req.configs, 'retention.bytes', -1)
+		segment_bytes:   common.parse_config_i64(req.configs, 'segment.bytes', 1073741824)
 		cleanup_policy:  req.configs['cleanup.policy'] or { 'delete' }
 	}
 
@@ -129,4 +129,4 @@ pub fn (m &TopicManager) add_partitions(name string, new_count int) ! {
 	m.storage.add_partitions(name, new_count)!
 }
 
-// parse_config_i64 is now moved to core/utils.v.
+// parse_config_i64 is now in common/config_utils.v.

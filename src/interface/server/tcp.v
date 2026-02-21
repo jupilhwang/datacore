@@ -15,6 +15,7 @@ module server
 import net
 import sync
 import time
+import domain
 import infra.observability
 
 // Logging
@@ -63,11 +64,25 @@ pub:
 	tcp_recv_buf_size int  = 262144
 }
 
+/// AuthConnection is an interface for connection types that support authentication.
+/// NOTE: This interface is now defined in domain.auth for architectural compliance.
+pub type AuthConnection = domain.AuthConnection
+
 /// RequestHandler is the interface for handling protocol requests.
 /// Receives Kafka protocol requests and generates responses.
 pub interface RequestHandler {
 mut:
-	handle_request(data []u8) ![]u8
+	/// handle_request processes a request with connection context for auth checking.
+	/// data: raw request bytes
+	/// conn: client connection for authentication state (optional)
+	handle_request(data []u8, mut conn ?&domain.AuthConnection) ![]u8
+}
+
+/// noop_handler is a no-op implementation for testing.
+struct NoopHandler {}
+
+pub fn (h NoopHandler) handle_request(data []u8, mut conn ?&AuthConnection) ![]u8 {
+	return []u8{}
 }
 
 /// ServerState is an enum representing the current state of the server.
@@ -394,8 +409,8 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				break
 			}
 
-			// Process request
-			mut response := s.handler.handle_request(request_buf) or {
+			// Process request with connection context for auth verification
+			mut response := s.handler.handle_request(request_buf, mut client) or {
 				eprintln('[Connection] Error handling request from ${client_addr}: ${err}')
 				// Generate minimal error response to prevent client timeout
 				// Check whether this is a flexible response (Fetch v12+, Metadata v9+, etc.)

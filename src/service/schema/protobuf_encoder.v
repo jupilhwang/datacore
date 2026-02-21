@@ -361,10 +361,10 @@ fn proto_decode_fixed32(mut reader ProtoReader) !u32 {
 	if reader.pos + 4 > reader.data.len {
 		return error('unexpected end of fixed32')
 	}
-	
-	val := core.read_i32_le(reader.data[reader.pos..reader.pos+4])
+
+	val := core.read_i32_le(reader.data[reader.pos..reader.pos + 4])
 	reader.pos += 4
-	
+
 	return u32(val)
 }
 
@@ -372,10 +372,10 @@ fn proto_decode_fixed64(mut reader ProtoReader) !u64 {
 	if reader.pos + 8 > reader.data.len {
 		return error('unexpected end of fixed64')
 	}
-	
-	val := core.read_i64_le(reader.data[reader.pos..reader.pos+8])
+
+	val := core.read_i64_le(reader.data[reader.pos..reader.pos + 8])
 	reader.pos += 8
-	
+
 	return u64(val)
 }
 

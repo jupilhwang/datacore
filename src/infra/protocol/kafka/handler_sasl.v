@@ -187,7 +187,7 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 // Handle SaslAuthenticate (API Key 36)
 // Handles SASL authentication
 // Supported mechanisms: PLAIN, SCRAM-SHA-256
-fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
+fn (mut h Handler) handle_sasl_authenticate(mut conn ?&domain.AuthConnection, body []u8, version i16) ![]u8 {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	is_flexible := is_flexible_version(.sasl_authenticate, version)
@@ -230,6 +230,17 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) ![]u8 {
 			if result.complete {
 				h.logger.info('SASL authentication successful', observability.field_string('mechanism',
 					mechanism.str()), observability.field_duration('latency', elapsed))
+
+				// Mark connection as authenticated
+				if mut c := conn {
+					if principal := result.principal {
+						c.set_authenticated(principal)
+					} else {
+						// Principal is missing - this should not happen for successful auth
+						h.logger.warn('SASL auth success but principal is missing', observability.field_string('mechanism',
+							mechanism.str()))
+					}
+				}
 			} else {
 				h.logger.debug('SASL authentication step completed', observability.field_string('mechanism',
 					mechanism.str()), observability.field_duration('latency', elapsed))

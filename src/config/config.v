@@ -863,15 +863,15 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 
 	// REST configuration (with priority cascade)
 	rest := RestConfig{
-		enabled:                   get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
+		enabled:         get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
 			empty_doc, '', true)
-		host:                      get_config_string(cli_args, 'rest-host', 'DATACORE_REST_HOST',
+		host:            get_config_string(cli_args, 'rest-host', 'DATACORE_REST_HOST',
 			empty_doc, '', '0.0.0.0')
-		port:                      get_config_int(cli_args, 'rest-port', 'DATACORE_REST_PORT',
-			empty_doc, '', 8080)
-		max_connections:           get_config_int(cli_args, 'rest-max-connections', 'DATACORE_REST_MAX_CONNECTIONS',
+		port:            get_config_int(cli_args, 'rest-port', 'DATACORE_REST_PORT', empty_doc,
+			'', 8080)
+		max_connections: get_config_int(cli_args, 'rest-max-connections', 'DATACORE_REST_MAX_CONNECTIONS',
 			empty_doc, '', 1000)
-		static_dir:                get_config_string(cli_args, 'rest-static-dir', 'DATACORE_REST_STATIC_DIR',
+		static_dir:      get_config_string(cli_args, 'rest-static-dir', 'DATACORE_REST_STATIC_DIR',
 			empty_doc, '', 'tests/web')
 	}
 
@@ -883,16 +883,16 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 
 	// S3 configuration (with priority cascade)
 	mut s3 := S3StorageConfig{
-		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
-			empty_doc, '', '')
-		bucket:                       get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
-			empty_doc, '', '')
-		region:                       get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
-			empty_doc, '', 'us-east-1')
-		prefix:                       get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
-			empty_doc, '', 'datacore/')
-		timezone:                     get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
-			empty_doc, '', 'UTC')
+		endpoint: get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT', empty_doc,
+			'', '')
+		bucket:   get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET', empty_doc,
+			'', '')
+		region:   get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION', empty_doc,
+			'', 'us-east-1')
+		prefix:   get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX', empty_doc,
+			'', 'datacore/')
+		timezone: get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE', empty_doc,
+			'', 'UTC')
 	}
 
 	// S3 credentials priority: CLI args > env vars > ~/.aws/credentials

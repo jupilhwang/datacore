@@ -604,7 +604,7 @@ fn decode_float(mut reader AvroReader) !f32 {
 		return error('unexpected end of float')
 	}
 
-	bits := core.read_i32_le(reader.data[reader.pos..reader.pos+4])
+	bits := core.read_i32_le(reader.data[reader.pos..reader.pos + 4])
 	reader.pos += 4
 
 	return *unsafe { &f32(&bits) }
@@ -615,7 +615,7 @@ fn decode_double(mut reader AvroReader) !f64 {
 		return error('unexpected end of double')
 	}
 
-	bits := core.read_i64_le(reader.data[reader.pos..reader.pos+8])
+	bits := core.read_i64_le(reader.data[reader.pos..reader.pos + 8])
 	reader.pos += 8
 
 	return *unsafe { &f64(&bits) }

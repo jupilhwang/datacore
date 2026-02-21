@@ -19,21 +19,7 @@ pub fn generate_uuid() []u8 {
 	return uuid
 }
 
-/// parse_config_i64 parses an i64 value from a configuration map.
-pub fn parse_config_i64(configs map[string]string, key string, default_val i64) i64 {
-	if val := configs[key] {
-		return val.i64()
-	}
-	return default_val
-}
-
-/// parse_config_int parses an int value from a configuration map.
-pub fn parse_config_int(configs map[string]string, key string, default_val int) int {
-	if val := configs[key] {
-		return val.int()
-	}
-	return default_val
-}
+// parse_config_i64 and parse_config_int have been moved to common/config_utils.v
 
 // MurmurHash3 - Kafka-compatible partitioning hash
 
@@ -381,7 +367,6 @@ pub fn escape_json_string(s string) string {
 	}
 	return result.bytestr()
 }
-
 
 // Ring buffer - lock-free single producer, single consumer
 

@@ -6,6 +6,7 @@ module kafka
 import domain
 import infra.observability
 import time
+import common
 import infra.performance.core
 
 /// CreateTopicsRequest holds the request data for CreateTopics.
@@ -272,12 +273,15 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 			t.replication_factor))
 		// Convert config map to domain.TopicConfig
 		topic_config := domain.TopicConfig{
-			retention_ms:        core.parse_config_i64(t.configs, 'retention.ms', 604800000)
-			retention_bytes:     core.parse_config_i64(t.configs, 'retention.bytes', -1)
-			segment_bytes:       core.parse_config_i64(t.configs, 'segment.bytes', 1073741824)
+			retention_ms:        common.parse_config_i64(t.configs, 'retention.ms', 604800000)
+			retention_bytes:     common.parse_config_i64(t.configs, 'retention.bytes',
+				-1)
+			segment_bytes:       common.parse_config_i64(t.configs, 'segment.bytes', 1073741824)
 			cleanup_policy:      t.configs['cleanup.policy'] or { 'delete' }
-			min_insync_replicas: core.parse_config_int(t.configs, 'min.insync.replicas', 1)
-			max_message_bytes:   core.parse_config_int(t.configs, 'max.message.bytes', 1048576)
+			min_insync_replicas: common.parse_config_int(t.configs, 'min.insync.replicas',
+				1)
+			max_message_bytes:   common.parse_config_int(t.configs, 'max.message.bytes',
+				1048576)
 		}
 
 		// Try to create topic in storage
@@ -429,12 +433,15 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 	for t in req.topics {
 		// Convert config map to domain.TopicConfig
 		topic_config := domain.TopicConfig{
-			retention_ms:        core.parse_config_i64(t.configs, 'retention.ms', 604800000)
-			retention_bytes:     core.parse_config_i64(t.configs, 'retention.bytes', -1)
-			segment_bytes:       core.parse_config_i64(t.configs, 'segment.bytes', 1073741824)
+			retention_ms:        common.parse_config_i64(t.configs, 'retention.ms', 604800000)
+			retention_bytes:     common.parse_config_i64(t.configs, 'retention.bytes',
+				-1)
+			segment_bytes:       common.parse_config_i64(t.configs, 'segment.bytes', 1073741824)
 			cleanup_policy:      t.configs['cleanup.policy'] or { 'delete' }
-			min_insync_replicas: core.parse_config_int(t.configs, 'min.insync.replicas', 1)
-			max_message_bytes:   core.parse_config_int(t.configs, 'max.message.bytes', 1048576)
+			min_insync_replicas: common.parse_config_int(t.configs, 'min.insync.replicas',
+				1)
+			max_message_bytes:   common.parse_config_int(t.configs, 'max.message.bytes',
+				1048576)
 		}
 
 		// Attempt to create topic in storage
