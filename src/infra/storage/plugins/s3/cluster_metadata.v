@@ -25,7 +25,8 @@ pub mut:
 pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMetadataAdapter {
 	// Workaround for V interface value copy bug: save config to global variable
 	cluster_metadata_config_backup = adapter.config
-	observability.log_with_context('s3', .info, 'ClusterMetadata', 'Creating cluster metadata adapter', {
+	observability.log_with_context('s3', .info, 'ClusterMetadata', 'Creating cluster metadata adapter',
+		{
 		'endpoint':    adapter.config.endpoint
 		'region':      adapter.config.region
 		'bucket_name': adapter.config.bucket_name
@@ -244,7 +245,8 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 	a.adapter.metrics_lock.unlock()
 
 	data, _ := a.adapter.get_object(key, 0, -1) or {
-		observability.log_with_context('s3', .warn, 'PartitionAssignment', 'Partition assignment not found', {
+		observability.log_with_context('s3', .warn, 'PartitionAssignment', 'Partition assignment not found',
+			{
 			'topic':     topic_name
 			'partition': partition.str()
 			'key':       key
@@ -344,7 +346,8 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 	a.ensure_adapter_config()
 	prefix := a.all_assignments_prefix()
 
-	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Listing all partition assignments', {
+	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Listing all partition assignments',
+		{
 		'prefix': prefix
 	})
 
@@ -387,7 +390,8 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 		assignments << assignment
 	}
 
-	observability.log_with_context('s3', .info, 'PartitionAssignment', 'Listed all partition assignments', {
+	observability.log_with_context('s3', .info, 'PartitionAssignment', 'Listed all partition assignments',
+		{
 		'total_count': assignments.len.str()
 		'failed':      failed_count.str()
 	})
@@ -402,7 +406,8 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 	a.ensure_adapter_config()
 	key := a.partition_assignment_key(assignment.topic_name, assignment.partition)
 
-	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Updating partition assignment', {
+	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Updating partition assignment',
+		{
 		'topic':            assignment.topic_name
 		'partition':        assignment.partition.str()
 		'preferred_broker': assignment.preferred_broker.str()

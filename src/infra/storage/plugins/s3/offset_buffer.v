@@ -103,7 +103,8 @@ fn (mut a S3StorageAdapter) flush_pending_offsets() {
 			a.metrics_lock.@lock()
 			a.metrics.offset_flush_error_count++
 			a.metrics_lock.unlock()
-			observability.log_with_context('s3', .error, 'OffsetFlush', 'Failed to flush offsets', {
+			observability.log_with_context('s3', .error, 'OffsetFlush', 'Failed to flush offsets',
+				{
 				'group_id': group_id
 				'error':    err.msg()
 			})

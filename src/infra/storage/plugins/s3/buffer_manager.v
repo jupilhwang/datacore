@@ -66,7 +66,8 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	// Write segment to S3
 	a.put_object(segment_key, segment_data) or {
 		// Without retry on failure, data will be lost. Currently log and return error.
-		observability.log_with_context('s3', .error, 'AsyncFlush', 'Segment put failed', {
+		observability.log_with_context('s3', .error, 'AsyncFlush', 'Segment put failed',
+			{
 			'partition_key': partition_key
 			'segment_key':   segment_key
 			'error':         err.msg()
@@ -77,7 +78,8 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	// 4. Update partition index with new segment
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
 		end_offset, segment_data.len) or {
-		observability.log_with_context('s3', .error, 'AsyncFlush', 'Index update failed', {
+		observability.log_with_context('s3', .error, 'AsyncFlush', 'Index update failed',
+			{
 			'partition_key': partition_key
 			'segment_key':   segment_key
 			'error':         err.msg()
@@ -129,13 +131,15 @@ fn (mut a S3StorageAdapter) flush_pending_messages() {
 			continue
 		}
 		a.flush_buffer_to_s3(batch.key, batch.records) or {
-			observability.log_with_context('s3', .error, 'FlushWorker', 'Flush failed', {
+			observability.log_with_context('s3', .error, 'FlushWorker', 'Flush failed',
+				{
 				'partition_key': batch.key
 				'record_count':  batch.records.len.str()
 				'error':         err.msg()
 			})
 			a.restore_failed_message_buffer(batch.key, batch.records)
-			observability.log_with_context('s3', .warn, 'FlushWorker', 'Buffer restored after flush failure', {
+			observability.log_with_context('s3', .warn, 'FlushWorker', 'Buffer restored after flush failure',
+				{
 				'partition_key': batch.key
 				'record_count':  batch.records.len.str()
 			})

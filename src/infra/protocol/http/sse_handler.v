@@ -61,7 +61,8 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 			status_code = 400
 			elapsed_ms := time.since(start_time).milliseconds()
 			h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-			observability.log_with_context('sse', .error, 'Request', 'Invalid partition', {
+			observability.log_with_context('sse', .error, 'Request', 'Invalid partition',
+				{
 				'topic':     request.topic
 				'partition': partition.str()
 				'client_ip': request.client_ip
@@ -79,7 +80,8 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		status_code = 503
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		observability.log_with_context('sse', .error, 'Request', 'Failed to register connection', {
+		observability.log_with_context('sse', .error, 'Request', 'Failed to register connection',
+			{
 			'client_ip': request.client_ip
 			'error':     err.msg()
 		})
@@ -99,7 +101,8 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		h.sse_service.unregister_connection(conn_id) or {}
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		observability.log_with_context('sse', .error, 'Request', 'Failed to subscribe', {
+		observability.log_with_context('sse', .error, 'Request', 'Failed to subscribe',
+			{
 			'conn_id': conn_id
 			'topic':   request.topic
 			'error':   err.msg()
@@ -121,7 +124,8 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 	elapsed_ms := time.since(start_time).milliseconds()
 	h.metrics.record_request('sse_request', elapsed_ms, success, 0, headers.len)
 
-	observability.log_with_context('sse', .info, 'Request', 'SSE request successful', {
+	observability.log_with_context('sse', .info, 'Request', 'SSE request successful',
+		{
 		'conn_id':   conn_id
 		'topic':     request.topic
 		'client_ip': request.client_ip

@@ -72,7 +72,8 @@ fn (mut a S3StorageAdapter) append_to_iceberg(topic string, partition int, recor
 			// Update metadata file
 			writer.write_metadata_file()!
 
-			observability.log_with_context('s3', .info, 'IcebergFlush', 'Created new Iceberg snapshot', {
+			observability.log_with_context('s3', .info, 'IcebergFlush', 'Created new Iceberg snapshot',
+				{
 				'topic':       topic
 				'partition':   partition.str()
 				'snapshot_id': snapshot.snapshot_id.str()
@@ -137,7 +138,8 @@ pub fn (mut a S3StorageAdapter) flush_all_iceberg_writers() ! {
 		}
 	}
 
-	observability.log_with_context('s3', .info, 'IcebergFlushAll', 'Flushed all Iceberg writers', {
+	observability.log_with_context('s3', .info, 'IcebergFlushAll', 'Flushed all Iceberg writers',
+		{
 		'total_files':     total_files.str()
 		'total_snapshots': total_snapshots.str()
 	})
