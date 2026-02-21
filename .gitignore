@@ -7,6 +7,7 @@
 *.out
 /datacore
 /src/src
+bin/*
 
 # Build outputs
 /build/
@@ -48,6 +49,11 @@ profile.txt
 
 # Dependencies cache
 .vcache/
+
+.opencode/*
+.taskmaster/*
+.serena/*
+.ruff_cache/*
 
 # Environment
 .env

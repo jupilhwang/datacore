@@ -17,19 +17,6 @@ pub:
 	client_id      string
 }
 
-/// Request header v2 (flexible version, Kafka 2.4+)
-///
-/// Note: client_id is still NULLABLE_STRING, not compact!
-/// Only the tag_buffer uses compact format.
-pub struct RequestHeaderV2 {
-pub:
-	api_key        i16
-	api_version    i16
-	correlation_id i32
-	client_id      string
-	tagged_fields  []TaggedField
-}
-
 /// Tagged field - carries extension data in flexible versions
 pub struct TaggedField {
 pub:

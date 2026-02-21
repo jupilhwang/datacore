@@ -15,7 +15,7 @@ services:
       # - ./data:/app/data  # If using persistent storage plugin
     environment:
       - LOG_LEVEL=info
-      - STORAGE_ENGINE=memory # memory, s3, postgres
+      - STORAGE_ENGINE=s3 # memory, s3, postgres
       # Env variables for S3 or Postgres can be added here
       # - S3_ENDPOINT=http://minio:9000
       # - S3_BUCKET=datacore

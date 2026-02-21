@@ -106,29 +106,3 @@ pub fn (mut m ProtocolMetrics) get_summary() string {
 
 	return result
 }
-
-/// Returns the average latency of a specific API (in milliseconds).
-pub fn (mut m ProtocolMetrics) get_avg_latency(api_name string) f64 {
-	m.lock.lock()
-	defer { m.lock.unlock() }
-
-	if api_name in m.api_latency_count && m.api_latency_count[api_name] > 0 {
-		return f64(m.api_latency_sum[api_name]) / f64(m.api_latency_count[api_name])
-	}
-	return 0.0
-}
-
-/// Returns the success rate of a specific API (0.0 to 1.0).
-pub fn (mut m ProtocolMetrics) get_success_rate(api_name string) f64 {
-	m.lock.lock()
-	defer { m.lock.unlock() }
-
-	if api_name in m.api_requests_total {
-		total := m.api_requests_total[api_name]
-		failed := m.api_requests_failed[api_name] or { 0 }
-		if total > 0 {
-			return f64(total - failed) / f64(total)
-		}
-	}
-	return 0.0
-}
