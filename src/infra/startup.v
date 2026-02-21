@@ -1,7 +1,7 @@
 // DataCore - Broker startup helpers
 // Contains helper functions extracted from start_broker to improve readability
 // and testability of the startup sequence.
-module main
+module infra
 
 import os
 import time
@@ -17,15 +17,15 @@ import service.cluster
 import service.port
 
 // StorageResult holds the initialized storage port and optional S3 adapter reference.
-struct StorageResult {
-mut:
+pub struct StorageResult {
+pub mut:
 	storage    port.StoragePort
 	s3_adapter ?&s3.S3StorageAdapter
 }
 
 // init_storage initializes the storage engine based on configuration.
 // Returns a StorageResult containing the port and an optional S3 adapter reference.
-fn init_storage(conf cfg.Config, mut logger observability.Logger) !StorageResult {
+pub fn init_storage(conf cfg.Config, mut logger observability.Logger) !StorageResult {
 	engine := conf.storage.engine.to_lower()
 
 	if engine == 'memory' {
@@ -94,21 +94,21 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 }
 
 // init_protocol_handler creates and returns the Kafka protocol handler.
-fn init_protocol_handler(conf cfg.Config, storage port.StoragePort, compression_service &compression.CompressionService) kafka.Handler {
+pub fn init_protocol_handler(conf cfg.Config, storage port.StoragePort, compression_service &compression.CompressionService) kafka.Handler {
 	return kafka.new_handler(conf.broker.broker_id, conf.broker.advertised_host, conf.broker.port,
 		conf.broker.cluster_id, storage, compression_service)
 }
 
 // ClusterRegistryResult holds the broker registry and cluster metadata port.
-struct ClusterRegistryResult {
-mut:
+pub struct ClusterRegistryResult {
+pub mut:
 	registry     ?&cluster.BrokerRegistry
 	cluster_port ?&port.ClusterMetadataPort
 }
 
 // init_cluster_registry initializes the broker registry for multi-broker mode.
 // Returns none if the storage does not support multi-broker mode.
-fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_adapter_ref ?&s3.S3StorageAdapter, mut protocol_handler kafka.Handler, mut logger observability.Logger) ClusterRegistryResult {
+pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_adapter_ref ?&s3.S3StorageAdapter, mut protocol_handler kafka.Handler, mut logger observability.Logger) ClusterRegistryResult {
 	capability := storage.get_storage_capability()
 	if !capability.supports_multi_broker {
 		return ClusterRegistryResult{}
