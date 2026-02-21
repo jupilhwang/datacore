@@ -45,113 +45,111 @@ mut:
 	compression_service     &compression.CompressionService
 }
 
+/// HandlerConfig holds all configuration for creating a Kafka protocol handler.
+/// Use new_handler_from_config to construct a Handler from this struct.
+pub struct HandlerConfig {
+pub:
+	broker_id           i32
+	host                string
+	broker_port         i32
+	cluster_id          string
+	storage             port.StoragePort
+	auth_manager        ?port.AuthManager
+	acl_manager         ?port.AclManager
+	txn_coordinator     ?transaction.TransactionCoordinator
+	share_coordinator   ?&group.ShareGroupCoordinator
+	compression_service &compression.CompressionService = unsafe { nil }
+}
+
+/// new_handler_from_config creates a Handler from a HandlerConfig.
+/// This is the single initialization path that all constructor helpers delegate to.
+pub fn new_handler_from_config(cfg HandlerConfig) Handler {
+	logger := observability.get_named_logger('kafka.handler')
+	offset_mgr := offset.new_offset_manager(cfg.storage, logger)
+	metrics := observability.new_protocol_metrics()
+
+	return Handler{
+		broker_id:               cfg.broker_id
+		host:                    cfg.host
+		broker_port:             cfg.broker_port
+		cluster_id:              cfg.cluster_id
+		storage:                 cfg.storage
+		offset_manager:          offset_mgr
+		broker_registry:         none
+		partition_assigner:      none
+		auth_manager:            cfg.auth_manager
+		acl_manager:             cfg.acl_manager
+		txn_coordinator:         cfg.txn_coordinator
+		share_group_coordinator: cfg.share_coordinator
+		logger:                  logger
+		metrics:                 metrics
+		compression_service:     cfg.compression_service
+	}
+}
+
 /// new_handler creates a new Kafka protocol handler with storage only.
 ///
 /// This is the basic handler with no authentication or ACL.
 /// Suitable for development and testing environments.
 pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_service &compression.CompressionService) Handler {
-	logger := observability.get_named_logger('kafka.handler')
-	offset_mgr := offset.new_offset_manager(storage, logger)
-	metrics := observability.new_protocol_metrics()
-
-	return Handler{
-		broker_id:               broker_id
-		host:                    host
-		broker_port:             broker_port
-		cluster_id:              cluster_id
-		storage:                 storage
-		offset_manager:          offset_mgr
-		broker_registry:         none
-		partition_assigner:      none
-		auth_manager:            none
-		acl_manager:             none
-		txn_coordinator:         none
-		share_group_coordinator: none
-		logger:                  logger
-		metrics:                 metrics
-		compression_service:     compression_service
-	}
+	return new_handler_from_config(HandlerConfig{
+		broker_id:           broker_id
+		host:                host
+		broker_port:         broker_port
+		cluster_id:          cluster_id
+		storage:             storage
+		compression_service: compression_service
+	})
 }
 
 /// new_handler_with_auth creates a new Kafka protocol handler with storage and an auth manager.
 ///
 /// Use this in environments that require SASL authentication.
 pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager, compression_service &compression.CompressionService) Handler {
-	logger := observability.get_named_logger('kafka.handler')
-	offset_mgr := offset.new_offset_manager(storage, logger)
-	metrics := observability.new_protocol_metrics()
-
-	return Handler{
-		broker_id:               broker_id
-		host:                    host
-		broker_port:             broker_port
-		cluster_id:              cluster_id
-		storage:                 storage
-		offset_manager:          offset_mgr
-		broker_registry:         none
-		partition_assigner:      none
-		auth_manager:            auth_manager
-		acl_manager:             none
-		txn_coordinator:         none
-		share_group_coordinator: none
-		logger:                  logger
-		metrics:                 metrics
-		compression_service:     compression_service
-	}
+	return new_handler_from_config(HandlerConfig{
+		broker_id:           broker_id
+		host:                host
+		broker_port:         broker_port
+		cluster_id:          cluster_id
+		storage:             storage
+		auth_manager:        auth_manager
+		compression_service: compression_service
+	})
 }
 
 /// new_handler_full creates a fully configured Kafka protocol handler with all components.
 ///
 /// Use this in production when authentication, ACL, and transactions are all required.
 pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, compression_service &compression.CompressionService) Handler {
-	logger := observability.get_named_logger('kafka.handler')
-	offset_mgr := offset.new_offset_manager(storage, logger)
-	metrics := observability.new_protocol_metrics()
-
-	return Handler{
-		broker_id:               broker_id
-		host:                    host
-		broker_port:             broker_port
-		cluster_id:              cluster_id
-		storage:                 storage
-		offset_manager:          offset_mgr
-		broker_registry:         none
-		partition_assigner:      none
-		auth_manager:            auth_manager
-		acl_manager:             acl_manager
-		txn_coordinator:         txn_coordinator
-		share_group_coordinator: none
-		logger:                  logger
-		metrics:                 metrics
-		compression_service:     compression_service
-	}
+	return new_handler_from_config(HandlerConfig{
+		broker_id:           broker_id
+		host:                host
+		broker_port:         broker_port
+		cluster_id:          cluster_id
+		storage:             storage
+		auth_manager:        auth_manager
+		acl_manager:         acl_manager
+		txn_coordinator:     txn_coordinator
+		compression_service: compression_service
+	})
 }
 
 /// new_handler_with_share_groups creates a Kafka protocol handler with Share Group support (KIP-932).
 ///
 /// Supports queue-based message consumption patterns.
 pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator, compression_service &compression.CompressionService) Handler {
-	logger := observability.get_named_logger('kafka.handler')
-	offset_mgr := offset.new_offset_manager(storage, logger)
-	metrics := observability.new_protocol_metrics()
-
-	return Handler{
-		broker_id:               broker_id
-		host:                    host
-		broker_port:             broker_port
-		cluster_id:              cluster_id
-		storage:                 storage
-		offset_manager:          offset_mgr
-		broker_registry:         none
-		partition_assigner:      none
-		auth_manager:            auth_manager
-		acl_manager:             acl_manager
-		txn_coordinator:         txn_coordinator
-		share_group_coordinator: share_coordinator
-		logger:                  logger
-		metrics:                 metrics
-		compression_service:     compression_service
-	}
+	return new_handler_from_config(HandlerConfig{
+		broker_id:           broker_id
+		host:                host
+		broker_port:         broker_port
+		cluster_id:          cluster_id
+		storage:             storage
+		auth_manager:        auth_manager
+		acl_manager:         acl_manager
+		txn_coordinator:     txn_coordinator
+		share_coordinator:   share_coordinator
+		compression_service: compression_service
+	})
 }
 
 /// set_broker_registry sets the broker registry for multi-broker mode.
