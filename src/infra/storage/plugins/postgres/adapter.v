@@ -310,6 +310,59 @@ fn (a &PostgresStorageAdapter) decode_record_rows(rows []pg.Row) []domain.Record
 	return records
 }
 
+// --- Metrics helper functions ---
+// Each helper acquires and releases the metrics lock independently,
+// preventing deadlocks when called from functions that do not hold the lock.
+
+fn (mut a PostgresStorageAdapter) inc_topic_create() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.topic_create_count++
+}
+
+fn (mut a PostgresStorageAdapter) inc_error() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.error_count++
+}
+
+fn (mut a PostgresStorageAdapter) inc_append(record_count i64) {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.append_count++
+	a.metrics.append_record_count += record_count
+}
+
+fn (mut a PostgresStorageAdapter) inc_append_query(elapsed_ms i64) {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.query_count++
+	a.metrics.query_total_ms += elapsed_ms
+}
+
+fn (mut a PostgresStorageAdapter) inc_fetch() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.fetch_count++
+}
+
+fn (mut a PostgresStorageAdapter) inc_fetch_done(record_count i64, elapsed_ms i64) {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.fetch_record_count += record_count
+	a.metrics.query_count++
+	a.metrics.query_total_ms += elapsed_ms
+}
+
+fn (mut a PostgresStorageAdapter) inc_create_topic_query(elapsed_ms i64) {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.query_count++
+	a.metrics.query_total_ms += elapsed_ms
+}
+
+// --- End metrics helpers ---
+
 /// init_schema initializes the database schema.
 /// Creates topics, records, partition_metadata, consumer_groups, and committed_offsets tables.
 /// Skips tables that already exist (IF NOT EXISTS).
@@ -433,10 +486,7 @@ fn (mut a PostgresStorageAdapter) load_topic_cache() ! {
 pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
 	start_time := time.now()
 
-	// Metrics: topic creation start
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.topic_create_count++
+	a.inc_topic_create()
 
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -486,12 +536,8 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 	a.topic_id_idx[topic_id.hex()] = name
 	a.cache_lock.unlock()
 
-	// Metrics: record query time
 	elapsed_ms := time.since(start_time).milliseconds()
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.query_count++
-	a.metrics.query_total_ms += elapsed_ms
+	a.inc_create_topic_query(elapsed_ms)
 
 	observability.log_with_context('postgres', .info, 'Topic', 'Topic created', {
 		'name':       name
@@ -616,29 +662,19 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 	_ = required_acks
 	start_time := time.now()
 
-	// Metrics: append start
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.append_count++
-	a.metrics.append_record_count += i64(records.len)
+	a.inc_append(i64(records.len))
 
 	// Check topic exists
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
-		// Metrics: error
-		a.metrics_lock.@lock()
-		a.metrics.error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('topic not found')
 	}
 	a.cache_lock.runlock()
 
 	if partition < 0 || partition >= topic.partition_count {
-		// Metrics: error
-		a.metrics_lock.@lock()
-		a.metrics.error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('partition out of range')
 	}
 
@@ -657,10 +693,7 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 
 	if rows.len == 0 {
 		db.rollback()!
-		// Metrics: error
-		a.metrics_lock.@lock()
-		a.metrics.error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('partition metadata not found')
 	}
 
@@ -689,12 +722,8 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 
 	db.commit()!
 
-	// Metrics: record query time
 	elapsed_ms := time.since(start_time).milliseconds()
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.query_count++
-	a.metrics.query_total_ms += elapsed_ms
+	a.inc_append_query(elapsed_ms)
 
 	return domain.AppendResult{
 		base_offset:      start_offset
@@ -708,28 +737,19 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
 	start_time := time.now()
 
-	// Metrics: fetch start
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.fetch_count++
+	a.inc_fetch()
 
 	// Check topic exists
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
-		// Metrics: error
-		a.metrics_lock.@lock()
-		a.metrics.error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('topic not found')
 	}
 	a.cache_lock.runlock()
 
 	if partition < 0 || partition >= topic.partition_count {
-		// Metrics: error
-		a.metrics_lock.@lock()
-		a.metrics.error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('partition out of range')
 	}
 
@@ -744,10 +764,7 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 		[topic_name, partition.str()])!
 
 	if meta_rows.len == 0 {
-		// Metrics: error
-		a.metrics_lock.@lock()
-		a.metrics.error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('partition metadata not found')
 	}
 
@@ -781,13 +798,8 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	// Decode records
 	fetched_records := a.decode_record_rows(rows)
 
-	// Metrics: fetched record count and query time
 	elapsed_ms := time.since(start_time).milliseconds()
-	a.metrics_lock.@lock()
-	a.metrics.fetch_record_count += i64(fetched_records.len)
-	a.metrics.query_count++
-	a.metrics.query_total_ms += elapsed_ms
-	a.metrics_lock.unlock()
+	a.inc_fetch_done(i64(fetched_records.len), elapsed_ms)
 
 	// Actual offset of the first returned record
 	actual_first_offset := if fetched_records.len > 0 { offset } else { high_watermark }
