@@ -6,6 +6,7 @@ import db.pg
 import domain
 import time
 import sync
+import infra.performance.core
 
 /// PostgresClusterMetadataPort implements port.ClusterMetadataPort.
 /// Manages broker registration, partition assignments, and distributed locks using PostgreSQL.
@@ -731,26 +732,14 @@ fn parse_hex_string(s string) []u8 {
 	mut result := []u8{cap: s.len / 2}
 	mut i := 0
 	for i < s.len {
-		high := hex_char_to_nibble(s[i])
-		low := hex_char_to_nibble(s[i + 1])
+		high := core.hex_char_to_nibble(s[i])
+		low := core.hex_char_to_nibble(s[i + 1])
 		if high >= 0 && low >= 0 {
 			result << u8((u8(high) << 4) | u8(low))
 		}
 		i += 2
 	}
 	return result
-}
-
-/// hex_char_to_nibble converts a hexadecimal character to a 4-bit value.
-fn hex_char_to_nibble(c u8) int {
-	if c >= `0` && c <= `9` {
-		return int(c - `0`)
-	} else if c >= `a` && c <= `f` {
-		return int(c - `a` + 10)
-	} else if c >= `A` && c <= `F` {
-		return int(c - `A` + 10)
-	}
-	return -1
 }
 
 /// is_octal checks whether a string is a 3-digit octal number.
@@ -798,16 +787,7 @@ fn format_pg_bytea(data []u8) string {
 	for b in data {
 		high := b >> 4
 		low := b & 0x0F
-		hex_parts << hex_nibble_to_char(high) + hex_nibble_to_char(low)
+		hex_parts << core.hex_nibble_to_char(high) + core.hex_nibble_to_char(low)
 	}
 	return '\\x${hex_parts.join('')}'
-}
-
-/// hex_nibble_to_char converts a 4-bit value to a hexadecimal character.
-fn hex_nibble_to_char(n u8) string {
-	if n < 10 {
-		return (u8(`0`) + n).ascii_str()
-	} else {
-		return (u8(`a`) + (n - 10)).ascii_str()
-	}
 }

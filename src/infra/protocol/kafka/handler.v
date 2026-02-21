@@ -7,7 +7,6 @@ module kafka
 
 import infra.compression
 import infra.observability
-import rand
 import service.cluster
 import service.group
 import service.offset
@@ -16,6 +15,7 @@ import service.schema
 import service.transaction
 import time
 import domain
+import infra.performance.core
 
 /// PartitionAssignerPtr is a pointer type for the partition assignment service,
 /// referencing PartitionAssigner from the service.cluster module.
@@ -177,8 +177,7 @@ fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 		// Look up schema configuration from topic metadata
 		if topic_meta := h.storage.get_topic(topic_name) {
 			schema_subject := topic_meta.config['schema.subject'] or { return none }
-			schema_version_str := topic_meta.config['schema.version'] or { '1' }
-			schema_version := schema_version_str.int()
+			schema_version := core.parse_config_int(topic_meta.config, 'schema.version', 1)
 
 			// Retrieve schema (version -1 means latest)
 			return registry.get_schema_by_subject(schema_subject, schema_version) or { return none }
@@ -573,27 +572,7 @@ fn empty_consumer_assignment() []u8 {
 	return writer.bytes()
 }
 
-// parse_config_i64 parses a configuration value as i64.
-fn parse_config_i64(configs map[string]string, key string, default_val i64) i64 {
-	val := configs[key] or { return default_val }
-	return val.i64()
-}
-
-// parse_config_int parses a configuration value as int.
-fn parse_config_int(configs map[string]string, key string, default_val int) int {
-	val := configs[key] or { return default_val }
-	return val.int()
-}
-
-// generate_uuid generates a random UUID v4 (16 bytes).
-fn generate_uuid() []u8 {
-	// Initialize array with random values
-	mut uuid := []u8{len: 16, init: u8(rand.int_in_range(0, 256) or { 0 })}
-	// Set version (4) and variant (RFC 4122) bits
-	uuid[6] = (uuid[6] & 0x0f) | 0x40
-	uuid[8] = (uuid[8] & 0x3f) | 0x80
-	return uuid
-}
+// parse_config_i64, parse_config_int, and generate_uuid are now moved to core/utils.v.
 
 /// get_metrics_summary returns a summary of protocol metrics.
 pub fn (mut h Handler) get_metrics_summary() string {

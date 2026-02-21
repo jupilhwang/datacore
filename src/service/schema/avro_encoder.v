@@ -3,6 +3,8 @@
 // https://avro.apache.org/docs/current/specification/
 module schema
 
+import infra.performance.core
+
 // AvroEncoder provides binary encoding and decoding for Avro data
 /// AvroEncoder provides binary encoding and decoding for Avro data.
 pub struct AvroEncoder {}
@@ -565,40 +567,12 @@ fn (mut e AvroEncoder) decode_fixed(mut reader AvroReader, schema AvroSchema) ![
 // Low-level decoding functions using primitives
 
 fn decode_varint_zigzag(mut reader AvroReader) !i64 {
-	zigzag := decode_varint_u64(mut reader)!
-	// Reverse ZigZag: (n >> 1) ^ -(n & 1)
-	return i64(zigzag >> 1) ^ -i64(zigzag & 1)
-}
-
-fn decode_varint_u64(mut reader AvroReader) !u64 {
-	if reader.pos >= reader.data.len {
-		return error('unexpected end of varint')
+	val, n := core.decode_varint(reader.data[reader.pos..])
+	if n <= 0 {
+		return error('invalid or incomplete varint')
 	}
-
-	mut result := u64(0)
-	mut shift := 0
-
-	for {
-		if reader.pos >= reader.data.len {
-			return error('unexpected end of varint')
-		}
-
-		b := reader.data[reader.pos]
-		reader.pos += 1
-
-		result |= u64(b & 0x7F) << shift
-
-		if (b & 0x80) == 0 {
-			break
-		}
-
-		shift += 7
-		if shift >= 64 {
-			return error('varint too long')
-		}
-	}
-
-	return result
+	reader.pos += n
+	return val
 }
 
 fn decode_string(mut reader AvroReader) !string {
@@ -630,8 +604,7 @@ fn decode_float(mut reader AvroReader) !f32 {
 		return error('unexpected end of float')
 	}
 
-	bits := u32(reader.data[reader.pos]) | (u32(reader.data[reader.pos + 1]) << 8) | (u32(reader.data[
-		reader.pos + 2]) << 16) | (u32(reader.data[reader.pos + 3]) << 24)
+	bits := core.read_i32_le(reader.data[reader.pos..reader.pos+4])
 	reader.pos += 4
 
 	return *unsafe { &f32(&bits) }
@@ -642,10 +615,7 @@ fn decode_double(mut reader AvroReader) !f64 {
 		return error('unexpected end of double')
 	}
 
-	bits := u64(reader.data[reader.pos]) | (u64(reader.data[reader.pos + 1]) << 8) | (u64(reader.data[
-		reader.pos + 2]) << 16) | (u64(reader.data[reader.pos + 3]) << 24) | (u64(reader.data[
-		reader.pos + 4]) << 32) | (u64(reader.data[reader.pos + 5]) << 40) | (u64(reader.data[
-		reader.pos + 6]) << 48) | (u64(reader.data[reader.pos + 7]) << 56)
+	bits := core.read_i64_le(reader.data[reader.pos..reader.pos+8])
 	reader.pos += 8
 
 	return *unsafe { &f64(&bits) }
@@ -700,7 +670,7 @@ fn parse_json_bytes(json_str string) ?[]u8 {
 			for i := 0; i < hex_str.len; i += 2 {
 				high := hex_str[i]
 				low := hex_str[i + 1]
-				byte_val := (hex_char_to_nibble(high) << 4) | hex_char_to_nibble(low)
+				byte_val := (u8(core.hex_char_to_nibble(high)) << 4) | u8(core.hex_char_to_nibble(low))
 				result << byte_val
 			}
 			return result
@@ -709,19 +679,6 @@ fn parse_json_bytes(json_str string) ?[]u8 {
 	}
 
 	return none
-}
-
-fn hex_char_to_nibble(c u8) u8 {
-	if c >= `0` && c <= `9` {
-		return c - `0`
-	}
-	if c >= `a` && c <= `f` {
-		return c - `a` + 10
-	}
-	if c >= `A` && c <= `F` {
-		return c - `A` + 10
-	}
-	return 0
 }
 
 fn format_json_bytes(bytes []u8) string {

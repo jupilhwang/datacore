@@ -3,6 +3,7 @@
 module s3
 
 import time
+import infra.performance.core
 
 /// StoredRecord is the internal storage representation with an offset.
 struct StoredRecord {
@@ -29,56 +30,33 @@ fn encode_stored_records(records []StoredRecord) []u8 {
 	}
 
 	mut buf := []u8{cap: estimated_size}
-	record_count := records.len
-	buf << u8(record_count >> 24)
-	buf << u8(record_count >> 16)
-	buf << u8(record_count >> 8)
-	buf << u8(record_count)
+	core.write_i32_be(mut buf, i32(records.len))
 
 	for rec in records {
 		// Offset (8 bytes)
-		for i := 7; i >= 0; i-- {
-			buf << u8(rec.offset >> (i * 8))
-		}
+		core.write_i64_be(mut buf, rec.offset)
 
 		// Timestamp (8 bytes)
-		ts := rec.timestamp.unix_milli()
-		for i := 7; i >= 0; i-- {
-			buf << u8(ts >> (i * 8))
-		}
+		core.write_i64_be(mut buf, rec.timestamp.unix_milli())
 
 		// Key
-		key_len := rec.key.len
-		buf << u8(key_len >> 24)
-		buf << u8(key_len >> 16)
-		buf << u8(key_len >> 8)
-		buf << u8(key_len)
+		core.write_i32_be(mut buf, i32(rec.key.len))
 		buf << rec.key
 
 		// Value
-		value_len := rec.value.len
-		buf << u8(value_len >> 24)
-		buf << u8(value_len >> 16)
-		buf << u8(value_len >> 8)
-		buf << u8(value_len)
+		core.write_i32_be(mut buf, i32(rec.value.len))
 		buf << rec.value
 
 		// Headers (map[string][]u8)
-		headers_count := rec.headers.len
-		buf << u8(headers_count >> 24)
-		buf << u8(headers_count >> 16)
-		buf << u8(headers_count >> 8)
-		buf << u8(headers_count)
+		core.write_i32_be(mut buf, i32(rec.headers.len))
 
 		for h_key, h_val in rec.headers {
 			// Header key length and value
-			buf << u8(h_key.len >> 8)
-			buf << u8(h_key.len)
+			core.write_i16_be(mut buf, i16(h_key.len))
 			buf << h_key.bytes()
 
 			// Header value length and value
-			buf << u8(h_val.len >> 8)
-			buf << u8(h_val.len)
+			core.write_i16_be(mut buf, i16(h_val.len))
 			buf << h_val
 		}
 
@@ -96,8 +74,7 @@ fn decode_stored_records(data []u8) []StoredRecord {
 	}
 
 	mut pos := 0
-	record_count := (u32(data[pos]) << 24) | (u32(data[pos + 1]) << 16) | (u32(data[pos + 2]) << 8) | u32(data[
-		pos + 3])
+	record_count := core.read_u32_be(data[pos..])
 	pos += 4
 
 	mut records := []StoredRecord{}
@@ -108,45 +85,36 @@ fn decode_stored_records(data []u8) []StoredRecord {
 		}
 
 		// Offset
-		mut offset := i64(0)
-		for i := 0; i < 8; i++ {
-			offset = i64((u64(offset) << 8) | u64(data[pos + i]))
-		}
+		offset := core.read_i64_be(data[pos..])
 		pos += 8
 
-		mut ts := i64(0)
-		for i := 0; i < 8; i++ {
-			ts = i64((u64(ts) << 8) | u64(data[pos + i]))
-		}
+		ts := core.read_i64_be(data[pos..])
 		pos += 8
 
 		// Key
-		key_len := (u32(data[pos]) << 24) | (u32(data[pos + 1]) << 16) | (u32(data[pos + 2]) << 8) | u32(data[
-			pos + 3])
+		key_len := core.read_u32_be(data[pos..])
 		pos += 4
 		key := data[pos..pos + int(key_len)].clone()
 		pos += int(key_len)
 
 		// Value
-		value_len := (u32(data[pos]) << 24) | (u32(data[pos + 1]) << 16) | (u32(data[pos + 2]) << 8) | u32(data[
-			pos + 3])
+		value_len := core.read_u32_be(data[pos..])
 		pos += 4
 		value := data[pos..pos + int(value_len)].clone()
 		pos += int(value_len)
 
 		// Headers
-		headers_count := (u32(data[pos]) << 24) | (u32(data[pos + 1]) << 16) | (u32(data[pos + 2]) << 8) | u32(data[
-			pos + 3])
+		headers_count := core.read_u32_be(data[pos..])
 		pos += 4
 
 		mut headers := map[string][]u8{}
 		for _ in 0 .. headers_count {
-			h_key_len := (u32(data[pos]) << 8) | u32(data[pos + 1])
+			h_key_len := core.read_u16_be(data[pos..])
 			pos += 2
 			h_key := data[pos..pos + int(h_key_len)].bytestr()
 			pos += int(h_key_len)
 
-			h_val_len := (u32(data[pos]) << 8) | u32(data[pos + 1])
+			h_val_len := core.read_u16_be(data[pos..])
 			pos += 2
 			h_val := data[pos..pos + int(h_val_len)].clone()
 			pos += int(h_val_len)

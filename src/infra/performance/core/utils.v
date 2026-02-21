@@ -2,6 +2,39 @@
 /// Hash functions, CRC32, varint encoding, and other utilities
 module core
 
+import rand
+
+// Utilities
+
+/// generate_uuid generates a random UUID v4 (16 bytes).
+pub fn generate_uuid() []u8 {
+	// Initialize array with random values
+	mut uuid := []u8{len: 16}
+	for i in 0 .. 16 {
+		uuid[i] = u8(rand.intn(256) or { 0 })
+	}
+	// Set version (4) and variant (RFC 4122) bits
+	uuid[6] = (uuid[6] & 0x0f) | 0x40
+	uuid[8] = (uuid[8] & 0x3f) | 0x80
+	return uuid
+}
+
+/// parse_config_i64 parses an i64 value from a configuration map.
+pub fn parse_config_i64(configs map[string]string, key string, default_val i64) i64 {
+	if val := configs[key] {
+		return val.i64()
+	}
+	return default_val
+}
+
+/// parse_config_int parses an int value from a configuration map.
+pub fn parse_config_int(configs map[string]string, key string, default_val int) int {
+	if val := configs[key] {
+		return val.int()
+	}
+	return default_val
+}
+
 // MurmurHash3 - Kafka-compatible partitioning hash
 
 const c1 = u32(0xcc9e2d51)
@@ -196,6 +229,159 @@ pub fn uvarint_size(value u64) int {
 	}
 	return size
 }
+
+// Big-endian write helpers
+
+/// hex_char_to_nibble converts a hexadecimal character to a 4-bit value.
+/// Returns -1 if the character is not a valid hex digit.
+pub fn hex_char_to_nibble(c u8) int {
+	if c >= `0` && c <= `9` {
+		return int(c - `0`)
+	} else if c >= `a` && c <= `f` {
+		return int(c - `a` + 10)
+	} else if c >= `A` && c <= `F` {
+		return int(c - `A` + 10)
+	}
+	return -1
+}
+
+/// hex_nibble_to_char converts a 4-bit value (0-15) to a hexadecimal character (a-f).
+pub fn hex_nibble_to_char(n u8) string {
+	if n < 10 {
+		return (u8(`0`) + n).ascii_str()
+	} else {
+		return (u8(`a`) + (n - 10)).ascii_str()
+	}
+}
+
+/// write_i16_be writes a 16-bit integer in big-endian order to a buffer.
+pub fn write_i16_be(mut buf []u8, val i16) {
+	buf << [u8(val >> 8), u8(val)]
+}
+
+/// write_i32_be writes a 32-bit integer in big-endian order to a buffer.
+pub fn write_i32_be(mut buf []u8, val i32) {
+	buf << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
+}
+
+/// write_u32_be writes an unsigned 32-bit integer in big-endian order to a buffer.
+pub fn write_u32_be(mut buf []u8, val u32) {
+	buf << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
+}
+
+/// write_i64_be writes a 64-bit integer in big-endian order to a buffer.
+pub fn write_i64_be(mut buf []u8, val i64) {
+	buf << [
+		u8(val >> 56),
+		u8(val >> 48),
+		u8(val >> 40),
+		u8(val >> 32),
+		u8(val >> 24),
+		u8(val >> 16),
+		u8(val >> 8),
+		u8(val),
+	]
+}
+
+/// write_i32_be_at writes a 32-bit integer in big-endian order at a specific position in the buffer.
+pub fn write_i32_be_at(mut buf []u8, pos int, val i32) {
+	buf[pos] = u8(val >> 24)
+	buf[pos + 1] = u8(val >> 16)
+	buf[pos + 2] = u8(val >> 8)
+	buf[pos + 3] = u8(val)
+}
+
+/// write_u32_be_at writes an unsigned 32-bit integer in big-endian order at a specific position in the buffer.
+pub fn write_u32_be_at(mut buf []u8, pos int, val u32) {
+	buf[pos] = u8(val >> 24)
+	buf[pos + 1] = u8(val >> 16)
+	buf[pos + 2] = u8(val >> 8)
+	buf[pos + 3] = u8(val)
+}
+
+/// read_i16_be reads a 16-bit integer in big-endian order from a buffer.
+pub fn read_i16_be(data []u8) i16 {
+	return i16(u16(data[0]) << 8 | u16(data[1]))
+}
+
+/// read_u16_be reads an unsigned 16-bit integer in big-endian order from a buffer.
+pub fn read_u16_be(data []u8) u16 {
+	return u16(data[0]) << 8 | u16(data[1])
+}
+
+/// read_i32_be reads a 32-bit integer in big-endian order from a buffer.
+pub fn read_i32_be(data []u8) i32 {
+	return i32(u32(data[0]) << 24 | u32(data[1]) << 16 | u32(data[2]) << 8 | u32(data[3]))
+}
+
+/// read_u32_be reads an unsigned 32-bit integer in big-endian order from a buffer.
+pub fn read_u32_be(data []u8) u32 {
+	return u32(data[0]) << 24 | u32(data[1]) << 16 | u32(data[2]) << 8 | u32(data[3])
+}
+
+/// read_i64_be reads a 64-bit integer in big-endian order from a buffer.
+pub fn read_i64_be(data []u8) i64 {
+	return i64(u64(data[0]) << 56 | u64(data[1]) << 48 | u64(data[2]) << 40 | u64(data[3]) << 32 | u64(data[4]) << 24 | u64(data[5]) << 16 | u64(data[6]) << 8 | u64(data[7]))
+}
+
+/// write_i32_le writes a 32-bit integer in little-endian order to a buffer.
+pub fn write_i32_le(mut buf []u8, val i32) {
+	buf << [u8(val), u8(val >> 8), u8(val >> 16), u8(val >> 24)]
+}
+
+/// write_i64_le writes a 64-bit integer in little-endian order to a buffer.
+pub fn write_i64_le(mut buf []u8, val i64) {
+	buf << [
+		u8(val),
+		u8(val >> 8),
+		u8(val >> 16),
+		u8(val >> 24),
+		u8(val >> 32),
+		u8(val >> 40),
+		u8(val >> 48),
+		u8(val >> 56),
+	]
+}
+
+/// read_i32_le reads a 32-bit integer in little-endian order from a buffer.
+pub fn read_i32_le(data []u8) i32 {
+	return i32(u32(data[0]) | u32(data[1]) << 8 | u32(data[2]) << 16 | u32(data[3]) << 24)
+}
+
+/// read_i64_le reads a 64-bit integer in little-endian order from a buffer.
+pub fn read_i64_le(data []u8) i64 {
+	return i64(u64(data[0]) | u64(data[1]) << 8 | u64(data[2]) << 16 | u64(data[3]) << 24 | u64(data[4]) << 32 | u64(data[5]) << 40 | u64(data[6]) << 48 | u64(data[7]) << 56)
+}
+
+/// escape_json_string escapes a string for use in a JSON value.
+
+pub fn escape_json_string(s string) string {
+	mut result := []u8{cap: s.len + 10}
+	for c in s.bytes() {
+		match c {
+			`"` {
+				result << [u8(`\\`), u8(`"`)]
+			}
+			`\\` {
+				result << [u8(`\\`), u8(`\\`)]
+			}
+			`\n` {
+				result << [u8(`\\`), u8(`n`)]
+			}
+			`\r` {
+				result << [u8(`\\`), u8(`r`)]
+			}
+			`\t` {
+				result << [u8(`\\`), u8(`t`)]
+			}
+			else {
+				result << c
+			}
+		}
+	}
+	return result.bytestr()
+}
+
 
 // Ring buffer - lock-free single producer, single consumer
 

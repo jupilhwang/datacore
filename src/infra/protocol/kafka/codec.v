@@ -4,6 +4,7 @@ module kafka
 import domain
 import time
 import infra.protocol.kafka.crc32c
+import infra.performance.core
 
 /// ByteView - Zero-copy view over a byte slice (lightweight alternative)
 /// Used internally for high-performance parsing without memory allocation.
@@ -109,7 +110,7 @@ pub fn (mut r BinaryReader) read_i16() !i16 {
 	if r.remaining() < 2 {
 		return error('not enough data for i16')
 	}
-	val := i16(u16(r.data[r.pos]) << 8 | u16(r.data[r.pos + 1]))
+	val := core.read_i16_be(r.data[r.pos..r.pos + 2])
 	r.pos += 2
 	return val
 }
@@ -119,8 +120,7 @@ pub fn (mut r BinaryReader) read_i32() !i32 {
 	if r.remaining() < 4 {
 		return error('not enough data for i32')
 	}
-	val := i32(u32(r.data[r.pos]) << 24 | u32(r.data[r.pos + 1]) << 16 | u32(r.data[r.pos + 2]) << 8 | u32(r.data[
-		r.pos + 3]))
+	val := core.read_i32_be(r.data[r.pos..r.pos + 4])
 	r.pos += 4
 	return val
 }
@@ -130,9 +130,7 @@ pub fn (mut r BinaryReader) read_i64() !i64 {
 	if r.remaining() < 8 {
 		return error('not enough data for i64')
 	}
-	val := i64(u64(r.data[r.pos]) << 56 | u64(r.data[r.pos + 1]) << 48 | u64(r.data[r.pos + 2]) << 40 | u64(r.data[
-		r.pos + 3]) << 32 | u64(r.data[r.pos + 4]) << 24 | u64(r.data[r.pos + 5]) << 16 | u64(r.data[
-		r.pos + 6]) << 8 | u64(r.data[r.pos + 7]))
+	val := core.read_i64_be(r.data[r.pos..r.pos + 8])
 	r.pos += 8
 	return val
 }
@@ -436,27 +434,22 @@ pub fn (mut w BinaryWriter) write_i8(val i8) {
 
 /// write_i16 writes a signed 16-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_i16(val i16) {
-	// Optimized as a single bulk append instead of two separate appends
-	w.data << [u8(val >> 8), u8(val)]
+	core.write_i16_be(mut w.data, val)
 }
 
 /// write_i32 writes a signed 32-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_i32(val i32) {
-	// Optimized as a single bulk append instead of four separate appends
-	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
+	core.write_i32_be(mut w.data, val)
 }
 
 /// write_u32 writes an unsigned 32-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_u32(val u32) {
-	// Optimized as a single bulk append instead of four separate appends
-	w.data << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
+	core.write_u32_be(mut w.data, val)
 }
 
 /// write_i64 writes a signed 64-bit integer in big-endian format.
 pub fn (mut w BinaryWriter) write_i64(val i64) {
-	// Optimized as a single bulk append instead of eight separate appends
-	w.data << [u8(val >> 56), u8(val >> 48), u8(val >> 40), u8(val >> 32), u8(val >> 24),
-		u8(val >> 16), u8(val >> 8), u8(val)]
+	core.write_i64_be(mut w.data, val)
 }
 
 /// write_uvarint writes an unsigned variable-length integer.

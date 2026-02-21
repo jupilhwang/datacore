@@ -9,6 +9,7 @@ import service.streaming
 import service.port
 import time
 import infra.observability
+import infra.performance.core
 
 // Logging
 
@@ -16,11 +17,12 @@ import infra.observability
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	mut logger := observability.get_named_logger('websocket.${component}')
 	match level {
-		.debug { logger.debug(message) }
-		.info { logger.info(message) }
-		.warn { logger.warn(message) }
-		.error { logger.error(message) }
-		else {}
+		.trace { logger.debug_map(message, context) }
+		.debug { logger.debug_map(message, context) }
+		.info { logger.info_map(message, context) }
+		.warn { logger.warn_map(message, context) }
+		.error { logger.error_map(message, context) }
+		.fatal { logger.fatal_map(message, context) }
 	}
 }
 
@@ -271,11 +273,11 @@ fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
 	if payload_len == 126 {
 		mut ext := []u8{len: 2}
 		conn.read(mut ext) or { return error('Failed to read extended length') }
-		payload_len = u64(ext[0]) << 8 | u64(ext[1])
+		payload_len = u64(core.read_u16_be(ext))
 	} else if payload_len == 127 {
 		mut ext := []u8{len: 8}
 		conn.read(mut ext) or { return error('Failed to read extended length') }
-		payload_len = u64(ext[0]) << 56 | u64(ext[1]) << 48 | u64(ext[2]) << 40 | u64(ext[3]) << 32 | u64(ext[4]) << 24 | u64(ext[5]) << 16 | u64(ext[6]) << 8 | u64(ext[7])
+		payload_len = u64(core.read_i64_be(ext))
 	}
 
 	// check maximum message size
@@ -332,12 +334,9 @@ fn (mut h WebSocketHandler) send_pong(mut conn net.TcpConn, payload []u8) ! {
 
 /// send_close sends a close frame.
 fn (mut h WebSocketHandler) send_close(mut conn net.TcpConn, code u16, reason string) ! {
-	mut payload := []u8{len: 2 + reason.len}
-	payload[0] = u8(code >> 8)
-	payload[1] = u8(code & 0xFF)
-	for i, c in reason.bytes() {
-		payload[2 + i] = c
-	}
+	mut payload := []u8{cap: 2 + reason.len}
+	core.write_i16_be(mut payload, i16(code))
+	payload << reason.bytes()
 	h.send_frame(mut conn, .close, payload)!
 }
 
@@ -353,13 +352,10 @@ fn (mut h WebSocketHandler) send_frame(mut conn net.TcpConn, opcode WebSocketOpc
 		frame << u8(payload.len)
 	} else if payload.len < 65536 {
 		frame << u8(126)
-		frame << u8(payload.len >> 8)
-		frame << u8(payload.len & 0xFF)
+		core.write_i16_be(mut frame, i16(payload.len))
 	} else {
 		frame << u8(127)
-		for i := 7; i >= 0; i-- {
-			frame << u8((payload.len >> (i * 8)) & 0xFF)
-		}
+		core.write_i64_be(mut frame, i64(payload.len))
 	}
 
 	// payload

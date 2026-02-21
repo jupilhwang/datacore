@@ -20,6 +20,7 @@ module s3
 import json
 import time
 import domain
+import infra.performance.core
 
 // Offset snapshot magic bytes (DataCore Offset Snapshot v1)
 const offset_snapshot_magic = u16(0xDC01)
@@ -64,95 +65,6 @@ fn new_offset_snapshot(broker_id i32) OffsetSnapshot {
 	}
 }
 
-// CRC32 IEEE checksum (inline implementation)
-
-// Lookup table based on IEEE polynomial 0xEDB88320
-const snapshot_crc32_table = init_snapshot_crc32_table()
-
-fn init_snapshot_crc32_table() []u32 {
-	mut table := []u32{len: 256}
-	for i in 0 .. 256 {
-		mut crc := u32(i)
-		for _ in 0 .. 8 {
-			if crc & 1 != 0 {
-				crc = (crc >> 1) ^ u32(0xedb88320)
-			} else {
-				crc >>= 1
-			}
-		}
-		table[i] = crc
-	}
-	return table
-}
-
-// crc32_checksum computes a CRC32 checksum using the IEEE polynomial.
-fn crc32_checksum(data []u8) u32 {
-	mut crc := u32(0xffffffff)
-	for b in data {
-		idx := int((crc ^ u32(b)) & 0xff)
-		crc = (crc >> 8) ^ snapshot_crc32_table[idx]
-	}
-	return crc ^ u32(0xffffffff)
-}
-
-// Big-endian write helpers
-
-fn write_i16_be(mut buf []u8, val i16) {
-	buf << u8(val >> 8)
-	buf << u8(val)
-}
-
-fn write_i32_be(mut buf []u8, val i32) {
-	buf << u8(val >> 24)
-	buf << u8(val >> 16)
-	buf << u8(val >> 8)
-	buf << u8(val)
-}
-
-fn write_i64_be(mut buf []u8, val i64) {
-	buf << u8(val >> 56)
-	buf << u8(val >> 48)
-	buf << u8(val >> 40)
-	buf << u8(val >> 32)
-	buf << u8(val >> 24)
-	buf << u8(val >> 16)
-	buf << u8(val >> 8)
-	buf << u8(val)
-}
-
-fn write_u32_be(mut buf []u8, val u32) {
-	buf << u8(val >> 24)
-	buf << u8(val >> 16)
-	buf << u8(val >> 8)
-	buf << u8(val)
-}
-
-// Big-endian read helpers
-
-fn read_i16_be(data []u8, pos int) i16 {
-	return i16(u16(data[pos]) << 8 | u16(data[pos + 1]))
-}
-
-fn read_i32_be(data []u8, pos int) i32 {
-	return i32(u32(data[pos]) << 24 | u32(data[pos + 1]) << 16 | u32(data[pos + 2]) << 8 | u32(data[
-		pos + 3]))
-}
-
-fn read_i64_be(data []u8, pos int) i64 {
-	return i64(u64(data[pos]) << 56 | u64(data[pos + 1]) << 48 | u64(data[pos + 2]) << 40 | u64(data[
-		pos + 3]) << 32 | u64(data[pos + 4]) << 24 | u64(data[pos + 5]) << 16 | u64(data[pos + 6]) << 8 | u64(data[
-		pos + 7]))
-}
-
-fn read_u16_be(data []u8, pos int) u16 {
-	return u16(data[pos]) << 8 | u16(data[pos + 1])
-}
-
-fn read_u32_be(data []u8, pos int) u32 {
-	return u32(data[pos]) << 24 | u32(data[pos + 1]) << 16 | u32(data[pos + 2]) << 8 | u32(data[
-		pos + 3])
-}
-
 // Encoding
 
 // calculate_snapshot_size accurately calculates the encoded binary size of a snapshot.
@@ -181,16 +93,16 @@ fn encode_offset_snapshot(snapshot OffsetSnapshot) []u8 {
 	buf << u8(offset_snapshot_magic)
 
 	// version (4 bytes)
-	write_i32_be(mut buf, snapshot.version)
+	core.write_i32_be(mut buf, snapshot.version)
 
 	// broker_id (4 bytes)
-	write_i32_be(mut buf, snapshot.broker_id)
+	core.write_i32_be(mut buf, snapshot.broker_id)
 
 	// timestamp (8 bytes)
-	write_i64_be(mut buf, snapshot.timestamp)
+	core.write_i64_be(mut buf, snapshot.timestamp)
 
 	// entry_count (4 bytes)
-	write_i32_be(mut buf, i32(snapshot.offsets.len))
+	core.write_i32_be(mut buf, i32(snapshot.offsets.len))
 
 	// Encode each entry
 	for composite_key, entry in snapshot.offsets {
@@ -208,30 +120,30 @@ fn encode_offset_snapshot(snapshot OffsetSnapshot) []u8 {
 
 		// topic_len (2 bytes) + topic (N bytes)
 		topic_bytes := topic_name.bytes()
-		write_i16_be(mut buf, i16(topic_bytes.len))
+		core.write_i16_be(mut buf, i16(topic_bytes.len))
 		buf << topic_bytes
 
 		// partition (4 bytes)
-		write_i32_be(mut buf, i32(partition))
+		core.write_i32_be(mut buf, i32(partition))
 
 		// offset (8 bytes)
-		write_i64_be(mut buf, entry.offset)
+		core.write_i64_be(mut buf, entry.offset)
 
 		// leader_epoch (4 bytes)
-		write_i32_be(mut buf, entry.leader_epoch)
+		core.write_i32_be(mut buf, entry.leader_epoch)
 
 		// metadata_len (2 bytes) + metadata (N bytes)
 		metadata_bytes := entry.metadata.bytes()
-		write_i16_be(mut buf, i16(metadata_bytes.len))
+		core.write_i16_be(mut buf, i16(metadata_bytes.len))
 		buf << metadata_bytes
 
 		// committed_at (8 bytes)
-		write_i64_be(mut buf, entry.committed_at)
+		core.write_i64_be(mut buf, entry.committed_at)
 	}
 
 	// CRC32 checksum (from magic through the last entry)
-	checksum := crc32_checksum(buf)
-	write_u32_be(mut buf, checksum)
+	checksum := core.crc32_ieee(buf)
+	core.write_u32_be(mut buf, checksum)
 
 	return buf
 }
@@ -242,8 +154,8 @@ fn encode_offset_snapshot(snapshot OffsetSnapshot) []u8 {
 // The last 4 bytes contain the CRC32; computed over all preceding data and compared.
 fn verify_snapshot_crc(data []u8) ! {
 	payload := data[0..data.len - offset_snapshot_crc_size]
-	stored_crc := read_u32_be(data, data.len - offset_snapshot_crc_size)
-	computed_crc := crc32_checksum(payload)
+	stored_crc := core.read_u32_be(data[data.len - offset_snapshot_crc_size..])
+	computed_crc := core.crc32_ieee(payload)
 	if stored_crc != computed_crc {
 		return error('offset snapshot CRC32 mismatch: stored=0x${stored_crc:08X}, computed=0x${computed_crc:08X}')
 	}
@@ -254,16 +166,16 @@ fn verify_snapshot_crc(data []u8) ! {
 fn decode_snapshot_header(data []u8) !(i32, i32, i64, i32, int) {
 	mut pos := 2
 
-	version := read_i32_be(data, pos)
+	version := core.read_i32_be(data[pos..])
 	pos += 4
 
-	broker_id := read_i32_be(data, pos)
+	broker_id := core.read_i32_be(data[pos..])
 	pos += 4
 
-	timestamp := read_i64_be(data, pos)
+	timestamp := core.read_i64_be(data[pos..])
 	pos += 8
 
-	entry_count := read_i32_be(data, pos)
+	entry_count := core.read_i32_be(data[pos..])
 	pos += 4
 
 	if entry_count < 0 {
@@ -282,7 +194,7 @@ fn decode_snapshot_entry(data []u8, start_pos int, payload_len int) !(string, Of
 	if pos + 2 > payload_len {
 		return error('unexpected end of data while reading topic length at pos ${pos}')
 	}
-	topic_len := int(read_i16_be(data, pos))
+	topic_len := int(core.read_i16_be(data[pos..]))
 	pos += 2
 	if topic_len < 0 || pos + topic_len > payload_len {
 		return error('invalid topic length: ${topic_len} at pos ${pos}')
@@ -294,28 +206,28 @@ fn decode_snapshot_entry(data []u8, start_pos int, payload_len int) !(string, Of
 	if pos + 4 > payload_len {
 		return error('unexpected end of data while reading partition at pos ${pos}')
 	}
-	partition := read_i32_be(data, pos)
+	partition := core.read_i32_be(data[pos..])
 	pos += 4
 
 	// offset (8 bytes)
 	if pos + 8 > payload_len {
 		return error('unexpected end of data while reading offset at pos ${pos}')
 	}
-	offset := read_i64_be(data, pos)
+	offset := core.read_i64_be(data[pos..])
 	pos += 8
 
 	// leader_epoch (4 bytes)
 	if pos + 4 > payload_len {
 		return error('unexpected end of data while reading leader_epoch at pos ${pos}')
 	}
-	leader_epoch := read_i32_be(data, pos)
+	leader_epoch := core.read_i32_be(data[pos..])
 	pos += 4
 
 	// metadata_len (2 bytes) + metadata (N bytes)
 	if pos + 2 > payload_len {
 		return error('unexpected end of data while reading metadata length at pos ${pos}')
 	}
-	metadata_len := int(read_i16_be(data, pos))
+	metadata_len := int(core.read_i16_be(data[pos..]))
 	pos += 2
 	if metadata_len < 0 || pos + metadata_len > payload_len {
 		return error('invalid metadata length: ${metadata_len} at pos ${pos}')
@@ -327,7 +239,7 @@ fn decode_snapshot_entry(data []u8, start_pos int, payload_len int) !(string, Of
 	if pos + 8 > payload_len {
 		return error('unexpected end of data while reading committed_at at pos ${pos}')
 	}
-	committed_at := read_i64_be(data, pos)
+	committed_at := core.read_i64_be(data[pos..])
 	pos += 8
 
 	composite_key := '${topic_name}:${partition}'
@@ -348,7 +260,7 @@ fn decode_offset_snapshot(data []u8) !OffsetSnapshot {
 	}
 
 	// Verify magic bytes
-	magic := read_u16_be(data, 0)
+	magic := core.read_u16_be(data[0..])
 	if magic != offset_snapshot_magic {
 		return error('invalid offset snapshot magic: 0x${magic:04X}, expected 0xDC01')
 	}
@@ -386,7 +298,7 @@ fn try_decode_offset_data(data []u8) !OffsetSnapshot {
 	}
 
 	// Check for binary format (magic = 0xDC01)
-	magic := read_u16_be(data, 0)
+	magic := core.read_u16_be(data[0..])
 	if magic == offset_snapshot_magic {
 		return decode_offset_snapshot(data)
 	}

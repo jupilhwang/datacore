@@ -4,6 +4,7 @@ module observability
 
 import sync
 import time
+import infra.performance.core
 
 // Log levels
 
@@ -400,6 +401,50 @@ pub fn (mut l Logger) trace(msg string, fields ...LogField) {
 	}
 }
 
+// Map-based logging helpers (converts map to LogFields)
+
+fn (l &Logger) map_to_fields(m map[string]string) []LogField {
+	mut fields := []LogField{cap: m.len}
+	for k, v in m {
+		fields << LogField{
+			key:   k
+			value: v
+		}
+	}
+	return fields
+}
+
+/// debug_map - writes a DEBUG level log using a map for fields
+pub fn (mut l Logger) debug_map(msg string, m map[string]string) {
+	if int(l.level) <= int(LogLevel.debug) {
+		l.log(.debug, msg, ...l.map_to_fields(m))
+	}
+}
+
+/// info_map - writes an INFO level log using a map for fields
+pub fn (mut l Logger) info_map(msg string, m map[string]string) {
+	if int(l.level) <= int(LogLevel.info) {
+		l.log(.info, msg, ...l.map_to_fields(m))
+	}
+}
+
+/// warn_map - writes a WARN level log using a map for fields
+pub fn (mut l Logger) warn_map(msg string, m map[string]string) {
+	if int(l.level) <= int(LogLevel.warn) {
+		l.log(.warn, msg, ...l.map_to_fields(m))
+	}
+}
+
+/// error_map - writes an ERROR level log using a map for fields
+pub fn (mut l Logger) error_map(msg string, m map[string]string) {
+	l.log(.error, msg, ...l.map_to_fields(m))
+}
+
+/// fatal_map - writes a FATAL level log using a map for fields
+pub fn (mut l Logger) fatal_map(msg string, m map[string]string) {
+	l.log(.fatal, msg, ...l.map_to_fields(m))
+}
+
 /// flush() - sends all buffered logs to the OTLP endpoint
 pub fn (mut l Logger) flush() {
 	if l.otlp_endpoint == '' {
@@ -509,35 +554,7 @@ pub fn log_fatal(msg string, fields ...LogField) {
 
 /// Escapes a JSON string
 fn escape_json_string(s string) string {
-	mut result := []u8{cap: s.len + 10}
-	for c in s.bytes() {
-		match c {
-			`"` {
-				result << `\\`
-				result << `"`
-			}
-			`\\` {
-				result << `\\`
-				result << `\\`
-			}
-			`\n` {
-				result << `\\`
-				result << `n`
-			}
-			`\r` {
-				result << `\\`
-				result << `r`
-			}
-			`\t` {
-				result << `\\`
-				result << `t`
-			}
-			else {
-				result << c
-			}
-		}
-	}
-	return result.bytestr()
+	return core.escape_json_string(s)
 }
 
 /// Formats a log entry in JSON format.

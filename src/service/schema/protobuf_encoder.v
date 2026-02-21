@@ -3,6 +3,8 @@
 // https://protobuf.dev/programming-guides/encoding/
 module schema
 
+import infra.performance.core
+
 // Protobuf Binary Encoder
 // Implements Protocol Buffers wire format encoding
 /// ProtobufEncoder implements Protocol Buffers wire format encoding.
@@ -71,7 +73,7 @@ fn encode_message(json_str string, schema ProtoMessage) ![]u8 {
 		// Encode field tag (field_number << 3 | wire_type)
 		wire_type := get_wire_type(field.field_type)
 		tag := (u32(field.number) << 3) | u32(wire_type)
-		result << proto_encode_varint(u64(tag))
+		result << core.encode_uvarint(u64(tag))
 
 		// Encode field value based on type
 		encoded := encode_field(value, field)!
@@ -86,15 +88,15 @@ fn encode_field(value string, field ProtoField) ![]u8 {
 	match field.field_type {
 		'int32', 'int64', 'uint32', 'uint64' {
 			val := parse_json_long(value) or { return error('invalid integer') }
-			return proto_encode_varint(u64(val))
+			return core.encode_uvarint(u64(val))
 		}
 		'sint32' {
 			val := parse_json_int(value) or { return error('invalid sint32') }
-			return proto_encode_zigzag32(val)
+			return core.encode_varint(i64(val))
 		}
 		'sint64' {
 			val := parse_json_long(value) or { return error('invalid sint64') }
-			return proto_encode_zigzag64(val)
+			return core.encode_varint(val)
 		}
 		'bool' {
 			val := parse_json_bool(value) or { return error('invalid bool') }
@@ -102,32 +104,40 @@ fn encode_field(value string, field ProtoField) ![]u8 {
 		}
 		'fixed32', 'sfixed32' {
 			val := parse_json_int(value) or { return error('invalid fixed32') }
-			return proto_encode_fixed32(u32(val))
+			mut buf := []u8{}
+			core.write_i32_le(mut buf, i32(val))
+			return buf
 		}
 		'fixed64', 'sfixed64' {
 			val := parse_json_long(value) or { return error('invalid fixed64') }
-			return proto_encode_fixed64(u64(val))
+			mut buf := []u8{}
+			core.write_i64_le(mut buf, i64(val))
+			return buf
 		}
 		'float' {
 			val := parse_json_float(value) or { return error('invalid float') }
 			bits := *unsafe { &u32(&val) }
-			return proto_encode_fixed32(bits)
+			mut buf := []u8{}
+			core.write_i32_le(mut buf, i32(bits))
+			return buf
 		}
 		'double' {
 			val := parse_json_double(value) or { return error('invalid double') }
 			bits := *unsafe { &u64(&val) }
-			return proto_encode_fixed64(bits)
+			mut buf := []u8{}
+			core.write_i64_le(mut buf, i64(bits))
+			return buf
 		}
 		'string' {
 			str := parse_json_string_value(value) or { return error('invalid string') }
 			bytes := str.bytes()
-			mut result := proto_encode_varint(u64(bytes.len))
+			mut result := core.encode_uvarint(u64(bytes.len))
 			result << bytes
 			return result
 		}
 		'bytes' {
 			bytes := parse_json_bytes(value) or { return error('invalid bytes') }
-			mut result := proto_encode_varint(u64(bytes.len))
+			mut result := core.encode_uvarint(u64(bytes.len))
 			result << bytes
 			return result
 		}
@@ -138,12 +148,12 @@ fn encode_field(value string, field ProtoField) ![]u8 {
 				str := parse_json_string_value(value) or {
 					// Try as integer
 					val := parse_json_int(value) or { return error('invalid enum') }
-					return proto_encode_varint(u64(val))
+					return core.encode_uvarint(u64(val))
 				}
 
 				for i, name in field.enum_values {
 					if name == str {
-						return proto_encode_varint(u64(i))
+						return core.encode_uvarint(u64(i))
 					}
 				}
 				return error('unknown enum value: ${str}')
@@ -312,61 +322,6 @@ fn skip_field(mut reader ProtoReader, wire_type int) ! {
 	}
 }
 
-// Protobuf Encoding Helpers
-
-fn proto_encode_varint(val u64) []u8 {
-	mut result := []u8{}
-	mut n := val
-
-	for {
-		mut b := u8(n & 0x7F)
-		n = n >> 7
-		if n != 0 {
-			b |= 0x80
-		}
-		result << b
-		if n == 0 {
-			break
-		}
-	}
-
-	return result
-}
-
-fn proto_encode_zigzag32(val int) []u8 {
-	// Cast to u32 first to avoid signed shift warning
-	zigzag := u32(val) << 1 ^ u32(val >> 31)
-	return proto_encode_varint(u64(zigzag))
-}
-
-fn proto_encode_zigzag64(val i64) []u8 {
-	// Cast to u64 first to avoid signed shift warning
-	zigzag := u64(val) << 1 ^ u64(val >> 63)
-	return proto_encode_varint(zigzag)
-}
-
-fn proto_encode_fixed32(val u32) []u8 {
-	return [
-		u8(val & 0xFF),
-		u8((val >> 8) & 0xFF),
-		u8((val >> 16) & 0xFF),
-		u8((val >> 24) & 0xFF),
-	]
-}
-
-fn proto_encode_fixed64(val u64) []u8 {
-	return [
-		u8(val & 0xFF),
-		u8((val >> 8) & 0xFF),
-		u8((val >> 16) & 0xFF),
-		u8((val >> 24) & 0xFF),
-		u8((val >> 32) & 0xFF),
-		u8((val >> 40) & 0xFF),
-		u8((val >> 48) & 0xFF),
-		u8((val >> 56) & 0xFF),
-	]
-}
-
 // Protobuf Decoding Helpers
 
 struct ProtoReader {
@@ -376,67 +331,52 @@ mut:
 }
 
 fn proto_decode_varint(mut reader ProtoReader) !u64 {
-	mut result := u64(0)
-	mut shift := 0
-
-	for {
-		if reader.pos >= reader.data.len {
-			return error('unexpected end of varint')
-		}
-
-		b := reader.data[reader.pos]
-		reader.pos += 1
-
-		result |= u64(b & 0x7F) << shift
-
-		if (b & 0x80) == 0 {
-			break
-		}
-
-		shift += 7
-		if shift >= 64 {
-			return error('varint too long')
-		}
+	val, n := core.decode_uvarint(reader.data[reader.pos..])
+	if n <= 0 {
+		return error('invalid or incomplete varint')
 	}
-
-	return result
+	reader.pos += n
+	return val
 }
 
 fn proto_decode_zigzag32(mut reader ProtoReader) !int {
-	val := proto_decode_varint(mut reader)!
-	zigzag := u32(val)
-	return int((zigzag >> 1) ^ u32(-int(zigzag & 1)))
+	val, n := core.decode_varint(reader.data[reader.pos..])
+	if n <= 0 {
+		return error('invalid or incomplete zigzag')
+	}
+	reader.pos += n
+	return int(val)
 }
 
 fn proto_decode_zigzag64(mut reader ProtoReader) !i64 {
-	val := proto_decode_varint(mut reader)!
-	return i64((val >> 1) ^ u64(-i64(val & 1)))
+	val, n := core.decode_varint(reader.data[reader.pos..])
+	if n <= 0 {
+		return error('invalid or incomplete zigzag')
+	}
+	reader.pos += n
+	return val
 }
 
 fn proto_decode_fixed32(mut reader ProtoReader) !u32 {
 	if reader.pos + 4 > reader.data.len {
 		return error('unexpected end of fixed32')
 	}
-
-	result := u32(reader.data[reader.pos]) | (u32(reader.data[reader.pos + 1]) << 8) | (u32(reader.data[
-		reader.pos + 2]) << 16) | (u32(reader.data[reader.pos + 3]) << 24)
+	
+	val := core.read_i32_le(reader.data[reader.pos..reader.pos+4])
 	reader.pos += 4
-
-	return result
+	
+	return u32(val)
 }
 
 fn proto_decode_fixed64(mut reader ProtoReader) !u64 {
 	if reader.pos + 8 > reader.data.len {
 		return error('unexpected end of fixed64')
 	}
-
-	result := u64(reader.data[reader.pos]) | (u64(reader.data[reader.pos + 1]) << 8) | (u64(reader.data[
-		reader.pos + 2]) << 16) | (u64(reader.data[reader.pos + 3]) << 24) | (u64(reader.data[
-		reader.pos + 4]) << 32) | (u64(reader.data[reader.pos + 5]) << 40) | (u64(reader.data[
-		reader.pos + 6]) << 48) | (u64(reader.data[reader.pos + 7]) << 56)
+	
+	val := core.read_i64_le(reader.data[reader.pos..reader.pos+8])
 	reader.pos += 8
-
-	return result
+	
+	return u64(val)
 }
 
 fn get_wire_type(field_type string) int {

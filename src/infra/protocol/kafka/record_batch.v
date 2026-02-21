@@ -4,24 +4,7 @@ module kafka
 
 import domain
 import infra.protocol.kafka.crc32c
-
-/// varint_size calculates the encoded size of a varint.
-/// Uses the same ZigZag encoding as write_varint in codec.v for correctness.
-fn varint_size(val i64) int {
-	// ZigZag encoding: (n << 1) ^ (n >> 63)
-	// Cast to unsigned first to avoid signed-shift warnings
-	v := (u64(val) << 1) ^ u64(val >> 63)
-	mut size := 0
-	mut value := v
-	for {
-		size++
-		value >>= 7
-		if value == 0 {
-			break
-		}
-	}
-	return size
-}
+import infra.performance.core
 
 /// calculate_record_size calculates the size of an encoded record without actually encoding it.
 fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.Record) int {
@@ -31,29 +14,29 @@ fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.R
 	size += 1
 
 	// timestamp_delta (varint)
-	size += varint_size(timestamp_delta)
+	size += core.varint_size(timestamp_delta)
 
 	// offset_delta (varint)
-	size += varint_size(i64(offset_delta))
+	size += core.varint_size(i64(offset_delta))
 
 	// key length + key
 	if record.key.len > 0 {
-		size += varint_size(i64(record.key.len))
+		size += core.varint_size(i64(record.key.len))
 		size += record.key.len
 	} else {
-		size += varint_size(-1)
+		size += core.varint_size(-1)
 	}
 
 	// value length + value
 	if record.value.len > 0 {
-		size += varint_size(i64(record.value.len))
+		size += core.varint_size(i64(record.value.len))
 		size += record.value.len
 	} else {
-		size += varint_size(-1)
+		size += core.varint_size(-1)
 	}
 
 	// headers count (varint, 0 for no headers)
-	size += varint_size(0)
+	size += core.varint_size(0)
 
 	return size
 }
@@ -172,18 +155,12 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 	mut batch_data := writer.bytes()
 
 	// Calculate and fill in batch length (total - base_offset - batch_length_field)
-	batch_length := batch_data.len - 12
-	batch_data[8] = u8(batch_length >> 24)
-	batch_data[9] = u8(batch_length >> 16)
-	batch_data[10] = u8(batch_length >> 8)
-	batch_data[11] = u8(batch_length)
+	batch_length := i32(batch_data.len - 12)
+	core.write_i32_be_at(mut batch_data, 8, batch_length)
 
 	// Calculate CRC32c of the batch (from attributes to end)
 	crc := calculate_crc32c(batch_data[crc_pos + 4..])
-	batch_data[crc_pos] = u8(crc >> 24)
-	batch_data[crc_pos + 1] = u8(crc >> 16)
-	batch_data[crc_pos + 2] = u8(crc >> 8)
-	batch_data[crc_pos + 3] = u8(crc)
+	core.write_u32_be_at(mut batch_data, crc_pos, crc)
 
 	return batch_data
 }

@@ -2,6 +2,8 @@
 // Provides JSON parsing helper functions for schema validation and compatibility checks
 module schema
 
+import infra.performance.core
+
 // extract_json_string extracts the string value for a given key from JSON
 // Returns the value if found, otherwise returns none
 fn extract_json_string(json_str string, key string) ?string {
@@ -307,10 +309,7 @@ fn is_valid_json(s string) bool {
 	return false
 }
 
-// escape_json_string escapes special characters for JSON embedding
-// Returns the escaped string with quotes
+// escape_json_string is now moved to core/utils.v.
 fn escape_json_string(s string) string {
-	// Escape special characters for JSON embedding
-	return '"${s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r',
-		'\\r').replace('\t', '\\t')}"'
+	return '"' + core.escape_json_string(s) + '"'
 }

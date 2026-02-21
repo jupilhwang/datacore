@@ -8,6 +8,7 @@ import json
 import crypto.md5
 import sync
 import net.http
+import infra.observability
 
 // NOTE: S3 client functions in s3_client.v; index types in partition_index.v;
 // buffer types in buffer_manager.v; compaction in compaction.v
@@ -115,34 +116,17 @@ struct CachedSignature {
 	cached_at time.Time
 }
 
-/// LogLevel defines the log levels.
-enum LogLevel {
-	debug
-	info
-	warn
-	error
-}
-
 /// log_message prints a structured log message.
-fn log_message(level LogLevel, component string, message string, context map[string]string) {
-	level_str := match level {
-		.debug { '[DEBUG]' }
-		.info { '[INFO]' }
-		.warn { '[WARN]' }
-		.error { '[ERROR]' }
+fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+	mut logger := observability.get_named_logger('s3.${component}')
+	match level {
+		.trace { logger.debug_map(message, context) }
+		.debug { logger.debug_map(message, context) }
+		.info { logger.info_map(message, context) }
+		.warn { logger.warn_map(message, context) }
+		.error { logger.error_map(message, context) }
+		.fatal { logger.fatal_map(message, context) }
 	}
-
-	timestamp := time.now().format_ss()
-	mut ctx_str := ''
-	if context.len > 0 {
-		mut parts := []string{}
-		for key, value in context {
-			parts << '${key}=${value}'
-		}
-		ctx_str = ' {${parts.join(', ')}}'
-	}
-
-	eprintln('${timestamp} ${level_str} [S3:${component}] ${message}${ctx_str}')
 }
 
 /// S3Metrics tracks metrics for S3 storage operations.

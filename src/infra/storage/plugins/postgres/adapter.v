@@ -10,35 +10,19 @@ import time
 import rand
 import sync
 import encoding.hex
-
-/// LogLevel defines log levels.
-enum LogLevel {
-	debug
-	info
-	warn
-	error
-}
+import infra.observability
 
 /// log_message prints a structured log message.
-fn log_message(level LogLevel, component string, message string, context map[string]string) {
-	level_str := match level {
-		.debug { '[DEBUG]' }
-		.info { '[INFO]' }
-		.warn { '[WARN]' }
-		.error { '[ERROR]' }
+fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
+	mut logger := observability.get_named_logger('postgres.${component}')
+	match level {
+		.trace { logger.debug_map(message, context) }
+		.debug { logger.debug_map(message, context) }
+		.info { logger.info_map(message, context) }
+		.warn { logger.warn_map(message, context) }
+		.error { logger.error_map(message, context) }
+		.fatal { logger.fatal_map(message, context) }
 	}
-
-	timestamp := time.now().format_ss()
-	mut ctx_str := ''
-	if context.len > 0 {
-		mut parts := []string{}
-		for key, value in context {
-			parts << '${key}=${value}'
-		}
-		ctx_str = ' {${parts.join(', ')}}'
-	}
-
-	eprintln('${timestamp} ${level_str} [Postgres:${component}] ${message}${ctx_str}')
 }
 
 /// PostgresMetrics tracks metrics for PostgreSQL storage operations.

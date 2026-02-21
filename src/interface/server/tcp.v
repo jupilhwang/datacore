@@ -23,11 +23,12 @@ import infra.observability
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	mut logger := observability.get_named_logger('tcp.${component}')
 	match level {
-		.debug { logger.debug(message) }
-		.info { logger.info(message) }
-		.warn { logger.warn(message) }
-		.error { logger.error(message) }
-		else {}
+		.trace { logger.debug_map(message, context) } // map trace to debug for now or add trace_map
+		.debug { logger.debug_map(message, context) }
+		.info { logger.info_map(message, context) }
+		.warn { logger.warn_map(message, context) }
+		.error { logger.error_map(message, context) }
+		.fatal { logger.fatal_map(message, context) }
 	}
 }
 

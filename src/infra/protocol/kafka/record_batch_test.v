@@ -2,6 +2,7 @@ module kafka
 
 import domain
 import time
+import infra.performance.core
 
 // Test varint_size matches actual varint encoding
 fn test_varint_size_accuracy() {
@@ -23,7 +24,7 @@ fn test_varint_size_accuracy() {
 
 	for val in test_cases {
 		// Calculate size
-		calc_size := varint_size(val)
+		calc_size := core.varint_size(val)
 
 		// Encode and measure actual size
 		mut writer := new_writer()

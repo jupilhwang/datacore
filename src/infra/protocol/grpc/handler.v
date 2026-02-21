@@ -7,15 +7,18 @@ import service.port
 import service.streaming
 import time
 import infra.observability
+import infra.performance.core
 
 /// log_message prints a structured log message.
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	logger := observability.get_named_logger('grpc.${component}')
+	mut logger := observability.get_named_logger('grpc.${component}')
 	match level {
-		.debug { logger.debug(message, context) }
-		.info { logger.info(message, context) }
-		.warn { logger.warn(message, context) }
-		.error { logger.error(message, context) }
+		.trace { logger.debug_map(message, context) }
+		.debug { logger.debug_map(message, context) }
+		.info { logger.info_map(message, context) }
+		.warn { logger.warn_map(message, context) }
+		.error { logger.error_map(message, context) }
+		.fatal { logger.fatal_map(message, context) }
 	}
 }
 
@@ -137,7 +140,7 @@ fn (mut h GrpcHandler) read_frame(mut conn net.TcpConn) !GrpcFrame {
 	}
 
 	compressed := header[0] == 1
-	length := u32(header[1]) << 24 | u32(header[2]) << 16 | u32(header[3]) << 8 | u32(header[4])
+	length := u32(core.read_i32_be(header[1..5]))
 
 	// check maximum message size
 	if length > u32(h.config.max_message_size) {
@@ -174,10 +177,7 @@ fn (mut h GrpcHandler) send_frame(mut conn net.TcpConn, data []u8, compressed bo
 	frame << if compressed { u8(1) } else { u8(0) }
 
 	// length (big-endian)
-	frame << u8(length >> 24)
-	frame << u8(length >> 16)
-	frame << u8(length >> 8)
-	frame << u8(length)
+	core.write_u32_be(mut frame, length)
 
 	// payload
 	frame << data
@@ -269,7 +269,7 @@ fn (h &GrpcHandler) parse_produce_request(data []u8) !domain.GrpcStreamRequest {
 	mut pos := 0
 
 	// topic length (2 bytes) + topic
-	topic_len := int(data[pos]) << 8 | int(data[pos + 1])
+	topic_len := int(core.read_i16_be(data[pos..pos + 2]))
 	pos += 2
 	if pos + topic_len > data.len {
 		return error('Invalid topic length')
@@ -281,8 +281,7 @@ fn (h &GrpcHandler) parse_produce_request(data []u8) !domain.GrpcStreamRequest {
 	if pos + 4 > data.len {
 		return error('Missing partition')
 	}
-	partition_val := int(data[pos]) << 24 | int(data[pos + 1]) << 16 | int(data[pos + 2]) << 8 | int(data[
-		pos + 3])
+	partition_val := core.read_i32_be(data[pos..pos + 4])
 	pos += 4
 	partition := if partition_val >= 0 { i32(partition_val) } else { none }
 
@@ -290,8 +289,7 @@ fn (h &GrpcHandler) parse_produce_request(data []u8) !domain.GrpcStreamRequest {
 	if pos + 4 > data.len {
 		return error('Missing record count')
 	}
-	record_count := int(data[pos]) << 24 | int(data[pos + 1]) << 16 | int(data[pos + 2]) << 8 | int(data[
-		pos + 3])
+	record_count := int(core.read_i32_be(data[pos..pos + 4]))
 	pos += 4
 
 	// parse records
@@ -323,7 +321,7 @@ fn (h &GrpcHandler) parse_consume_request(data []u8) !domain.GrpcStreamRequest {
 	mut pos := 0
 
 	// topic length (2 bytes) + topic
-	topic_len := int(data[pos]) << 8 | int(data[pos + 1])
+	topic_len := int(core.read_i16_be(data[pos..pos + 2]))
 	pos += 2
 	if pos + topic_len > data.len {
 		return error('Invalid topic length')
@@ -331,34 +329,26 @@ fn (h &GrpcHandler) parse_consume_request(data []u8) !domain.GrpcStreamRequest {
 	topic := data[pos..pos + topic_len].bytestr()
 	pos += topic_len
 
-	// partition (4 bytes)
-	if pos + 4 > data.len {
-		return error('Missing partition')
-	}
-	partition := i32(data[pos]) << 24 | i32(data[pos + 1]) << 16 | i32(data[pos + 2]) << 8 | i32(data[
-		pos + 3])
+	partition := core.read_i32_be(data[pos..pos + 4])
 	pos += 4
 
 	// offset (8 bytes)
 	if pos + 8 > data.len {
 		return error('Missing offset')
 	}
-	offset := i64(data[pos]) << 56 | i64(data[pos + 1]) << 48 | i64(data[pos + 2]) << 40 | i64(data[
-		pos + 3]) << 32 | i64(data[pos + 4]) << 24 | i64(data[pos + 5]) << 16 | i64(data[pos + 6]) << 8 | i64(data[
-		pos + 7])
+	offset := core.read_i64_be(data[pos..pos + 8])
 	pos += 8
 
 	// max record count (4 bytes)
 	if pos + 4 > data.len {
 		return error('Missing max_records')
 	}
-	max_records := int(data[pos]) << 24 | int(data[pos + 1]) << 16 | int(data[pos + 2]) << 8 | int(data[
-		pos + 3])
+	max_records := int(core.read_i32_be(data[pos..pos + 4]))
 	pos += 4
 
 	// max byte count (4 bytes)
 	max_bytes := if pos + 4 <= data.len {
-		int(data[pos]) << 24 | int(data[pos + 1]) << 16 | int(data[pos + 2]) << 8 | int(data[pos + 3])
+		int(core.read_i32_be(data[pos..pos + 4]))
 	} else {
 		1048576
 	}
@@ -385,7 +375,7 @@ fn (h &GrpcHandler) parse_commit_request(data []u8) !domain.GrpcStreamRequest {
 	mut pos := 0
 
 	// group ID length (2 bytes) + group_id
-	group_len := int(data[pos]) << 8 | int(data[pos + 1])
+	group_len := int(core.read_i16_be(data[pos..pos + 2]))
 	pos += 2
 	if pos + group_len > data.len {
 		return error('Invalid group_id length')
@@ -397,8 +387,7 @@ fn (h &GrpcHandler) parse_commit_request(data []u8) !domain.GrpcStreamRequest {
 	if pos + 4 > data.len {
 		return error('Missing offset count')
 	}
-	offset_count := int(data[pos]) << 24 | int(data[pos + 1]) << 16 | int(data[pos + 2]) << 8 | int(data[
-		pos + 3])
+	offset_count := int(core.read_i32_be(data[pos..pos + 4]))
 	pos += 4
 
 	// parse offsets
@@ -408,7 +397,7 @@ fn (h &GrpcHandler) parse_commit_request(data []u8) !domain.GrpcStreamRequest {
 		if pos + 2 > data.len {
 			return error('Missing topic length')
 		}
-		topic_len := int(data[pos]) << 8 | int(data[pos + 1])
+		topic_len := int(core.read_i16_be(data[pos..pos + 2]))
 		pos += 2
 		if pos + topic_len > data.len {
 			return error('Invalid topic length')
@@ -420,17 +409,14 @@ fn (h &GrpcHandler) parse_commit_request(data []u8) !domain.GrpcStreamRequest {
 		if pos + 4 > data.len {
 			return error('Missing partition')
 		}
-		partition := i32(data[pos]) << 24 | i32(data[pos + 1]) << 16 | i32(data[pos + 2]) << 8 | i32(data[
-			pos + 3])
+		partition := core.read_i32_be(data[pos..pos + 4])
 		pos += 4
 
 		// offset (8 bytes)
 		if pos + 8 > data.len {
 			return error('Missing offset')
 		}
-		offset := i64(data[pos]) << 56 | i64(data[pos + 1]) << 48 | i64(data[pos + 2]) << 40 | i64(data[
-			pos + 3]) << 32 | i64(data[pos + 4]) << 24 | i64(data[pos + 5]) << 16 | i64(data[pos + 6]) << 8 | i64(data[
-			pos + 7])
+		offset := core.read_i64_be(data[pos..pos + 8])
 		pos += 8
 
 		offsets << domain.GrpcPartitionOffset{
@@ -459,7 +445,7 @@ fn (h &GrpcHandler) parse_ack_request(data []u8) !domain.GrpcStreamRequest {
 	mut pos := 0
 
 	// topic length (2 bytes) + topic
-	topic_len := int(data[pos]) << 8 | int(data[pos + 1])
+	topic_len := int(core.read_i16_be(data[pos..pos + 2]))
 	pos += 2
 	if pos + topic_len > data.len {
 		return error('Invalid topic length')
@@ -471,17 +457,14 @@ fn (h &GrpcHandler) parse_ack_request(data []u8) !domain.GrpcStreamRequest {
 	if pos + 4 > data.len {
 		return error('Missing partition')
 	}
-	partition := i32(data[pos]) << 24 | i32(data[pos + 1]) << 16 | i32(data[pos + 2]) << 8 | i32(data[
-		pos + 3])
+	partition := core.read_i32_be(data[pos..pos + 4])
 	pos += 4
 
 	// offset (8 bytes)
 	if pos + 8 > data.len {
 		return error('Missing offset')
 	}
-	offset := i64(data[pos]) << 56 | i64(data[pos + 1]) << 48 | i64(data[pos + 2]) << 40 | i64(data[
-		pos + 3]) << 32 | i64(data[pos + 4]) << 24 | i64(data[pos + 5]) << 16 | i64(data[pos + 6]) << 8 | i64(data[
-		pos + 7])
+	offset := core.read_i64_be(data[pos..pos + 8])
 
 	return domain.GrpcStreamRequest{
 		request_type: .ack
@@ -552,50 +535,26 @@ fn (h &GrpcHandler) encode_produce_response(resp domain.GrpcProduceResponse) []u
 	buf << u8(domain.GrpcStreamResponseType.produce_ack)
 
 	// topic length + topic
-	buf << u8(resp.topic.len >> 8)
-	buf << u8(resp.topic.len)
+	core.write_i16_be(mut buf, i16(resp.topic.len))
 	buf << resp.topic.bytes()
 
 	// partition (4 bytes)
-	buf << u8(resp.partition >> 24)
-	buf << u8(resp.partition >> 16)
-	buf << u8(resp.partition >> 8)
-	buf << u8(resp.partition)
+	core.write_i32_be(mut buf, resp.partition)
 
 	// base offset (8 bytes)
-	buf << u8(resp.base_offset >> 56)
-	buf << u8(resp.base_offset >> 48)
-	buf << u8(resp.base_offset >> 40)
-	buf << u8(resp.base_offset >> 32)
-	buf << u8(resp.base_offset >> 24)
-	buf << u8(resp.base_offset >> 16)
-	buf << u8(resp.base_offset >> 8)
-	buf << u8(resp.base_offset)
+	core.write_i64_be(mut buf, resp.base_offset)
 
 	// record count (4 bytes)
-	buf << u8(resp.record_count >> 24)
-	buf << u8(resp.record_count >> 16)
-	buf << u8(resp.record_count >> 8)
-	buf << u8(resp.record_count)
+	core.write_i32_be(mut buf, i32(resp.record_count))
 
-	buf << u8(resp.timestamp >> 56)
-	buf << u8(resp.timestamp >> 48)
-	buf << u8(resp.timestamp >> 40)
-	buf << u8(resp.timestamp >> 32)
-	buf << u8(resp.timestamp >> 24)
-	buf << u8(resp.timestamp >> 16)
-	buf << u8(resp.timestamp >> 8)
-	buf << u8(resp.timestamp)
+	// timestamp (8 bytes)
+	core.write_i64_be(mut buf, resp.timestamp)
 
 	// error code (4 bytes)
-	buf << u8(resp.error_code >> 24)
-	buf << u8(resp.error_code >> 16)
-	buf << u8(resp.error_code >> 8)
-	buf << u8(resp.error_code)
+	core.write_i32_be(mut buf, resp.error_code)
 
 	// error message length + message
-	buf << u8(resp.error_msg.len >> 8)
-	buf << u8(resp.error_msg.len)
+	core.write_i16_be(mut buf, i16(resp.error_msg.len))
 	buf << resp.error_msg.bytes()
 
 	return buf
@@ -609,60 +568,34 @@ fn (h &GrpcHandler) encode_message_response(resp domain.GrpcMessageResponse) []u
 	buf << u8(domain.GrpcStreamResponseType.message)
 
 	// topic length + topic
-	buf << u8(resp.topic.len >> 8)
-	buf << u8(resp.topic.len)
+	core.write_i16_be(mut buf, i16(resp.topic.len))
 	buf << resp.topic.bytes()
 
 	// partition (4 bytes)
-	buf << u8(resp.partition >> 24)
-	buf << u8(resp.partition >> 16)
-	buf << u8(resp.partition >> 8)
-	buf << u8(resp.partition)
+	core.write_i32_be(mut buf, resp.partition)
 
 	// offset (8 bytes)
-	buf << u8(resp.offset >> 56)
-	buf << u8(resp.offset >> 48)
-	buf << u8(resp.offset >> 40)
-	buf << u8(resp.offset >> 32)
-	buf << u8(resp.offset >> 24)
-	buf << u8(resp.offset >> 16)
-	buf << u8(resp.offset >> 8)
-	buf << u8(resp.offset)
+	core.write_i64_be(mut buf, resp.offset)
 
-	buf << u8(resp.timestamp >> 56)
-	buf << u8(resp.timestamp >> 48)
-	buf << u8(resp.timestamp >> 40)
-	buf << u8(resp.timestamp >> 32)
-	buf << u8(resp.timestamp >> 24)
-	buf << u8(resp.timestamp >> 16)
-	buf << u8(resp.timestamp >> 8)
-	buf << u8(resp.timestamp)
+	// timestamp (8 bytes)
+	core.write_i64_be(mut buf, resp.timestamp)
 
-	buf << u8(resp.key.len >> 24)
-	buf << u8(resp.key.len >> 16)
-	buf << u8(resp.key.len >> 8)
-	buf << u8(resp.key.len)
+	// key length + key (4 bytes)
+	core.write_i32_be(mut buf, i32(resp.key.len))
 	buf << resp.key
 
-	buf << u8(resp.value.len >> 24)
-	buf << u8(resp.value.len >> 16)
-	buf << u8(resp.value.len >> 8)
-	buf << u8(resp.value.len)
+	// value length + value (4 bytes)
+	core.write_i32_be(mut buf, i32(resp.value.len))
 	buf << resp.value
 
-	// header count + headers
-	buf << u8(resp.headers.len >> 24)
-	buf << u8(resp.headers.len >> 16)
-	buf << u8(resp.headers.len >> 8)
-	buf << u8(resp.headers.len)
+	// header count + headers (4 bytes)
+	core.write_i32_be(mut buf, i32(resp.headers.len))
 
 	for k, v in resp.headers {
-		buf << u8(k.len >> 8)
-		buf << u8(k.len)
+		core.write_i16_be(mut buf, i16(k.len))
 		buf << k.bytes()
 
-		buf << u8(v.len >> 8)
-		buf << u8(v.len)
+		core.write_i16_be(mut buf, i16(v.len))
 		buf << v
 	}
 
@@ -680,8 +613,7 @@ fn (h &GrpcHandler) encode_commit_response(resp domain.GrpcCommitResponse) []u8 
 	buf << if resp.success { u8(1) } else { u8(0) }
 
 	// message length + message
-	buf << u8(resp.message.len >> 8)
-	buf << u8(resp.message.len)
+	core.write_i16_be(mut buf, i16(resp.message.len))
 	buf << resp.message.bytes()
 
 	return buf
@@ -695,14 +627,10 @@ fn (h &GrpcHandler) encode_error_response(code i32, message string) []u8 {
 	buf << u8(domain.GrpcStreamResponseType.error)
 
 	// error code (4 bytes)
-	buf << u8(code >> 24)
-	buf << u8(code >> 16)
-	buf << u8(code >> 8)
-	buf << u8(code)
+	core.write_i32_be(mut buf, code)
 
 	// message length + message
-	buf << u8(message.len >> 8)
-	buf << u8(message.len)
+	core.write_i16_be(mut buf, i16(message.len))
 	buf << message.bytes()
 
 	return buf
@@ -715,14 +643,7 @@ fn (h &GrpcHandler) encode_pong_response(resp domain.GrpcPongResponse) []u8 {
 	// response type (1 byte)
 	buf << u8(domain.GrpcStreamResponseType.pong)
 
-	buf << u8(resp.timestamp >> 56)
-	buf << u8(resp.timestamp >> 48)
-	buf << u8(resp.timestamp >> 40)
-	buf << u8(resp.timestamp >> 32)
-	buf << u8(resp.timestamp >> 24)
-	buf << u8(resp.timestamp >> 16)
-	buf << u8(resp.timestamp >> 8)
-	buf << u8(resp.timestamp)
+	core.write_i64_be(mut buf, resp.timestamp)
 
 	return buf
 }

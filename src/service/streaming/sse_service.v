@@ -6,6 +6,7 @@ import domain
 import service.port
 import sync
 import time
+import infra.performance.core
 
 // SSE Service
 
@@ -558,12 +559,12 @@ fn encode_message_data(data domain.SSEMessageData) string {
 	json += ',"timestamp":${data.timestamp}'
 
 	if key := data.key {
-		json += ',"key":"${escape_json_string(key)}"'
+		json += ',"key":"${core.escape_json_string(key)}"'
 	} else {
 		json += ',"key":null'
 	}
 
-	json += ',"value":"${escape_json_string(data.value)}"'
+	json += ',"value":"${core.escape_json_string(data.value)}"'
 
 	// Headers
 	json += ',"headers":{'
@@ -572,27 +573,11 @@ fn encode_message_data(data domain.SSEMessageData) string {
 		if !first {
 			json += ','
 		}
-		json += '"${escape_json_string(k)}":"${escape_json_string(v)}"'
+		json += '"${core.escape_json_string(k)}":"${core.escape_json_string(v)}"'
 		first = false
 	}
 	json += '}'
 
 	json += '}'
 	return json
-}
-
-// escape_json_string escapes special characters in JSON string
-fn escape_json_string(s string) string {
-	mut result := ''
-	for c in s {
-		result += match c {
-			`"` { '\\"' }
-			`\\` { '\\\\' }
-			`\n` { '\\n' }
-			`\r` { '\\r' }
-			`\t` { '\\t' }
-			else { c.ascii_str() }
-		}
-	}
-	return result
 }

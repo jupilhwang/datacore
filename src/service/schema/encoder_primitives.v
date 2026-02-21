@@ -2,62 +2,36 @@
 // Low-level binary encoding/decoding for Avro primitive types
 module schema
 
+import infra.performance.core
+
 // Varint Encoding/Decoding
 
 // encode_varint_zigzag encodes an i64 using variable-length zigzag encoding
 fn encode_varint_zigzag(val i64) []u8 {
-	// ZigZag encoding: (n << 1) ^ (n >> 63)
-	// Cast to u64 first to avoid signed shift warning
-	zigzag := u64(val) << 1 ^ u64(val >> 63)
-	return encode_varint(zigzag)
+	return core.encode_varint(val)
 }
 
 // encode_varint encodes a u64 using variable-length encoding
 fn encode_varint(val u64) []u8 {
-	mut result := []u8{}
-	mut n := val
-
-	for {
-		mut b := u8(n & 0x7F)
-		n = n >> 7
-		if n != 0 {
-			b |= 0x80
-		}
-		result << b
-		if n == 0 {
-			break
-		}
-	}
-
-	return result
+	return core.encode_uvarint(val)
 }
 
 // Float/Double Encoding/Decoding
 
 // encode_float encodes a f32 in little-endian IEEE 754 format
 fn encode_float(val f32) []u8 {
+	mut buf := []u8{}
 	bits := *unsafe { &u32(&val) }
-	return [
-		u8(bits & 0xFF),
-		u8((bits >> 8) & 0xFF),
-		u8((bits >> 16) & 0xFF),
-		u8((bits >> 24) & 0xFF),
-	]
+	core.write_i32_le(mut buf, i32(bits))
+	return buf
 }
 
 // encode_double encodes a f64 in little-endian IEEE 754 format
 fn encode_double(val f64) []u8 {
+	mut buf := []u8{}
 	bits := *unsafe { &u64(&val) }
-	return [
-		u8(bits & 0xFF),
-		u8((bits >> 8) & 0xFF),
-		u8((bits >> 16) & 0xFF),
-		u8((bits >> 24) & 0xFF),
-		u8((bits >> 32) & 0xFF),
-		u8((bits >> 40) & 0xFF),
-		u8((bits >> 48) & 0xFF),
-		u8((bits >> 56) & 0xFF),
-	]
+	core.write_i64_le(mut buf, i64(bits))
+	return buf
 }
 
 // Bytes/String Encoding/Decoding

@@ -873,20 +873,13 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 			empty_doc, '', 1000)
 		static_dir:                get_config_string(cli_args, 'rest-static-dir', 'DATACORE_REST_STATIC_DIR',
 			empty_doc, '', 'tests/web')
-		sse_heartbeat_interval_ms: 15000
-		sse_connection_timeout_ms: 3600000
-		ws_max_message_size:       1048576
-		ws_ping_interval_ms:       30000
 	}
 
 	// storage configuration (with priority cascade)
 	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
 		empty_doc, '', 'memory')
 
-	memory := MemoryStorageConfig{
-		max_memory_mb:      20240
-		segment_size_bytes: 1073741824
-	}
+	memory := MemoryStorageConfig{}
 
 	// S3 configuration (with priority cascade)
 	mut s3 := S3StorageConfig{
@@ -900,16 +893,6 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 			empty_doc, '', 'datacore/')
 		timezone:                     get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
 			empty_doc, '', 'UTC')
-		batch_timeout_ms:             25
-		batch_max_bytes:              4096000
-		compaction_interval_ms:       30000
-		target_segment_bytes:         104857600
-		index_cache_ttl_ms:           30000
-		offset_batch_enabled:         true
-		offset_flush_interval_ms:     100
-		offset_flush_threshold_count: 50
-		access_key:                   ''
-		secret_key:                   ''
 	}
 
 	// S3 credentials priority: CLI args > env vars > ~/.aws/credentials
@@ -938,21 +921,9 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	}
 
 	// Iceberg configuration (default - disabled)
-	s3.iceberg = IcebergConfig{
-		enabled:           false
-		format:            'parquet'
-		compression:       'zstd'
-		write_mode:        'append'
-		partition_by:      ['timestamp', 'topic']
-		max_rows_per_file: 1000000
-		max_file_size_mb:  128
-		schema_evolution:  true
-	}
+	s3.iceberg = IcebergConfig{}
 
-	sqlite := SqliteStorageConfig{
-		path:         'datacore.db'
-		journal_mode: 'WAL'
-	}
+	sqlite := SqliteStorageConfig{}
 
 	// PostgreSQL configuration (with priority cascade)
 	postgres := PostgresStorageConfig{
@@ -981,55 +952,16 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	}
 
 	// schema registry configuration
-	schema_registry := SchemaRegistryConfig{
-		enabled: true
-		topic:   '__schemas'
-	}
+	schema_registry := SchemaRegistryConfig{}
 
 	// observability configuration (defaults)
-	otel := OtelConfig{
-		enabled:             true
-		service_name:        'datacore'
-		service_version:     '0.44.4'
-		instance_id:         ''
-		environment:         'development'
-		otlp_endpoint:       'http://localhost:4317'
-		otlp_http_endpoint:  ''
-		resource_attributes: ''
-	}
+	otel := OtelConfig{}
 
-	metrics := MetricsConfig{
-		enabled:             true
-		exporter:            'prometheus'
-		prometheus_endpoint: '/metrics'
-		prometheus_port:     9093
-		otlp_endpoint:       ''
-		collection_interval: 15
-	}
+	metrics := MetricsConfig{}
 
-	logging := LoggingConfig{
-		enabled:              true
-		level:                'debug'
-		format:               'json'
-		output:               'stdout'
-		otlp_endpoint:        ''
-		otlp_export:          false
-		console_output:       true
-		inject_trace_context: true
-	}
+	logging := LoggingConfig{}
 
-	tracing := TracingConfig{
-		enabled:                 false
-		otlp_endpoint:           ''
-		sampler:                 'trace_id_ratio'
-		sample_rate:             1.0
-		batch_timeout_ms:        5000
-		max_batch_size:          512
-		max_queue_size:          2048
-		max_attributes_per_span: 128
-		max_events_per_span:     128
-		max_links_per_span:      128
-	}
+	tracing := TracingConfig{}
 
 	observability := ObservabilityConfig{
 		otel:    otel

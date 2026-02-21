@@ -14,11 +14,12 @@ import time
 fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
 	mut logger := observability.get_named_logger('auth.${component}')
 	match level {
-		.debug { logger.debug(message) }
-		.info { logger.info(message) }
-		.warn { logger.warn(message) }
-		.error { logger.error(message) }
-		else {}
+		.trace { logger.debug_map(message, context) }
+		.debug { logger.debug_map(message, context) }
+		.info { logger.info_map(message, context) }
+		.warn { logger.warn_map(message, context) }
+		.error { logger.error_map(message, context) }
+		.fatal { logger.fatal_map(message, context) }
 	}
 }
 
