@@ -435,8 +435,8 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 
 	// Metrics: topic creation start
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.topic_create_count++
-	a.metrics_lock.unlock()
 
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
@@ -489,9 +489,9 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 	// Metrics: record query time
 	elapsed_ms := time.since(start_time).milliseconds()
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.query_count++
 	a.metrics.query_total_ms += elapsed_ms
-	a.metrics_lock.unlock()
 
 	observability.log_with_context('postgres', .info, 'Topic', 'Topic created', {
 		'name':       name
@@ -618,9 +618,9 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 
 	// Metrics: append start
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.append_count++
 	a.metrics.append_record_count += i64(records.len)
-	a.metrics_lock.unlock()
 
 	// Check topic exists
 	a.cache_lock.rlock()
@@ -692,9 +692,9 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 	// Metrics: record query time
 	elapsed_ms := time.since(start_time).milliseconds()
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.query_count++
 	a.metrics.query_total_ms += elapsed_ms
-	a.metrics_lock.unlock()
 
 	return domain.AppendResult{
 		base_offset:      start_offset
@@ -710,8 +710,8 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 
 	// Metrics: fetch start
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.fetch_count++
-	a.metrics_lock.unlock()
 
 	// Check topic exists
 	a.cache_lock.rlock()

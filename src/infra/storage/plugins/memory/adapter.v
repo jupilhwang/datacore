@@ -144,8 +144,8 @@ pub fn new_memory_adapter_with_config(config MemoryConfig) &MemoryStorageAdapter
 pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
 	// Metrics: topic creation start
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.topic_create_count++
-	a.metrics_lock.unlock()
 
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -241,8 +241,8 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 pub fn (mut a MemoryStorageAdapter) delete_topic(name string) ! {
 	// Metrics: topic deletion
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.topic_delete_count++
-	a.metrics_lock.unlock()
 
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -281,8 +281,8 @@ pub fn (mut a MemoryStorageAdapter) list_topics() ![]domain.TopicMetadata {
 pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	// Metrics: topic lookup
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.topic_lookup_count++
-	a.metrics_lock.unlock()
 
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -293,8 +293,9 @@ pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata
 
 	// Metrics: error
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.error_count++
-	a.metrics_lock.unlock()
+
 	return error('topic not found')
 }
 
@@ -369,9 +370,9 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 	_ = required_acks
 	// Metrics: append start
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.append_count++
 	a.metrics.append_record_count += i64(records.len)
-	a.metrics_lock.unlock()
 
 	// Look up topic with read lock
 	a.global_lock.rlock()
@@ -425,8 +426,8 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 
 	// Metrics: add byte count
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.append_bytes += bytes_written
-	a.metrics_lock.unlock()
 
 	// Apply retention policy (max message count)
 	if a.config.max_messages_per_partition > 0 {
@@ -497,8 +498,8 @@ fn (mut a MemoryStorageAdapter) append_mmap(topic &TopicStore, partition int, re
 pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offset i64, max_bytes int) !domain.FetchResult {
 	// Metrics: fetch start
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.fetch_count++
-	a.metrics_lock.unlock()
 
 	// Look up topic with read lock
 	a.global_lock.rlock()
@@ -574,8 +575,8 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 
 	// Metrics: number of fetched records
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.fetch_record_count += i64(fetched_records.len)
-	a.metrics_lock.unlock()
 
 	// Calculate the offset of the first record actually returned
 	actual_first_offset := part.base_offset + i64(start_idx)
@@ -725,8 +726,8 @@ pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partit
 pub fn (mut a MemoryStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 	// Metrics: group save
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.group_save_count++
-	a.metrics_lock.unlock()
 
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -738,8 +739,8 @@ pub fn (mut a MemoryStorageAdapter) save_group(group domain.ConsumerGroup) ! {
 pub fn (mut a MemoryStorageAdapter) load_group(group_id string) !domain.ConsumerGroup {
 	// Metrics: group load
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.group_load_count++
-	a.metrics_lock.unlock()
 
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }
@@ -750,8 +751,9 @@ pub fn (mut a MemoryStorageAdapter) load_group(group_id string) !domain.Consumer
 
 	// Metrics: error
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.error_count++
-	a.metrics_lock.unlock()
+
 	return error('group not found')
 }
 
@@ -759,8 +761,8 @@ pub fn (mut a MemoryStorageAdapter) load_group(group_id string) !domain.Consumer
 pub fn (mut a MemoryStorageAdapter) delete_group(group_id string) ! {
 	// Metrics: group delete
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.group_delete_count++
-	a.metrics_lock.unlock()
 
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -806,8 +808,8 @@ pub fn (mut a MemoryStorageAdapter) list_groups() ![]domain.GroupInfo {
 pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
 	// Metrics: offset commit
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.offset_commit_count += i64(offsets.len)
-	a.metrics_lock.unlock()
 
 	a.global_lock.@lock()
 	defer { a.global_lock.unlock() }
@@ -831,8 +833,8 @@ pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []do
 pub fn (mut a MemoryStorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
 	// Metrics: offset fetch
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.offset_fetch_count += i64(partitions.len)
-	a.metrics_lock.unlock()
 
 	a.global_lock.rlock()
 	defer { a.global_lock.runlock() }

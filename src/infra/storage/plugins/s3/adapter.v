@@ -306,6 +306,7 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 
 	// Store in topic cache
 	a.topic_lock.@lock()
+	defer { a.topic_lock.unlock() }
 	a.topic_cache[name] = CachedTopic{
 		meta:      meta
 		etag:      ''
@@ -313,7 +314,6 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 	}
 	// Also cache topic_id -> name mapping for O(1) lookup
 	a.topic_id_cache[meta.topic_id.hex()] = name
-	a.topic_lock.unlock()
 
 	return meta
 }
@@ -323,8 +323,8 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 	// Look up topic metadata to remove from id cache
 	if cached := a.topic_cache[name] {
 		a.topic_lock.@lock()
+		defer { a.topic_lock.unlock() }
 		a.topic_id_cache.delete(cached.meta.topic_id.hex())
-		a.topic_lock.unlock()
 	}
 
 	// Delete all objects starting with topic prefix
@@ -333,8 +333,8 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 
 	// Remove from cache
 	a.topic_lock.@lock()
+	defer { a.topic_lock.unlock() }
 	a.topic_cache.delete(name)
-	a.topic_lock.unlock()
 }
 
 /// list_topics retrieves all topics from S3.
@@ -382,20 +382,14 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	if cached := a.topic_cache[name] {
 		if time.since(cached.cached_at) < topic_cache_ttl {
 			a.topic_lock.runlock()
-			// Cache hit metric
-			a.metrics_lock.@lock()
-			a.metrics.cache_hit_count++
-			a.metrics_lock.unlock()
+			a.record_cache_hit()
 			return cached.meta
 		}
 	}
 	a.topic_lock.runlock()
 
 	// Cache miss metric
-	a.metrics_lock.@lock()
-	a.metrics.cache_miss_count++
-	a.metrics.s3_get_count++
-	a.metrics_lock.unlock()
+	a.record_cache_miss()
 
 	// Fetch from S3
 	key := a.topic_metadata_key(name)
@@ -405,12 +399,12 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 
 	// Update cache
 	a.topic_lock.@lock()
+	defer { a.topic_lock.unlock() }
 	a.topic_cache[name] = CachedTopic{
 		meta:      meta
 		etag:      etag
 		cached_at: time.now()
 	}
-	a.topic_lock.unlock()
 
 	return meta
 }
@@ -436,11 +430,11 @@ pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMeta
 
 	// Acquire lock once for all cache updates
 	a.topic_lock.@lock()
+	defer { a.topic_lock.unlock() }
 	for t in topics {
 		// Populate topic_id_cache for future lookups
 		a.topic_id_cache[t.topic_id.hex()] = t.name
 	}
-	a.topic_lock.unlock()
 
 	// Find matching topic
 	for t in topics {
@@ -482,6 +476,7 @@ pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
 
 	// Update cache directly (instead of invalidating)
 	a.topic_lock.@lock()
+	defer { a.topic_lock.unlock() }
 	if cached := a.topic_cache[name] {
 		a.topic_cache[name] = CachedTopic{
 			meta:      updated_meta
@@ -489,7 +484,6 @@ pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
 			cached_at: time.now()
 		}
 	}
-	a.topic_lock.unlock()
 }
 
 /// append appends records to a partition.
@@ -554,35 +548,24 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 
 		// S3 PUT (synchronous wait)
 		a.put_object(segment_key, segment_data) or {
-			a.metrics_lock.@lock()
-			a.metrics.sync_append_error_count++
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.record_sync_append_error()
 			return error('durable append failed (acks=${required_acks}): S3 PUT error: ${err}')
 		}
 
-		a.metrics_lock.@lock()
-		a.metrics.s3_put_count++
-		a.metrics.sync_append_count++
-		a.metrics_lock.unlock()
+		a.record_sync_append_put()
 
 		// Index update (synchronous wait)
 		a.index_update_lock.lock()
 		a.update_partition_index_with_segment(topic, partition, segment_key, base_offset_val,
 			end_offset, segment_data.len) or {
 			a.index_update_lock.unlock()
-			a.metrics_lock.@lock()
-			a.metrics.sync_append_error_count++
-			a.metrics_lock.unlock()
+			a.record_sync_append_index_error()
 			return error('durable append failed (acks=${required_acks}): index update error: ${err}')
 		}
 		a.index_update_lock.unlock()
 
 		elapsed_ms := time.since(start_time).milliseconds()
-		a.metrics_lock.@lock()
-		a.metrics.sync_append_success_count++
-		a.metrics.sync_append_total_ms += elapsed_ms
-		a.metrics_lock.unlock()
+		a.record_sync_append_success(elapsed_ms)
 	}
 
 	// Append records to Iceberg table (when Iceberg is enabled)
@@ -602,7 +585,9 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	// All code paths MUST acquire locks in this order to prevent deadlocks.
 	new_high_watermark := base_offset + i64(records.len)
 	a.index_update_lock.@lock()
+	defer { a.index_update_lock.unlock() }
 	a.topic_lock.@lock()
+	defer { a.topic_lock.unlock() }
 	if cached := a.topic_index_cache[partition_key] {
 		mut updated_index := cached.index
 		updated_index.high_watermark = new_high_watermark
@@ -612,8 +597,6 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 			cached_at: cached.cached_at
 		}
 	}
-	a.topic_lock.unlock()
-	a.index_update_lock.unlock()
 
 	return domain.AppendResult{
 		base_offset:      base_offset
@@ -772,12 +755,12 @@ pub fn (mut a S3StorageAdapter) save_group(group domain.ConsumerGroup) ! {
 
 	// Update cache
 	a.group_lock.@lock()
+	defer { a.group_lock.unlock() }
 	a.group_cache[group.group_id] = CachedGroup{
 		group:     group
 		etag:      ''
 		cached_at: time.now()
 	}
-	a.group_lock.unlock()
 }
 
 /// load_group loads a consumer group.
@@ -799,12 +782,12 @@ pub fn (mut a S3StorageAdapter) load_group(group_id string) !domain.ConsumerGrou
 
 	// Update cache
 	a.group_lock.@lock()
+	defer { a.group_lock.unlock() }
 	a.group_cache[group_id] = CachedGroup{
 		group:     group
 		etag:      etag
 		cached_at: time.now()
 	}
-	a.group_lock.unlock()
 
 	return group
 }
@@ -820,8 +803,8 @@ pub fn (mut a S3StorageAdapter) delete_group(group_id string) ! {
 
 	// Remove from cache
 	a.group_lock.@lock()
+	defer { a.group_lock.unlock() }
 	a.group_cache.delete(group_id)
-	a.group_lock.unlock()
 }
 
 /// list_groups returns all consumer groups.
@@ -937,8 +920,8 @@ struct CommitResult {
 /// record_commit_start_metrics records commit start metrics.
 fn (mut a S3StorageAdapter) record_commit_start_metrics(count int) {
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.offset_commit_count += i64(count)
-	a.metrics_lock.unlock()
 }
 
 /// create_commit_channel creates a commit result channel.
@@ -1039,6 +1022,7 @@ fn (mut a S3StorageAdapter) update_offset_cache_and_metrics(group_id string, suc
 /// update_offset_cache updates the offset cache.
 fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []domain.PartitionOffset) {
 	a.offset_lock.@lock()
+	defer { a.offset_lock.unlock() }
 	if group_id !in a.offset_cache {
 		a.offset_cache[group_id] = map[string]i64{}
 	}
@@ -1046,7 +1030,6 @@ fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []dom
 		cache_key := '${offset.topic}:${offset.partition}'
 		a.offset_cache[group_id][cache_key] = offset.offset
 	}
-	a.offset_lock.unlock()
 
 	observability.log_with_context('s3', .info, 'OffsetCommit', 'Successfully committed offsets',
 		{
@@ -1055,20 +1038,65 @@ fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []dom
 	})
 }
 
-/// record_commit_success_metrics records success metrics.
 fn (mut a S3StorageAdapter) record_commit_success_metrics(count int) {
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.offset_commit_success_count += i64(count)
 	a.metrics.s3_put_count += i64(count)
-	a.metrics_lock.unlock()
 }
 
 /// record_commit_failure_metrics records failure metrics.
 fn (mut a S3StorageAdapter) record_commit_failure_metrics(count int) {
 	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
 	a.metrics.offset_commit_error_count += i64(count)
 	a.metrics.s3_error_count += i64(count)
-	a.metrics_lock.unlock()
+}
+
+/// record_cache_hit increments the cache hit counter.
+fn (mut a S3StorageAdapter) record_cache_hit() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.cache_hit_count++
+}
+
+/// record_cache_miss increments the cache miss and S3 GET counters.
+fn (mut a S3StorageAdapter) record_cache_miss() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.cache_miss_count++
+	a.metrics.s3_get_count++
+}
+
+/// record_sync_append_error increments the sync append error and S3 error counters.
+fn (mut a S3StorageAdapter) record_sync_append_error() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.sync_append_error_count++
+	a.metrics.s3_error_count++
+}
+
+/// record_sync_append_put increments the S3 PUT and sync append counters.
+fn (mut a S3StorageAdapter) record_sync_append_put() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.s3_put_count++
+	a.metrics.sync_append_count++
+}
+
+/// record_sync_append_index_error increments only the sync append error counter.
+fn (mut a S3StorageAdapter) record_sync_append_index_error() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.sync_append_error_count++
+}
+
+/// record_sync_append_success increments the success counter and accumulates elapsed time.
+fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.sync_append_success_count++
+	a.metrics.sync_append_total_ms += elapsed_ms
 }
 
 /// handle_commit_result handles the commit result.
