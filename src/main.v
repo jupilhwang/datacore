@@ -16,12 +16,7 @@ import interface.server
 import interface.cli
 import interface.rest
 import infra.compression
-import infra.protocol.kafka
-import infra.storage.plugins.memory
-import infra.storage.plugins.s3
 import infra.observability
-import service.cluster
-import service.port
 import service.schema
 
 fn main() {
@@ -167,67 +162,12 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	// 1. Create Infra Layer components
 	cli.print_progress('Initializing storage engine (${conf.storage.engine})')
-
-	engine := conf.storage.engine.to_lower()
-	mut storage_opt := ?port.StoragePort(none)
-	mut s3_adapter_ref := ?&s3.S3StorageAdapter(none)
-
-	if engine == 'memory' {
-		logger.info('Initializing Memory storage', observability.field_int('max_memory_mb',
-			conf.storage.memory.max_memory_mb), observability.field_int('segment_size',
-			conf.storage.memory.segment_size_bytes))
-		storage_opt = port.StoragePort(memory.new_memory_adapter())
-	} else if engine == 's3' {
-		// Set timezone for S3 operations
-		os.setenv('TZ', conf.storage.s3.timezone, true)
-
-		// Map config to S3Config
-		mut s_config := s3.S3Config{
-			bucket_name:            conf.storage.s3.bucket
-			region:                 conf.storage.s3.region
-			endpoint:               conf.storage.s3.endpoint
-			access_key:             conf.storage.s3.access_key
-			secret_key:             conf.storage.s3.secret_key
-			prefix:                 conf.storage.s3.prefix
-			use_path_style:         true // AWS S3 path-style URLs
-			timezone:               conf.storage.s3.timezone
-			broker_id:              i32(conf.broker.broker_id)
-			batch_timeout_ms:       conf.storage.s3.batch_timeout_ms
-			batch_max_bytes:        conf.storage.s3.batch_max_bytes
-			compaction_interval_ms: conf.storage.s3.compaction_interval_ms
-			target_segment_bytes:   conf.storage.s3.target_segment_bytes
-			index_cache_ttl_ms:     conf.storage.s3.index_cache_ttl_ms
-		}
-
-		masked_key := if s_config.access_key.len > 4 {
-			s_config.access_key[0..4] + '****'
-		} else {
-			'****'
-		}
-		logger.info('Initializing S3 storage', observability.field_string('bucket', s_config.bucket_name),
-			observability.field_string('region', s_config.region), observability.field_string('endpoint',
-			s_config.endpoint), observability.field_string('access_key', masked_key))
-
-		if mut s3_adapter := s3.new_s3_adapter(s_config) {
-			storage_opt = port.StoragePort(s3_adapter)
-			s3_adapter_ref = s3_adapter
-			s3_adapter.start_workers() // Start S3 compaction workers
-		} else {
-			cli.print_failed('Failed to init S3 storage: ${err}')
-			cli.print_failed('Falling back to memory storage')
-			storage_opt = port.StoragePort(memory.new_memory_adapter())
-		}
-	} else {
-		cli.print_failed('Unknown storage engine: ${engine}')
-		cli.print_failed('Falling back to memory storage')
-		storage_opt = port.StoragePort(memory.new_memory_adapter())
-	}
-
-	mut storage := storage_opt or {
-		cli.print_failed('Failed to initialize any storage engine')
+	mut storage_result := init_storage(conf, mut logger) or {
+		cli.print_failed('Failed to initialize storage: ${err}')
 		exit(1)
 	}
-
+	mut storage := storage_result.storage
+	s3_adapter_ref := storage_result.s3_adapter
 	cli.print_done()
 
 	// 2. Create Compression Service
@@ -240,108 +180,13 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	// 3. Create Protocol Handler with storage and compression injection
 	cli.print_progress('Initializing Kafka protocol handler')
-	// Pass advertised host/port to handler so metadata responses contain the correct connect string
-	mut protocol_handler := kafka.new_handler(conf.broker.broker_id, conf.broker.advertised_host,
-		conf.broker.port, conf.broker.cluster_id, storage, compression_service)
+	mut protocol_handler := init_protocol_handler(conf, storage, compression_service)
 	cli.print_done()
 
-	// 3. Initialize Broker Registry for multi-broker mode (S3 storage)
-	mut broker_registry_opt := ?&cluster.BrokerRegistry(none)
-	capability := storage.get_storage_capability()
-
-	if capability.supports_multi_broker {
-		cli.print_progress('Initializing multi-broker cluster registry')
-
-		// For S3 storage, use the existing adapter reference to create the cluster metadata adapter
-		// to avoid losing config when calling through the V interface (the adapter holds its own config)
-		mut cluster_port_opt := ?&port.ClusterMetadataPort(none)
-		if engine == 's3' {
-			if mut s3_ref := s3_adapter_ref {
-				// Use the existing adapter reference (mutex and other fields already initialized)
-				cluster_port_opt = s3.new_s3_cluster_metadata_adapter(s3_ref)
-			}
-		} else {
-			cluster_port_opt = storage.get_cluster_metadata_port()
-		}
-		if mut cluster_port := cluster_port_opt {
-			registry_config := cluster.BrokerRegistryConfig{
-				broker_id:             conf.broker.broker_id
-				host:                  conf.broker.advertised_host
-				port:                  conf.broker.port
-				rack:                  '' // TODO: Add rack config
-				cluster_id:            conf.broker.cluster_id
-				version:               '0.20.0'
-				heartbeat_interval_ms: 3000
-				session_timeout_ms:    10000
-			}
-
-			mut broker_registry := cluster.new_broker_registry(registry_config, capability,
-				cluster_port)
-
-			// Register this broker with the cluster (with retry for DNS/network issues)
-			mut broker_info := domain.BrokerInfo{}
-			mut register_success := false
-			for reg_attempt in 0 .. 3 {
-				broker_info = broker_registry.register() or {
-					logger.warn('Broker registration attempt ${reg_attempt + 1}/3 failed',
-						observability.field_int('broker_id', conf.broker.broker_id), observability.field_string('cluster_id',
-						conf.broker.cluster_id), observability.field_string('error', err.msg()))
-					if reg_attempt < 2 {
-						// Exponential backoff: 2s, 4s
-						wait_secs := 2 * (1 << reg_attempt)
-						logger.info('Waiting ${wait_secs}s before next registration attempt')
-						time.sleep(wait_secs * time.second)
-					}
-					domain.BrokerInfo{}
-				}
-				if broker_info.broker_id > 0 {
-					register_success = true
-					break
-				}
-			}
-			if !register_success {
-				cli.print_failed('Failed to register broker after 3 attempts - continuing without cluster registration')
-				logger.error('Failed to register broker with cluster after 3 attempts - server will start without cluster features',
-					observability.field_int('broker_id', conf.broker.broker_id), observability.field_string('cluster_id',
-					conf.broker.cluster_id))
-			}
-
-			if register_success {
-				logger.info('Broker registered with cluster', observability.field_int('broker_id',
-					broker_info.broker_id), observability.field_string('host', broker_info.host),
-					observability.field_int('port', broker_info.port))
-
-				// Set broker registry on handler for multi-broker metadata responses
-				protocol_handler.set_broker_registry(broker_registry)
-				broker_registry_opt = broker_registry
-
-				// Initialize PartitionAssigner for consumer group rebalancing
-				cli.print_progress('Initializing partition assigner')
-				assigner_config := cluster.PartitionAssignerServiceConfig{
-					broker_id:     conf.broker.broker_id
-					strategy:      .round_robin
-					rack_aware:    false
-					sticky_assign: true
-					cluster_id:    conf.broker.cluster_id
-				}
-				mut partition_assigner := cluster.new_partition_assigner(assigner_config,
-					cluster_port)
-
-				// Set on broker_registry for rebalance triggers
-				broker_registry.set_partition_assigner(partition_assigner)
-
-				// Set on protocol_handler for metadata responses
-				protocol_handler.set_partition_assigner(partition_assigner)
-
-				cli.print_done()
-			} else {
-				logger.warn('Broker will start without cluster registration - single-broker mode active')
-				cli.print_done()
-			}
-		} else {
-			cli.print_failed('Storage does not provide cluster metadata port')
-		}
-	}
+	// 4. Initialize Broker Registry for multi-broker mode (S3 storage)
+	cluster_result := init_cluster_registry(conf, mut storage, s3_adapter_ref, mut protocol_handler, mut
+		logger)
+	mut broker_registry_opt := cluster_result.registry
 
 	if conf.schema_registry.enabled {
 		logger.info('Schema Registry initialized', observability.field_string('topic',

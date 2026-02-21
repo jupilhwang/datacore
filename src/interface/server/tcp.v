@@ -16,7 +16,6 @@ import net
 import sync
 import time
 import domain
-import infra.observability
 
 /// ServerConfig is a struct holding server configuration.
 /// Contains various options controlling TCP server behavior.
