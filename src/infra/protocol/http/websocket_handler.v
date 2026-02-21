@@ -162,6 +162,20 @@ enum WebSocketOpcode {
 	pong         = 0xa
 }
 
+/// websocket_opcode_from_u8 converts a u8 value to a WebSocketOpcode with validation.
+/// Returns an error for unrecognized opcode values.
+fn websocket_opcode_from_u8(val u8) !WebSocketOpcode {
+	return match val {
+		0x0 { WebSocketOpcode.continuation }
+		0x1 { WebSocketOpcode.text }
+		0x2 { WebSocketOpcode.binary }
+		0x8 { WebSocketOpcode.close }
+		0x9 { WebSocketOpcode.ping }
+		0xa { WebSocketOpcode.pong }
+		else { error('unknown websocket opcode: 0x${val:02x}') }
+	}
+}
+
 /// WebSocketFrame represents a WebSocket frame.
 struct WebSocketFrame {
 	fin     bool
@@ -257,7 +271,9 @@ fn (mut h WebSocketHandler) read_frame(mut conn net.TcpConn) !WebSocketFrame {
 	conn.read(mut header) or { return error('Failed to read frame header') }
 
 	fin := (header[0] & 0x80) != 0
-	opcode := unsafe { WebSocketOpcode(header[0] & 0x0F) }
+	opcode := websocket_opcode_from_u8(header[0] & 0x0F) or {
+		return error('unknown websocket opcode: ${err}')
+	}
 	masked := (header[1] & 0x80) != 0
 	mut payload_len := u64(header[1] & 0x7F)
 

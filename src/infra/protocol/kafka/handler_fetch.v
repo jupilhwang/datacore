@@ -373,7 +373,9 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 
 			// If the record carries a preserved compression type, it takes priority over topic config
 			if result.records.len > 0 && result.records[0].compression_type > 0 {
-				preferred_compression = unsafe { compression.CompressionType(result.records[0].compression_type) }
+				preferred_compression = compression.compression_type_from_u8(result.records[0].compression_type) or {
+					preferred_compression
+				}
 			}
 
 			// Apply schema decoding if configured for this topic

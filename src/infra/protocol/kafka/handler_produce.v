@@ -392,7 +392,13 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 							observability.field_string('error', 'compression type must be 0-4'))
 					} else if compression_type_val != 0 {
 						// Compressed data — decompression required
-						compression_type := unsafe { compression.CompressionType(compression_type_val) }
+						compression_type := compression.compression_type_from_i16(compression_type_val) or {
+							h.logger.error('Invalid compression type value', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_int('compression_type_val', compression_type_val),
+								observability.field_string('error', err.msg()))
+							continue
+						}
 
 						h.logger.debug('Compression type detection', observability.field_string('topic',
 							topic_name), observability.field_int('partition', int(p.index)),

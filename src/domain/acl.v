@@ -155,9 +155,20 @@ pub fn (t ResourceType) str() string {
 	}
 }
 
-/// resource_type_from_i8 converts an i8 value to a ResourceType.
+/// resource_type_from_i8 converts an i8 value to a ResourceType with validation.
+/// Returns .unknown for unrecognized values.
 pub fn resource_type_from_i8(val i8) ResourceType {
-	return unsafe { ResourceType(val) }
+	return match val {
+		0 { ResourceType.unknown }
+		1 { ResourceType.any }
+		2 { ResourceType.topic }
+		3 { ResourceType.group }
+		4 { ResourceType.cluster }
+		5 { ResourceType.transactional_id }
+		6 { ResourceType.delegation_token }
+		7 { ResourceType.user }
+		else { ResourceType.unknown }
+	}
 }
 
 /// str converts PatternType to a string.
@@ -171,9 +182,17 @@ pub fn (t PatternType) str() string {
 	}
 }
 
-/// pattern_type_from_i8 converts an i8 value to a PatternType.
+/// pattern_type_from_i8 converts an i8 value to a PatternType with validation.
+/// Returns .unknown for unrecognized values.
 pub fn pattern_type_from_i8(val i8) PatternType {
-	return unsafe { PatternType(val) }
+	return match val {
+		0 { PatternType.unknown }
+		1 { PatternType.any }
+		2 { PatternType.match }
+		3 { PatternType.literal }
+		4 { PatternType.prefixed }
+		else { PatternType.unknown }
+	}
 }
 
 /// str converts AclOperation to a string.
@@ -195,9 +214,25 @@ pub fn (o AclOperation) str() string {
 	}
 }
 
-/// acl_operation_from_i8 converts an i8 value to an AclOperation.
+/// acl_operation_from_i8 converts an i8 value to an AclOperation with validation.
+/// Returns .unknown for unrecognized values.
 pub fn acl_operation_from_i8(val i8) AclOperation {
-	return unsafe { AclOperation(val) }
+	return match val {
+		0 { AclOperation.unknown }
+		1 { AclOperation.any }
+		2 { AclOperation.all }
+		3 { AclOperation.read }
+		4 { AclOperation.write }
+		5 { AclOperation.create }
+		6 { AclOperation.delete }
+		7 { AclOperation.alter }
+		8 { AclOperation.describe }
+		9 { AclOperation.cluster_action }
+		10 { AclOperation.describe_configs }
+		11 { AclOperation.alter_configs }
+		12 { AclOperation.idempotent_write }
+		else { AclOperation.unknown }
+	}
 }
 
 /// str converts PermissionType to a string.
@@ -210,7 +245,14 @@ pub fn (p PermissionType) str() string {
 	}
 }
 
-/// permission_type_from_i8 converts an i8 value to a PermissionType.
+/// permission_type_from_i8 converts an i8 value to a PermissionType with validation.
+/// Returns .unknown for unrecognized values.
 pub fn permission_type_from_i8(val i8) PermissionType {
-	return unsafe { PermissionType(val) }
+	return match val {
+		0 { PermissionType.unknown }
+		1 { PermissionType.any }
+		2 { PermissionType.allow }
+		3 { PermissionType.deny }
+		else { PermissionType.unknown }
+	}
 }
