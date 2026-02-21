@@ -212,7 +212,7 @@ pub struct OtelConfig {
 pub:
 	enabled             bool   = true
 	service_name        string = 'datacore'
-	service_version     string = '0.44.1'
+	service_version     string = '0.44.4'
 	instance_id         string
 	environment         string = 'development'
 	otlp_endpoint       string = 'http://localhost:4317'
@@ -487,7 +487,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	otel := OtelConfig{
 		enabled:             get_bool(doc, 'observability.otel.enabled', true)
 		service_name:        get_string(doc, 'observability.otel.service_name', 'datacore')
-		service_version:     get_string(doc, 'observability.otel.service_version', '0.44.1')
+		service_version:     get_string(doc, 'observability.otel.service_version', '0.44.4')
 		instance_id:         get_string(doc, 'observability.otel.instance_id', '')
 		environment:         get_string(doc, 'observability.otel.environment', 'development')
 		otlp_endpoint:       get_string(doc, 'observability.otel.otlp_endpoint', 'http://localhost:4317')
@@ -990,7 +990,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	otel := OtelConfig{
 		enabled:             true
 		service_name:        'datacore'
-		service_version:     '0.44.1'
+		service_version:     '0.44.4'
 		instance_id:         ''
 		environment:         'development'
 		otlp_endpoint:       'http://localhost:4317'

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.44.4] - 2026-02-21
+
+### Changed
+
+- **Code Cleanup** - Removed unused public structs and functions across protocol and observability layers
+- **Testing Infrastructure** - Streamlined testing configuration and improved replication compatibility tests
+
+## [0.44.3] - 2026-02-21
+
+### Added
+
+- **Comprehensive Replication Metrics** - Added sub-second replication latency tracking and replica catch-up monitoring
+
 ## [0.44.2] - 2026-02-20
 
 ### Changed
