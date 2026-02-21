@@ -8,36 +8,7 @@ import service.port
 import sync
 import time
 import rand
-
-/// LogLevel defines log levels.
-enum LogLevel {
-	debug
-	info
-	warn
-	error
-}
-
-/// log_message prints a structured log message.
-fn log_message(level LogLevel, component string, message string, context map[string]string) {
-	level_str := match level {
-		.debug { '[DEBUG]' }
-		.info { '[INFO]' }
-		.warn { '[WARN]' }
-		.error { '[ERROR]' }
-	}
-
-	timestamp := time.now().format_ss()
-	mut ctx_str := ''
-	if context.len > 0 {
-		mut parts := []string{}
-		for key, value in context {
-			parts << '${key}=${value}'
-		}
-		ctx_str = ' {${parts.join(', ')}}'
-	}
-
-	eprintln('${timestamp} ${level_str} [Memory:${component}] ${message}${ctx_str}')
-}
+import infra.observability
 
 /// MemoryMetrics tracks metrics for memory storage operations.
 struct MemoryMetrics {
@@ -184,7 +155,8 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 		a.metrics_lock.@lock()
 		a.metrics.error_count++
 		a.metrics_lock.unlock()
-		log_message(.error, 'Topic', 'Topic already exists', {
+		observability.log_with_context('memory', .error, 'Topic', 'Topic already exists',
+			{
 			'topic': name
 		})
 		return error('topic already exists')
@@ -215,7 +187,8 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 				a.metrics_lock.@lock()
 				a.metrics.error_count++
 				a.metrics_lock.unlock()
-				log_message(.error, 'Topic', 'Failed to create mmap partition', {
+				observability.log_with_context('memory', .error, 'Topic', 'Failed to create mmap partition',
+					{
 					'topic':     name
 					'partition': i.str()
 					'error':     err.msg()
@@ -255,7 +228,7 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 	// Cache topic_id -> name mapping for O(1) lookup
 	a.topic_id_index[topic_id.hex()] = name
 
-	log_message(.info, 'Topic', 'Topic created', {
+	observability.log_with_context('memory', .info, 'Topic', 'Topic created', {
 		'topic':      name
 		'partitions': partitions.str()
 		'use_mmap':   a.config.use_mmap.str()
@@ -287,7 +260,7 @@ pub fn (mut a MemoryStorageAdapter) delete_topic(name string) ! {
 
 	a.topics.delete(name)
 
-	log_message(.info, 'Topic', 'Topic deleted', {
+	observability.log_with_context('memory', .info, 'Topic', 'Topic deleted', {
 		'topic': name
 	})
 }
@@ -462,7 +435,8 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 			// Move elements in-place using slice without clone
 			part.records = part.records[excess..]
 			part.base_offset += i64(excess)
-			log_message(.debug, 'Append', 'Applied retention policy', {
+			observability.log_with_context('memory', .debug, 'Append', 'Applied retention policy',
+				{
 				'topic':         topic_name
 				'partition':     partition.str()
 				'deleted_count': excess.str()
@@ -801,7 +775,7 @@ pub fn (mut a MemoryStorageAdapter) delete_group(group_id string) ! {
 	a.groups.delete(group_id)
 	a.offsets.delete(group_id)
 
-	log_message(.info, 'Group', 'Group deleted', {
+	observability.log_with_context('memory', .info, 'Group', 'Group deleted', {
 		'group_id': group_id
 	})
 }
@@ -847,7 +821,7 @@ pub fn (mut a MemoryStorageAdapter) commit_offsets(group_id string, offsets []do
 		a.offsets[group_id][key] = offset.offset
 	}
 
-	log_message(.debug, 'Offset', 'Offsets committed', {
+	observability.log_with_context('memory', .debug, 'Offset', 'Offsets committed', {
 		'group_id': group_id
 		'count':    offsets.len.str()
 	})

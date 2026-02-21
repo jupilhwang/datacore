@@ -7,6 +7,7 @@ import crypto.sha256
 import crypto.hmac
 import net.http
 import time
+import infra.observability
 
 // S3 HTTP request retry configuration constants
 const max_retries = 3
@@ -90,7 +91,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			// Retry on DNS/network errors
 			if is_network_error(err_str) && attempt < max_retries - 1 {
 				backoff_ms := dns_backoff_ms * (1 << attempt)
-				log_message(.warn, 'S3Client', 'GET retry (network error)', {
+				observability.log_with_context('s3', .warn, 'S3Client', 'GET retry (network error)', {
 					'attempt':    '${attempt + 1}/${max_retries}'
 					'key':        key
 					'error':      err_str
@@ -189,7 +190,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 					initial_backoff_ms * (1 << attempt)
 				}
 
-				log_message(.warn, 'S3Client', 'PUT retry', {
+				observability.log_with_context('s3', .warn, 'S3Client', 'PUT retry', {
 					'attempt':    '${attempt + 1}/${max_retries_}'
 					'key':        key
 					'error':      err_str
@@ -202,7 +203,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 				continue
 			}
 			// Final failure: log detailed error
-			log_message(.error, 'S3Client', 'PUT failed after all retries', {
+			observability.log_with_context('s3', .error, 'S3Client', 'PUT failed after all retries', {
 				'key':      key
 				'error':    err_str
 				'endpoint': endpoint
@@ -227,7 +228,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			backoff_ms := initial_backoff_ms * (1 << attempt) +
 				int(time.now().unix_milli() % max_backoff_jitter_ms)
 
-			log_message(.warn, 'S3Client', 'PUT status error, retrying', {
+			observability.log_with_context('s3', .warn, 'S3Client', 'PUT status error, retrying', {
 				'attempt':     '${attempt + 1}/${max_retries_}'
 				'key':         key
 				'status_code': resp.status_code.str()
@@ -389,7 +390,7 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 		active++
 		spawn fn [mut a, obj, ch] () {
 			a.delete_object(obj.key) or {
-				log_message(.error, 'S3Client', 'Failed to delete object', {
+				observability.log_with_context('s3', .error, 'S3Client', 'Failed to delete object', {
 					'object_key': obj.key
 					'error':      err.msg()
 				})
@@ -421,7 +422,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 
 	for attempt in 0 .. max_retries {
 		if attempt > 0 {
-			log_message(.debug, 'S3Client', 'LIST retry', {
+			observability.log_with_context('s3', .debug, 'S3Client', 'LIST retry', {
 				'attempt': (attempt + 1).str()
 				'max':     max_retries.str()
 				'prefix':  prefix
@@ -447,7 +448,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		resp := req.do() or {
 			last_err = 'S3 LIST failed: ${err}'
 			err_str := err.msg()
-			log_message(.error, 'S3Client', 'LIST error', {
+			observability.log_with_context('s3', .error, 'S3Client', 'LIST error', {
 				'attempt':  (attempt + 1).str()
 				'error':    err_str
 				'prefix':   prefix
@@ -462,7 +463,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 				} else {
 					initial_backoff_ms * (1 << attempt)
 				}
-				log_message(.warn, 'S3Client', 'LIST retry', {
+				observability.log_with_context('s3', .warn, 'S3Client', 'LIST retry', {
 					'attempt':    '${attempt + 1}/${max_retries}'
 					'backoff_ms': backoff_ms.str()
 				})
@@ -484,7 +485,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		// Retry on 503 (Service Unavailable) and 500 (Server Error)
 		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
 			last_err = 'S3 LIST failed with status ${resp.status_code}'
-			log_message(.warn, 'S3Client', 'LIST status error, retrying', {
+			observability.log_with_context('s3', .warn, 'S3Client', 'LIST status error, retrying', {
 				'status_code': resp.status_code.str()
 			})
 

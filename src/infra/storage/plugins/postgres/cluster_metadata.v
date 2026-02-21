@@ -6,6 +6,7 @@ import db.pg
 import domain
 import time
 import sync
+import infra.observability
 import infra.performance.core
 
 /// PostgresClusterMetadataPort implements port.ClusterMetadataPort.
@@ -401,7 +402,7 @@ pub fn (mut p PostgresClusterMetadataPort) get_partition_assignment(topic_name s
 		[topic_name, partition.str()])!
 
 	if rows.len == 0 {
-		log_message(.warn, 'cluster_metadata', 'partition assignment not found', {
+		observability.log_with_context('postgres', .warn, 'cluster_metadata', 'partition assignment not found', {
 			'topic':     topic_name
 			'partition': partition.str()
 		})
@@ -410,7 +411,7 @@ pub fn (mut p PostgresClusterMetadataPort) get_partition_assignment(topic_name s
 
 	row := rows[0]
 	elapsed := time.now().unix_milli() - start_time
-	log_message(.debug, 'cluster_metadata', 'partition assignment retrieved', {
+	observability.log_with_context('postgres', .debug, 'cluster_metadata', 'partition assignment retrieved', {
 		'topic':     topic_name
 		'partition': partition.str()
 		'elapsed':   elapsed.str() + 'ms'
@@ -458,7 +459,7 @@ pub fn (mut p PostgresClusterMetadataPort) list_partition_assignments(topic_name
 	}
 
 	elapsed := time.now().unix_milli() - start_time
-	log_message(.debug, 'cluster_metadata', 'partition assignments listed', {
+	observability.log_with_context('postgres', .debug, 'cluster_metadata', 'partition assignments listed', {
 		'topic':   topic_name
 		'count':   assignments.len.str()
 		'elapsed': elapsed.str() + 'ms'
@@ -505,7 +506,7 @@ pub fn (mut p PostgresClusterMetadataPort) update_partition_assignment(assignmen
 	])!
 
 	elapsed := time.now().unix_milli() - start_time
-	log_message(.debug, 'cluster_metadata', 'partition assignment updated', {
+	observability.log_with_context('postgres', .debug, 'cluster_metadata', 'partition assignment updated', {
 		'topic':     assignment.topic_name
 		'partition': assignment.partition.str()
 		'elapsed':   elapsed.str() + 'ms'
@@ -540,7 +541,7 @@ pub fn (mut p PostgresClusterMetadataPort) list_all_partition_assignments() ![]d
 	}
 
 	elapsed := time.now().unix_milli() - start_time
-	log_message(.debug, 'cluster_metadata', 'all partition assignments listed', {
+	observability.log_with_context('postgres', .debug, 'cluster_metadata', 'all partition assignments listed', {
 		'count':   assignments.len.str()
 		'elapsed': elapsed.str() + 'ms'
 	})

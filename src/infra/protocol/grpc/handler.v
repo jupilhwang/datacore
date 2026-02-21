@@ -9,19 +9,6 @@ import time
 import infra.observability
 import infra.performance.core
 
-/// log_message prints a structured log message.
-fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	mut logger := observability.get_named_logger('grpc.${component}')
-	match level {
-		.trace { logger.debug_map(message, context) }
-		.debug { logger.debug_map(message, context) }
-		.info { logger.info_map(message, context) }
-		.warn { logger.warn_map(message, context) }
-		.error { logger.error_map(message, context) }
-		.fatal { logger.fatal_map(message, context) }
-	}
-}
-
 // GrpcHandler handles gRPC connections over HTTP/2.
 /// GrpcHandler handles gRPC connections over HTTP/2.
 pub struct GrpcHandler {

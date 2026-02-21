@@ -8,20 +8,6 @@ import net
 import time
 import infra.observability
 
-// Logging
-
-/// sse_log_message prints a structured log message.
-fn sse_log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	mut logger := observability.get_named_logger('sse.${component}')
-	match level {
-		.debug { logger.debug(message) }
-		.info { logger.info(message) }
-		.warn { logger.warn(message) }
-		.error { logger.error(message) }
-		else {}
-	}
-}
-
 // SSE handler
 
 /// SSEHandler handles SSE HTTP requests.
@@ -60,7 +46,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		status_code = 404
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		sse_log_message(.error, 'Request', 'Topic not found', {
+		observability.log_with_context('sse', .error, 'Request', 'Topic not found', {
 			'topic':     request.topic
 			'client_ip': request.client_ip
 		})
@@ -75,7 +61,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 			status_code = 400
 			elapsed_ms := time.since(start_time).milliseconds()
 			h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-			sse_log_message(.error, 'Request', 'Invalid partition', {
+			observability.log_with_context('sse', .error, 'Request', 'Invalid partition', {
 				'topic':     request.topic
 				'partition': partition.str()
 				'client_ip': request.client_ip
@@ -93,7 +79,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		status_code = 503
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		sse_log_message(.error, 'Request', 'Failed to register connection', {
+		observability.log_with_context('sse', .error, 'Request', 'Failed to register connection', {
 			'client_ip': request.client_ip
 			'error':     err.msg()
 		})
@@ -113,7 +99,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 		h.sse_service.unregister_connection(conn_id) or {}
 		elapsed_ms := time.since(start_time).milliseconds()
 		h.metrics.record_request('sse_request', elapsed_ms, success, 0, 0)
-		sse_log_message(.error, 'Request', 'Failed to subscribe', {
+		observability.log_with_context('sse', .error, 'Request', 'Failed to subscribe', {
 			'conn_id': conn_id
 			'topic':   request.topic
 			'error':   err.msg()
@@ -135,7 +121,7 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 	elapsed_ms := time.since(start_time).milliseconds()
 	h.metrics.record_request('sse_request', elapsed_ms, success, 0, headers.len)
 
-	sse_log_message(.info, 'Request', 'SSE request successful', {
+	observability.log_with_context('sse', .info, 'Request', 'SSE request successful', {
 		'conn_id':   conn_id
 		'topic':     request.topic
 		'client_ip': request.client_ip

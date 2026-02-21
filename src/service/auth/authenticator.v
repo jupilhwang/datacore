@@ -10,19 +10,6 @@ import time
 
 // Logging
 
-/// log_message prints a structured log message.
-fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	mut logger := observability.get_named_logger('auth.${component}')
-	match level {
-		.trace { logger.debug_map(message, context) }
-		.debug { logger.debug_map(message, context) }
-		.info { logger.info_map(message, context) }
-		.warn { logger.warn_map(message, context) }
-		.error { logger.error_map(message, context) }
-		.fatal { logger.fatal_map(message, context) }
-	}
-}
-
 // Metrics
 
 /// AuthMetrics tracks metrics for authentication operations.
@@ -198,7 +185,8 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 		// Metrics: record failure
 		elapsed_ms := time.since(start_time).milliseconds()
 		s.metrics.record_auth_attempt(mech_str, elapsed_ms, false)
-		log_message(.error, 'Auth', 'Unsupported mechanism', {
+		observability.log_with_context('auth', .error, 'Auth', 'Unsupported mechanism',
+			{
 			'mechanism': mech_str
 		})
 		return err
@@ -208,7 +196,8 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 		// Metrics: record failure
 		elapsed_ms := time.since(start_time).milliseconds()
 		s.metrics.record_auth_attempt(mech_str, elapsed_ms, false)
-		log_message(.warn, 'Auth', 'Authentication failed', {
+		observability.log_with_context('auth', .warn, 'Auth', 'Authentication failed',
+			{
 			'mechanism': mech_str
 			'error':     err.msg()
 		})
@@ -219,7 +208,8 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 	elapsed_ms := time.since(start_time).milliseconds()
 	s.metrics.record_auth_attempt(mech_str, elapsed_ms, true)
 
-	log_message(.info, 'Auth', 'Authentication successful', {
+	observability.log_with_context('auth', .info, 'Auth', 'Authentication successful',
+		{
 		'mechanism': mech_str
 		'user':      if principal := result.principal { principal.name } else { 'unknown' }
 	})

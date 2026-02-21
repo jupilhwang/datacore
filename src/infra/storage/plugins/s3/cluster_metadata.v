@@ -5,6 +5,7 @@ module s3
 import domain
 import time
 import json
+import infra.observability
 
 // Workaround for V interface value copy bug: keep config backup at module level
 // Adding a config field to the struct causes a segfault on interface assignment,
@@ -24,7 +25,7 @@ pub mut:
 pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMetadataAdapter {
 	// Workaround for V interface value copy bug: save config to global variable
 	cluster_metadata_config_backup = adapter.config
-	log_message(.info, 'ClusterMetadata', 'Creating cluster metadata adapter', {
+	observability.log_with_context('s3', .info, 'ClusterMetadata', 'Creating cluster metadata adapter', {
 		'endpoint':    adapter.config.endpoint
 		'region':      adapter.config.region
 		'bucket_name': adapter.config.bucket_name
@@ -230,7 +231,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 	a.ensure_adapter_config()
 	key := a.partition_assignment_key(topic_name, partition)
 
-	log_message(.debug, 'PartitionAssignment', 'Reading partition assignment from S3',
+	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Reading partition assignment from S3',
 		{
 		'topic':     topic_name
 		'partition': partition.str()
@@ -243,7 +244,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 	a.adapter.metrics_lock.unlock()
 
 	data, _ := a.adapter.get_object(key, 0, -1) or {
-		log_message(.warn, 'PartitionAssignment', 'Partition assignment not found', {
+		observability.log_with_context('s3', .warn, 'PartitionAssignment', 'Partition assignment not found', {
 			'topic':     topic_name
 			'partition': partition.str()
 			'key':       key
@@ -256,7 +257,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 	}
 
 	assignment := json.decode(domain.PartitionAssignment, data.bytestr()) or {
-		log_message(.error, 'PartitionAssignment', 'Failed to decode partition assignment',
+		observability.log_with_context('s3', .error, 'PartitionAssignment', 'Failed to decode partition assignment',
 			{
 			'topic':     topic_name
 			'partition': partition.str()
@@ -266,7 +267,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 		return error('failed to decode partition assignment: ${err}')
 	}
 
-	log_message(.debug, 'PartitionAssignment', 'Successfully read partition assignment',
+	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Successfully read partition assignment',
 		{
 		'topic':            topic_name
 		'partition':        partition.str()
@@ -282,7 +283,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_partition_assignments(topic_name st
 	a.ensure_adapter_config()
 	prefix := a.partition_assignments_prefix(topic_name)
 
-	log_message(.debug, 'PartitionAssignment', 'Listing partition assignments for topic',
+	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Listing partition assignments for topic',
 		{
 		'topic':  topic_name
 		'prefix': prefix
@@ -327,7 +328,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_partition_assignments(topic_name st
 		assignments << assignment
 	}
 
-	log_message(.info, 'PartitionAssignment', 'Listed partition assignments for topic',
+	observability.log_with_context('s3', .info, 'PartitionAssignment', 'Listed partition assignments for topic',
 		{
 		'topic':  topic_name
 		'count':  assignments.len.str()
@@ -343,7 +344,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 	a.ensure_adapter_config()
 	prefix := a.all_assignments_prefix()
 
-	log_message(.debug, 'PartitionAssignment', 'Listing all partition assignments', {
+	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Listing all partition assignments', {
 		'prefix': prefix
 	})
 
@@ -386,7 +387,7 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 		assignments << assignment
 	}
 
-	log_message(.info, 'PartitionAssignment', 'Listed all partition assignments', {
+	observability.log_with_context('s3', .info, 'PartitionAssignment', 'Listed all partition assignments', {
 		'total_count': assignments.len.str()
 		'failed':      failed_count.str()
 	})
@@ -401,7 +402,7 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 	a.ensure_adapter_config()
 	key := a.partition_assignment_key(assignment.topic_name, assignment.partition)
 
-	log_message(.debug, 'PartitionAssignment', 'Updating partition assignment', {
+	observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Updating partition assignment', {
 		'topic':            assignment.topic_name
 		'partition':        assignment.partition.str()
 		'preferred_broker': assignment.preferred_broker.str()
@@ -414,7 +415,7 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 	mut last_error := ''
 	for retry in 0 .. a.adapter.config.max_retries {
 		if retry > 0 {
-			log_message(.debug, 'PartitionAssignment', 'Retrying partition assignment update',
+			observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Retrying partition assignment update',
 				{
 				'topic':     assignment.topic_name
 				'partition': assignment.partition.str()
@@ -433,7 +434,7 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 		a.adapter.metrics.s3_put_count++
 		a.adapter.metrics_lock.unlock()
 
-		log_message(.info, 'PartitionAssignment', 'Successfully updated partition assignment',
+		observability.log_with_context('s3', .info, 'PartitionAssignment', 'Successfully updated partition assignment',
 			{
 			'topic':     assignment.topic_name
 			'partition': assignment.partition.str()
@@ -447,7 +448,7 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 	a.adapter.metrics.s3_error_count++
 	a.adapter.metrics_lock.unlock()
 
-	log_message(.error, 'PartitionAssignment', 'Failed to update partition assignment after retries',
+	observability.log_with_context('s3', .error, 'PartitionAssignment', 'Failed to update partition assignment after retries',
 		{
 		'topic':       assignment.topic_name
 		'partition':   assignment.partition.str()

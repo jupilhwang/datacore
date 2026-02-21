@@ -116,19 +116,6 @@ struct CachedSignature {
 	cached_at time.Time
 }
 
-/// log_message prints a structured log message.
-fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	mut logger := observability.get_named_logger('s3.${component}')
-	match level {
-		.trace { logger.debug_map(message, context) }
-		.debug { logger.debug_map(message, context) }
-		.info { logger.info_map(message, context) }
-		.warn { logger.warn_map(message, context) }
-		.error { logger.error_map(message, context) }
-		.fatal { logger.fatal_map(message, context) }
-	}
-}
-
 /// S3Metrics tracks metrics for S3 storage operations.
 struct S3Metrics {
 mut:
@@ -601,7 +588,8 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	// Append records to Iceberg table (when Iceberg is enabled)
 	if a.is_iceberg_enabled() {
 		a.append_to_iceberg(topic, partition, records, base_offset) or {
-			log_message(.warn, 'IcebergAppend', 'Failed to append to Iceberg', {
+			observability.log_with_context('s3', .warn, 'IcebergAppend', 'Failed to append to Iceberg',
+				{
 				'topic':     topic
 				'partition': partition.str()
 				'error':     err.str()
@@ -931,7 +919,8 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 	a.update_offset_cache_and_metrics(group_id, succeeded, failed)
 	a.handle_commit_result(offsets.len, failed, group_id) or {
 		// Partial failures are allowed; only log the error
-		log_message(.warn, 'OffsetCommit', 'Some offsets failed to commit', {
+		observability.log_with_context('s3', .warn, 'OffsetCommit', 'Some offsets failed to commit',
+			{
 			'group_id': group_id
 			'failed':   failed.len.str()
 		})
@@ -980,7 +969,8 @@ fn (mut a S3StorageAdapter) wait_for_slot(ch chan CommitResult, active int, mut 
 
 /// log_commit_error logs a commit error.
 fn (a &S3StorageAdapter) log_commit_error(result CommitResult, group_id string) {
-	log_message(.error, 'OffsetCommit', 'Offset commit failed', {
+	observability.log_with_context('s3', .error, 'OffsetCommit', 'Offset commit failed',
+		{
 		'group_id':  group_id
 		'topic':     result.offset.topic
 		'partition': result.offset.partition.str()
@@ -1013,7 +1003,7 @@ fn (mut a S3StorageAdapter) commit_single_offset(group_id string, offset domain.
 
 /// log_single_commit_error logs a single commit error.
 fn (a &S3StorageAdapter) log_single_commit_error(group_id string, offset domain.PartitionOffset, error_msg string) {
-	log_message(.error, 'OffsetCommit', error_msg, {
+	observability.log_with_context('s3', .error, 'OffsetCommit', error_msg, {
 		'group_id':  group_id
 		'topic':     offset.topic
 		'partition': offset.partition.str()
@@ -1058,7 +1048,8 @@ fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []dom
 	}
 	a.offset_lock.unlock()
 
-	log_message(.info, 'OffsetCommit', 'Successfully committed offsets', {
+	observability.log_with_context('s3', .info, 'OffsetCommit', 'Successfully committed offsets',
+		{
 		'group_id': group_id
 		'count':    succeeded.len.str()
 	})
@@ -1087,7 +1078,8 @@ fn (a &S3StorageAdapter) handle_commit_result(total_count int, failed []string, 
 	}
 
 	if failed.len > 0 {
-		log_message(.warn, 'OffsetCommit', 'Partial offset commit', {
+		observability.log_with_context('s3', .warn, 'OffsetCommit', 'Partial offset commit',
+			{
 			'group_id': group_id
 			'failed':   failed.len.str()
 		})

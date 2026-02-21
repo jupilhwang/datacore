@@ -18,21 +18,6 @@ import time
 import domain
 import infra.observability
 
-// Logging
-
-/// log_message prints a structured log message.
-fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	mut logger := observability.get_named_logger('tcp.${component}')
-	match level {
-		.trace { logger.debug_map(message, context) } // map trace to debug for now or add trace_map
-		.debug { logger.debug_map(message, context) }
-		.info { logger.info_map(message, context) }
-		.warn { logger.warn_map(message, context) }
-		.error { logger.error_map(message, context) }
-		.fatal { logger.fatal_map(message, context) }
-	}
-}
-
 /// ServerConfig is a struct holding server configuration.
 /// Contains various options controlling TCP server behavior.
 pub struct ServerConfig {

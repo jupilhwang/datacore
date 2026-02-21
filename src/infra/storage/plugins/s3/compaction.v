@@ -4,6 +4,7 @@ module s3
 
 import json
 import time
+import infra.observability
 
 // Compaction worker configuration constants
 const max_consecutive_failures = 5
@@ -19,11 +20,11 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 	for a.compactor_running {
 		time.sleep(a.config.compaction_interval_ms * time.millisecond)
 
-		log_message(.debug, 'Compaction', 'Starting compaction cycle', {})
+		observability.log_with_context('s3', .debug, 'Compaction', 'Starting compaction cycle', {})
 
 		a.compact_all_partitions() or {
 			consecutive_failures++
-			log_message(.error, 'Compaction', 'Compaction cycle failed', {
+			observability.log_with_context('s3', .error, 'Compaction', 'Compaction cycle failed', {
 				'consecutive_failures': consecutive_failures.str()
 				'max_failures':         max_consecutive_failures.str()
 				'error':                err.msg()
@@ -31,7 +32,7 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 
 			// Too many consecutive failures; increase backoff
 			if consecutive_failures >= max_consecutive_failures {
-				log_message(.warn, 'Compaction', 'Too many consecutive failures, backing off',
+				observability.log_with_context('s3', .warn, 'Compaction', 'Too many consecutive failures, backing off',
 					{
 					'backoff_duration': failure_backoff_duration.str()
 				})
@@ -43,7 +44,7 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 
 		// Reset counter on success
 		if consecutive_failures > 0 {
-			log_message(.info, 'Compaction', 'Compaction succeeded after failures', {
+			observability.log_with_context('s3', .info, 'Compaction', 'Compaction succeeded after failures', {
 				'previous_failures': consecutive_failures.str()
 			})
 			consecutive_failures = 0
@@ -73,7 +74,7 @@ fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 				topic := parts[0]
 				partition := parts[1].int()
 				a.compact_partition(topic, partition) or {
-					log_message(.error, 'Compaction', 'Partition compaction failed', {
+					observability.log_with_context('s3', .error, 'Compaction', 'Partition compaction failed', {
 						'partition_key': key
 						'error':         err.msg()
 					})
@@ -101,7 +102,7 @@ fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 					topic := parts[0]
 					partition := parts[1].int()
 					a.compact_partition(topic, partition) or {
-						log_message(.error, 'Compaction', 'Partition compaction failed',
+						observability.log_with_context('s3', .error, 'Compaction', 'Partition compaction failed',
 							{
 							'partition_key': key
 							'error':         err.msg()
@@ -200,7 +201,7 @@ fn (mut a S3StorageAdapter) download_segments_parallel(segments []LogSegment) ![
 	for seg in segments {
 		spawn fn [mut a, seg, ch] () {
 			data, _ := a.get_object(seg.key, -1, -1) or {
-				log_message(.error, 'Compaction', 'Failed to download segment', {
+				observability.log_with_context('s3', .error, 'Compaction', 'Failed to download segment', {
 					'segment_key': seg.key
 					'error':       err.msg()
 				})
@@ -290,7 +291,7 @@ fn (mut a S3StorageAdapter) delete_segments_parallel(segments []LogSegment) {
 	for seg in segments {
 		spawn fn [mut a, seg, ch] () {
 			a.delete_object(seg.key) or {
-				log_message(.error, 'Compaction', 'Failed to delete old segment', {
+				observability.log_with_context('s3', .error, 'Compaction', 'Failed to delete old segment', {
 					'segment_key': seg.key
 					'error':       err.msg()
 				})

@@ -12,19 +12,6 @@ import sync
 import encoding.hex
 import infra.observability
 
-/// log_message prints a structured log message.
-fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	mut logger := observability.get_named_logger('postgres.${component}')
-	match level {
-		.trace { logger.debug_map(message, context) }
-		.debug { logger.debug_map(message, context) }
-		.info { logger.info_map(message, context) }
-		.warn { logger.warn_map(message, context) }
-		.error { logger.error_map(message, context) }
-		.fatal { logger.fatal_map(message, context) }
-	}
-}
-
 /// PostgresMetrics tracks metrics for PostgreSQL storage operations.
 struct PostgresMetrics {
 mut:
@@ -506,7 +493,7 @@ pub fn (mut a PostgresStorageAdapter) create_topic(name string, partitions int, 
 	a.metrics.query_total_ms += elapsed_ms
 	a.metrics_lock.unlock()
 
-	log_message(.info, 'Topic', 'Topic created', {
+	observability.log_with_context('postgres', .info, 'Topic', 'Topic created', {
 		'name':       name
 		'partitions': partitions.str()
 	})

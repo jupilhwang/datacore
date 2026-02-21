@@ -5,6 +5,7 @@ module s3
 
 import domain
 import time
+import infra.observability
 
 /// OffsetGroupBuffer buffers consumer group offsets in memory.
 /// flush_worker periodically flushes dirty buffers to S3.
@@ -102,7 +103,7 @@ fn (mut a S3StorageAdapter) flush_pending_offsets() {
 			a.metrics_lock.@lock()
 			a.metrics.offset_flush_error_count++
 			a.metrics_lock.unlock()
-			log_message(.error, 'OffsetFlush', 'Failed to flush offsets', {
+			observability.log_with_context('s3', .error, 'OffsetFlush', 'Failed to flush offsets', {
 				'group_id': group_id
 				'error':    err.msg()
 			})

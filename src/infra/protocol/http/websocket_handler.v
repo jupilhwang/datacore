@@ -11,21 +11,6 @@ import time
 import infra.observability
 import infra.performance.core
 
-// Logging
-
-/// log_message prints a structured log message.
-fn log_message(level observability.LogLevel, component string, message string, context map[string]string) {
-	mut logger := observability.get_named_logger('websocket.${component}')
-	match level {
-		.trace { logger.debug_map(message, context) }
-		.debug { logger.debug_map(message, context) }
-		.info { logger.info_map(message, context) }
-		.warn { logger.warn_map(message, context) }
-		.error { logger.error_map(message, context) }
-		.fatal { logger.fatal_map(message, context) }
-	}
-}
-
 // WebSocket handler
 
 /// WebSocketHandler handles WebSocket HTTP requests.
@@ -62,7 +47,8 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		success = false
 		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
 			success, 0, 0)
-		log_message(.error, 'Upgrade', 'Invalid Upgrade header', {
+		observability.log_with_context('websocket', .error, 'Upgrade', 'Invalid Upgrade header',
+			{
 			'client_ip': client_ip
 		})
 		return error('Invalid Upgrade header')
@@ -73,7 +59,8 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		success = false
 		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
 			success, 0, 0)
-		log_message(.error, 'Upgrade', 'Invalid Connection header', {
+		observability.log_with_context('websocket', .error, 'Upgrade', 'Invalid Connection header',
+			{
 			'client_ip': client_ip
 		})
 		return error('Invalid Connection header')
@@ -84,7 +71,8 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		success = false
 		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
 			success, 0, 0)
-		log_message(.error, 'Upgrade', 'Missing Sec-WebSocket-Key header', {
+		observability.log_with_context('websocket', .error, 'Upgrade', 'Missing Sec-WebSocket-Key header',
+			{
 			'client_ip': client_ip
 		})
 		return error('Missing Sec-WebSocket-Key header')
@@ -95,7 +83,8 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		success = false
 		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
 			success, 0, 0)
-		log_message(.error, 'Upgrade', 'Unsupported WebSocket version', {
+		observability.log_with_context('websocket', .error, 'Upgrade', 'Unsupported WebSocket version',
+			{
 			'client_ip': client_ip
 			'version':   ws_version
 		})
@@ -114,7 +103,8 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		success = false
 		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
 			success, 0, 0)
-		log_message(.error, 'Upgrade', 'Failed to register connection', {
+		observability.log_with_context('websocket', .error, 'Upgrade', 'Failed to register connection',
+			{
 			'client_ip': client_ip
 			'error':     err.msg()
 		})
@@ -131,7 +121,8 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 		h.ws_service.unregister_connection(conn_id) or {}
 		h.metrics.record_request('ws_upgrade', time.since(start_time).milliseconds(),
 			success, 0, 0)
-		log_message(.error, 'Upgrade', 'Failed to send upgrade response', {
+		observability.log_with_context('websocket', .error, 'Upgrade', 'Failed to send upgrade response',
+			{
 			'client_ip': client_ip
 			'conn_id':   conn_id
 		})
@@ -142,7 +133,8 @@ pub fn (mut h WebSocketHandler) handle_upgrade(mut conn net.TcpConn, headers map
 	elapsed_ms := time.since(start_time).milliseconds()
 	h.metrics.record_request('ws_upgrade', elapsed_ms, success, 0, response.len)
 
-	log_message(.info, 'Upgrade', 'WebSocket upgrade successful', {
+	observability.log_with_context('websocket', .info, 'Upgrade', 'WebSocket upgrade successful',
+		{
 		'client_ip': client_ip
 		'conn_id':   conn_id
 	})
