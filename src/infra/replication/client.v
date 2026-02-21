@@ -16,8 +16,8 @@ mut:
 
 // Client.new creates a new replication Client with the given timeout in milliseconds.
 /// Client.
-pub fn Client.new(timeout_ms int) Client {
-	return Client{
+pub fn Client.new(timeout_ms int) &Client {
+	return &Client{
 		protocol:   Protocol.new()
 		timeout_ms: timeout_ms
 		logger:     log.Log{}

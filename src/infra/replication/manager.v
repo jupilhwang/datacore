@@ -59,11 +59,9 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 		running:             false
 	}
 
-	// Initialize server and client
-	mut srv := Server.new(config.replication_port, m.create_handler())
-	mut cli := Client.new(config.replica_timeout_ms)
-	m.server = &srv
-	m.client = &cli
+	// Initialize server and client (heap-allocated to prevent dangling pointers)
+	m.server = Server.new(config.replication_port, m.create_handler())
+	m.client = Client.new(config.replica_timeout_ms)
 
 	return m
 }

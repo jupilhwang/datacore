@@ -28,13 +28,11 @@ fn create_test_manager() &Manager {
 	handler := fn (msg domain.ReplicationMessage) !domain.ReplicationMessage {
 		return msg
 	}
-	mut srv := Server.new(config.replication_port, handler)
-	mut cli := Client.new(config.replica_timeout_ms)
 	mut m := &Manager{
 		broker_id:           'broker-test-1'
 		config:              config
-		server:              &srv
-		client:              &cli
+		server:              Server.new(config.replication_port, handler)
+		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
 		assignments:         map[string]domain.ReplicaAssignment{}
 		broker_health:       map[string]domain.ReplicationHealth{}
@@ -379,13 +377,11 @@ fn test_manager_worker_lifecycle() {
 	handler := fn (msg domain.ReplicationMessage) !domain.ReplicationMessage {
 		return msg
 	}
-	mut srv := Server.new(config.replication_port, handler)
-	mut cli := Client.new(config.replica_timeout_ms)
 	mut m := &Manager{
 		broker_id:           'broker-lifecycle'
 		config:              config
-		server:              &srv
-		client:              &cli
+		server:              Server.new(config.replication_port, handler)
+		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
 		assignments:         map[string]domain.ReplicaAssignment{}
 		broker_health:       map[string]domain.ReplicationHealth{}
@@ -525,16 +521,14 @@ fn test_assign_replicas_excludes_self_by_broker_id() {
 	handler := fn (msg domain.ReplicationMessage) !domain.ReplicationMessage {
 		return msg
 	}
-	mut srv := Server.new(config.replication_port, handler)
-	mut cli := Client.new(config.replica_timeout_ms)
 	// The manager's own broker_id is 'self-broker'.
 	// It is also listed in cluster_broker_refs but with a different address
 	// (simulating an address change or multi-interface scenario).
 	mut m := &Manager{
 		broker_id:           'self-broker'
 		config:              config
-		server:              &srv
-		client:              &cli
+		server:              Server.new(config.replication_port, handler)
+		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
 		assignments:         map[string]domain.ReplicaAssignment{}
 		broker_health:       map[string]domain.ReplicationHealth{}
@@ -585,13 +579,11 @@ fn test_assign_replicas_legacy_addr_fallback() {
 	handler := fn (msg domain.ReplicationMessage) !domain.ReplicationMessage {
 		return msg
 	}
-	mut srv := Server.new(config.replication_port, handler)
-	mut cli := Client.new(config.replica_timeout_ms)
 	mut m := &Manager{
 		broker_id:       'legacy-broker'
 		config:          config
-		server:          &srv
-		client:          &cli
+		server:          Server.new(config.replication_port, handler)
+		client:          Client.new(config.replica_timeout_ms)
 		replica_buffers: map[string][]domain.ReplicaBuffer{}
 		assignments:     map[string]domain.ReplicaAssignment{}
 		broker_health:   map[string]domain.ReplicationHealth{}

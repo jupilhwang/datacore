@@ -25,8 +25,8 @@ pub type MessageHandler = fn (domain.ReplicationMessage) !domain.ReplicationMess
 
 // Server.new creates a new replication Server on the given port with the specified message handler.
 /// Server.
-pub fn Server.new(port int, handler MessageHandler) Server {
-	return Server{
+pub fn Server.new(port int, handler MessageHandler) &Server {
+	return &Server{
 		port:     port
 		protocol: Protocol.new()
 		handler:  handler
