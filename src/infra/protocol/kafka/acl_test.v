@@ -119,7 +119,8 @@ fn test_handler_create_acls() {
 	request.write_i8(3)
 	request.write_i8(2)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	mut conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -154,7 +155,8 @@ fn test_handler_describe_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
+	mut create_conn := ?&domain.AuthConnection(none)
+	_ = handler.handle_request(create_req.bytes()[4..], mut create_conn) or { panic(err) }
 
 	// Now describe ACLs
 	mut request := kafka.new_writer()
@@ -173,7 +175,8 @@ fn test_handler_describe_acls() {
 	request.write_i8(1)
 	request.write_i8(1)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	mut conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -229,7 +232,8 @@ fn test_handler_delete_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
+	mut create_conn2 := ?&domain.AuthConnection(none)
+	_ = handler.handle_request(create_req.bytes()[4..], mut create_conn2) or { panic(err) }
 
 	// Delete ACL
 	mut request := kafka.new_writer()
@@ -249,7 +253,8 @@ fn test_handler_delete_acls() {
 	request.write_i8(1)
 	request.write_i8(1)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	mut conn2 := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut conn2) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -284,4 +289,191 @@ fn test_handler_delete_acls() {
 
 	principal := reader.read_string()!
 	assert principal == 'User:alice'
+}
+
+// --- Additional test scenarios ---
+
+// create_acl_helper builds a v1 non-flexible CreateAcls request.
+fn create_acl_helper(resource_type i8, resource_name string, pattern_type i8, principal string, host string, operation i8, permission_type i8) []u8 {
+	mut w := kafka.new_writer()
+	w.write_i32(0)
+	w.write_i16(30)
+	w.write_i16(1)
+	w.write_i32(1)
+	w.write_nullable_string('test-client')
+	w.write_array_len(1)
+	w.write_i8(resource_type)
+	w.write_string(resource_name)
+	w.write_i8(pattern_type)
+	w.write_string(principal)
+	w.write_string(host)
+	w.write_i8(operation)
+	w.write_i8(permission_type)
+	return w.bytes()
+}
+
+// describe_all_acls_helper builds a v1 DescribeAcls request matching all ACLs.
+fn describe_all_acls_helper() []u8 {
+	mut w := kafka.new_writer()
+	w.write_i32(0)
+	w.write_i16(29)
+	w.write_i16(1)
+	w.write_i32(2)
+	w.write_nullable_string('test-client')
+	w.write_i8(1)
+	w.write_nullable_string(none)
+	w.write_i8(1)
+	w.write_nullable_string(none)
+	w.write_nullable_string(none)
+	w.write_i8(1)
+	w.write_i8(1)
+	return w.bytes()
+}
+
+fn test_create_acls_duplicate_is_idempotent() {
+	mut handler := create_test_handler_with_acl()
+
+	// Create same ACL twice
+	create_body := create_acl_helper(2, 'dup-topic', 3, 'User:bob', '*', 3, 2)
+	for _ in 0 .. 2 {
+		mut c := ?&domain.AuthConnection(none)
+		resp := handler.handle_request(create_body[4..], mut c) or { panic(err) }
+		mut reader := kafka.new_reader(resp)
+		_ = reader.read_i32()!
+		_ = reader.read_i32()!
+		_ = reader.read_i32()!
+		count := reader.read_array_len()!
+		assert count == 1
+		error_code := reader.read_i16()!
+		assert error_code == 0
+	}
+
+	// Only one resource entry should exist in describe response
+	desc_body := describe_all_acls_helper()
+	mut desc_conn := ?&domain.AuthConnection(none)
+	desc_resp := handler.handle_request(desc_body[4..], mut desc_conn) or { panic(err) }
+	mut dr := kafka.new_reader(desc_resp)
+	_ = dr.read_i32()!
+	_ = dr.read_i32()!
+	_ = dr.read_i32()!
+	_ = dr.read_i16()!
+	_ = dr.read_nullable_string()!
+	res_count := dr.read_array_len()!
+	assert res_count == 1
+}
+
+fn test_delete_acls_multiple_matches() {
+	mut handler := create_test_handler_with_acl()
+
+	// Create two ACLs on the same topic with different principals
+	for principal in ['User:charlie', 'User:dave'] {
+		mut c := ?&domain.AuthConnection(none)
+		body := create_acl_helper(2, 'multi-topic', 3, principal, '*', 3, 2)
+		_ = handler.handle_request(body[4..], mut c) or { panic(err) }
+	}
+
+	// Delete all ACLs on multi-topic
+	mut del_req := kafka.new_writer()
+	del_req.write_i32(0)
+	del_req.write_i16(31)
+	del_req.write_i16(1)
+	del_req.write_i32(3)
+	del_req.write_nullable_string('test-client')
+	del_req.write_array_len(1)
+	del_req.write_i8(2)
+	del_req.write_nullable_string('multi-topic')
+	del_req.write_i8(3)
+	del_req.write_nullable_string(none)
+	del_req.write_nullable_string(none)
+	del_req.write_i8(1)
+	del_req.write_i8(1)
+
+	mut del_conn := ?&domain.AuthConnection(none)
+	del_resp := handler.handle_request(del_req.bytes()[4..], mut del_conn) or { panic(err) }
+
+	mut reader := kafka.new_reader(del_resp)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	count := reader.read_array_len()!
+	assert count == 1
+	error_code := reader.read_i16()!
+	assert error_code == 0
+	_ = reader.read_nullable_string()!
+	match_count := reader.read_array_len()!
+	assert match_count == 2
+}
+
+fn test_describe_acls_empty_when_none_exist() {
+	mut handler := create_test_handler_with_acl()
+
+	mut conn := ?&domain.AuthConnection(none)
+	desc_body := describe_all_acls_helper()
+	desc_resp := handler.handle_request(desc_body[4..], mut conn) or { panic(err) }
+
+	mut reader := kafka.new_reader(desc_resp)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	error_code := reader.read_i16()!
+	assert error_code == 0
+	_ = reader.read_nullable_string()!
+	res_count := reader.read_array_len()!
+	assert res_count == 0
+}
+
+fn test_acls_security_disabled_when_no_acl_manager() {
+	storage := AclMockStorage{}
+	compression_service := compression.new_default_compression_service() or {
+		panic('failed to create compression service: ${err}')
+	}
+	// Handler with no ACL manager
+	mut handler := kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage,
+		none, none, none, compression_service)
+
+	mut conn := ?&domain.AuthConnection(none)
+	desc_body := describe_all_acls_helper()
+	desc_resp := handler.handle_request(desc_body[4..], mut conn) or { panic(err) }
+
+	mut reader := kafka.new_reader(desc_resp)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	error_code := reader.read_i16()!
+	// 54 = SECURITY_DISABLED
+	assert error_code == 54
+}
+
+fn test_delete_acls_no_matches_returns_zero() {
+	mut handler := create_test_handler_with_acl()
+
+	mut del_req := kafka.new_writer()
+	del_req.write_i32(0)
+	del_req.write_i16(31)
+	del_req.write_i16(1)
+	del_req.write_i32(3)
+	del_req.write_nullable_string('test-client')
+	del_req.write_array_len(1)
+	del_req.write_i8(2)
+	del_req.write_nullable_string('nonexistent-topic')
+	del_req.write_i8(3)
+	del_req.write_nullable_string(none)
+	del_req.write_nullable_string(none)
+	del_req.write_i8(1)
+	del_req.write_i8(1)
+
+	mut del_conn := ?&domain.AuthConnection(none)
+	del_resp := handler.handle_request(del_req.bytes()[4..], mut del_conn) or { panic(err) }
+
+	mut reader := kafka.new_reader(del_resp)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	count := reader.read_array_len()!
+	assert count == 1
+	error_code := reader.read_i16()!
+	assert error_code == 0
+	_ = reader.read_nullable_string()!
+	match_count := reader.read_array_len()!
+	assert match_count == 0
 }
