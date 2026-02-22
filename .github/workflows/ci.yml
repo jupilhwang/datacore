@@ -83,7 +83,7 @@ jobs:
       - name: Build
         run: |
           cd src
-          v -prod -enable-globals -d use_openssl -cflag -static -o ../bin/${{ matrix.artifact_name }} .
+          v -prod -enable-globals -d use_openssl -cflags -static -o ../bin/${{ matrix.artifact_name }} .
 
       - name: Create archive
         run: |
