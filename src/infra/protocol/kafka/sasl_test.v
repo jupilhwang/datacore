@@ -321,6 +321,18 @@ fn (m &MockStorage) get_storage_capability() domain.StorageCapability {
 	return domain.memory_storage_capability
 }
 
+fn (m MockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (m MockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (m MockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (m MockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []
+}
+
 fn (m &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
@@ -339,7 +351,8 @@ fn test_handler_sasl_handshake_success() {
 	request.write_string('PLAIN')
 
 	// Handle request
-	response := handler.handle_request(request.bytes()[4..]) or {
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or {
 		panic('handle_request failed: ${err}')
 	}
 
@@ -373,7 +386,8 @@ fn test_handler_sasl_handshake_unsupported_mechanism() {
 	request.write_nullable_string('test-client')
 	request.write_string('SCRAM-SHA-256')
 
-	response := handler.handle_request(request.bytes()[4..]) or {
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or {
 		panic('handle_request failed: ${err}')
 	}
 
@@ -399,7 +413,8 @@ fn test_handler_sasl_authenticate_success() {
 	request.write_nullable_string('test-client')
 	request.write_bytes(auth_bytes)
 
-	response := handler.handle_request(request.bytes()[4..]) or {
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or {
 		panic('handle_request failed: ${err}')
 	}
 
@@ -427,7 +442,8 @@ fn test_handler_sasl_authenticate_failure() {
 	request.write_nullable_string('test-client')
 	request.write_bytes(auth_bytes)
 
-	response := handler.handle_request(request.bytes()[4..]) or {
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or {
 		panic('handle_request failed: ${err}')
 	}
 

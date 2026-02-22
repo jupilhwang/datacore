@@ -82,6 +82,18 @@ fn (m &AclMockStorage) get_storage_capability() domain.StorageCapability {
 	return domain.memory_storage_capability
 }
 
+fn (m AclMockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (m AclMockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (m AclMockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (m AclMockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []
+}
+
 fn (m &AclMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
@@ -107,7 +119,8 @@ fn test_handler_create_acls() {
 	request.write_i8(3)
 	request.write_i8(2)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -142,7 +155,8 @@ fn test_handler_describe_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	_ = handler.handle_request(create_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// Now describe ACLs
 	mut request := kafka.new_writer()
@@ -161,7 +175,7 @@ fn test_handler_describe_acls() {
 	request.write_i8(1)
 	request.write_i8(1)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -217,7 +231,8 @@ fn test_handler_delete_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	_ = handler.handle_request(create_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// Delete ACL
 	mut request := kafka.new_writer()
@@ -237,7 +252,7 @@ fn test_handler_delete_acls() {
 	request.write_i8(1)
 	request.write_i8(1)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!

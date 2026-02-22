@@ -319,6 +319,7 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.add_partitions_to_txn, 0, 4},
 		ApiVersionRange{.add_offsets_to_txn, 0, 3},
 		ApiVersionRange{.end_txn, 0, 3},
+		ApiVersionRange{.write_txn_markers, 0, 1},
 		ApiVersionRange{.txn_offset_commit, 0, 3},
 		ApiVersionRange{.describe_configs, 0, 4},
 		ApiVersionRange{.alter_configs, 0, 2},
@@ -328,6 +329,10 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.describe_acls, 0, 3},
 		ApiVersionRange{.create_acls, 0, 3},
 		ApiVersionRange{.delete_acls, 0, 3},
+		ApiVersionRange{.alter_replica_log_dirs, 1, 2},
+		ApiVersionRange{.describe_log_dirs, 1, 4},
+		ApiVersionRange{.incremental_alter_configs, 0, 1},
+		ApiVersionRange{.describe_topic_partitions, 0, 0},
 		ApiVersionRange{.describe_cluster, 0, 0},
 		ApiVersionRange{.consumer_group_heartbeat, 0, 0},
 		ApiVersionRange{.consumer_group_describe, 0, 0},
@@ -335,5 +340,9 @@ pub fn get_supported_api_versions() []ApiVersionRange {
 		ApiVersionRange{.share_group_describe, 0, 0},
 		ApiVersionRange{.share_fetch, 0, 0},
 		ApiVersionRange{.share_acknowledge, 0, 0},
+		ApiVersionRange{.initialize_share_group_state, 0, 0},
+		ApiVersionRange{.read_share_group_state, 0, 0},
+		ApiVersionRange{.write_share_group_state, 0, 0},
+		ApiVersionRange{.delete_share_group_state, 0, 0},
 	]
 }
