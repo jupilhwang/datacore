@@ -176,6 +176,17 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 		mechanisms: supported_mechanisms
 	}
 
+	// Store the negotiated mechanism for use in handle_sasl_authenticate
+	if error_code == 0 {
+		upper := req.mechanism.to_upper()
+		h.negotiated_mechanism = match upper {
+			'SCRAM-SHA-256' { domain.SaslMechanism.scram_sha_256 }
+			'SCRAM-SHA-512' { domain.SaslMechanism.scram_sha_512 }
+			'OAUTHBEARER' { domain.SaslMechanism.oauthbearer }
+			else { domain.SaslMechanism.plain }
+		}
+	}
+
 	elapsed := time.since(start_time)
 	h.logger.info('SASL handshake completed', observability.field_string('mechanism',
 		req.mechanism), observability.field_int('error_code', error_code), observability.field_duration('latency',
@@ -207,13 +218,11 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 
 	// Perform authentication
 	if mut auth_mgr := h.auth_manager {
-		// Detect SASL mechanism from authentication data
-		// PLAIN: [authzid]\0[authcid]\0[password] format
-		// SCRAM: client-first-message (n,,n=username,r=nonce) format
-		// OAUTHBEARER: contains auth=Bearer token
-		mechanism := detect_sasl_mechanism(req.auth_bytes)
+		// Use the mechanism negotiated during SaslHandshake; fall back to detection
+		// only when no handshake was performed (e.g., legacy clients).
+		mechanism := h.negotiated_mechanism or { detect_sasl_mechanism(req.auth_bytes) }
 
-		h.logger.debug('Detected SASL mechanism', observability.field_string('mechanism',
+		h.logger.debug('SASL authenticate mechanism', observability.field_string('mechanism',
 			mechanism.str()))
 
 		result := auth_mgr.authenticate(mechanism, req.auth_bytes) or {

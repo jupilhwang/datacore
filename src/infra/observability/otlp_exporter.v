@@ -131,7 +131,11 @@ pub fn (mut e OTLPExporter) add_log(entry LogEntry) {
 	e.buffer_lock.unlock()
 
 	if should_flush {
-		spawn e.flush()
+		// try_lock prevents multiple goroutines from racing to flush simultaneously
+		if e.flush_lock.try_lock() {
+			e.flush_lock.unlock()
+			spawn e.flush()
+		}
 	}
 }
 
@@ -229,7 +233,11 @@ pub fn (mut e OTLPExporter) add_span(span &Span) {
 	e.buffer_lock.unlock()
 
 	if should_flush {
-		spawn e.flush()
+		// try_lock prevents multiple goroutines from racing to flush simultaneously
+		if e.flush_lock.try_lock() {
+			e.flush_lock.unlock()
+			spawn e.flush()
+		}
 	}
 }
 
@@ -377,17 +385,16 @@ fn (e &OTLPExporter) send_with_retry(endpoint string, payload string) {
 
 // send_http sends HTTP POST request to OTLP endpoint
 fn (e &OTLPExporter) send_http(endpoint string, payload string) bool {
+	timeout_ns := i64(e.config.timeout_ms) * i64(time.millisecond)
 	mut req := http.Request{
-		method: .post
-		url:    endpoint
-		data:   payload
+		method:        .post
+		url:           endpoint
+		data:          payload
+		read_timeout:  timeout_ns
+		write_timeout: timeout_ns
 	}
 	req.add_header(.content_type, 'application/json')
 	req.add_header(.accept, 'application/json')
-
-	// Set timeout
-	// Note: V's http client doesn't have direct timeout support
-	// In production, consider using a custom TCP client with timeout
 
 	resp := req.do() or { return false }
 

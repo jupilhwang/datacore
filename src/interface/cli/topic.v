@@ -21,6 +21,7 @@ pub:
 	partitions       int = 1
 	replication      int = 1
 	timeout_ms       int = 30000
+	new_partitions   int = -1
 }
 
 /// parse_topic_options parses topic command options.
@@ -62,6 +63,15 @@ pub fn parse_topic_options(args []string) TopicOptions {
 					opts = TopicOptions{
 						...opts
 						replication: args[i + 1].int()
+					}
+					i += 1
+				}
+			}
+			'--new-partitions' {
+				if i + 1 < args.len {
+					opts = TopicOptions{
+						...opts
+						new_partitions: args[i + 1].int()
 					}
 					i += 1
 				}
@@ -207,6 +217,33 @@ pub fn run_topic_delete(opts TopicOptions) ! {
 	check_delete_topic_response(response, opts.topic)!
 
 	println('\x1b[32m✓\x1b[0m Topic "${opts.topic}" deleted successfully')
+}
+
+/// run_topic_alter updates topic configuration (e.g., increase partition count).
+pub fn run_topic_alter(opts TopicOptions) ! {
+	if opts.topic.len == 0 {
+		return error('Topic name is required. Use --topic <name>')
+	}
+	if opts.new_partitions < 1 {
+		return error('New partition count is required. Use --new-partitions <n>')
+	}
+
+	println('\x1b[90mAltering topic "${opts.topic}"...\x1b[0m')
+
+	mut conn := connect_broker(opts.bootstrap_server)!
+	defer { conn.close() or {} }
+
+	// CreatePartitions request (API Key 37, Version 3)
+	request := build_create_partitions_request(opts.topic, opts.new_partitions, opts.timeout_ms)
+	send_kafka_request(mut conn, 37, 3, request)!
+	response := read_kafka_response(mut conn)!
+
+	if response.len < 10 {
+		return error('Failed to alter topic: invalid response')
+	}
+
+	println('\x1b[32m\u2713\x1b[0m Topic "${opts.topic}" altered successfully')
+	println('  New partition count: ${opts.new_partitions}')
 }
 
 struct TopicInfo {
@@ -520,6 +557,43 @@ fn check_delete_topic_response(response []u8, expected_topic string) ! {
 	}
 	// Simplified validation
 	return
+}
+
+fn build_create_partitions_request(topic string, new_count int, timeout_ms int) []u8 {
+	mut body := []u8{}
+
+	// Topics array (compact array, 1 entry)
+	body << u8(2)
+
+	// Topic name (compact string)
+	body << u8(topic.len + 1)
+	body << topic.bytes()
+
+	// Count (4 bytes)
+	body << u8(new_count >> 24)
+	body << u8((new_count >> 16) & 0xff)
+	body << u8((new_count >> 8) & 0xff)
+	body << u8(new_count & 0xff)
+
+	// Assignments (compact nullable array) - null
+	body << u8(0)
+
+	// Tagged fields for topic
+	body << u8(0)
+
+	// Timeout ms (4 bytes)
+	body << u8(timeout_ms >> 24)
+	body << u8((timeout_ms >> 16) & 0xff)
+	body << u8((timeout_ms >> 8) & 0xff)
+	body << u8(timeout_ms & 0xff)
+
+	// Validate only (1 byte)
+	body << u8(0)
+
+	// Tagged fields for request
+	body << u8(0)
+
+	return body
 }
 
 // skip_brokers_array skips the brokers array in metadata response and returns new position

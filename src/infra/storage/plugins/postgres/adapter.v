@@ -474,6 +474,7 @@ fn (mut a PostgresStorageAdapter) init_schema() ! {
 			end_offset BIGINT DEFAULT 0,
 			record_states JSONB DEFAULT '{}',
 			acquired_records JSONB DEFAULT '{}',
+			delivery_counts JSONB DEFAULT '{}',
 			total_acquired BIGINT DEFAULT 0,
 			total_acknowledged BIGINT DEFAULT 0,
 			total_released BIGINT DEFAULT 0,
@@ -1216,19 +1217,21 @@ pub fn (mut a PostgresStorageAdapter) save_share_partition_state(state domain.Sh
 	// Serialize maps to JSON strings for JSONB storage
 	record_states_json := json.encode(state.record_states)
 	acquired_records_json := json.encode(state.acquired_records)
+	delivery_counts_json := json.encode(state.delivery_counts)
 
 	db.exec_param_many('
 		INSERT INTO share_partition_states (
 			group_id, topic_name, partition_id,
 			start_offset, end_offset,
-			record_states, acquired_records,
+			record_states, acquired_records, delivery_counts,
 			total_acquired, total_acknowledged, total_released, total_rejected
-		) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11)
+		) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12)
 		ON CONFLICT (group_id, topic_name, partition_id) DO UPDATE SET
 			start_offset = EXCLUDED.start_offset,
 			end_offset = EXCLUDED.end_offset,
 			record_states = EXCLUDED.record_states,
 			acquired_records = EXCLUDED.acquired_records,
+			delivery_counts = EXCLUDED.delivery_counts,
 			total_acquired = EXCLUDED.total_acquired,
 			total_acknowledged = EXCLUDED.total_acknowledged,
 			total_released = EXCLUDED.total_released,
@@ -1243,6 +1246,7 @@ pub fn (mut a PostgresStorageAdapter) save_share_partition_state(state domain.Sh
 		state.end_offset.str(),
 		record_states_json,
 		acquired_records_json,
+		delivery_counts_json,
 		state.total_acquired.str(),
 		state.total_acknowledged.str(),
 		state.total_released.str(),
@@ -1261,7 +1265,7 @@ pub fn (mut a PostgresStorageAdapter) load_share_partition_state(group_id string
 	rows := db.exec_param_many('
 		SELECT group_id, topic_name, partition_id,
 			start_offset, end_offset,
-			record_states, acquired_records,
+			record_states, acquired_records, delivery_counts,
 			total_acquired, total_acknowledged, total_released, total_rejected
 		FROM share_partition_states
 		WHERE group_id = \$1 AND topic_name = \$2 AND partition_id = \$3
@@ -1299,7 +1303,7 @@ pub fn (mut a PostgresStorageAdapter) load_all_share_partition_states(group_id s
 	rows := db.exec_param('
 		SELECT group_id, topic_name, partition_id,
 			start_offset, end_offset,
-			record_states, acquired_records,
+			record_states, acquired_records, delivery_counts,
 			total_acquired, total_acknowledged, total_released, total_rejected
 		FROM share_partition_states
 		WHERE group_id = \$1
@@ -1318,7 +1322,8 @@ pub fn (mut a PostgresStorageAdapter) load_all_share_partition_states(group_id s
 /// decode_share_partition_state_row decodes a PostgreSQL row into SharePartitionState.
 /// Column order: group_id(0), topic_name(1), partition_id(2),
 ///   start_offset(3), end_offset(4), record_states(5), acquired_records(6),
-///   total_acquired(7), total_acknowledged(8), total_released(9), total_rejected(10)
+///   delivery_counts(7), total_acquired(8), total_acknowledged(9),
+///   total_released(10), total_rejected(11)
 fn (a &PostgresStorageAdapter) decode_share_partition_state_row(row &pg.Row) ?domain.SharePartitionState {
 	g_id := get_row_str(row, 0, '')
 	if g_id == '' {
@@ -1333,12 +1338,16 @@ fn (a &PostgresStorageAdapter) decode_share_partition_state_row(row &pg.Row) ?do
 	// Decode JSONB fields
 	rs_json := get_row_str(row, 5, '{}')
 	ar_json := get_row_str(row, 6, '{}')
+	dc_json := get_row_str(row, 7, '{}')
 
 	record_states := json.decode(map[i64]u8, rs_json) or {
 		map[i64]u8{}
 	}
 	acquired_records := json.decode(map[i64]domain.AcquiredRecordState, ar_json) or {
 		map[i64]domain.AcquiredRecordState{}
+	}
+	delivery_counts := json.decode(map[i64]i32, dc_json) or {
+		map[i64]i32{}
 	}
 
 	return domain.SharePartitionState{
@@ -1349,9 +1358,10 @@ fn (a &PostgresStorageAdapter) decode_share_partition_state_row(row &pg.Row) ?do
 		end_offset:         e_offset
 		record_states:      record_states
 		acquired_records:   acquired_records
-		total_acquired:     get_row_i64(row, 7, 0)
-		total_acknowledged: get_row_i64(row, 8, 0)
-		total_released:     get_row_i64(row, 9, 0)
-		total_rejected:     get_row_i64(row, 10, 0)
+		delivery_counts:    delivery_counts
+		total_acquired:     get_row_i64(row, 8, 0)
+		total_acknowledged: get_row_i64(row, 9, 0)
+		total_released:     get_row_i64(row, 10, 0)
+		total_rejected:     get_row_i64(row, 11, 0)
 	}
 }

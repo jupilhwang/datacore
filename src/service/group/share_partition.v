@@ -267,7 +267,7 @@ pub fn (mut m SharePartitionManager) release_member_records(group_id string, mem
 }
 
 /// release_member_records_internal releases member records internally without a lock.
-pub fn (mut m SharePartitionManager) release_member_records_internal(group_id string, member_id string) {
+fn (mut m SharePartitionManager) release_member_records_internal(group_id string, member_id string) {
 	for _, mut sp in m.partitions {
 		if sp.group_id != group_id {
 			continue
