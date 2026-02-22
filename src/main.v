@@ -255,14 +255,23 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 			observability.field_int('port', conf.rest.port))
 	}
 
-	// 6. Start heartbeat worker after all initialization is complete
+	// 6. Start gRPC Gateway if enabled
+	if conf.grpc.enabled {
+		cli.print_progress('Starting gRPC gateway')
+		startup.init_grpc_server(conf, storage, mut logger) or {
+			cli.print_failed('Failed to start gRPC gateway')
+		}
+		cli.print_done()
+	}
+
+	// 7. Start heartbeat worker after all initialization is complete
 	// heartbeat_loop uses r.lock which can contend with set_partition_assigner on main thread
 	if mut registry := broker_registry_opt {
 		registry.start_heartbeat_worker()
 		logger.info('Heartbeat worker started')
 	}
 
-	// 7. Create and start TCP Server
+	// 8. Create and start TCP Server
 	server_config := server.ServerConfig{
 		host:       conf.broker.host
 		port:       conf.broker.port
