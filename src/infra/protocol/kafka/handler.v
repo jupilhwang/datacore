@@ -43,6 +43,9 @@ mut:
 	logger                  &observability.Logger
 	metrics                 &observability.ProtocolMetrics
 	compression_service     &compression.CompressionService
+	// negotiated_mechanism stores the mechanism agreed upon during SaslHandshake
+	// so that handle_sasl_authenticate can use it instead of guessing from bytes
+	negotiated_mechanism ?domain.SaslMechanism
 }
 
 /// HandlerConfig holds all configuration for creating a Kafka protocol handler.

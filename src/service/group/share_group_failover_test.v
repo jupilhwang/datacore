@@ -217,7 +217,9 @@ fn generate_test_topic_id(name string) []u8 {
 fn setup_test_environment(record_count int) (&ShareGroupCoordinator, &PersistentMockStorage) {
 	mut storage := new_persistent_mock_storage()
 	storage.create_topic('test-topic', 1, domain.TopicConfig{}) or {
-		panic('topic creation failed')
+		assert false, 'topic creation failed: ${err}'
+		// unreachable: assert false terminates the test
+		return unsafe { nil }, storage
 	}
 
 	// Populate records
@@ -229,7 +231,11 @@ fn setup_test_environment(record_count int) (&ShareGroupCoordinator, &Persistent
 			timestamp: time.now()
 		}
 	}
-	storage.append('test-topic', 0, records, 1) or { panic('append failed') }
+	storage.append('test-topic', 0, records, 1) or {
+		assert false, 'append failed: ${err}'
+		// unreachable: assert false terminates the test
+		return unsafe { nil }, storage
+	}
 
 	config := domain.ShareGroupConfig{
 		record_lock_duration_ms: 30000
@@ -252,9 +258,7 @@ fn join_consumer(mut coordinator ShareGroupCoordinator, group_id string, topic s
 		subscribed_topic_names: [topic]
 	}
 	resp := coordinator.heartbeat(req)
-	if resp.error_code != 0 {
-		panic('heartbeat failed: ${resp.error_message}')
-	}
+	assert resp.error_code == 0, 'heartbeat failed: ${resp.error_message}'
 	return resp.member_id, resp.member_epoch
 }
 
@@ -546,7 +550,8 @@ fn test_broker_restart_persistence() {
 fn test_multi_broker_state_sync() {
 	mut storage := new_persistent_mock_storage()
 	storage.create_topic('test-topic', 1, domain.TopicConfig{}) or {
-		panic('topic creation failed')
+		assert false, 'topic creation failed: ${err}'
+		return
 	}
 
 	// Populate 10 records
@@ -558,7 +563,10 @@ fn test_multi_broker_state_sync() {
 			timestamp: time.now()
 		}
 	}
-	storage.append('test-topic', 0, records, 1) or { panic('append failed') }
+	storage.append('test-topic', 0, records, 1) or {
+		assert false, 'append failed: ${err}'
+		return
+	}
 
 	// Create Broker 1
 	mut broker1 := create_coordinator_from_storage(storage)
