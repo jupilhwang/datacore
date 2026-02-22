@@ -677,8 +677,7 @@ fn test_acl_lifecycle() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	mut mock_conn := new_mock_auth_conn()
-	mut auth_conn := ?&domain.AuthConnection(mock_conn)
+	// Reuse the already-authenticated connection declared above
 	_ = handler.handle_request(create_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// Verify ACL exists

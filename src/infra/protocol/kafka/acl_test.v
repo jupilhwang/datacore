@@ -119,7 +119,9 @@ fn test_handler_create_acls() {
 	request.write_i8(3)
 	request.write_i8(2)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -154,7 +156,9 @@ fn test_handler_describe_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
+	_ = handler.handle_request(create_req.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	// Now describe ACLs
 	mut request := kafka.new_writer()
@@ -173,7 +177,9 @@ fn test_handler_describe_acls() {
 	request.write_i8(1)
 	request.write_i8(1)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -229,7 +235,9 @@ fn test_handler_delete_acls() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
+	_ = handler.handle_request(create_req.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	// Delete ACL
 	mut request := kafka.new_writer()
@@ -249,7 +257,9 @@ fn test_handler_delete_acls() {
 	request.write_i8(1)
 	request.write_i8(1)
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!

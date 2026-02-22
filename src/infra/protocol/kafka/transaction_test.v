@@ -131,7 +131,9 @@ fn test_handler_init_producer_id_transactional() {
 	// Tagged fields
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -166,7 +168,9 @@ fn test_handler_add_partitions_to_txn() {
 	init_req.write_i16(-1)
 	init_req.write_tagged_fields()
 
-	init_resp := handler.handle_request(init_req.bytes()[4..]) or { panic(err) }
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 	mut init_reader := kafka.new_reader(init_resp)
 	_ = init_reader.read_i32()!
 	_ = init_reader.read_i32()!
@@ -204,7 +208,9 @@ fn test_handler_add_partitions_to_txn() {
 	// tagged fields (request)
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 	eprintln('DEBUG: Response len=${response.len} hex=${response.hex()}')
 
 	mut reader := kafka.new_reader(response)
@@ -259,7 +265,9 @@ fn test_handler_end_txn_commit() {
 	init_req.write_i64(-1)
 	init_req.write_i16(-1)
 	init_req.write_tagged_fields()
-	init_resp := handler.handle_request(init_req.bytes()[4..]) or { panic(err) }
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 	mut init_reader := kafka.new_reader(init_resp)
 	_ = init_reader.read_i32()!
 	_ = init_reader.read_i32()!
@@ -286,7 +294,9 @@ fn test_handler_end_txn_commit() {
 	add_req.write_i32(0)
 	add_req.write_tagged_fields()
 	add_req.write_tagged_fields()
-	_ = handler.handle_request(add_req.bytes()[4..]) or { panic(err) }
+	_ = handler.handle_request(add_req.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	// 3. EndTxn (Commit)
 	mut request := kafka.new_writer()
@@ -303,7 +313,9 @@ fn test_handler_end_txn_commit() {
 	request.write_i8(1)
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -352,7 +364,9 @@ fn test_handler_write_txn_markers() {
 
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -416,7 +430,9 @@ fn test_write_txn_markers_unknown_topic() {
 	request.write_tagged_fields()
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut ?&domain.AuthConnection(none)) or {
+		panic(err)
+	}
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
