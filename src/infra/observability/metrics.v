@@ -25,6 +25,8 @@ pub mut:
 	count   u64
 	sum     f64
 	buckets []Bucket
+mut:
+	mu sync.Mutex
 }
 
 /// Bucket represents a histogram bucket.
@@ -124,6 +126,8 @@ pub fn (mut r MetricsRegistry) get(name string) ?&Metric {
 
 /// Counter functions
 pub fn (mut m Metric) inc() {
+	m.mu.@lock()
+	defer { m.mu.unlock() }
 	if m.metric_type == .counter || m.metric_type == .gauge {
 		m.value += 1
 	}
@@ -131,6 +135,8 @@ pub fn (mut m Metric) inc() {
 
 /// inc_by increments the metric by the specified value.
 pub fn (mut m Metric) inc_by(v f64) {
+	m.mu.@lock()
+	defer { m.mu.unlock() }
 	if m.metric_type == .counter || m.metric_type == .gauge {
 		m.value += v
 	}
@@ -138,6 +144,8 @@ pub fn (mut m Metric) inc_by(v f64) {
 
 /// dec decrements the gauge by 1.
 pub fn (mut m Metric) dec() {
+	m.mu.@lock()
+	defer { m.mu.unlock() }
 	if m.metric_type == .gauge {
 		m.value -= 1
 	}
@@ -145,6 +153,8 @@ pub fn (mut m Metric) dec() {
 
 /// dec_by decrements the gauge by the specified value.
 pub fn (mut m Metric) dec_by(v f64) {
+	m.mu.@lock()
+	defer { m.mu.unlock() }
 	if m.metric_type == .gauge {
 		m.value -= v
 	}
@@ -152,13 +162,51 @@ pub fn (mut m Metric) dec_by(v f64) {
 
 /// set sets the gauge to the specified value.
 pub fn (mut m Metric) set(v f64) {
+	m.mu.@lock()
+	defer { m.mu.unlock() }
 	if m.metric_type == .gauge {
 		m.value = v
 	}
 }
 
+/// get_value returns the current metric value safely.
+pub fn (mut m Metric) get_value() f64 {
+	m.mu.@lock()
+	defer { m.mu.unlock() }
+	return m.value
+}
+
+/// MetricSnapshot holds a point-in-time copy of metric data for safe reading.
+pub struct MetricSnapshot {
+pub:
+	value   f64
+	count   u64
+	sum     f64
+	buckets []Bucket
+}
+
+/// snapshot returns a thread-safe copy of the metric data.
+/// Uses unsafe cast to obtain a mutable reference from an immutable pointer,
+/// which is safe here because the mutex ensures exclusive access during the copy.
+pub fn (m &Metric) snapshot() MetricSnapshot {
+	unsafe {
+		mut mu := &m.mu
+		mu.@lock()
+		snap := MetricSnapshot{
+			value:   m.value
+			count:   m.count
+			sum:     m.sum
+			buckets: m.buckets.clone()
+		}
+		mu.unlock()
+		return snap
+	}
+}
+
 /// Histogram functions
 pub fn (mut m Metric) observe(v f64) {
+	m.mu.@lock()
+	defer { m.mu.unlock() }
 	if m.metric_type == .histogram {
 		m.sum += v
 		m.count += 1
@@ -175,6 +223,9 @@ pub fn (r &MetricsRegistry) export_prometheus() string {
 	mut output := ''
 
 	for name, metric in r.metrics {
+		// Take a thread-safe snapshot of values before formatting
+		snap := metric.snapshot()
+
 		// Help line
 		output += '# HELP ${name} ${metric.help}\n'
 
@@ -189,15 +240,15 @@ pub fn (r &MetricsRegistry) export_prometheus() string {
 		// Value line
 		match metric.metric_type {
 			.counter, .gauge {
-				output += '${name} ${metric.value}\n'
+				output += '${name} ${snap.value}\n'
 			}
 			.histogram {
-				for b in metric.buckets {
+				for b in snap.buckets {
 					output += '${name}_bucket{le="${b.upper_bound}"} ${b.count}\n'
 				}
-				output += '${name}_bucket{le="+Inf"} ${metric.count}\n'
-				output += '${name}_sum ${metric.sum}\n'
-				output += '${name}_count ${metric.count}\n'
+				output += '${name}_bucket{le="+Inf"} ${snap.count}\n'
+				output += '${name}_sum ${snap.sum}\n'
+				output += '${name}_count ${snap.count}\n'
 			}
 		}
 		output += '\n'
