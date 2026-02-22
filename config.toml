@@ -424,6 +424,34 @@ max_events_per_span = 128
 max_links_per_span = 128
 
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# [telemetry] - OpenTelemetry 통합 설정 (Task #15)
+# -----------------------------------------------------------------------------
+# [observability] 섹션의 대안으로 제공되는 간소화된 텔레메트리 설정.
+# [observability] 설정이 더 상세하므로 실제 운영에서는 [observability] 사용 권장.
+# -----------------------------------------------------------------------------
+[telemetry]
+enabled = true
+service_name = "datacore"
+
+[telemetry.otlp]
+# gRPC OTLP endpoint (기본: 포트 4317)
+endpoint = "http://localhost:4317"
+# HTTP OTLP endpoint (선택, gRPC 대신 사용)
+# http_endpoint = "http://localhost:4318/v1/metrics"
+insecure = true
+
+[telemetry.metrics]
+# 메트릭 export 주기 (초)
+interval = 10
+# export timeout (밀리초)
+export_timeout = 30000
+
+[telemetry.traces]
+# 샘플링 비율 (1.0 = 100%)
+sample_rate = 1.0
+
+# -----------------------------------------------------------------------------
 # [profiles] - 환경별 권장 설정 예시
 # -----------------------------------------------------------------------------
 # 아래는 개발/스테이징/운영 환경별 권장 설정입니다.

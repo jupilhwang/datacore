@@ -383,6 +383,54 @@ pub mut:
 	schema_validation_errors    &Metric
 }
 
+/// ShareGroupMetrics - Share Group metrics (KIP-932)
+pub struct ShareGroupMetrics {
+pub mut:
+	// Records acquired (ShareFetch)
+	acquired &Metric
+	// Records acknowledged
+	acked &Metric
+	// Records released (returned without ack)
+	released &Metric
+	// Records rejected (permanent failure)
+	rejected &Metric
+	// Active share group sessions
+	active_sessions &Metric
+}
+
+/// GrpcGatewayMetrics - gRPC gateway metrics
+pub struct GrpcGatewayMetrics {
+pub mut:
+	// Total gRPC requests
+	requests_total &Metric
+	// gRPC response latency histogram (seconds)
+	latency_seconds &Metric
+	// gRPC errors
+	errors_total &Metric
+	// Active gRPC connections
+	active_connections &Metric
+}
+
+/// PartitionDetailMetrics - per-partition detail metrics (Task #15)
+pub struct PartitionDetailMetrics {
+pub mut:
+	// Log size in bytes
+	log_size &Metric
+	// Current high-water mark offset
+	current_offset &Metric
+	// Consumer lag (distance between producer and consumer offset)
+	lag &Metric
+}
+
+/// ConsumerGroupDetailMetrics - consumer group detail metrics (Task #15)
+pub struct ConsumerGroupDetailMetrics {
+pub mut:
+	// Number of members in the group
+	members &Metric
+	// Total consumer group lag across all partitions
+	lag &Metric
+}
+
 /// DataCoreMetrics - complete metrics collection
 pub struct DataCoreMetrics {
 pub mut:
@@ -410,6 +458,12 @@ pub mut:
 	auth              AuthenticationMetrics
 	storage           StorageMetrics
 	schema_registry   SchemaRegistryMetrics
+
+	// Task #15: Extended metrics
+	share_group           ShareGroupMetrics
+	grpc_gateway          GrpcGatewayMetrics
+	partition_detail      PartitionDetailMetrics
+	consumer_group_detail ConsumerGroupDetailMetrics
 }
 
 /// new_datacore_metrics creates and registers all DataCore metrics.
@@ -664,6 +718,50 @@ pub fn new_datacore_metrics() DataCoreMetrics {
 			schema_validation_errors:    reg.register('datacore_schema_registry_validation_errors_total',
 				'Schema validation errors', .counter)
 		}
+
+		// Task #15: ShareGroupMetrics (KIP-932)
+		share_group: ShareGroupMetrics{
+			acquired:        reg.register('datacore_share_group_acquired', 'Total records acquired by share groups',
+				.counter)
+			acked:           reg.register('datacore_share_group_acked', 'Total records acknowledged by share groups',
+				.counter)
+			released:        reg.register('datacore_share_group_released', 'Total records released by share groups',
+				.counter)
+			rejected:        reg.register('datacore_share_group_rejected', 'Total records rejected by share groups',
+				.counter)
+			active_sessions: reg.register('datacore_share_group_active_sessions', 'Active share group sessions',
+				.gauge)
+		}
+
+		// Task #15: GrpcGatewayMetrics
+		grpc_gateway: GrpcGatewayMetrics{
+			requests_total:     reg.register('datacore_grpc_requests_total', 'Total gRPC gateway requests',
+				.counter)
+			latency_seconds:    reg.register('datacore_grpc_latency_seconds', 'gRPC gateway response latency in seconds',
+				.histogram)
+			errors_total:       reg.register('datacore_grpc_errors_total', 'Total gRPC gateway errors',
+				.counter)
+			active_connections: reg.register('datacore_grpc_active_connections', 'Active gRPC connections',
+				.gauge)
+		}
+
+		// Task #15: PartitionDetailMetrics
+		partition_detail: PartitionDetailMetrics{
+			log_size:       reg.register('datacore_partition_log_size', 'Partition log size in bytes',
+				.gauge)
+			current_offset: reg.register('datacore_partition_offset', 'Current high-water mark offset',
+				.gauge)
+			lag:            reg.register('datacore_partition_lag', 'Consumer lag per partition',
+				.gauge)
+		}
+
+		// Task #15: ConsumerGroupDetailMetrics
+		consumer_group_detail: ConsumerGroupDetailMetrics{
+			members: reg.register('datacore_consumer_group_members', 'Number of members in consumer group',
+				.gauge)
+			lag:     reg.register('datacore_consumer_group_lag', 'Total consumer group lag across partitions',
+				.gauge)
+		}
 	}
 }
 
@@ -818,4 +916,64 @@ pub fn (mut t Timer) observe_duration() {
 		mut metric := t.metric
 		metric.observe(seconds)
 	}
+}
+
+// Task #15: Share Group metric helpers
+
+/// record_share_group_acquire records a share group record acquisition.
+pub fn (mut m DataCoreMetrics) record_share_group_acquire(count int) {
+	m.share_group.acquired.inc_by(count)
+}
+
+/// record_share_group_ack records a share group record acknowledgement.
+pub fn (mut m DataCoreMetrics) record_share_group_ack(count int) {
+	m.share_group.acked.inc_by(count)
+}
+
+/// record_share_group_release records a share group record release.
+pub fn (mut m DataCoreMetrics) record_share_group_release(count int) {
+	m.share_group.released.inc_by(count)
+}
+
+/// record_share_group_reject records a share group record rejection.
+pub fn (mut m DataCoreMetrics) record_share_group_reject(count int) {
+	m.share_group.rejected.inc_by(count)
+}
+
+/// update_share_group_sessions updates the active share group session count.
+pub fn (mut m DataCoreMetrics) update_share_group_sessions(count int) {
+	m.share_group.active_sessions.set(f64(count))
+}
+
+// Task #15: gRPC Gateway metric helpers
+
+/// record_grpc_request records a gRPC gateway request.
+pub fn (mut m DataCoreMetrics) record_grpc_request(success bool, latency_seconds f64) {
+	m.grpc_gateway.requests_total.inc()
+	m.grpc_gateway.latency_seconds.observe(latency_seconds)
+	if !success {
+		m.grpc_gateway.errors_total.inc()
+	}
+}
+
+/// update_grpc_connections updates the active gRPC connection count.
+pub fn (mut m DataCoreMetrics) update_grpc_connections(count int) {
+	m.grpc_gateway.active_connections.set(f64(count))
+}
+
+// Task #15: Partition detail metric helpers
+
+/// update_partition_metrics updates partition-level detail metrics.
+pub fn (mut m DataCoreMetrics) update_partition_metrics(log_size i64, current_offset i64, lag i64) {
+	m.partition_detail.log_size.set(f64(log_size))
+	m.partition_detail.current_offset.set(f64(current_offset))
+	m.partition_detail.lag.set(f64(lag))
+}
+
+// Task #15: Consumer group detail metric helpers
+
+/// update_consumer_group_metrics updates consumer group detail metrics.
+pub fn (mut m DataCoreMetrics) update_consumer_group_metrics(members int, lag i64) {
+	m.consumer_group_detail.members.set(f64(members))
+	m.consumer_group_detail.lag.set(f64(lag))
 }
