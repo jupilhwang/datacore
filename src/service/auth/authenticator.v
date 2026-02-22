@@ -133,8 +133,11 @@ pub fn new_auth_service(user_store port.UserStore, mechanisms []domain.SaslMecha
 			.scram_sha_256 {
 				authenticators[mech.str()] = new_scram_sha256_authenticator(user_store)
 			}
-			else {
-				// Other mechanisms to be implemented later (SCRAM-SHA-512, OAUTHBEARER)
+			.scram_sha_512 {
+				authenticators[mech.str()] = new_scram_sha512_authenticator(user_store)
+			}
+			.oauthbearer {
+				authenticators[mech.str()] = new_oauthbearer_authenticator(unsafe { nil })
 			}
 		}
 	}

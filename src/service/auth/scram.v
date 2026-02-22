@@ -1,10 +1,11 @@
-// Implements SCRAM-SHA-256 authentication per RFC 5802 and RFC 7677.
+// Implements SCRAM-SHA-256 and SCRAM-SHA-512 authentication per RFC 5802 and RFC 7677.
 // Salted Challenge Response Authentication Mechanism (SCRAM)
 module auth
 
 import domain
 import service.port
 import crypto.sha256
+import crypto.sha512
 import crypto.hmac
 import encoding.base64
 import rand
@@ -417,4 +418,188 @@ fn constant_time_compare(a []u8, b []u8) bool {
 	}
 
 	return result == 0
+}
+
+// SCRAM-SHA-512 Authenticator
+
+/// ScramSha512Authenticator implements SCRAM-SHA-512 authentication.
+/// Per RFC 5802 and RFC 7677, uses SHA-512 instead of SHA-256.
+pub struct ScramSha512Authenticator {
+mut:
+	user_store      port.UserStore
+	state           ScramState
+	username        string
+	client_nonce    string
+	server_nonce    string
+	combined_nonce  string
+	salt            []u8
+	iterations      int
+	auth_message    string
+	salted_password []u8
+	stored_key      []u8
+	server_key      []u8
+}
+
+/// new_scram_sha512_authenticator creates a new SCRAM-SHA-512 authenticator.
+pub fn new_scram_sha512_authenticator(user_store port.UserStore) &ScramSha512Authenticator {
+	return &ScramSha512Authenticator{
+		user_store: user_store
+		state:      .initial
+		iterations: default_iterations
+	}
+}
+
+/// mechanism returns the SASL mechanism type.
+pub fn (a &ScramSha512Authenticator) mechanism() domain.SaslMechanism {
+	return .scram_sha_512
+}
+
+/// authenticate handles the first step of SCRAM-SHA-512 authentication.
+pub fn (mut a ScramSha512Authenticator) authenticate(auth_bytes []u8) !domain.AuthResult {
+	if a.state != .initial {
+		return domain.auth_failure(.illegal_sasl_state, 'SCRAM-SHA-512 authenticator already in use')
+	}
+
+	// Parse client-first-message
+	client_first := parse_client_first_message(auth_bytes.bytestr()) or {
+		a.state = .failed
+		return domain.auth_failure(.sasl_authentication_failed, 'Invalid client-first-message format')
+	}
+
+	a.username = client_first.username
+	a.client_nonce = client_first.nonce
+
+	// Look up user
+	user := a.user_store.get_user(a.username) or {
+		a.state = .failed
+		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
+	}
+
+	// Generate deterministic salt based on username
+	a.salt = generate_user_salt(a.username)
+	a.iterations = default_iterations
+
+	// Derive keys from password using SHA-512
+	salted_password := pbkdf2_sha512(user.password_hash.bytes(), a.salt, a.iterations)
+	a.salted_password = salted_password
+	a.stored_key = compute_stored_key_sha512(salted_password)
+	a.server_key = compute_server_key_sha512(salted_password)
+
+	// Generate server nonce
+	a.server_nonce = generate_nonce()
+	a.combined_nonce = a.client_nonce + a.server_nonce
+
+	// Build server-first-message
+	server_first := build_server_first_message(a.combined_nonce, a.salt, a.iterations)
+
+	a.auth_message = client_first.bare + ',' + server_first
+	a.state = .server_first_sent
+
+	return domain.AuthResult{
+		complete:   false
+		challenge:  server_first.bytes()
+		error_code: .none
+	}
+}
+
+/// step handles subsequent steps of SCRAM-SHA-512 authentication.
+pub fn (mut a ScramSha512Authenticator) step(response []u8) !domain.AuthResult {
+	if a.state != .server_first_sent {
+		return domain.auth_failure(.illegal_sasl_state, 'Invalid SCRAM state for step')
+	}
+
+	// Parse client-final-message
+	client_final := parse_client_final_message(response.bytestr()) or {
+		a.state = .failed
+		return domain.auth_failure(.sasl_authentication_failed, 'Invalid client-final-message format')
+	}
+
+	// Verify nonce
+	if client_final.nonce != a.combined_nonce {
+		a.state = .failed
+		return domain.auth_failure(.sasl_authentication_failed, 'Nonce mismatch')
+	}
+
+	// Complete auth_message
+	a.auth_message = a.auth_message + ',' + client_final.without_proof
+
+	// Compute ClientKey (derived from salted_password using SHA-512)
+	client_key := compute_client_key_from_salted_sha512(a.salted_password)
+
+	// ClientSignature = HMAC-SHA-512(StoredKey, AuthMessage)
+	client_signature := hmac_sha512(a.stored_key, a.auth_message.bytes())
+
+	// Decode client proof
+	client_proof := base64.decode(client_final.proof)
+	if client_proof.len == 0 && client_final.proof.len > 0 {
+		a.state = .failed
+		return domain.auth_failure(.sasl_authentication_failed, 'Invalid proof encoding')
+	}
+
+	// Recover ClientKey from proof
+	recovered_client_key := xor_bytes(client_proof, client_signature)
+
+	if !constant_time_compare(recovered_client_key, client_key) {
+		a.state = .failed
+		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
+	}
+
+	// Build server-final-message
+	server_signature := hmac_sha512(a.server_key, a.auth_message.bytes())
+	server_final := 'v=' + base64.encode(server_signature)
+
+	a.state = .completed
+
+	return domain.AuthResult{
+		complete:   true
+		challenge:  server_final.bytes()
+		principal:  domain.new_user_principal(a.username)
+		error_code: .none
+	}
+}
+
+// SHA-512 Cryptographic Functions
+
+/// hmac_sha512 computes HMAC-SHA-512.
+fn hmac_sha512(key []u8, message []u8) []u8 {
+	return hmac.new(key, message, sha512.sum512, sha512.block_size).bytestr().bytes()
+}
+
+/// pbkdf2_sha512 implements the PBKDF2-SHA-512 key derivation function.
+fn pbkdf2_sha512(password []u8, salt []u8, iterations int) []u8 {
+	mut salt_with_int := salt.clone()
+	salt_with_int << u8(0)
+	salt_with_int << u8(0)
+	salt_with_int << u8(0)
+	salt_with_int << u8(1)
+
+	mut u := hmac_sha512(password, salt_with_int)
+	mut result := u.clone()
+
+	for _ in 1 .. iterations {
+		u = hmac_sha512(password, u)
+		for i in 0 .. result.len {
+			result[i] ^= u[i]
+		}
+	}
+
+	return result
+}
+
+/// compute_stored_key_sha512 computes the SCRAM StoredKey with SHA-512.
+/// StoredKey = SHA-512(ClientKey)
+fn compute_stored_key_sha512(salted_password []u8) []u8 {
+	client_key := hmac_sha512(salted_password, 'Client Key'.bytes())
+	sum := sha512.sum512(client_key)
+	return sum[..].clone()
+}
+
+/// compute_server_key_sha512 computes the SCRAM ServerKey with SHA-512.
+fn compute_server_key_sha512(salted_password []u8) []u8 {
+	return hmac_sha512(salted_password, 'Server Key'.bytes())
+}
+
+/// compute_client_key_from_salted_sha512 computes ClientKey from SaltedPassword using SHA-512.
+fn compute_client_key_from_salted_sha512(salted_password []u8) []u8 {
+	return hmac_sha512(salted_password, 'Client Key'.bytes())
 }

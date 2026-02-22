@@ -58,6 +58,18 @@ mut:
 
 	/// Retrieves committed offsets for a consumer group.
 	fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult
+	/// Saves a SharePartition state for persistence.
+	save_share_partition_state(state domain.SharePartitionState) !
+
+	/// Loads a SharePartition state.
+	/// Returns none if not found.
+	load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState
+
+	/// Deletes a SharePartition state.
+	delete_share_partition_state(group_id string, topic_name string, partition i32) !
+
+	/// Loads all SharePartition states for a given group.
+	load_all_share_partition_states(group_id string) []domain.SharePartitionState
 	/// Checks storage health status.
 	health_check() !HealthStatus
 	/// Returns storage capability information.

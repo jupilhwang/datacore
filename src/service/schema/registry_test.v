@@ -111,6 +111,18 @@ fn (s &MockStorage) get_storage_capability() domain.StorageCapability {
 	return domain.memory_storage_capability
 }
 
+fn (s MockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (s MockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (s MockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (s MockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []
+}
+
 fn (s &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }

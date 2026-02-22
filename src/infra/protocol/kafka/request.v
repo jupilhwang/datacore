@@ -152,6 +152,10 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 		.describe_acls { version >= 2 }
 		.create_acls { version >= 2 }
 		.delete_acls { version >= 2 }
+		.alter_replica_log_dirs { version >= 2 }
+		.describe_log_dirs { version >= 2 }
+		.incremental_alter_configs { version >= 1 }
+		.describe_topic_partitions { version >= 0 }
 		.describe_cluster { version >= 0 }
 		.consumer_group_heartbeat { version >= 0 }
 		.consumer_group_describe { version >= 0 }
@@ -159,6 +163,10 @@ pub fn is_flexible_version(api_key ApiKey, version i16) bool {
 		.share_group_describe { version >= 0 }
 		.share_fetch { version >= 0 }
 		.share_acknowledge { version >= 0 }
+		.initialize_share_group_state { version >= 0 }
+		.read_share_group_state { version >= 0 }
+		.write_share_group_state { version >= 0 }
+		.delete_share_group_state { version >= 0 }
 		else { false }
 	}
 }

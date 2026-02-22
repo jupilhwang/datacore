@@ -320,20 +320,19 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 
 /// delete_topic deletes a topic from S3.
 pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
+	a.topic_lock.@lock()
+	defer { a.topic_lock.unlock() }
+
 	// Look up topic metadata to remove from id cache
 	if cached := a.topic_cache[name] {
-		a.topic_lock.@lock()
-		defer { a.topic_lock.unlock() }
 		a.topic_id_cache.delete(cached.meta.topic_id.hex())
 	}
 
-	// Delete all objects starting with topic prefix
+	// Delete all objects starting with topic prefix (S3 operation, no lock needed)
 	prefix := '${a.config.prefix}topics/${name}/'
 	a.delete_objects_with_prefix(prefix)!
 
 	// Remove from cache
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
 	a.topic_cache.delete(name)
 }
 
@@ -1274,4 +1273,24 @@ pub fn (mut a S3StorageAdapter) reset_metrics() {
 fn generate_topic_id(name string) []u8 {
 	hash := md5.sum(name.bytes())
 	return hash[0..16]
+}
+
+/// save_share_partition_state saves a SharePartition state (not yet implemented for S3).
+pub fn (mut a S3StorageAdapter) save_share_partition_state(state domain.SharePartitionState) ! {
+	return error('share partition state persistence not yet implemented for S3')
+}
+
+/// load_share_partition_state loads a SharePartition state (not yet implemented for S3).
+pub fn (mut a S3StorageAdapter) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+/// delete_share_partition_state deletes a SharePartition state (not yet implemented for S3).
+pub fn (mut a S3StorageAdapter) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {
+	return error('share partition state persistence not yet implemented for S3')
+}
+
+/// load_all_share_partition_states loads all SharePartition states for a group (not yet implemented for S3).
+pub fn (mut a S3StorageAdapter) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []
 }

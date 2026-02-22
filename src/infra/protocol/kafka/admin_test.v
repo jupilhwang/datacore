@@ -202,6 +202,18 @@ fn (s &MockStorage) get_storage_capability() domain.StorageCapability {
 	return domain.memory_storage_capability
 }
 
+fn (s MockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (s MockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (s MockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (s MockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []
+}
+
 fn (s &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
@@ -1393,4 +1405,613 @@ fn test_handler_delete_groups_multiple() {
 	assert 'empty-group' !in storage.groups
 	assert 'test-group-1' in storage.groups
 	assert 'dead-group' !in storage.groups
+}
+
+// ========================
+// Extended Admin API Tests
+// ========================
+// DescribeTopicPartitions (API Key 75), IncrementalAlterConfigs (API Key 44),
+// DescribeLogDirs (API Key 35), AlterReplicaLogDirs (API Key 34)
+
+// ---- DescribeTopicPartitions (API Key 75) ----
+
+fn test_parse_describe_topic_partitions_request() {
+	mut writer := new_writer()
+
+	writer.write_compact_array_len(2)
+	writer.write_compact_string('topic-a')
+	writer.write_i8(0)
+	writer.write_compact_string('topic-b')
+	writer.write_i8(0)
+	writer.write_i32(100)
+	writer.write_compact_array_len(-1)
+	writer.write_i8(0)
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_describe_topic_partitions_request(mut reader, 0) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	assert req.topics.len == 2
+	assert req.topics[0].name == 'topic-a'
+	assert req.topics[1].name == 'topic-b'
+	assert req.response_partition_limit == 100
+	assert req.cursor == none
+}
+
+fn test_describe_topic_partitions_response_encoding() {
+	resp := DescribeTopicPartitionsResponse{
+		throttle_time_ms: 0
+		topics:           [
+			DescribeTopicPartitionsTopicResp{
+				error_code:                  0
+				name:                        'test-topic'
+				topic_id:                    []u8{len: 16}
+				is_internal:                 false
+				partitions:                  [
+					DescribeTopicPartitionsPartition{
+						error_code:       0
+						partition_index:  0
+						leader_id:        1
+						leader_epoch:     0
+						replica_nodes:    [i32(1)]
+						isr_nodes:        [i32(1)]
+						offline_replicas: []
+					},
+				]
+				topic_authorized_operations: -2147483648
+			},
+		]
+		next_cursor:      none
+	}
+
+	encoded := resp.encode(0)
+	assert encoded.len > 0
+}
+
+fn test_handler_describe_topic_partitions_success() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		topic_id:        []u8{len: 16}
+		partition_count: 3
+		is_internal:     false
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_compact_array_len(1)
+	writer.write_compact_string('test-topic')
+	writer.write_i8(0)
+	writer.write_i32(2000)
+	writer.write_compact_array_len(-1)
+	writer.write_i8(0)
+
+	result := handler.handle_describe_topic_partitions(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+}
+
+fn test_handler_describe_topic_partitions_not_found() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_compact_array_len(1)
+	writer.write_compact_string('nonexistent')
+	writer.write_i8(0)
+	writer.write_i32(2000)
+	writer.write_compact_array_len(-1)
+	writer.write_i8(0)
+
+	result := handler.handle_describe_topic_partitions(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+}
+
+// ---- IncrementalAlterConfigs (API Key 44) ----
+
+fn test_parse_incremental_alter_configs_request_v0() {
+	mut writer := new_writer()
+
+	writer.write_i32(1)
+	writer.write_i8(2)
+	writer.write_string('test-topic')
+
+	writer.write_i32(2)
+
+	writer.write_string('retention.ms')
+	writer.write_i8(0)
+	writer.write_string('86400000')
+
+	writer.write_string('cleanup.policy')
+	writer.write_i8(1)
+	writer.write_string('')
+
+	writer.write_i8(0)
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_incremental_alter_configs_request(mut reader, 0, false) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	assert req.resources.len == 1
+	assert req.resources[0].resource_type == 2
+	assert req.resources[0].resource_name == 'test-topic'
+	assert req.resources[0].configs.len == 2
+	assert req.resources[0].configs[0].name == 'retention.ms'
+	assert req.resources[0].configs[0].config_operation == 0
+	assert req.resources[0].configs[1].config_operation == 1
+	assert req.validate_only == false
+}
+
+fn test_handler_incremental_alter_configs_success() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 3
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_i8(2)
+	writer.write_string('test-topic')
+	writer.write_i32(1)
+	writer.write_string('retention.ms')
+	writer.write_i8(0)
+	writer.write_string('86400000')
+	writer.write_i8(0)
+
+	result := handler.handle_incremental_alter_configs(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	mut reader := new_reader(result)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+
+	count := reader.read_i32() or { 0 }
+	assert count == 1
+
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == 0
+}
+
+fn test_handler_incremental_alter_configs_topic_not_found() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_i8(2)
+	writer.write_string('nonexistent')
+	writer.write_i32(0)
+	writer.write_i8(0)
+
+	result := handler.handle_incremental_alter_configs(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
+}
+
+fn test_handler_incremental_alter_configs_broker_accepted() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_i8(4) // BROKER
+	writer.write_string('1')
+	writer.write_i32(1)
+	writer.write_string('log.retention.hours')
+	writer.write_i8(0)
+	writer.write_string('168')
+	writer.write_i8(0)
+
+	result := handler.handle_incremental_alter_configs(writer.bytes(), 0) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == 0
+}
+
+fn test_incremental_alter_configs_response_encoding() {
+	resp := IncrementalAlterConfigsResponse{
+		throttle_time_ms: 0
+		responses:        [
+			IncrementalAlterConfigsResourceResponse{
+				error_code:    0
+				error_message: none
+				resource_type: 2
+				resource_name: 'test-topic'
+			},
+		]
+	}
+
+	encoded_v0 := resp.encode(0)
+	assert encoded_v0.len > 0
+
+	encoded_v1 := resp.encode(1)
+	assert encoded_v1.len > 0
+}
+
+// ---- DescribeLogDirs (API Key 35) ----
+
+fn test_parse_describe_log_dirs_null_topics() {
+	mut writer := new_writer()
+	writer.write_i32(-1) // null = all topics
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_describe_log_dirs_request(mut reader, 1, false) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	assert req.topics == none
+}
+
+fn test_parse_describe_log_dirs_specific_topics() {
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('topic-a')
+	writer.write_i32(2)
+	writer.write_i32(0)
+	writer.write_i32(1)
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_describe_log_dirs_request(mut reader, 1, false) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	if ts := req.topics {
+		assert ts.len == 1
+		assert ts[0].topic == 'topic-a'
+		assert ts[0].partitions.len == 2
+	} else {
+		assert false, 'expected topics'
+	}
+}
+
+fn test_handler_describe_log_dirs_all_topics() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+
+	storage.topics['topic-x'] = domain.TopicMetadata{
+		name:            'topic-x'
+		partition_count: 2
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(-1) // null topics
+
+	result := handler.handle_describe_log_dirs(writer.bytes(), 1) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	mut reader := new_reader(result)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+
+	results_count := reader.read_i32() or { 0 }
+	assert results_count == 1
+
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == 0
+
+	log_dir := reader.read_string() or { '' }
+	assert log_dir == virtual_log_dir
+}
+
+fn test_handler_describe_log_dirs_specific_partitions() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 5
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('test-topic')
+	writer.write_i32(2)
+	writer.write_i32(0)
+	writer.write_i32(2)
+
+	result := handler.handle_describe_log_dirs(writer.bytes(), 1) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+}
+
+fn test_describe_log_dirs_response_encoding_v1() {
+	resp := DescribeLogDirsResponse{
+		throttle_time_ms: 0
+		error_code:       0
+		results:          [
+			DescribeLogDirsResult{
+				error_code:   0
+				log_dir:      '/var/kafka-logs'
+				topics:       [
+					DescribeLogDirsTopicResult{
+						name:       'test-topic'
+						partitions: [
+							DescribeLogDirsPartitionResult{
+								partition_index: 0
+								partition_size:  1024000
+								offset_lag:      0
+								is_future_key:   false
+							},
+						]
+					},
+				]
+				total_bytes:  -1
+				usable_bytes: -1
+			},
+		]
+	}
+
+	encoded := resp.encode(1)
+	assert encoded.len > 0
+
+	mut reader := new_reader(encoded)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+}
+
+fn test_describe_log_dirs_response_encoding_v4() {
+	resp := DescribeLogDirsResponse{
+		throttle_time_ms: 0
+		error_code:       0
+		results:          [
+			DescribeLogDirsResult{
+				error_code:   0
+				log_dir:      '/var/kafka-logs'
+				topics:       []
+				total_bytes:  1073741824
+				usable_bytes: 536870912
+			},
+		]
+	}
+
+	encoded := resp.encode(4)
+	assert encoded.len > 0
+}
+
+// ---- AlterReplicaLogDirs (API Key 34) ----
+
+fn test_parse_alter_replica_log_dirs_request() {
+	mut writer := new_writer()
+
+	writer.write_i32(1)
+	writer.write_string('/var/kafka-logs-new')
+
+	writer.write_i32(1)
+	writer.write_string('test-topic')
+	writer.write_i32(2)
+	writer.write_i32(0)
+	writer.write_i32(1)
+
+	mut reader := new_reader(writer.bytes())
+	req := parse_alter_replica_log_dirs_request(mut reader, 1, false) or {
+		assert false, 'parse failed: ${err}'
+		return
+	}
+
+	assert req.dirs.len == 1
+	assert req.dirs[0].path == '/var/kafka-logs-new'
+	assert req.dirs[0].topics.len == 1
+	assert req.dirs[0].topics[0].name == 'test-topic'
+	assert req.dirs[0].topics[0].partitions.len == 2
+}
+
+fn test_handler_alter_replica_log_dirs_success() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 3
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('/new-log-dir')
+	writer.write_i32(1)
+	writer.write_string('test-topic')
+	writer.write_i32(2)
+	writer.write_i32(0)
+	writer.write_i32(1)
+
+	result := handler.handle_alter_replica_log_dirs(writer.bytes(), 1) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	mut reader := new_reader(result)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+
+	count := reader.read_i32() or { 0 }
+	assert count == 1
+
+	topic_name := reader.read_string() or { '' }
+	assert topic_name == 'test-topic'
+
+	p_count := reader.read_i32() or { 0 }
+	assert p_count == 2
+
+	p0_idx := reader.read_i32() or { -1 }
+	p0_err := reader.read_i16() or { -999 }
+	assert p0_idx == 0
+	assert p0_err == 0
+
+	p1_idx := reader.read_i32() or { -1 }
+	p1_err := reader.read_i16() or { -999 }
+	assert p1_idx == 1
+	assert p1_err == 0
+}
+
+fn test_handler_alter_replica_log_dirs_topic_not_found() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('/new-log-dir')
+	writer.write_i32(1)
+	writer.write_string('nonexistent')
+	writer.write_i32(1)
+	writer.write_i32(0)
+
+	result := handler.handle_alter_replica_log_dirs(writer.bytes(), 1) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
+}
+
+fn test_handler_alter_replica_log_dirs_invalid_partition() {
+	mut storage := new_mock_storage()
+	compression_service := get_test_compression_service()
+
+	storage.topics['test-topic'] = domain.TopicMetadata{
+		name:            'test-topic'
+		partition_count: 2
+	}
+
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, compression_service)
+
+	mut writer := new_writer()
+	writer.write_i32(1)
+	writer.write_string('/new-log-dir')
+	writer.write_i32(1)
+	writer.write_string('test-topic')
+	writer.write_i32(1)
+	writer.write_i32(99) // invalid partition
+
+	result := handler.handle_alter_replica_log_dirs(writer.bytes(), 1) or {
+		assert false, 'handler failed: ${err}'
+		return
+	}
+
+	assert result.len > 0
+
+	mut reader := new_reader(result)
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_string() or { '' }
+	_ := reader.read_i32() or { 0 }
+	_ := reader.read_i32() or { 0 }
+	error_code := reader.read_i16() or { -999 }
+	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
+}
+
+fn test_alter_replica_log_dirs_response_encoding() {
+	resp_v1 := AlterReplicaLogDirsResponse{
+		throttle_time_ms: 0
+		results:          [
+			AlterReplicaLogDirTopicResult{
+				topic_name: 'test-topic'
+				partitions: [
+					AlterReplicaLogDirPartitionResult{
+						partition_index: 0
+						error_code:      0
+					},
+				]
+			},
+		]
+	}
+
+	encoded_v1 := resp_v1.encode(1)
+	assert encoded_v1.len > 0
+
+	mut reader := new_reader(encoded_v1)
+	throttle := reader.read_i32() or { -1 }
+	assert throttle == 0
+
+	count := reader.read_i32() or { 0 }
+	assert count == 1
+
+	encoded_v2 := resp_v1.encode(2)
+	assert encoded_v2.len > 0
+}
+
+// ---- API versions registration check ----
+
+fn test_new_apis_in_supported_versions() {
+	versions := get_supported_api_versions()
+	mut found := map[string]bool{}
+
+	for v in versions {
+		match v.api_key {
+			.describe_topic_partitions { found['describe_topic_partitions'] = true }
+			.incremental_alter_configs { found['incremental_alter_configs'] = true }
+			.describe_log_dirs { found['describe_log_dirs'] = true }
+			.alter_replica_log_dirs { found['alter_replica_log_dirs'] = true }
+			else {}
+		}
+	}
+
+	assert found['describe_topic_partitions'] == true, 'describe_topic_partitions missing'
+	assert found['incremental_alter_configs'] == true, 'incremental_alter_configs missing'
+	assert found['describe_log_dirs'] == true, 'describe_log_dirs missing'
+	assert found['alter_replica_log_dirs'] == true, 'alter_replica_log_dirs missing'
 }

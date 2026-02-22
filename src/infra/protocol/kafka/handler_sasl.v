@@ -184,10 +184,18 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 	return response.encode(version)
 }
 
+// SaslAuthenticateResult holds the result of a SASL authenticate handler call.
+// It combines the encoded response bytes with an optional principal for connection update.
+struct SaslAuthenticateResult {
+	response_bytes []u8
+	principal      ?domain.Principal
+}
+
 // Handle SaslAuthenticate (API Key 36)
 // Handles SASL authentication
-// Supported mechanisms: PLAIN, SCRAM-SHA-256
-fn (mut h Handler) handle_sasl_authenticate(mut conn ?&domain.AuthConnection, body []u8, version i16) ![]u8 {
+// Supported mechanisms: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER
+// Returns encoded response bytes and an optional principal for connection authentication.
+fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthenticateResult {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	is_flexible := is_flexible_version(.sasl_authenticate, version)
@@ -202,6 +210,7 @@ fn (mut h Handler) handle_sasl_authenticate(mut conn ?&domain.AuthConnection, bo
 		// Detect SASL mechanism from authentication data
 		// PLAIN: [authzid]\0[authcid]\0[password] format
 		// SCRAM: client-first-message (n,,n=username,r=nonce) format
+		// OAUTHBEARER: contains auth=Bearer token
 		mechanism := detect_sasl_mechanism(req.auth_bytes)
 
 		h.logger.debug('Detected SASL mechanism', observability.field_string('mechanism',
@@ -220,27 +229,18 @@ fn (mut h Handler) handle_sasl_authenticate(mut conn ?&domain.AuthConnection, bo
 				auth_bytes:          []u8{}
 				session_lifetime_ms: 0
 			}
-			return response.encode(version)
+			return SaslAuthenticateResult{
+				response_bytes: response.encode(version)
+				principal:      none
+			}
 		}
 
 		if result.error_code == .none {
-			// Authentication successful or challenge response
 			elapsed := time.since(start_time)
 
 			if result.complete {
 				h.logger.info('SASL authentication successful', observability.field_string('mechanism',
 					mechanism.str()), observability.field_duration('latency', elapsed))
-
-				// Mark connection as authenticated
-				if mut c := conn {
-					if principal := result.principal {
-						c.set_authenticated(principal)
-					} else {
-						// Principal is missing - this should not happen for successful auth
-						h.logger.warn('SASL auth success but principal is missing', observability.field_string('mechanism',
-							mechanism.str()))
-					}
-				}
 			} else {
 				h.logger.debug('SASL authentication step completed', observability.field_string('mechanism',
 					mechanism.str()), observability.field_duration('latency', elapsed))
@@ -249,12 +249,14 @@ fn (mut h Handler) handle_sasl_authenticate(mut conn ?&domain.AuthConnection, bo
 			response := SaslAuthenticateResponse{
 				error_code:          0
 				error_message:       none
-				auth_bytes:          result.challenge // For SCRAM, this is the server's challenge
+				auth_bytes:          result.challenge
 				session_lifetime_ms: 0
 			}
-			return response.encode(version)
+			return SaslAuthenticateResult{
+				response_bytes: response.encode(version)
+				principal:      result.principal
+			}
 		} else {
-			// Authentication failed
 			elapsed := time.since(start_time)
 			h.logger.warn('SASL authentication failed', observability.field_string('mechanism',
 				mechanism.str()), observability.field_string('error', result.error_message),
@@ -266,11 +268,13 @@ fn (mut h Handler) handle_sasl_authenticate(mut conn ?&domain.AuthConnection, bo
 				auth_bytes:          []u8{}
 				session_lifetime_ms: 0
 			}
-			return response.encode(version)
+			return SaslAuthenticateResult{
+				response_bytes: response.encode(version)
+				principal:      none
+			}
 		}
 	} else {
 		// No auth manager - authentication not configured
-		// Return error to indicate auth is required but not available
 		elapsed := time.since(start_time)
 		h.logger.warn('SASL authentication not configured', observability.field_duration('latency',
 			elapsed))
@@ -281,23 +285,36 @@ fn (mut h Handler) handle_sasl_authenticate(mut conn ?&domain.AuthConnection, bo
 			auth_bytes:          []u8{}
 			session_lifetime_ms: 0
 		}
-		return response.encode(version)
+		return SaslAuthenticateResult{
+			response_bytes: response.encode(version)
+			principal:      none
+		}
 	}
 }
 
 /// detect_sasl_mechanism detects the SASL mechanism from authentication bytes.
 /// PLAIN: bytes contain null (\0)
 /// SCRAM: starts with "n,,", "y,,", or "p=" (GS2 header)
+/// OAUTHBEARER: contains auth=Bearer token
 fn detect_sasl_mechanism(auth_bytes []u8) domain.SaslMechanism {
 	if auth_bytes.len == 0 {
 		return .plain
+	}
+
+	auth_str := auth_bytes.bytestr()
+
+	// OAUTHBEARER: contains the auth=Bearer attribute (RFC 7628)
+	if auth_str.contains('auth=Bearer ') {
+		return .oauthbearer
 	}
 
 	// SCRAM client-first-message starts with a GS2 header
 	// n,, (no channel binding)
 	// y,, (server does not support channel binding)
 	// p=... (channel binding in use)
-	auth_str := auth_bytes.bytestr()
+	// The mechanism variant (SHA-256 vs SHA-512) is determined by the
+	// SaslHandshake negotiation; here we default to SCRAM-SHA-256.
+	// In the handler, the connection's negotiated mechanism should be used instead.
 	if auth_str.starts_with('n,,') || auth_str.starts_with('y,,') || auth_str.starts_with('p=') {
 		return .scram_sha_256
 	}

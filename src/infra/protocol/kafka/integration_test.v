@@ -140,6 +140,45 @@ fn (m &IntegrationMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadat
 	return none
 }
 
+fn (m IntegrationMockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (m IntegrationMockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (m IntegrationMockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (m IntegrationMockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []domain.SharePartitionState{}
+}
+
+// MockAuthConnection implements domain.AuthConnection for testing
+struct MockAuthConnection {
+mut:
+	authenticated bool
+	principal     domain.Principal
+}
+
+fn (m MockAuthConnection) is_authenticated() bool {
+	return m.authenticated
+}
+
+fn (mut m MockAuthConnection) set_authenticated(principal domain.Principal) {
+	m.authenticated = true
+	m.principal = principal
+}
+
+fn new_mock_auth_conn() &MockAuthConnection {
+	return &MockAuthConnection{}
+}
+
+fn new_authenticated_mock_conn(principal_name string) &MockAuthConnection {
+	return &MockAuthConnection{
+		authenticated: true
+		principal:     domain.new_user_principal(principal_name)
+	}
+}
+
 // Helper Functions
 
 fn make_plain_auth_bytes(authzid string, username string, password string) []u8 {
@@ -166,7 +205,11 @@ fn test_sasl_auth_then_acl_check() {
 	handshake_req.write_nullable_string('integration-client')
 	handshake_req.write_string('PLAIN')
 
-	handshake_resp := handler.handle_request(handshake_req.bytes()[4..]) or { panic(err) }
+	mut mock_conn := new_mock_auth_conn()
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
+	handshake_resp := handler.handle_request(handshake_req.bytes()[4..], mut auth_conn) or {
+		panic(err)
+	}
 	mut hs_reader := kafka.new_reader(handshake_resp)
 	_ = hs_reader.read_i32()!
 	_ = hs_reader.read_i32()!
@@ -183,7 +226,7 @@ fn test_sasl_auth_then_acl_check() {
 	auth_req.write_nullable_string('integration-client')
 	auth_req.write_bytes(auth_bytes)
 
-	auth_resp := handler.handle_request(auth_req.bytes()[4..]) or { panic(err) }
+	auth_resp := handler.handle_request(auth_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut auth_reader := kafka.new_reader(auth_resp)
 	_ = auth_reader.read_i32()!
 	_ = auth_reader.read_i32()!
@@ -206,7 +249,9 @@ fn test_sasl_auth_then_acl_check() {
 	create_acl_req.write_i8(4)
 	create_acl_req.write_i8(2)
 
-	create_acl_resp := handler.handle_request(create_acl_req.bytes()[4..]) or { panic(err) }
+	create_acl_resp := handler.handle_request(create_acl_req.bytes()[4..], mut auth_conn) or {
+		panic(err)
+	}
 	mut acl_reader := kafka.new_reader(create_acl_resp)
 	_ = acl_reader.read_i32()!
 	_ = acl_reader.read_i32()!
@@ -231,7 +276,9 @@ fn test_sasl_auth_then_acl_check() {
 	describe_acl_req.write_i8(1)
 	describe_acl_req.write_i8(1)
 
-	describe_resp := handler.handle_request(describe_acl_req.bytes()[4..]) or { panic(err) }
+	describe_resp := handler.handle_request(describe_acl_req.bytes()[4..], mut auth_conn) or {
+		panic(err)
+	}
 	mut desc_reader := kafka.new_reader(describe_resp)
 	_ = desc_reader.read_i32()!
 	_ = desc_reader.read_i32()!
@@ -247,6 +294,10 @@ fn test_sasl_auth_then_acl_check() {
 
 fn test_transaction_with_acl() {
 	mut handler := create_full_integration_handler()
+
+	// Use pre-authenticated connection (bypasses SASL for this test)
+	mut mock_conn := new_authenticated_mock_conn('txn-user')
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
 
 	// Step 1: Create ACL for transactional user
 	mut create_acl_req := kafka.new_writer()
@@ -277,7 +328,7 @@ fn test_transaction_with_acl() {
 	create_acl_req.write_i8(11)
 	create_acl_req.write_i8(2)
 
-	_ = handler.handle_request(create_acl_req.bytes()[4..]) or { panic(err) }
+	_ = handler.handle_request(create_acl_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// Step 2: InitProducerId for transactional producer
 	mut init_req := kafka.new_writer()
@@ -293,7 +344,7 @@ fn test_transaction_with_acl() {
 	init_req.write_i16(-1)
 	init_req.write_tagged_fields()
 
-	init_resp := handler.handle_request(init_req.bytes()[4..]) or { panic(err) }
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut init_reader := kafka.new_reader(init_resp)
 	_ = init_reader.read_i32()!
 	_ = init_reader.read_i32()!
@@ -325,7 +376,7 @@ fn test_transaction_with_acl() {
 	add_req.write_tagged_fields()
 	add_req.write_tagged_fields()
 
-	add_resp := handler.handle_request(add_req.bytes()[4..]) or { panic(err) }
+	add_resp := handler.handle_request(add_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut add_reader := kafka.new_reader(add_resp)
 	_ = add_reader.read_i32()!
 	_ = add_reader.read_i32()!
@@ -355,7 +406,7 @@ fn test_transaction_with_acl() {
 	end_req.write_i8(1)
 	end_req.write_tagged_fields()
 
-	end_resp := handler.handle_request(end_req.bytes()[4..]) or { panic(err) }
+	end_resp := handler.handle_request(end_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut end_reader := kafka.new_reader(end_resp)
 	_ = end_reader.read_i32()!
 	_ = end_reader.read_i32()!
@@ -378,7 +429,9 @@ fn test_full_sasl_acl_transaction_flow() {
 	handshake_req.write_i32(1)
 	handshake_req.write_nullable_string('full-test-client')
 	handshake_req.write_string('PLAIN')
-	_ = handler.handle_request(handshake_req.bytes()[4..]) or { panic(err) }
+	mut mock_conn := new_mock_auth_conn()
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
+	_ = handler.handle_request(handshake_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	auth_bytes := make_plain_auth_bytes('', 'txn-user', 'txnpass')
 	mut auth_req := kafka.new_writer()
@@ -389,7 +442,7 @@ fn test_full_sasl_acl_transaction_flow() {
 	auth_req.write_nullable_string('full-test-client')
 	auth_req.write_bytes(auth_bytes)
 
-	auth_resp := handler.handle_request(auth_req.bytes()[4..]) or { panic(err) }
+	auth_resp := handler.handle_request(auth_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut auth_reader := kafka.new_reader(auth_resp)
 	_ = auth_reader.read_i32()!
 	_ = auth_reader.read_i32()!
@@ -411,7 +464,7 @@ fn test_full_sasl_acl_transaction_flow() {
 	create_acl_req.write_string('*')
 	create_acl_req.write_i8(5)
 	create_acl_req.write_i8(2)
-	_ = handler.handle_request(create_acl_req.bytes()[4..]) or { panic(err) }
+	_ = handler.handle_request(create_acl_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// Step 3: Transaction Flow
 	mut init_req := kafka.new_writer()
@@ -427,7 +480,7 @@ fn test_full_sasl_acl_transaction_flow() {
 	init_req.write_i16(-1)
 	init_req.write_tagged_fields()
 
-	init_resp := handler.handle_request(init_req.bytes()[4..]) or { panic(err) }
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut init_reader := kafka.new_reader(init_resp)
 	_ = init_reader.read_i32()!
 	_ = init_reader.read_i32()!
@@ -453,7 +506,9 @@ fn test_full_sasl_acl_transaction_flow() {
 	add_offsets_req.write_compact_string('test-consumer-group')
 	add_offsets_req.write_tagged_fields()
 
-	add_offsets_resp := handler.handle_request(add_offsets_req.bytes()[4..]) or { panic(err) }
+	add_offsets_resp := handler.handle_request(add_offsets_req.bytes()[4..], mut auth_conn) or {
+		panic(err)
+	}
 	mut ao_reader := kafka.new_reader(add_offsets_resp)
 	_ = ao_reader.read_i32()!
 	_ = ao_reader.read_i32()!
@@ -476,7 +531,7 @@ fn test_full_sasl_acl_transaction_flow() {
 	end_req.write_i8(0)
 	end_req.write_tagged_fields()
 
-	end_resp := handler.handle_request(end_req.bytes()[4..]) or { panic(err) }
+	end_resp := handler.handle_request(end_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut end_reader := kafka.new_reader(end_resp)
 	_ = end_reader.read_i32()!
 	_ = end_reader.read_i32()!
@@ -499,7 +554,9 @@ fn test_sasl_auth_failure_wrong_password() {
 	handshake_req.write_i32(1)
 	handshake_req.write_nullable_string('test-client')
 	handshake_req.write_string('PLAIN')
-	_ = handler.handle_request(handshake_req.bytes()[4..]) or { panic(err) }
+	mut mock_conn := new_mock_auth_conn()
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
+	_ = handler.handle_request(handshake_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// SASL Authenticate with wrong password
 	auth_bytes := make_plain_auth_bytes('', 'admin', 'wrongpassword')
@@ -511,7 +568,7 @@ fn test_sasl_auth_failure_wrong_password() {
 	auth_req.write_nullable_string('test-client')
 	auth_req.write_bytes(auth_bytes)
 
-	auth_resp := handler.handle_request(auth_req.bytes()[4..]) or { panic(err) }
+	auth_resp := handler.handle_request(auth_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut auth_reader := kafka.new_reader(auth_resp)
 	_ = auth_reader.read_i32()!
 	_ = auth_reader.read_i32()!
@@ -530,7 +587,9 @@ fn test_sasl_auth_failure_unknown_user() {
 	handshake_req.write_i32(1)
 	handshake_req.write_nullable_string('test-client')
 	handshake_req.write_string('PLAIN')
-	_ = handler.handle_request(handshake_req.bytes()[4..]) or { panic(err) }
+	mut mock_conn := new_mock_auth_conn()
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
+	_ = handler.handle_request(handshake_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// SASL Authenticate with unknown user
 	auth_bytes := make_plain_auth_bytes('', 'unknownuser', 'anypassword')
@@ -542,7 +601,7 @@ fn test_sasl_auth_failure_unknown_user() {
 	auth_req.write_nullable_string('test-client')
 	auth_req.write_bytes(auth_bytes)
 
-	auth_resp := handler.handle_request(auth_req.bytes()[4..]) or { panic(err) }
+	auth_resp := handler.handle_request(auth_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut auth_reader := kafka.new_reader(auth_resp)
 	_ = auth_reader.read_i32()!
 	_ = auth_reader.read_i32()!
@@ -556,6 +615,8 @@ fn test_transaction_invalid_producer_id() {
 	mut handler := create_full_integration_handler()
 
 	// Try AddPartitionsToTxn with invalid producer ID
+	mut mock_conn := new_authenticated_mock_conn('txn-user')
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
 	mut add_req := kafka.new_writer()
 	add_req.write_i32(0)
 	add_req.write_i16(24)
@@ -573,7 +634,7 @@ fn test_transaction_invalid_producer_id() {
 	add_req.write_tagged_fields()
 	add_req.write_tagged_fields()
 
-	add_resp := handler.handle_request(add_req.bytes()[4..]) or { panic(err) }
+	add_resp := handler.handle_request(add_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut add_reader := kafka.new_reader(add_resp)
 	_ = add_reader.read_i32()!
 	_ = add_reader.read_i32()!
@@ -597,6 +658,10 @@ fn test_transaction_invalid_producer_id() {
 fn test_acl_lifecycle() {
 	mut handler := create_full_integration_handler()
 
+	// Use pre-authenticated connection
+	mut mock_conn := new_authenticated_mock_conn('admin')
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
+
 	// Create ACL
 	mut create_req := kafka.new_writer()
 	create_req.write_i32(0)
@@ -612,7 +677,9 @@ fn test_acl_lifecycle() {
 	create_req.write_string('*')
 	create_req.write_i8(3)
 	create_req.write_i8(2)
-	_ = handler.handle_request(create_req.bytes()[4..]) or { panic(err) }
+	mut mock_conn := new_mock_auth_conn()
+	mut auth_conn := ?&domain.AuthConnection(mock_conn)
+	_ = handler.handle_request(create_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// Verify ACL exists
 	mut describe_req := kafka.new_writer()
@@ -629,7 +696,9 @@ fn test_acl_lifecycle() {
 	describe_req.write_i8(1)
 	describe_req.write_i8(1)
 
-	describe_resp := handler.handle_request(describe_req.bytes()[4..]) or { panic(err) }
+	describe_resp := handler.handle_request(describe_req.bytes()[4..], mut auth_conn) or {
+		panic(err)
+	}
 	mut desc_reader := kafka.new_reader(describe_resp)
 	_ = desc_reader.read_i32()!
 	_ = desc_reader.read_i32()!
@@ -655,7 +724,7 @@ fn test_acl_lifecycle() {
 	delete_req.write_i8(1)
 	delete_req.write_i8(1)
 
-	delete_resp := handler.handle_request(delete_req.bytes()[4..]) or { panic(err) }
+	delete_resp := handler.handle_request(delete_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut del_reader := kafka.new_reader(delete_resp)
 	_ = del_reader.read_i32()!
 	_ = del_reader.read_i32()!
@@ -680,7 +749,7 @@ fn test_acl_lifecycle() {
 	verify_req.write_i8(1)
 	verify_req.write_i8(1)
 
-	verify_resp := handler.handle_request(verify_req.bytes()[4..]) or { panic(err) }
+	verify_resp := handler.handle_request(verify_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut ver_reader := kafka.new_reader(verify_resp)
 	_ = ver_reader.read_i32()!
 	_ = ver_reader.read_i32()!

@@ -75,6 +75,8 @@ mut:
 	groups         map[string]domain.ConsumerGroup
 	offsets        map[string]map[string]i64
 	global_lock    sync.RwMutex
+	// Share Group Partition states keyed by "group_id:topic:partition"
+	share_partition_states map[string]domain.SharePartitionState
 	// Metrics
 	metrics      MemoryMetrics
 	metrics_lock sync.Mutex
@@ -975,4 +977,47 @@ pub fn (mut a MemoryStorageAdapter) clear() {
 	a.topic_id_index.clear()
 	a.groups.clear()
 	a.offsets.clear()
+	a.share_partition_states.clear()
+}
+
+/// save_share_partition_state saves a SharePartition state.
+pub fn (mut a MemoryStorageAdapter) save_share_partition_state(state domain.SharePartitionState) ! {
+	a.global_lock.@lock()
+	defer { a.global_lock.unlock() }
+
+	key := '${state.group_id}:${state.topic_name}:${state.partition}'
+	a.share_partition_states[key] = state
+}
+
+/// load_share_partition_state loads a SharePartition state.
+/// Returns none if not found.
+pub fn (mut a MemoryStorageAdapter) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	a.global_lock.rlock()
+	defer { a.global_lock.runlock() }
+
+	key := '${group_id}:${topic_name}:${partition}'
+	return a.share_partition_states[key] or { return none }
+}
+
+/// delete_share_partition_state deletes a SharePartition state.
+pub fn (mut a MemoryStorageAdapter) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {
+	a.global_lock.@lock()
+	defer { a.global_lock.unlock() }
+
+	key := '${group_id}:${topic_name}:${partition}'
+	a.share_partition_states.delete(key)
+}
+
+/// load_all_share_partition_states loads all SharePartition states for a group.
+pub fn (mut a MemoryStorageAdapter) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	a.global_lock.rlock()
+	defer { a.global_lock.runlock() }
+
+	mut result := []domain.SharePartitionState{}
+	for key, state in a.share_partition_states {
+		if key.starts_with('${group_id}:') {
+			result << state
+		}
+	}
+	return result
 }

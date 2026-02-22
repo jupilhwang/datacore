@@ -86,6 +86,18 @@ fn (m &AclMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
 
+fn (m AclMockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (m AclMockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (m AclMockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (m AclMockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []domain.SharePartitionState{}
+}
+
 fn test_handler_create_acls() {
 	mut handler := create_test_handler_with_acl()
 

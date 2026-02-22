@@ -76,6 +76,7 @@ pub mut:
 	end_offset         i64
 	record_states      map[i64]RecordState
 	acquired_records   map[i64]AcquiredRecord
+	delivery_counts    map[i64]i32
 	total_acquired     i64
 	total_acknowledged i64
 	total_released     i64
@@ -211,6 +212,7 @@ pub fn new_share_partition(topic_name string, partition i32, group_id string, st
 		end_offset:       start_offset
 		record_states:    map[i64]RecordState{}
 		acquired_records: map[i64]AcquiredRecord{}
+		delivery_counts:  map[i64]i32{}
 	}
 }
 
@@ -265,4 +267,131 @@ pub fn acknowledge_type_from_value(value u8) !AcknowledgeType {
 /// is_share_group_type checks whether a group type string represents a Share Group.
 pub fn is_share_group_type(group_type string) bool {
 	return group_type == 'share'
+}
+
+/// record_state_to_u8 converts a RecordState enum to its u8 representation.
+pub fn record_state_to_u8(s RecordState) u8 {
+	return match s {
+		.available { 0 }
+		.acquired { 1 }
+		.acknowledged { 2 }
+		.archived { 3 }
+	}
+}
+
+/// record_state_from_u8 converts a u8 value to a RecordState enum.
+pub fn record_state_from_u8(v u8) RecordState {
+	return match v {
+		0 { .available }
+		1 { .acquired }
+		2 { .acknowledged }
+		3 { .archived }
+		else { .available }
+	}
+}
+
+/// SharePartitionState is the persistable state of a SharePartition.
+/// Used for serialization and storage to survive broker restarts.
+pub struct SharePartitionState {
+pub mut:
+	group_id           string
+	topic_name         string
+	partition          i32
+	start_offset       i64
+	end_offset         i64
+	record_states      map[i64]u8
+	acquired_records   map[i64]AcquiredRecordState
+	delivery_counts    map[i64]i32
+	total_acquired     i64
+	total_acknowledged i64
+	total_released     i64
+	total_rejected     i64
+}
+
+/// AcquiredRecordState is the persistable state of an acquired record.
+pub struct AcquiredRecordState {
+pub mut:
+	offset          i64
+	member_id       string
+	delivery_count  i32
+	acquired_at     i64
+	lock_expires_at i64
+}
+
+/// to_state converts a SharePartition to a SharePartitionState for persistence.
+pub fn (sp SharePartition) to_state() SharePartitionState {
+	mut rs := map[i64]u8{}
+	for offset, state in sp.record_states {
+		rs[offset] = record_state_to_u8(state)
+	}
+
+	mut ar := map[i64]AcquiredRecordState{}
+	for offset, acquired in sp.acquired_records {
+		ar[offset] = AcquiredRecordState{
+			offset:          acquired.offset
+			member_id:       acquired.member_id
+			delivery_count:  acquired.delivery_count
+			acquired_at:     acquired.acquired_at
+			lock_expires_at: acquired.lock_expires_at
+		}
+	}
+
+	mut dc := map[i64]i32{}
+	for offset, count in sp.delivery_counts {
+		dc[offset] = count
+	}
+
+	return SharePartitionState{
+		group_id:           sp.group_id
+		topic_name:         sp.topic_name
+		partition:          sp.partition
+		start_offset:       sp.start_offset
+		end_offset:         sp.end_offset
+		record_states:      rs
+		acquired_records:   ar
+		delivery_counts:    dc
+		total_acquired:     sp.total_acquired
+		total_acknowledged: sp.total_acknowledged
+		total_released:     sp.total_released
+		total_rejected:     sp.total_rejected
+	}
+}
+
+/// to_partition creates a SharePartition from a SharePartitionState.
+pub fn (sps SharePartitionState) to_partition() SharePartition {
+	mut rs := map[i64]RecordState{}
+	for offset, state_val in sps.record_states {
+		rs[offset] = record_state_from_u8(state_val)
+	}
+
+	mut ar := map[i64]AcquiredRecord{}
+	for offset, acquired in sps.acquired_records {
+		ar[offset] = AcquiredRecord{
+			offset:          acquired.offset
+			member_id:       acquired.member_id
+			delivery_count:  acquired.delivery_count
+			acquired_at:     acquired.acquired_at
+			lock_expires_at: acquired.lock_expires_at
+		}
+	}
+
+	mut dc := map[i64]i32{}
+	for offset, count in sps.delivery_counts {
+		dc[offset] = count
+	}
+
+	return SharePartition{
+		group_id:           sps.group_id
+		topic_name:         sps.topic_name
+		partition:          sps.partition
+		start_offset:       sps.start_offset
+		end_offset:         sps.end_offset
+		record_states:      rs
+		acquired_records:   ar
+		delivery_counts:    dc
+		total_acquired:     sps.total_acquired
+		total_acknowledged: sps.total_acknowledged
+		total_released:     sps.total_released
+		total_rejected:     sps.total_rejected
+	}
 }

@@ -245,7 +245,7 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 	// If auth_manager is none, authentication is disabled (optional)
 	is_public_api := api_key in [.api_versions, .sasl_handshake, .sasl_authenticate]
 	mut is_authenticated := false
-	if c := conn {
+	if mut c := conn {
 		is_authenticated = c.is_authenticated()
 	}
 	if h.auth_manager != none && !is_public_api && !is_authenticated {
@@ -413,10 +413,18 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 			}
 		}
 		.sasl_authenticate {
-			h.handle_sasl_authenticate(mut conn, req.body, version) or {
+			sasl_result := h.handle_sasl_authenticate(req.body, version) or {
 				success = false
 				return err
 			}
+			// Update connection authentication state directly in handle_request
+			// to avoid V interface mutation issues with nested function calls
+			if principal := sasl_result.principal {
+				if mut c := conn {
+					c.set_authenticated(principal)
+				}
+			}
+			sasl_result.response_bytes
 		}
 		.describe_cluster {
 			h.handle_describe_cluster(req.body, version) or {
@@ -445,6 +453,18 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 		.delete_records {
 			h.handle_delete_records(req.body, version)!
 		}
+		.alter_replica_log_dirs {
+			h.handle_alter_replica_log_dirs(req.body, version)!
+		}
+		.describe_log_dirs {
+			h.handle_describe_log_dirs(req.body, version)!
+		}
+		.incremental_alter_configs {
+			h.handle_incremental_alter_configs(req.body, version)!
+		}
+		.describe_topic_partitions {
+			h.handle_describe_topic_partitions(req.body, version)!
+		}
 		.share_group_heartbeat {
 			h.handle_share_group_heartbeat(req.body, version)!
 		}
@@ -453,6 +473,18 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 		}
 		.share_acknowledge {
 			h.handle_share_acknowledge(req.body, version)!
+		}
+		.initialize_share_group_state {
+			h.handle_initialize_share_group_state(req.body, version)!
+		}
+		.read_share_group_state {
+			h.handle_read_share_group_state(req.body, version)!
+		}
+		.write_share_group_state {
+			h.handle_write_share_group_state(req.body, version)!
+		}
+		.delete_share_group_state {
+			h.handle_delete_share_group_state(req.body, version)!
 		}
 		else {
 			h.logger.warn('Unsupported API key', observability.field_int('api_key', int(api_key)))

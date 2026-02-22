@@ -113,11 +113,10 @@ pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id 
 				break
 			}
 
-			// Get or initialize delivery count
-			mut delivery_count := i32(1)
-			if existing := sp.acquired_records[offset] {
-				delivery_count = existing.delivery_count + 1
-			}
+			// Get delivery count from persistent tracking map
+			prev_count := sp.delivery_counts[offset] or { i32(0) }
+			delivery_count := prev_count + 1
+			sp.delivery_counts[offset] = delivery_count
 
 			// Acquire record
 			sp.record_states[offset] = .acquired
@@ -144,6 +143,11 @@ pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id 
 	// Update end_offset if needed
 	if offset > sp.end_offset {
 		sp.end_offset = offset
+	}
+
+	// Auto-save: persist state after acquisition
+	if acquired.len > 0 {
+		m.persist_state(sp)
 	}
 
 	return acquired
@@ -203,6 +207,9 @@ pub fn (mut m SharePartitionManager) acknowledge_records(group_id string, member
 
 	// Advance SPSO (Share Partition Start Offset) if possible
 	m.advance_spso_internal(mut sp)
+
+	// Auto-save: persist state after acknowledgement
+	m.persist_state(sp)
 
 	return domain.ShareAcknowledgeResult{
 		topic_name: batch.topic_name
@@ -309,12 +316,53 @@ fn (mut m SharePartitionManager) advance_spso_internal(mut sp domain.SharePartit
 	for new_start <= sp.end_offset {
 		state := sp.record_states[new_start] or { break }
 		if state == .acknowledged || state == .archived {
-			// Clean up state for this offset
+			// Clean up state and delivery count for this offset
 			sp.record_states.delete(new_start)
+			sp.delivery_counts.delete(new_start)
 			new_start += 1
 		} else {
 			break
 		}
 	}
 	sp.start_offset = new_start
+}
+
+// Persistence operations
+
+/// persist_state persists a partition state to storage.
+fn (mut m SharePartitionManager) persist_state(sp &domain.SharePartition) {
+	state := sp.to_state()
+	m.storage.save_share_partition_state(state) or {}
+}
+
+/// load_state loads a partition state from storage.
+fn (mut m SharePartitionManager) load_state(group_id string, topic_name string, partition i32) ?domain.SharePartition {
+	state := m.storage.load_share_partition_state(group_id, topic_name, partition)?
+	return state.to_partition()
+}
+
+/// persist_all_states persists all partition states to storage.
+pub fn (mut m SharePartitionManager) persist_all_states() {
+	m.lock.rlock()
+	defer { m.lock.runlock() }
+
+	for _, sp in m.partitions {
+		state := sp.to_state()
+		m.storage.save_share_partition_state(state) or {}
+	}
+}
+
+/// load_all_states loads all partition states for a group from storage.
+pub fn (mut m SharePartitionManager) load_all_states(group_id string) {
+	m.lock.@lock()
+	defer { m.lock.unlock() }
+
+	states := m.storage.load_all_share_partition_states(group_id)
+	for state in states {
+		key := '${state.group_id}:${state.topic_name}:${state.partition}'
+		sp := state.to_partition()
+		m.partitions[key] = &domain.SharePartition{
+			...sp
+		}
+	}
 }

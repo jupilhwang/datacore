@@ -86,6 +86,18 @@ fn (m &TransactionMockStorage) get_storage_capability() domain.StorageCapability
 	return domain.memory_storage_capability
 }
 
+fn (m TransactionMockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (m TransactionMockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (m TransactionMockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (m TransactionMockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []
+}
+
 fn (m &TransactionMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 	return none
 }
@@ -516,6 +528,18 @@ fn (m WriteTxnMarkersMockStorage) health_check() !port.HealthStatus {
 
 fn (m &WriteTxnMarkersMockStorage) get_storage_capability() domain.StorageCapability {
 	return domain.memory_storage_capability
+}
+
+fn (m WriteTxnMarkersMockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
+
+fn (m WriteTxnMarkersMockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	return none
+}
+
+fn (m WriteTxnMarkersMockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
+
+fn (m WriteTxnMarkersMockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	return []
 }
 
 fn (m &WriteTxnMarkersMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {

@@ -5,6 +5,7 @@ module postgres
 
 import db.pg
 import domain
+import json
 import service.port
 import time
 import rand
@@ -35,6 +36,10 @@ mut:
 	group_save_count   i64
 	group_load_count   i64
 	group_delete_count i64
+	// Share group state metrics
+	share_save_count   i64
+	share_load_count   i64
+	share_delete_count i64
 	// Error metrics
 	error_count i64
 }
@@ -56,6 +61,9 @@ fn (mut m PostgresMetrics) reset() {
 	m.group_save_count = 0
 	m.group_load_count = 0
 	m.group_delete_count = 0
+	m.share_save_count = 0
+	m.share_load_count = 0
+	m.share_delete_count = 0
 	m.error_count = 0
 }
 
@@ -67,6 +75,7 @@ fn (m &PostgresMetrics) get_summary() string {
   Records: append=${m.append_count} (${m.append_record_count} records), fetch=${m.fetch_count} (${m.fetch_record_count} records)
   Offsets: commit=${m.offset_commit_count}, fetch=${m.offset_fetch_count}
   Groups: save=${m.group_save_count}, load=${m.group_load_count}, delete=${m.group_delete_count}
+  ShareGroups: save=${m.share_save_count}, load=${m.share_load_count}, delete=${m.share_delete_count}
   Errors: ${m.error_count}'
 }
 
@@ -361,6 +370,24 @@ fn (mut a PostgresStorageAdapter) inc_create_topic_query(elapsed_ms i64) {
 	a.metrics.query_total_ms += elapsed_ms
 }
 
+fn (mut a PostgresStorageAdapter) inc_share_save() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.share_save_count++
+}
+
+fn (mut a PostgresStorageAdapter) inc_share_load() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.share_load_count++
+}
+
+fn (mut a PostgresStorageAdapter) inc_share_delete() {
+	a.metrics_lock.@lock()
+	defer { a.metrics_lock.unlock() }
+	a.metrics.share_delete_count++
+}
+
 // --- End metrics helpers ---
 
 /// init_schema initializes the database schema.
@@ -437,10 +464,31 @@ fn (mut a PostgresStorageAdapter) init_schema() ! {
 		)
 	")!
 
+	// Share partition states table for share group persistence
+	db.exec("
+		CREATE TABLE IF NOT EXISTS share_partition_states (
+			group_id VARCHAR(255) NOT NULL,
+			topic_name VARCHAR(255) NOT NULL,
+			partition_id INT NOT NULL,
+			start_offset BIGINT DEFAULT 0,
+			end_offset BIGINT DEFAULT 0,
+			record_states JSONB DEFAULT '{}',
+			acquired_records JSONB DEFAULT '{}',
+			total_acquired BIGINT DEFAULT 0,
+			total_acknowledged BIGINT DEFAULT 0,
+			total_released BIGINT DEFAULT 0,
+			total_rejected BIGINT DEFAULT 0,
+			created_at TIMESTAMPTZ DEFAULT NOW(),
+			updated_at TIMESTAMPTZ DEFAULT NOW(),
+			PRIMARY KEY (group_id, topic_name, partition_id)
+		)
+	")!
+
 	// Create indexes
 	db.exec('CREATE INDEX IF NOT EXISTS idx_records_topic_partition ON records(topic_name, partition_id)')!
 	db.exec('CREATE INDEX IF NOT EXISTS idx_records_offset ON records(topic_name, partition_id, offset_id)')!
 	db.exec('CREATE INDEX IF NOT EXISTS idx_committed_offsets_group ON committed_offsets(group_id)')!
+	db.exec('CREATE INDEX IF NOT EXISTS idx_share_partition_states_group ON share_partition_states(group_id)')!
 }
 
 /// load_topic_cache loads all topics into the in-memory cache.
@@ -1155,4 +1203,155 @@ pub fn (mut a PostgresStorageAdapter) reset_metrics() {
 		a.metrics_lock.unlock()
 	}
 	a.metrics.reset()
+}
+
+/// save_share_partition_state saves a SharePartition state using UPSERT.
+/// Serializes record_states and acquired_records as JSONB.
+pub fn (mut a PostgresStorageAdapter) save_share_partition_state(state domain.SharePartitionState) ! {
+	a.inc_share_save()
+
+	mut db := a.pool.acquire()!
+	defer { a.pool.release(db) }
+
+	// Serialize maps to JSON strings for JSONB storage
+	record_states_json := json.encode(state.record_states)
+	acquired_records_json := json.encode(state.acquired_records)
+
+	db.exec_param_many('
+		INSERT INTO share_partition_states (
+			group_id, topic_name, partition_id,
+			start_offset, end_offset,
+			record_states, acquired_records,
+			total_acquired, total_acknowledged, total_released, total_rejected
+		) VALUES (\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11)
+		ON CONFLICT (group_id, topic_name, partition_id) DO UPDATE SET
+			start_offset = EXCLUDED.start_offset,
+			end_offset = EXCLUDED.end_offset,
+			record_states = EXCLUDED.record_states,
+			acquired_records = EXCLUDED.acquired_records,
+			total_acquired = EXCLUDED.total_acquired,
+			total_acknowledged = EXCLUDED.total_acknowledged,
+			total_released = EXCLUDED.total_released,
+			total_rejected = EXCLUDED.total_rejected,
+			updated_at = NOW()
+	',
+		[
+		state.group_id,
+		state.topic_name,
+		state.partition.str(),
+		state.start_offset.str(),
+		state.end_offset.str(),
+		record_states_json,
+		acquired_records_json,
+		state.total_acquired.str(),
+		state.total_acknowledged.str(),
+		state.total_released.str(),
+		state.total_rejected.str(),
+	])!
+}
+
+/// load_share_partition_state loads a SharePartition state by composite key.
+/// Returns none if not found.
+pub fn (mut a PostgresStorageAdapter) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
+	a.inc_share_load()
+
+	mut db := a.pool.acquire() or { return none }
+	defer { a.pool.release(db) }
+
+	rows := db.exec_param_many('
+		SELECT group_id, topic_name, partition_id,
+			start_offset, end_offset,
+			record_states, acquired_records,
+			total_acquired, total_acknowledged, total_released, total_rejected
+		FROM share_partition_states
+		WHERE group_id = \$1 AND topic_name = \$2 AND partition_id = \$3
+	',
+		[group_id, topic_name, partition.str()]) or { return none }
+
+	if rows.len == 0 {
+		return none
+	}
+
+	return a.decode_share_partition_state_row(&rows[0])
+}
+
+/// delete_share_partition_state deletes a SharePartition state by composite key.
+pub fn (mut a PostgresStorageAdapter) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {
+	a.inc_share_delete()
+
+	mut db := a.pool.acquire()!
+	defer { a.pool.release(db) }
+
+	db.exec_param_many('
+		DELETE FROM share_partition_states
+		WHERE group_id = \$1 AND topic_name = \$2 AND partition_id = \$3
+	',
+		[group_id, topic_name, partition.str()])!
+}
+
+/// load_all_share_partition_states loads all SharePartition states for a group.
+pub fn (mut a PostgresStorageAdapter) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
+	a.inc_share_load()
+
+	mut db := a.pool.acquire() or { return [] }
+	defer { a.pool.release(db) }
+
+	rows := db.exec_param('
+		SELECT group_id, topic_name, partition_id,
+			start_offset, end_offset,
+			record_states, acquired_records,
+			total_acquired, total_acknowledged, total_released, total_rejected
+		FROM share_partition_states
+		WHERE group_id = \$1
+	',
+		group_id) or { return [] }
+
+	mut result := []domain.SharePartitionState{}
+	for row in rows {
+		if state := a.decode_share_partition_state_row(&row) {
+			result << state
+		}
+	}
+	return result
+}
+
+/// decode_share_partition_state_row decodes a PostgreSQL row into SharePartitionState.
+/// Column order: group_id(0), topic_name(1), partition_id(2),
+///   start_offset(3), end_offset(4), record_states(5), acquired_records(6),
+///   total_acquired(7), total_acknowledged(8), total_released(9), total_rejected(10)
+fn (a &PostgresStorageAdapter) decode_share_partition_state_row(row &pg.Row) ?domain.SharePartitionState {
+	g_id := get_row_str(row, 0, '')
+	if g_id == '' {
+		return none
+	}
+
+	t_name := get_row_str(row, 1, '')
+	p_id := get_row_int(row, 2, 0)
+	s_offset := get_row_i64(row, 3, 0)
+	e_offset := get_row_i64(row, 4, 0)
+
+	// Decode JSONB fields
+	rs_json := get_row_str(row, 5, '{}')
+	ar_json := get_row_str(row, 6, '{}')
+
+	record_states := json.decode(map[i64]u8, rs_json) or {
+		map[i64]u8{}
+	}
+	acquired_records := json.decode(map[i64]domain.AcquiredRecordState, ar_json) or {
+		map[i64]domain.AcquiredRecordState{}
+	}
+
+	return domain.SharePartitionState{
+		group_id:           g_id
+		topic_name:         t_name
+		partition:          i32(p_id)
+		start_offset:       s_offset
+		end_offset:         e_offset
+		record_states:      record_states
+		acquired_records:   acquired_records
+		total_acquired:     get_row_i64(row, 7, 0)
+		total_acknowledged: get_row_i64(row, 8, 0)
+		total_released:     get_row_i64(row, 9, 0)
+		total_rejected:     get_row_i64(row, 10, 0)
+	}
 }

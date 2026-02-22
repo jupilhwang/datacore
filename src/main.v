@@ -12,7 +12,7 @@ import time
 import net.http
 import config as cfg
 import domain
-import infra
+import startup
 import interface.server
 import interface.cli
 import interface.rest
@@ -163,7 +163,7 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	// 1. Create Infra Layer components
 	cli.print_progress('Initializing storage engine (${conf.storage.engine})')
-	mut storage_result := infra.init_storage(conf, mut logger) or {
+	mut storage_result := startup.init_storage(conf, mut logger) or {
 		cli.print_failed('Failed to initialize storage: ${err}')
 		exit(1)
 	}
@@ -181,11 +181,11 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	// 3. Create Protocol Handler with storage and compression injection
 	cli.print_progress('Initializing Kafka protocol handler')
-	mut protocol_handler := infra.init_protocol_handler(conf, storage, compression_service)
+	mut protocol_handler := startup.init_protocol_handler(conf, storage, compression_service)
 	cli.print_done()
 
 	// 4. Initialize Broker Registry for multi-broker mode (S3 storage)
-	cluster_result := infra.init_cluster_registry(conf, mut storage, s3_adapter_ref, mut
+	cluster_result := startup.init_cluster_registry(conf, mut storage, s3_adapter_ref, mut
 		protocol_handler, mut logger)
 	mut broker_registry_opt := cluster_result.registry
 
