@@ -131,7 +131,8 @@ fn test_handler_init_producer_id_transactional() {
 	// Tagged fields
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -166,7 +167,8 @@ fn test_handler_add_partitions_to_txn() {
 	init_req.write_i16(-1)
 	init_req.write_tagged_fields()
 
-	init_resp := handler.handle_request(init_req.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut init_reader := kafka.new_reader(init_resp)
 	_ = init_reader.read_i32()!
 	_ = init_reader.read_i32()!
@@ -204,7 +206,7 @@ fn test_handler_add_partitions_to_txn() {
 	// tagged fields (request)
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 	eprintln('DEBUG: Response len=${response.len} hex=${response.hex()}')
 
 	mut reader := kafka.new_reader(response)
@@ -259,7 +261,8 @@ fn test_handler_end_txn_commit() {
 	init_req.write_i64(-1)
 	init_req.write_i16(-1)
 	init_req.write_tagged_fields()
-	init_resp := handler.handle_request(init_req.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut auth_conn) or { panic(err) }
 	mut init_reader := kafka.new_reader(init_resp)
 	_ = init_reader.read_i32()!
 	_ = init_reader.read_i32()!
@@ -286,7 +289,7 @@ fn test_handler_end_txn_commit() {
 	add_req.write_i32(0)
 	add_req.write_tagged_fields()
 	add_req.write_tagged_fields()
-	_ = handler.handle_request(add_req.bytes()[4..]) or { panic(err) }
+	_ = handler.handle_request(add_req.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	// 3. EndTxn (Commit)
 	mut request := kafka.new_writer()
@@ -303,7 +306,7 @@ fn test_handler_end_txn_commit() {
 	request.write_i8(1)
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -352,7 +355,8 @@ fn test_handler_write_txn_markers() {
 
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -416,7 +420,8 @@ fn test_write_txn_markers_unknown_topic() {
 	request.write_tagged_fields()
 	request.write_tagged_fields()
 
-	response := handler.handle_request(request.bytes()[4..]) or { panic(err) }
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
 
 	mut reader := kafka.new_reader(response)
 	_ = reader.read_i32()!
@@ -443,6 +448,186 @@ fn test_write_txn_markers_unknown_topic() {
 
 	error_code := reader.read_i16()!
 	assert error_code == 3
+}
+
+fn test_handler_add_offsets_to_txn() {
+	mut handler := create_test_handler_with_transaction()
+
+	// 1. InitProducerId to get PID
+	mut init_req := kafka.new_writer()
+	init_req.write_i32(0)
+	init_req.write_i16(22)
+	init_req.write_i16(3)
+	init_req.write_i32(1)
+	init_req.write_nullable_string('test-client')
+	init_req.write_tagged_fields()
+	init_req.write_compact_nullable_string('my-txn-id')
+	init_req.write_i32(60000)
+	init_req.write_i64(-1)
+	init_req.write_i16(-1)
+	init_req.write_tagged_fields()
+
+	mut auth_conn_init := ?&domain.AuthConnection(none)
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut auth_conn_init) or { panic(err) }
+	mut init_reader := kafka.new_reader(init_resp)
+	_ = init_reader.read_i32()!
+	_ = init_reader.read_i32()!
+	_ = init_reader.read_uvarint()!
+	_ = init_reader.read_i32()!
+	_ = init_reader.read_i16()!
+	pid := init_reader.read_i64()!
+	epoch := init_reader.read_i16()!
+
+	// 2. AddOffsetsToTxn (API Key 25, v3 is flexible)
+	mut request := kafka.new_writer()
+	request.write_i32(0)
+	request.write_i16(25)
+	request.write_i16(3)
+	request.write_i32(2)
+	request.write_nullable_string('test-client')
+	request.write_tagged_fields()
+
+	request.write_compact_string('my-txn-id')
+	request.write_i64(pid)
+	request.write_i16(epoch)
+	request.write_compact_string('my-consumer-group')
+	request.write_tagged_fields()
+
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
+
+	mut reader := kafka.new_reader(response)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_uvarint()!
+
+	_ = reader.read_i32()!
+	error_code := reader.read_i16()!
+	assert error_code == 0
+
+	reader.skip_tagged_fields()!
+}
+
+fn test_handler_txn_offset_commit() {
+	mut handler := create_test_handler_with_transaction()
+
+	// 1. InitProducerId
+	mut init_req := kafka.new_writer()
+	init_req.write_i32(0)
+	init_req.write_i16(22)
+	init_req.write_i16(3)
+	init_req.write_i32(1)
+	init_req.write_nullable_string('test-client')
+	init_req.write_tagged_fields()
+	init_req.write_compact_nullable_string('my-txn-id')
+	init_req.write_i32(60000)
+	init_req.write_i64(-1)
+	init_req.write_i16(-1)
+	init_req.write_tagged_fields()
+
+	mut auth_conn_init := ?&domain.AuthConnection(none)
+	init_resp := handler.handle_request(init_req.bytes()[4..], mut auth_conn_init) or { panic(err) }
+	mut init_reader := kafka.new_reader(init_resp)
+	_ = init_reader.read_i32()!
+	_ = init_reader.read_i32()!
+	_ = init_reader.read_uvarint()!
+	_ = init_reader.read_i32()!
+	_ = init_reader.read_i16()!
+	pid := init_reader.read_i64()!
+	epoch := init_reader.read_i16()!
+
+	// 2. AddPartitionsToTxn (to set state to Ongoing)
+	mut add_req := kafka.new_writer()
+	add_req.write_i32(0)
+	add_req.write_i16(24)
+	add_req.write_i16(3)
+	add_req.write_i32(2)
+	add_req.write_nullable_string('test-client')
+	add_req.write_tagged_fields()
+	add_req.write_compact_string('my-txn-id')
+	add_req.write_i64(pid)
+	add_req.write_i16(epoch)
+	add_req.write_compact_array_len(1)
+	add_req.write_compact_string('test-topic')
+	add_req.write_compact_array_len(1)
+	add_req.write_i32(0)
+	add_req.write_tagged_fields()
+	add_req.write_tagged_fields()
+
+	mut auth_conn_add := ?&domain.AuthConnection(none)
+	_ = handler.handle_request(add_req.bytes()[4..], mut auth_conn_add) or { panic(err) }
+
+	// 3. TxnOffsetCommit (API Key 28, v3 is flexible)
+	mut request := kafka.new_writer()
+	request.write_i32(0)
+	request.write_i16(28)
+	request.write_i16(3)
+	request.write_i32(3)
+	request.write_nullable_string('test-client')
+	request.write_tagged_fields()
+
+	// transactional_id
+	request.write_compact_string('my-txn-id')
+	// group_id
+	request.write_compact_string('my-consumer-group')
+	// producer_id
+	request.write_i64(pid)
+	// producer_epoch
+	request.write_i16(epoch)
+	// generation_id (v3+)
+	request.write_i32(-1)
+	// member_id (v3+)
+	request.write_compact_string('')
+	// group_instance_id (v3+, nullable)
+	request.write_compact_nullable_string('')
+	// topics array
+	request.write_compact_array_len(1)
+	// topic name
+	request.write_compact_string('test-topic')
+	// partitions array
+	request.write_compact_array_len(1)
+	// partition_index
+	request.write_i32(0)
+	// committed_offset
+	request.write_i64(100)
+	// committed_leader_epoch (v2+)
+	request.write_i32(-1)
+	// committed_metadata (nullable)
+	request.write_compact_nullable_string('')
+	request.write_tagged_fields()
+	request.write_tagged_fields()
+	request.write_tagged_fields()
+
+	mut auth_conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(request.bytes()[4..], mut auth_conn) or { panic(err) }
+
+	mut reader := kafka.new_reader(response)
+	_ = reader.read_i32()!
+	_ = reader.read_i32()!
+	_ = reader.read_uvarint()!
+
+	// throttle_time_ms
+	_ = reader.read_i32()!
+
+	// topics array
+	topic_count := reader.read_compact_array_len()!
+	assert topic_count == 1
+
+	topic_name := reader.read_compact_string()!
+	assert topic_name == 'test-topic'
+
+	partition_count := reader.read_compact_array_len()!
+	assert partition_count == 1
+
+	partition_index := reader.read_i32()!
+	assert partition_index == 0
+
+	error_code := reader.read_i16()!
+	assert error_code == 0
+
+	reader.skip_tagged_fields()!
+	reader.skip_tagged_fields()!
+	reader.skip_tagged_fields()!
 }
 
 // helper: create handler with WriteTxnMarkers-capable mock storage
