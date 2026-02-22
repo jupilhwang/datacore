@@ -9,6 +9,7 @@ import toml
 /// Config represents the entire configuration for DataCore.
 /// broker: broker configuration
 /// rest: REST API configuration
+/// grpc: gRPC gateway configuration
 /// storage: storage configuration
 /// schema_registry: schema registry configuration
 /// observability: observability configuration (metrics, logging, tracing)
@@ -16,6 +17,7 @@ pub struct Config {
 pub:
 	broker          BrokerConfig
 	rest            RestConfig
+	grpc            GrpcGatewayConfig
 	storage         StorageConfig
 	schema_registry SchemaRegistryConfig
 	observability   ObservabilityConfig
@@ -42,6 +44,21 @@ pub:
 	request_timeout_ms int    = 30000
 	idle_timeout_ms    int    = 600000
 	advertised_host    string = '127.0.0.1'
+}
+
+/// GrpcGatewayConfig represents the gRPC gateway configuration.
+/// enabled: whether the gRPC gateway is enabled
+/// host: host address to bind
+/// port: port number to bind (default: 9094 to avoid conflict with metrics on 9093)
+/// max_connections: maximum number of concurrent gRPC connections
+/// max_message_size: maximum message size in bytes
+pub struct GrpcGatewayConfig {
+pub:
+	enabled          bool
+	host             string = '0.0.0.0'
+	port             int    = 9094
+	max_connections  int    = 10000
+	max_message_size int    = 4194304
 }
 
 /// RestConfig represents the REST API server configuration.
@@ -345,6 +362,19 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		ws_ping_interval_ms:       get_int(doc, 'rest.ws_ping_interval_ms', 30000)
 	}
 
+	// parse gRPC gateway configuration
+	grpc_gateway := GrpcGatewayConfig{
+		enabled:          get_config_bool(cli_args, 'grpc-enabled', 'DATACORE_GRPC_ENABLED',
+			doc, 'grpc.enabled', false)
+		host:             get_config_string(cli_args, 'grpc-host', 'DATACORE_GRPC_HOST',
+			doc, 'grpc.host', '0.0.0.0')
+		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT', doc,
+			'grpc.port', 9094)
+		max_connections:  get_config_int(cli_args, 'grpc-max-connections', 'DATACORE_GRPC_MAX_CONNECTIONS',
+			doc, 'grpc.max_connections', 10000)
+		max_message_size: get_int(doc, 'grpc.max_message_size', 4194304)
+	}
+
 	// parse storage configuration (with priority cascade)
 	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
 		doc, 'storage.engine', 'memory')
@@ -553,6 +583,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	mut cfg := Config{
 		broker:          broker
 		rest:            rest
+		grpc:            grpc_gateway
 		storage:         storage
 		schema_registry: schema_registry
 		observability:   observability
@@ -954,6 +985,19 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	// schema registry configuration
 	schema_registry := SchemaRegistryConfig{}
 
+	// gRPC gateway configuration (defaults)
+	grpc_gateway := GrpcGatewayConfig{
+		enabled:          get_config_bool(cli_args, 'grpc-enabled', 'DATACORE_GRPC_ENABLED',
+			empty_doc, '', false)
+		host:             get_config_string(cli_args, 'grpc-host', 'DATACORE_GRPC_HOST',
+			empty_doc, '', '0.0.0.0')
+		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT', empty_doc,
+			'', 9094)
+		max_connections:  get_config_int(cli_args, 'grpc-max-connections', 'DATACORE_GRPC_MAX_CONNECTIONS',
+			empty_doc, '', 10000)
+		max_message_size: 4194304
+	}
+
 	// observability configuration (defaults)
 	otel := OtelConfig{}
 
@@ -973,6 +1017,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 	return Config{
 		broker:          broker
 		rest:            rest
+		grpc:            grpc_gateway
 		storage:         storage
 		schema_registry: schema_registry
 		observability:   observability

@@ -9,6 +9,7 @@ import config as cfg
 import domain
 import infra.compression
 import infra.observability
+import interface.grpc as iface_grpc
 import infra.protocol.kafka
 import infra.storage.plugins.memory
 import infra.storage.plugins.s3
@@ -195,4 +196,33 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 		registry:     broker_registry
 		cluster_port: cluster_port
 	}
+}
+
+// init_grpc_server creates and starts the gRPC gateway server if enabled.
+// Returns the server instance or none if gRPC is disabled.
+pub fn init_grpc_server(conf cfg.Config, storage port.StoragePort, mut logger observability.Logger) ?&iface_grpc.GrpcServer {
+	if !conf.grpc.enabled {
+		return none
+	}
+
+	server_config := iface_grpc.GrpcServerConfig{
+		host:       conf.grpc.host
+		port:       conf.grpc.port
+		broker_id:  conf.broker.broker_id
+		cluster_id: conf.broker.cluster_id
+	}
+
+	grpc_config := domain.GrpcConfig{
+		port:             conf.grpc.port
+		max_connections:  conf.grpc.max_connections
+		max_message_size: conf.grpc.max_message_size
+	}
+
+	mut srv := iface_grpc.new_grpc_server(server_config, storage, grpc_config)
+	srv.start_background()
+
+	logger.info('gRPC gateway started', observability.field_string('host', conf.grpc.host),
+		observability.field_int('port', conf.grpc.port))
+
+	return srv
 }

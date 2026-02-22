@@ -212,7 +212,7 @@ fn (mut h GrpcHandler) handle_frame(conn_id string, frame GrpcFrame) domain.Grpc
 	// record metrics
 	elapsed_ms := time.since(start_time).milliseconds()
 	h.metrics.record_request('grpc_${api_name}', elapsed_ms, success, frame.data.len,
-		response.encode().len)
+		h.encode_stream_response(response).len)
 
 	return response
 }
