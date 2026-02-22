@@ -13,6 +13,7 @@ import toml
 /// storage: storage configuration
 /// schema_registry: schema registry configuration
 /// observability: observability configuration (metrics, logging, tracing)
+/// telemetry: simplified telemetry configuration (Task #15, mirrors [telemetry] in config.toml)
 pub struct Config {
 pub:
 	broker          BrokerConfig
@@ -21,6 +22,43 @@ pub:
 	storage         StorageConfig
 	schema_registry SchemaRegistryConfig
 	observability   ObservabilityConfig
+	telemetry       TelemetryRootConfig
+}
+
+/// TelemetryRootConfig mirrors the [telemetry] section in config.toml (Task #15).
+pub struct TelemetryRootConfig {
+pub:
+	enabled      bool   = true
+	service_name string = 'datacore'
+	otlp         TelemetryOtlpConfig
+	metrics      TelemetryMetricsConfig
+	traces       TelemetryTracesConfig
+}
+
+/// TelemetryOtlpConfig holds OTLP endpoint settings.
+pub struct TelemetryOtlpConfig {
+pub:
+	// gRPC OTLP endpoint (default port 4317)
+	endpoint string = 'http://localhost:4317'
+	// HTTP OTLP endpoint (optional)
+	http_endpoint string
+	insecure      bool = true
+}
+
+/// TelemetryMetricsConfig holds metrics export settings.
+pub struct TelemetryMetricsConfig {
+pub:
+	// Export interval in seconds
+	interval int = 10
+	// Export timeout in milliseconds
+	export_timeout int = 30000
+}
+
+/// TelemetryTracesConfig holds tracing settings.
+pub struct TelemetryTracesConfig {
+pub:
+	// Sampling ratio (1.0 = 100%)
+	sample_rate f64 = 1.0
 }
 
 /// BrokerConfig represents the Kafka broker configuration.
@@ -368,8 +406,8 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			doc, 'grpc.enabled', false)
 		host:             get_config_string(cli_args, 'grpc-host', 'DATACORE_GRPC_HOST',
 			doc, 'grpc.host', '0.0.0.0')
-		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT', doc,
-			'grpc.port', 9094)
+		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT',
+			doc, 'grpc.port', 9094)
 		max_connections:  get_config_int(cli_args, 'grpc-max-connections', 'DATACORE_GRPC_MAX_CONNECTIONS',
 			doc, 'grpc.max_connections', 10000)
 		max_message_size: get_int(doc, 'grpc.max_message_size', 4194304)
@@ -580,6 +618,24 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		tracing: tracing
 	}
 
+	// Task #15: Parse [telemetry] section
+	telemetry := TelemetryRootConfig{
+		enabled:      get_bool(doc, 'telemetry.enabled', true)
+		service_name: get_string(doc, 'telemetry.service_name', 'datacore')
+		otlp:         TelemetryOtlpConfig{
+			endpoint:      get_string(doc, 'telemetry.otlp.endpoint', 'http://localhost:4317')
+			http_endpoint: get_string(doc, 'telemetry.otlp.http_endpoint', '')
+			insecure:      get_bool(doc, 'telemetry.otlp.insecure', true)
+		}
+		metrics:      TelemetryMetricsConfig{
+			interval:       get_int(doc, 'telemetry.metrics.interval', 10)
+			export_timeout: get_int(doc, 'telemetry.metrics.export_timeout', 30000)
+		}
+		traces:       TelemetryTracesConfig{
+			sample_rate: get_f64(doc, 'telemetry.traces.sample_rate', 1.0)
+		}
+	}
+
 	mut cfg := Config{
 		broker:          broker
 		rest:            rest
@@ -587,6 +643,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		storage:         storage
 		schema_registry: schema_registry
 		observability:   observability
+		telemetry:       telemetry
 	}
 
 	// validate configuration
@@ -991,8 +1048,8 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 			empty_doc, '', false)
 		host:             get_config_string(cli_args, 'grpc-host', 'DATACORE_GRPC_HOST',
 			empty_doc, '', '0.0.0.0')
-		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT', empty_doc,
-			'', 9094)
+		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT',
+			empty_doc, '', 9094)
 		max_connections:  get_config_int(cli_args, 'grpc-max-connections', 'DATACORE_GRPC_MAX_CONNECTIONS',
 			empty_doc, '', 10000)
 		max_message_size: 4194304
@@ -1014,6 +1071,9 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		tracing: tracing
 	}
 
+	// Task #15: telemetry defaults
+	telemetry := TelemetryRootConfig{}
+
 	return Config{
 		broker:          broker
 		rest:            rest
@@ -1021,6 +1081,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		storage:         storage
 		schema_registry: schema_registry
 		observability:   observability
+		telemetry:       telemetry
 	}
 }
 

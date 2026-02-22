@@ -442,3 +442,102 @@ pub fn shutdown_otlp_exporter() {
 		holder.exporter = unsafe { nil }
 	}
 }
+
+// Metrics Export
+
+// export_metrics_snapshot exports a snapshot of all registered metrics to OTLP endpoint.
+/// export_metrics_snapshot exports all metrics from the registry to the OTLP /v1/metrics endpoint.
+pub fn (mut e OTLPExporter) export_metrics_snapshot() {
+	mut reg := get_registry()
+	payload := e.build_metrics_payload(mut reg)
+	if payload.len == 0 {
+		return
+	}
+	endpoint := '${e.config.endpoint}/v1/metrics'
+	e.send_with_retry(endpoint, payload)
+}
+
+// build_metrics_payload converts the registry snapshot to OTLP JSON metrics payload.
+/// build_metrics_payload converts all metrics in the registry to an OTLP JSON payload.
+pub fn (e &OTLPExporter) build_metrics_payload(mut reg MetricsRegistry) string {
+	reg.lock.rlock()
+	metrics_copy := reg.metrics.clone()
+	reg.lock.runlock()
+
+	if metrics_copy.len == 0 {
+		return ''
+	}
+
+	mut sb := []u8{cap: 4096}
+	sb << '{"resourceMetrics":[{"resource":{"attributes":['.bytes()
+	sb << '{"key":"service.name","value":{"stringValue":"${e.config.service_name}"}}'.bytes()
+	sb << ',{"key":"service.version","value":{"stringValue":"${e.config.service_version}"}}'.bytes()
+	if e.config.instance_id.len > 0 {
+		sb << ',{"key":"service.instance.id","value":{"stringValue":"${e.config.instance_id}"}}'.bytes()
+	}
+	sb << ',{"key":"deployment.environment","value":{"stringValue":"${e.config.environment}"}}'.bytes()
+	sb << ']},"scopeMetrics":[{"scope":{"name":"datacore"},"metrics":['.bytes()
+
+	mut first := true
+	for name, metric in metrics_copy {
+		if !first {
+			sb << ','.bytes()
+		}
+		first = false
+		sb << e.build_metric_record(name, metric).bytes()
+	}
+
+	sb << ']}]}]}'.bytes()
+	return sb.bytestr()
+}
+
+// build_metric_record converts a single Metric to OTLP JSON.
+fn (e &OTLPExporter) build_metric_record(name string, metric &Metric) string {
+	mut sb := []u8{cap: 512}
+	sb << '{"name":"${name}"'.bytes()
+	if metric.help.len > 0 {
+		sb << ',"description":"${escape_json_string(metric.help)}"'.bytes()
+	}
+
+	match metric.metric_type {
+		.counter {
+			sb << ',"sum":{"dataPoints":[{"asDouble":${metric.value}'.bytes()
+			sb << ',"timeUnixNano":"${now_unix_nano()}"}]'.bytes()
+			sb << ',"aggregationTemporality":2,"isMonotonic":true}}'.bytes()
+		}
+		.gauge {
+			sb << ',"gauge":{"dataPoints":[{"asDouble":${metric.value}'.bytes()
+			sb << ',"timeUnixNano":"${now_unix_nano()}"}]}}'.bytes()
+		}
+		.histogram {
+			sb << ',"histogram":{"dataPoints":[{'.bytes()
+			sb << '"count":${metric.count}'.bytes()
+			sb << ',"sum":${metric.sum}'.bytes()
+			sb << ',"timeUnixNano":"${now_unix_nano()}"'.bytes()
+			sb << ',"explicitBounds":['.bytes()
+			for i, b in metric.buckets {
+				if i > 0 {
+					sb << ','.bytes()
+				}
+				sb << '${b.upper_bound}'.bytes()
+			}
+			sb << '],"bucketCounts":['.bytes()
+			for i, b in metric.buckets {
+				if i > 0 {
+					sb << ','.bytes()
+				}
+				sb << '${b.count}'.bytes()
+			}
+			// +Inf bucket
+			sb << ',${metric.count}]'.bytes()
+			sb << '}],"aggregationTemporality":2}}'.bytes()
+		}
+	}
+
+	return sb.bytestr()
+}
+
+// now_unix_nano returns the current time as Unix nanoseconds string.
+fn now_unix_nano() string {
+	return '${time.now().unix_nano()}'
+}
