@@ -100,11 +100,13 @@ fn test_offset_commit_empty_group_id_returns_error() ! {
 
 	manager.commit_offsets(OffsetCommitRequest{
 		group_id: ''
-		offsets:  [domain.PartitionOffset{
-			topic:     'topic-x'
-			partition: 0
-			offset:    1
-		}]
+		offsets:  [
+			domain.PartitionOffset{
+				topic:     'topic-x'
+				partition: 0
+				offset:    1
+			},
+		]
 	}) or {
 		assert err.msg().contains('invalid group_id')
 		return
