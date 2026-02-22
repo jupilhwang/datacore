@@ -113,7 +113,7 @@ docker run -p 9092:9092 -p 8080:8080 -p 9094:9094 datacore:latest
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| V Language | v0.44.4+ | [vlang.io](https://vlang.io/) |
+| V Language | v0.5.0+ | [vlang.io](https://vlang.io/) |
 | C Compiler | GCC / Clang / MSVC | Required by V |
 
 ### OS Dependencies
