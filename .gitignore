@@ -7,7 +7,6 @@
 *.out
 /datacore
 /src/src
-bin/datacore
 
 # Build outputs
 /build/
