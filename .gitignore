@@ -65,15 +65,17 @@ tmp/
 temp/
 
 # Ignore docs except tracked files
-docs/*
-!docs/PRD.md
-!docs/TRD.md
-!docs/CONTRIBUTING.md
-!docs/BENCHMARK.md
-!docs/FUTURE_FEATURES.md
-!docs/PR_DESCRIPTION.md
-.taskmaster/*
+docs/
+.taskmaster/
 AGENTS.md
+benchmark_results/
+.opencode/
+.ruff_cache/
+.serena/
+.test/
+.env*
+.config.toml
+.config.toml.bak
 
 logs
 npm-debug.log*
@@ -96,3 +98,4 @@ node_modules/
 # Task files
 # tasks.json
 # tasks/ 
+
