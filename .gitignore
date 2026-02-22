@@ -7,13 +7,12 @@
 *.out
 /datacore
 /src/src
-bin/*
+bin/datacore
 
 # Build outputs
 /build/
 /dist/
 /target/
-/bin/
 
 # Benchmark binaries
 tests/bench/bench
@@ -50,11 +49,6 @@ profile.txt
 # Dependencies cache
 .vcache/
 
-.opencode/*
-.taskmaster/*
-.serena/*
-.ruff_cache/*
-
 # Environment
 .env
 .env.local
@@ -65,17 +59,6 @@ tmp/
 temp/
 
 # Ignore docs except tracked files
-docs/
-.taskmaster/
-AGENTS.md
-benchmark_results/
-.opencode/
-.ruff_cache/
-.serena/
-.test/
-.env*
-.config.toml
-.config.toml.bak
 
 logs
 npm-debug.log*
@@ -99,3 +82,20 @@ node_modules/
 # tasks.json
 # tasks/ 
 
+
+
+
+docs/
+.taskmaster/
+AGENTS.md
+benchmark_results/
+.opencode/
+.ruff_cache/
+.serena/
+.env*
+.config.toml
+.config.toml.bak
+.opencode/*
+.taskmaster/*
+.serena/*
+.ruff_cache/*
