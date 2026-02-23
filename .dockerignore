@@ -1,0 +1,38 @@
+# Build artifacts
+bin/
+release/
+obj/
+*.o
+*.a
+*.so
+datacore
+
+# Logs
+*.log
+broker_debug.log
+broker_orig.log
+broker_test.log
+
+# Environment and Config
+.env
+config.toml.bak
+config_memory.toml
+
+# Version Control
+.git/
+.gitignore
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Project specific
+.opencode/
+.serena/
+.ruff_cache/
+benchmark_results/
+
+# Documentation (Optional, exclude if you want a smaller build context)
+docs/
+CHANGELOG.md
+README.md

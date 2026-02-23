@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: datacore
+  namespace: datacore
+  labels:
+    app: datacore
+    release: prometheus # Assuming prometheus operator is deployed with this label
+spec:
+  selector:
+    matchLabels:
+      app: datacore
+  endpoints:
+  - port: admin
+    path: /metrics
+    interval: 15s

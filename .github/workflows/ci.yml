@@ -1,0 +1,102 @@
+# DataCore CI/CD Pipeline
+# Runs on every push and pull request
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  V_VERSION: "0.5"
+
+jobs:
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup V
+        uses: vlang/setup-v@v1.4
+        with:
+          version: ${{ env.V_VERSION }}
+      
+      - name: Check formatting
+        run: v fmt -verify src/
+      
+      - name: Run vet
+        run: v vet src/
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup V
+        uses: vlang/setup-v@v1.4
+        with:
+          version: ${{ env.V_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libsnappy-dev liblz4-dev libzstd-dev libpq-dev libnuma-dev liburing-dev zlib1g-dev
+
+      - name: Run unit tests
+        run: |
+          v -enable-globals test src/
+
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin-amd64
+            artifact_name: datacore
+            asset_name: datacore-darwin-amd64
+          - os: macos-14
+            target: darwin-arm64
+            artifact_name: datacore
+            asset_name: datacore-darwin-arm64
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup V
+        uses: vlang/setup-v@v1.4
+        with:
+          version: ${{ env.V_VERSION }}
+      
+      - name: Install dependencies (macOS)
+        run: |
+          brew install openssl snappy lz4 zstd postgresql
+
+      - name: Build
+        run: |
+          cd src
+          v -prod -enable-globals -d use_openssl -cflags -static -o ../bin/${{ matrix.artifact_name }} .
+
+      - name: Create archive
+        run: |
+          cd bin
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            7z a ../${{ matrix.asset_name }}.zip ${{ matrix.artifact_name }}
+          else
+            tar -czvf ../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+          fi
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}.tar.gz
+          retention-days: 7

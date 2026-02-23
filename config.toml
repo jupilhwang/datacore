@@ -1,53 +1,525 @@
+# =============================================================================
 # DataCore Configuration
-# See docs/TRD.md for full configuration reference
+# =============================================================================
+# Kafka-compatible stateless message broker configuration
+# See docs/TRD.md for full architecture reference
+# =============================================================================
 
+# -----------------------------------------------------------------------------
+# [broker] - Kafka 호환 브로커 설정
+# -----------------------------------------------------------------------------
 [broker]
-id = 1
-listener = "0.0.0.0:9092"
-advertised_listener = "localhost:9092"
+
+# 브로커 고유 식별자 (Kafka broker.id와 동일)
+# 범위: 1-65535 (권장: 1부터 순차적으로 할당)
+broker_id = 1
+
+# 클러스터 식별자 (모든 브로커가 동일한 값 사용)
+cluster_id = "datacore-cluster"
+
+# 클라이언트 연결을 수신할 호스트
+# "0.0.0.0" = 모든 네트워크 인터페이스
+# "127.0.0.1" = 로컬 연결만 허용
+host = "0.0.0.0"
+
+# 클라이언트에게 알릴 호스트 주소 (advertised.listeners)
+# Docker/Cloud 환경에서 외부 접근 주소를 지정할 때 사용
+# 기본값: 127.0.0.1 (로컬 개발 환경 호환성)
+advertised_host = "127.0.0.1"
+
+# Kafka 프로토콜 포트 (기본: 9092)
+port = 9092
+
+# 최대 동시 연결 수
+# 권장값: 메모리 4GB당 10000
 max_connections = 10000
-max_connections_per_ip = 100
-idle_timeout_ms = 600000
-request_timeout_ms = 30000
+
+# 클라이언트당 최대 요청 크기 (바이트)
+# 기본값: 100MB (104857600)
+# 대용량 메시지 배치 전송 시 증가 필요
 max_request_size = 104857600
 
+# 요청 처리 타임아웃 (밀리초)
+# 기본값: 30초 (30000)
+request_timeout_ms = 30000
+
+# 유휴 연결 타임아웃 (밀리초)
+# 기본값: 10분 (600000)
+# 이 시간 동안 활동 없으면 연결 종료
+idle_timeout_ms = 600000
+
+# -----------------------------------------------------------------------------
+# [rest] - REST API 서버 설정 (SSE/WebSocket 포함)
+# -----------------------------------------------------------------------------
+[rest]
+
+# REST API 활성화 여부
+enabled = true
+
+# REST API 호스트
+host = "0.0.0.0"
+
+# REST API 포트
+port = 8080
+
+# 최대 연결 수
+max_connections = 1000
+
+# 정적 파일 디렉토리 (테스트 클라이언트용)
+static_dir = "tests/web"
+
+# SSE 하트비트 간격 (밀리초)
+sse_heartbeat_interval_ms = 15000
+
+# SSE 연결 타임아웃 (밀리초)
+sse_connection_timeout_ms = 3600000
+
+# WebSocket 최대 메시지 크기 (바이트)
+ws_max_message_size = 1048576
+
+# WebSocket 핑 간격 (밀리초)
+ws_ping_interval_ms = 30000
+
+# -----------------------------------------------------------------------------
+# [storage] - 스토리지 엔진 설정
+# -----------------------------------------------------------------------------
 [storage]
-plugin = "memory"
 
+# 사용할 스토리지 엔진
+# 지원값: "memory", "s3", "postgres" (P2)
+# 현재 구현됨: "memory", "s3"
+engine = "memory"
+
+# -----------------------------------------------------------------------------
+# [storage.memory] - 인메모리 스토리지 설정 (기본값)
+# -----------------------------------------------------------------------------
 [storage.memory]
-max_partition_size = "1GB"
-flush_interval_ms = 1000
 
-[schema_registry]
-enabled = true
-compatibility_level = "BACKWARD"
+# 최대 메모리 사용량 (MB)
+# 권장: 시스템 메모리의 50-75%
+max_memory_mb = 20240
 
-[schema_registry.rest]
-enabled = true
-port = 8081
+# 세그먼트 파일 크기 (바이트)
+# 기본값: 1GB (1073741824)
+segment_size_bytes = 1073741824
 
-[group]
-supported_protocols = ["classic", "consumer", "share"]
-default_assignor = "uniform"
-share_record_lock_duration_ms = 30000
-share_max_in_flight_records = 5000
+# -----------------------------------------------------------------------------
+# [storage.s3] - S3 스토리지 설정
+# -----------------------------------------------------------------------------
+[storage.s3]
 
-[observability]
-service_name = "datacore"
-service_version = "0.1.0"
+# S3 호환 엔드포인트 URL
+# AWS S3: 비워두면 AWS 기본 엔드포인트 사용
+# MinIO: "http://localhost:9000"
+endpoint = ""
 
-[observability.metrics]
-enabled = true
-exporter = "prometheus"
-prometheus_port = 9090
+# S3 버킷 이름
+bucket = "jhwang-s3"
 
-[observability.tracing]
+# AWS 리전
+region = "ap-northeast-2"
+
+# 객체 키 프리픽스 (선택사항)
+# 여러 클러스터가 같은 버킷 공유 시 사용
+prefix = "datacore/"
+
+# 인증 정보 (환경변수 DATACORE_S3_ACCESS_KEY, DATACORE_S3_SECRET_KEY 권장)
+#access_key = ""
+#secret_key = ""
+
+# S3 타임존 설정 (기본값: UTC)
+timezone = "UTC"
+
+# -----------------------------------------------------------------------------
+# S3 Performance and Compaction Settings
+# -----------------------------------------------------------------------------
+
+# 레코드 버퍼링 최대 시간 (밀리초). 이 시간 안에 플러시 워커가 실행됨.(25ms)
+batch_timeout_ms = 25
+
+# 레코드 버퍼링 최대 크기 (바이트). 이 크기 초과 시 즉시 플러시 트리거됨. (4MB)
+batch_max_bytes = 4096000
+
+# 컴팩션 워커 주기 (밀리초). 작은 세그먼트를 병합하는 주기.
+compaction_interval_ms = 30000
+
+# 컴팩션 후 목표 세그먼트 크기 (바이트). (100MB)
+target_segment_bytes = 104857600
+
+# 파티션 인덱스 캐시 TTL (밀리초). TTL 만료 시 S3에서 재로딩하여 Latency 유발 가능.
+# 프로덕션 환경: 1시간 (3600000ms) - 최신 상태 유지와 성능의 균형
+# 개발/테스트: 24시간 (86400000ms) - S3 GET 요청 최소화
+index_cache_ttl_ms = 3600000
+
+# 오프셋 배치 플러시 설정
+# commit_offsets를 메모리에 버퍼링하고 주기적으로 S3에 바이너리 스냅샷으로 플러시
+offset_batch_enabled = true
+offset_flush_interval_ms = 100
+offset_flush_threshold_count = 50
+
+# -----------------------------------------------------------------------------
+# [storage.s3.iceberg] - S3 Iceberg 테이블 형식 설정
+# -----------------------------------------------------------------------------
+# DataCore는 Iceberg 테이블 형식으로 Parquet 파일 저장을 지원합니다.
+# 이 설정은 S3 스토리지 엔진이 Iceberg 형식을 사용할 때 적용됩니다.
+# -----------------------------------------------------------------------------
+
+[storage.s3.iceberg]
+
+# Iceberg 형식 사용 여부
+# true: Iceberg 형식으로 Parquet 파일 저장
+# false: 기존 바이너리 형식으로 저장 (기본값)
 enabled = false
-exporter = "otlp"
-sampling_ratio = 1.0
 
-[observability.logging]
+# 파일 형식
+# 지원값: "parquet", "orc", "avro"
+format = "parquet"
+
+# 압축 방식
+# 지원값: "none", "snappy", "gzip", "zstd"
+# 권장: zstd (최상의 압축률과 속도)
+compression = "zstd"
+
+# 쓰기 모드
+# 지원값: "append", "overwrite"
+# append: 새 데이터 추가 (기본값)
+# overwrite: 기존 데이터 덮어쓰기
+write_mode = "append"
+
+# 파티셔닝 컬럼
+# Iceberg 테이블의 파티셔닝 기준 컬럼
+# 지원값: "timestamp", "topic", "partition"
+# timestamp는 자동으로 day 단위로 파티셔닝됨
+partition_by = ["timestamp", "topic"]
+
+# 파일당 최대 행 수
+# 이 수를 초과하면 새로운 파일 생성
+max_rows_per_file = 1000000
+
+# 파일당 최대 크기 (MB)
+# 이 크기를 초과하면 새로운 파일 생성
+max_file_size_mb = 128
+
+# 스키마 진화 지원
+# true: 스키마 변경 자동 감지 및 적용
+# false: 스키마 변경 불가
+schema_evolution = true
+
+# -----------------------------------------------------------------------------
+# [storage.s3.iceberg.catalog] - Iceberg REST Catalog 설정
+# -----------------------------------------------------------------------------
+[storage.s3.iceberg.catalog]
+
+# 카탈로그 타입
+# 지원값: "hadoop" (파일 기반), "rest" (REST API 기반)
+type = "rest"
+
+# REST Catalog 엔드포인트 (외부 서비스 사용 시)
+# 비어있으면 내장 REST Catalog 서버 사용
+rest_endpoint = ""
+
+# Warehouse 위치 (S3 경로)
+warehouse = "s3://jhwang-s3/datacore/iceberg/warehouse"
+
+# 테이블 포맷 버전 (1, 2, 3)
+# v3: Binary Deletion Vectors, Row Lineage, 신규 데이터 타입 지원
+# v2: Row-Level Deletes 지원
+# v1: 기본 Iceberg 포맷
+format_version = 3
+
+# -----------------------------------------------------------------------------
+# [storage.postgres] - PostgreSQL 스토리지 설정 (P2 - 미구현)
+# -----------------------------------------------------------------------------
+[storage.postgres]
+
+# 데이터베이스 연결 정보
+host = "localhost"
+port = 5432
+database = "datacore"
+# user = ""
+# password = ""
+
+# 연결 풀 크기
+pool_size = 10
+
+# SSL 모드 (disable, allow, prefer, require, verify-ca, verify-full)
+# disable: SSL 사용 안함 (기본값)
+# require: SSL 필수 (인증서 검증 안함)
+# verify-ca: SSL 필수 + CA 인증서 검증
+# verify-full: SSL 필수 + CA 인증서 + 호스트명 검증
+sslmode = "disable"
+
+# -----------------------------------------------------------------------------
+# [replication] - 브로커 간 인메모리 복제 설정 (v0.44.1+)
+# -----------------------------------------------------------------------------
+# DataCore는 브로커 간 TCP 기반 인메모리 복제를 지원합니다.
+# 다중 브로커 환경에서 S3 flush 전 데이터 유실을 방지합니다.
+# 단일 브로커 환경에서는 이 설정을 무시합니다.
+# -----------------------------------------------------------------------------
+[replication]
+
+# 복제 기능 활성화 여부
+# 다중 브로커 배포 시 true로 설정
+enabled = false
+
+# 브로커 간 복제 통신용 TCP 포트
+# 기본값: 9094 (Kafka 프로토콜 포트 9092와 구분)
+replication_port = 9094
+
+# 파티션당 복제본 수 (원본 포함)
+# 예: 2 = 원본 1개 + 복제본 1개
+replica_count = 2
+
+# 복제 ACK 대기 타임아웃 (밀리초)
+# 이 시간 내에 REPLICATE_ACK를 받지 못하면 실패 처리
+replica_timeout_ms = 5000
+
+# 브로커 생존 확인 하트비트 간격 (밀리초)
+heartbeat_interval_ms = 3000
+
+# replica_brokers 재할당 주기 (밀리초)
+# 브로커 추가/제거 시 복제 대상을 재계산하는 주기
+reassignment_interval_ms = 30000
+
+# orphan buffer 정리 주기 (밀리초)
+# FLUSH_ACK를 받지 못한 버퍼의 최대 보관 시간
+orphan_cleanup_interval_ms = 60000
+
+# 최대 복제 재시도 횟수
+# 이 횟수 초과 시 복제 실패로 처리하고 stats.total_retry_exhausted 증가
+retry_count = 3
+
+# 복제 버퍼 최대 보관 시간 (밀리초)
+# TTL 초과 시 해당 메시지를 버퍼에서 삭제 (데이터 유실 위험, 운영자 확인 필요)
+replica_buffer_ttl_ms = 60000
+
+# 복제 버퍼 최대 크기 (바이트)
+# 0 = 무제한. 메모리 과다 사용 방지를 위해 프로덕션 환경에서는 값 설정 권장
+# 예: 104857600 = 100MB
+max_replica_buffer_size_bytes = 0
+
+# -----------------------------------------------------------------------------
+# [schema_registry] - 내장 Schema Registry 설정
+# -----------------------------------------------------------------------------
+[schema_registry]
+
+# Schema Registry 활성화 여부
 enabled = true
-level = "info"
+
+# 스키마 저장용 내부 토픽 이름
+topic = "__schemas"
+
+# 기본 호환성 레벨 (P1 - 미구현)
+# 지원값: "NONE", "BACKWARD", "FORWARD", "FULL", 
+#         "BACKWARD_TRANSITIVE", "FORWARD_TRANSITIVE", "FULL_TRANSITIVE"
+# compatibility_level = "BACKWARD"
+
+# -----------------------------------------------------------------------------
+# [observability] - OpenTelemetry 기반 관측성 설정
+# -----------------------------------------------------------------------------
+# DataCore는 OpenTelemetry(OTel)을 기본 관측성 프레임워크로 사용합니다.
+# - Metrics: OTLP → Prometheus/Grafana
+# - Logging: OTel Log Bridge → Loki/ELK
+# - Tracing: OTLP → Jaeger/Tempo
+# -----------------------------------------------------------------------------
+
+# [observability.otel] - OpenTelemetry 공통 설정
+[observability.otel]
+
+# OpenTelemetry 활성화 (전역)
+enabled = true
+
+# 서비스 이름 (모든 텔레메트리에 공통 적용)
+service_name = "datacore"
+
+# 서비스 버전
+service_version = "0.44.1"
+
+# 서비스 인스턴스 ID (자동 생성 또는 지정)
+# instance_id = ""
+
+# 환경 (production, staging, development)
+environment = "development"
+
+# OTLP gRPC 엔드포인트 (모든 시그널 공통)
+# OpenTelemetry Collector: "http://localhost:4317"
+otlp_endpoint = "http://localhost:4317"
+
+# OTLP HTTP 엔드포인트 (대체 프로토콜)
+# otlp_http_endpoint = "http://localhost:4318"
+
+# 리소스 속성 (key=value, 쉼표 구분)
+# resource_attributes = "deployment.environment=production,service.namespace=kafka"
+
+# [observability.metrics] - OTel Metrics 설정
+[observability.metrics]
+
+# 메트릭 수집 활성화
+enabled = true
+
+# 메트릭 내보내기 방식
+# 지원값: "otlp" (OTel Collector로 전송), "prometheus" (직접 스크래핑 노출)
+exporter = "prometheus"
+
+# Prometheus 스크래핑 엔드포인트 (exporter=prometheus 시 사용)
+# REST API 서버(8080)의 /metrics 엔드포인트에서 제공됨
+prometheus_endpoint = "/metrics"
+prometheus_port = 9093  # Deprecated: REST API(8080)에서 /metrics 제공
+
+# OTLP 엔드포인트 (exporter=otlp 시 사용, 비어있으면 공통 설정 사용)
+# otlp_endpoint = ""
+
+# 메트릭 수집 주기 (초)
+collection_interval = 15
+
+# [observability.logging] - OTel Logging 설정
+[observability.logging]
+
+# 로깅 활성화
+enabled = true
+
+# 로그 레벨
+# 지원값: "trace", "debug", "info", "warn", "error"
+level = "debug"
+
+# 로그 출력 형식
+# 지원값: "json" (OTel 호환 구조화), "text" (콘솔 가독성)
 format = "json"
-exporter = "stdout"
+
+# OTLP로 로그 전송 여부
+otlp_export = false
+
+# 콘솔 출력 여부
+console_output = true
+
+# 트레이스 컨텍스트 자동 주입 (trace_id, span_id)
+inject_trace_context = true
+
+# [observability.tracing] - OTel Tracing 설정
+[observability.tracing]
+
+# 분산 추적 활성화
+enabled = false
+
+# OTLP 엔드포인트 (비어있으면 공통 설정 사용)
+# otlp_endpoint = ""
+
+# 샘플링 전략
+# 지원값: "always_on" (모두 추적), "always_off" (추적 안함),
+#         "trace_id_ratio" (비율 기반), "parent_based" (부모 따름)
+sampler = "trace_id_ratio"
+
+# 샘플링 비율 (sampler=trace_id_ratio 시 사용)
+# 1.0 = 100% 추적, 0.1 = 10% 추적
+sample_rate = 1.0
+
+# 배치 내보내기 설정
+batch_timeout_ms = 5000
+max_batch_size = 512
+max_queue_size = 2048
+
+# 스팬 제한
+max_attributes_per_span = 128
+max_events_per_span = 128
+max_links_per_span = 128
+
+# -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# [telemetry] - OpenTelemetry 통합 설정 (Task #15)
+# -----------------------------------------------------------------------------
+# [observability] 섹션의 대안으로 제공되는 간소화된 텔레메트리 설정.
+# [observability] 설정이 더 상세하므로 실제 운영에서는 [observability] 사용 권장.
+# -----------------------------------------------------------------------------
+[telemetry]
+enabled = true
+service_name = "datacore"
+
+[telemetry.otlp]
+# gRPC OTLP endpoint (기본: 포트 4317)
+endpoint = "http://localhost:4317"
+# HTTP OTLP endpoint (선택, gRPC 대신 사용)
+# http_endpoint = "http://localhost:4318/v1/metrics"
+insecure = true
+
+[telemetry.metrics]
+# 메트릭 export 주기 (초)
+interval = 10
+# export timeout (밀리초)
+export_timeout = 30000
+
+[telemetry.traces]
+# 샘플링 비율 (1.0 = 100%)
+sample_rate = 1.0
+
+# -----------------------------------------------------------------------------
+# [profiles] - 환경별 권장 설정 예시
+# -----------------------------------------------------------------------------
+# 아래는 개발/스테이징/운영 환경별 권장 설정입니다.
+# 필요에 따라 복사하여 사용하세요.
+# -----------------------------------------------------------------------------
+
+# [profiles.development] - 로컬 개발 환경
+# -----------------------------------------------------------------------------
+[profiles.development]
+
+# environment = "development"
+# 로컬開発에서는 로깅을 debug로 설정하여 문제 파악 용이하게
+# [observability.logging]
+# level = "debug"
+
+# S3 개발 시 로컬 MinIO 사용 시
+# [storage.s3]
+# endpoint = "http://localhost:9000"
+# bucket = "datacore-dev"
+
+# 개발 환경에서는 트레이스 활성화하여 디버깅
+# [observability.tracing]
+# enabled = true
+# sampler = "always_on"
+
+
+# [profiles.staging] - 스테이징 환경
+# -----------------------------------------------------------------------------
+[profiles.staging]
+
+# environment = "staging"
+# 스테이징에서는 실제 프로덕션과 유사한 설정
+# [observability.logging]
+# level = "info"
+# format = "json"
+
+# 프로메테우스 메트릭 활성화
+# [observability.metrics]
+# exporter = "otlp"
+
+# 트레이스는 부모 기반 샘플링 (10%)
+# [observability.tracing]
+# enabled = true
+# sampler = "parent_based"
+# sample_rate = 0.1
+
+
+# [profiles.production] - 운영 환경
+# -----------------------------------------------------------------------------
+[profiles.production]
+
+# environment = "production"
+# 운영에서는 WARN 레벨로 불필요한 로그 최소화
+# [observability.logging]
+# level = "warn"
+# format = "json"
+# otlp_export = true
+
+# 운영에서는 프로메테우스 또는 OTLP
+# [observability.metrics]
+# exporter = "otlp"
+
+# 운영 트레이스는 비율 기반 (1%)
+# [observability.tracing]
+# enabled = true
+# sampler = "trace_id_ratio"
+# sample_rate = 0.01
+
+# 운영 스토리지: 인덱스 캐시 TTL 1시간
+# [storage.s3]
+# index_cache_ttl_ms = 3600000

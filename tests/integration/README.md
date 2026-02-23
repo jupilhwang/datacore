@@ -1,6 +1,6 @@
 # DataCore Integration Tests
 
-이 디렉토리에는 Kafka CLI 도구와 Schema Registry REST API를 사용한 통합 테스트가 포함되어 있습니다.
+이 디렉토리에는 Kafka CLI 도구, gRPC 스트리밍, Schema Registry REST API를 사용한 통합 테스트가 포함되어 있습니다.
 
 ## 사전 요구사항
 
@@ -17,7 +17,20 @@ tar -xzf kafka_2.13-3.6.0.tgz
 export PATH=$PATH:$(pwd)/kafka_2.13-3.6.0/bin
 ```
 
-### 2. Avro 도구 설치 (선택사항)
+### 2. Python 3 설치 (gRPC 테스트용)
+
+```bash
+# macOS (Homebrew)
+brew install python3
+
+# Linux (Ubuntu/Debian)
+sudo apt-get install python3 python3-pip
+
+# 버전 확인
+python3 --version  # 3.6 이상 필요
+```
+
+### 3. Avro 도구 설치 (선택사항)
 
 Avro 테스트를 위해서는 Confluent Schema Registry CLI가 필요합니다:
 
@@ -49,7 +62,20 @@ v run . broker start
 BOOTSTRAP_SERVER=myhost:9092 ./test_kafka_cli.sh
 ```
 
-### 3. Schema Registry 테스트 실행
+### 3. gRPC 스트리밍 테스트 실행
+
+```bash
+# 기본 설정 (gRPC: localhost:9093, Kafka: localhost:9092)
+./run_grpc_tests.sh
+
+# 커스텀 설정
+./run_grpc_tests.sh --grpc-port 9094 --kafka-port 9092
+
+# 환경 변수 사용
+GRPC_HOST=192.168.1.100 GRPC_PORT=9093 ./run_grpc_tests.sh
+```
+
+### 4. Schema Registry 테스트 실행
 
 ```bash
 # 기본 설정 (http://localhost:8081)
@@ -59,7 +85,7 @@ BOOTSTRAP_SERVER=myhost:9092 ./test_kafka_cli.sh
 SCHEMA_REGISTRY_URL=http://myhost:8081 ./test_schema_registry.sh
 ```
 
-### 4. 전체 테스트 실행
+### 5. 전체 테스트 실행
 
 ```bash
 ./run_all_tests.sh
@@ -82,6 +108,25 @@ SCHEMA_REGISTRY_URL=http://myhost:8081 ./test_schema_registry.sh
 | Avro Produce/Consume | Avro 스키마 메시지 송수신 |
 | Avro with Key | 키가 있는 Avro 메시지 송수신 |
 | Consumer Group | Consumer Group 기능 테스트 |
+
+### gRPC Streaming Tests (`test_grpc_streaming.py`)
+
+| 테스트 | 설명 |
+|--------|------|
+| gRPC Ping/Pong | gRPC 연결 및 keepalive 테스트 |
+| gRPC Produce/Consume Simple | gRPC로 메시지 produce 및 consume |
+| gRPC Multiple Batch Produce | 여러 배치 메시지 전송 |
+| gRPC Produce with Key | 키가 있는 메시지 전송 |
+| gRPC Streaming Consume | 스트리밍 방식 메시지 수신 |
+| Kafka CLI → gRPC | Kafka CLI로 produce, gRPC로 consume |
+| gRPC → Kafka CLI | gRPC로 produce, Kafka CLI로 consume |
+| gRPC Offset Commit | Consumer group 오프셋 커밋 |
+| gRPC Message Headers | 메시지 헤더 전송 및 수신 |
+
+**테스트 시나리오:**
+- **gRPC ↔ gRPC**: 양방향 gRPC 스트리밍 테스트
+- **Kafka CLI → gRPC**: Kafka 호환성 검증 (produce)
+- **gRPC → Kafka CLI**: Kafka 호환성 검증 (consume)
 
 ### Schema Registry Tests (`test_schema_registry.sh`)
 
@@ -110,6 +155,10 @@ SCHEMA_REGISTRY_URL=http://myhost:8081 ./test_schema_registry.sh
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | `BOOTSTRAP_SERVER` | localhost:9092 | Kafka 브로커 주소 |
+| `GRPC_HOST` | localhost | gRPC 서버 호스트 |
+| `GRPC_PORT` | 9093 | gRPC 서버 포트 |
+| `KAFKA_HOST` | localhost | Kafka 서버 호스트 |
+| `KAFKA_PORT` | 9092 | Kafka 서버 포트 |
 | `SCHEMA_REGISTRY_URL` | http://localhost:8081 | Schema Registry URL |
 | `TIMEOUT` | 10 | Consumer 타임아웃 (초) |
 
@@ -127,10 +176,37 @@ SCHEMA_REGISTRY_URL=http://myhost:8081 ./test_schema_registry.sh
 
 ```bash
 # 브로커가 실행 중인지 확인
-netstat -an | grep 9092
+netstat -an | grep 9092  # Kafka port
+netstat -an | grep 9093  # gRPC port
 
 # 브로커 로그 확인
 tail -f /var/log/datacore/broker.log
+```
+
+### gRPC connection failed
+
+```bash
+# gRPC 포트 확인
+nc -zv localhost 9093
+
+# config.toml에서 gRPC 설정 확인
+grep -A 5 "\[grpc\]" config.toml
+
+# gRPC가 활성화되어 있는지 확인
+# [grpc]
+# enabled = true
+# port = 9093
+```
+
+### Python import errors
+
+```bash
+# grpc_client.py가 같은 디렉토리에 있는지 확인
+ls -la tests/integration/grpc_client.py
+
+# Python 경로 확인
+cd tests/integration
+python3 -c "import grpc_client"
 ```
 
 ### Kafka CLI not found
@@ -155,7 +231,9 @@ which kafka-avro-console-producer
 
 ## 수동 테스트 예제
 
-### 토픽 생성
+### Kafka CLI 예제
+
+#### 토픽 생성
 
 ```bash
 kafka-topics.sh --bootstrap-server localhost:9092 \
@@ -165,7 +243,7 @@ kafka-topics.sh --bootstrap-server localhost:9092 \
     --replication-factor 1
 ```
 
-### 메시지 전송
+#### 메시지 전송
 
 ```bash
 echo "Hello DataCore" | kafka-console-producer.sh \
@@ -173,7 +251,7 @@ echo "Hello DataCore" | kafka-console-producer.sh \
     --topic my-topic
 ```
 
-### 메시지 수신
+#### 메시지 수신
 
 ```bash
 kafka-console-consumer.sh \
@@ -182,7 +260,54 @@ kafka-console-consumer.sh \
     --from-beginning
 ```
 
-### Schema Registry 스키마 등록
+### gRPC 예제
+
+#### Python 클라이언트로 메시지 전송
+
+```python
+from grpc_client import GrpcProducer, GrpcRecord
+
+# Producer 생성
+producer = GrpcProducer("localhost", 9093)
+producer.connect()
+
+# 메시지 전송
+records = [
+    GrpcRecord(value=b"Hello from gRPC"),
+    GrpcRecord(key=b"key1", value=b"Message with key")
+]
+
+base_offset, count = producer.produce("my-topic", records, partition=0)
+print(f"Produced {count} messages at offset {base_offset}")
+
+producer.close()
+```
+
+#### Python 클라이언트로 메시지 수신
+
+```python
+from grpc_client import GrpcConsumer
+
+# Consumer 생성
+consumer = GrpcConsumer("localhost", 9093)
+consumer.connect()
+
+# 구독 시작
+consumer.subscribe("my-topic", partition=0, offset=0)
+
+# 메시지 폴링
+for _ in range(10):
+    result = consumer.poll(timeout=5.0)
+    if result:
+        topic, partition, offset, record = result
+        print(f"Received: {record.value.decode('utf-8')}")
+
+consumer.close()
+```
+
+### Schema Registry 예제
+
+#### 스키마 등록
 
 ```bash
 curl -X POST \

@@ -1,0 +1,88 @@
+version: "3.8"
+
+services:
+  broker1:
+    image: datacore:local
+    container_name: datacore-broker1
+    hostname: broker1
+    ports:
+      - "9092:9092"
+      - "8081:8081"
+    volumes:
+      - ./config_broker1.toml:/app/config.toml:ro
+      - ~/.aws:/root/.aws:ro
+    networks:
+      - datacore-cluster
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8081/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
+    restart: unless-stopped
+
+  broker2:
+    image: datacore:local
+    container_name: datacore-broker2
+    hostname: broker2
+    ports:
+      - "9093:9093"
+      - "8082:8082"
+    volumes:
+      - ./config_broker2.toml:/app/config.toml:ro
+      - ~/.aws:/root/.aws:ro
+    networks:
+      - datacore-cluster
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8082/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
+    depends_on:
+      broker1:
+        condition: service_healthy
+    restart: unless-stopped
+
+  broker3:
+    image: datacore:local
+    container_name: datacore-broker3
+    hostname: broker3
+    ports:
+      - "9094:9094"
+      - "8083:8083"
+    volumes:
+      - ./config_broker3.toml:/app/config.toml:ro
+      - ~/.aws:/root/.aws:ro
+    networks:
+      - datacore-cluster
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8083/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 120s
+    depends_on:
+      broker1:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  datacore-cluster:
+    driver: bridge
+    name: datacore-cluster-net

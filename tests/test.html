@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket 연결 테스트</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; font-size: 14px; }
+        #log { background-color: #f8f9fa; padding: 10px; border: 1px solid #dee2e6; height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket 연결 테스트</h1>
+    
+    <div>
+        <button onclick="testConnection()">WebSocket 연결 테스트</button>
+        <button onclick="testHTTP()">HTTP 서버 테스트</button>
+        <button onclick="clearLog()">로그 지우기</button>
+    </div>
+    
+    <div id="status"></div>
+    <div id="log"></div>
+
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function showStatus(message, isError = false) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="${isError ? 'error' : 'success'}">${message}</div>`;
+        }
+
+        function showInfo(message) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="info">${message}</div>`;
+        }
+
+        async function testHTTP() {
+            showInfo('HTTP 서버 테스트 중...');
+            log('HTTP 서버 테스트 시작...');
+            
+            try {
+                const response = await fetch('http://localhost:8080/health');
+                log(`HTTP 상태 코드: ${response.status}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`HTTP 응답: ${JSON.stringify(data)}`);
+                    showStatus('HTTP 서버 연결 성공!');
+                } else {
+                    log(`HTTP 오류: ${response.status} ${response.statusText}`);
+                    showStatus('HTTP 서버 연결 실패!', true);
+                }
+            } catch (error) {
+                log(`HTTP 오류: ${error.message}`);
+                showStatus('HTTP 서버 연결 실패!', true);
+            }
+        }
+
+        async function testConnection() {
+            showInfo('WebSocket 연결 테스트 중...');
+            log('WebSocket 연결 테스트 시작...');
+            
+            // WebSocket 서버의 주소 - 테스트할 포트들
+            const wsPorts = [8080, 8081];
+            
+            for (const port of wsPorts) {
+                await tryWebSocketPort(port);
+            }
+        }
+
+        async function tryWebSocketPort(port) {
+            return new Promise((resolve) => {
+                log(`포트 ${port}에서 WebSocket 연결 시도...`);
+                
+                let ws;
+                try {
+                    // 웹소켓 연결 시도
+                    ws = new WebSocket(`ws://localhost:${port}/ws`);
+                    
+                    const timeout = setTimeout(() => {
+                        log(`포트 ${port}: 연결 시간 초과`);
+                        ws.close();
+                        resolve();
+                    }, 5000);
+
+                    ws.onopen = function() {
+                        clearTimeout(timeout);
+                        log(`포트 ${port}: WebSocket 연결 성공!`);
+                        showStatus(`포트 ${port}에서 WebSocket 연결 성공!`);
+                        
+                        // 테스트 메시지 전송
+                        ws.send(JSON.stringify({
+                            action: 'ping',
+                            timestamp: Date.now()
+                        }));
+                        log('테스트 메시지 전송 완료');
+                    };
+
+                    ws.onmessage = function(event) {
+                        log(`포트 ${port}: 메시지 수신 - ${event.data}`);
+                        
+                        try {
+                            const data = JSON.parse(event.data);
+                            log(`포트 ${port}: 파싱된 메시지 - ${JSON.stringify(data)}`);
+                        } catch (e) {
+                            log(`포트 ${port}: 메시지 파싱 오류 - ${e.message}`);
+                        }
+                        
+                        ws.close();
+                        resolve();
+                    };
+
+                    ws.onerror = function(error) {
+                        clearTimeout(timeout);
+                        log(`포트 ${port}: WebSocket 오류 - ${error}`);
+                        
+                        // 더 자세한 오류 정보 얻기
+                        if (error instanceof Error) {
+                            log(`포트 ${port}: 오류 상세정보 - ${error.message}`);
+                        }
+                        resolve();
+                    };
+
+                    ws.onclose = function(event) {
+                        clearTimeout(timeout);
+                        log(`포트 ${port}: WebSocket 연결 종료 - 코드: ${event.code}, 이유: ${event.reason}`);
+                        resolve();
+                    };
+
+                } catch (error) {
+                    log(`포트 ${port}: WebSocket 생성 오류 - ${error.message}`);
+                    resolve();
+                }
+            });
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('status').innerHTML = '';
+        }
+
+        // 페이지 로드 시 자동으로 HTTP 테스트
+        window.onload = function() {
+            log('페이지 로드 완료 - 자동 테스트 시작');
+            testHTTP();
+        };
+    </script>
+</body>
+</html>

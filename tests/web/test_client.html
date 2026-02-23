@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataCore SSE/WebSocket Test Client</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            color: #00d9ff;
+            margin-bottom: 20px;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .panel {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #0f3460;
+        }
+        .panel h2 {
+            color: #00d9ff;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #0f3460;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 0.9em;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #0f3460;
+            border-radius: 5px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 14px;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #00d9ff;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #00d9ff;
+            color: #1a1a2e;
+        }
+        .btn-primary:hover {
+            background: #00b8d9;
+        }
+        .btn-danger {
+            background: #e94560;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c73e54;
+        }
+        .btn-success {
+            background: #4ecca3;
+            color: #1a1a2e;
+        }
+        .btn-success:hover {
+            background: #3db892;
+        }
+        .btn-warning {
+            background: #ffc107;
+            color: #1a1a2e;
+        }
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+        .status.connected {
+            background: #4ecca3;
+            color: #1a1a2e;
+        }
+        .status.disconnected {
+            background: #e94560;
+            color: white;
+        }
+        .status.connecting {
+            background: #ffc107;
+            color: #1a1a2e;
+        }
+        .log-container {
+            background: #0d1117;
+            border-radius: 5px;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            margin-top: 15px;
+        }
+        .log-entry {
+            padding: 5px 0;
+            border-bottom: 1px solid #21262d;
+        }
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+        .log-time {
+            color: #6e7681;
+            margin-right: 10px;
+        }
+        .log-type {
+            padding: 2px 8px;
+            border-radius: 3px;
+            margin-right: 10px;
+            font-size: 11px;
+        }
+        .log-type.info { background: #1f6feb; }
+        .log-type.success { background: #238636; }
+        .log-type.error { background: #da3633; }
+        .log-type.message { background: #8957e5; }
+        .log-type.send { background: #f78166; }
+        .log-data {
+            color: #c9d1d9;
+            word-break: break-all;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .stat-item {
+            background: #0d1117;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00d9ff;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #6e7681;
+            margin-top: 5px;
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        .actions {
+            margin-top: 15px;
+        }
+        pre {
+            background: #0d1117;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>DataCore SSE/WebSocket Test Client</h1>
+    
+    <div class="container">
+        <!-- SSE Panel -->
+        <div class="panel">
+            <h2>SSE (Server-Sent Events) <span id="sse-status" class="status disconnected">Disconnected</span></h2>
+            
+            <div class="form-group">
+                <label>Server URL</label>
+                <input type="text" id="sse-url" value="http://localhost:8080/v1/topics/test-topic/sse?from=latest">
+            </div>
+            
+            <div class="actions">
+                <button class="btn-primary" onclick="connectSSE()">Connect</button>
+                <button class="btn-danger" onclick="disconnectSSE()">Disconnect</button>
+            </div>
+            
+            <div class="log-container" id="sse-log"></div>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="sse-messages">0</div>
+                    <div class="stat-label">Messages</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="sse-errors">0</div>
+                    <div class="stat-label">Errors</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="sse-reconnects">0</div>
+                    <div class="stat-label">Reconnects</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- WebSocket Panel -->
+        <div class="panel">
+            <h2>WebSocket <span id="ws-status" class="status disconnected">Disconnected</span></h2>
+            
+            <div class="form-group">
+                <label>Server URL</label>
+                <input type="text" id="ws-url" value="ws://localhost:8080/v1/ws">
+            </div>
+            
+            <div class="actions">
+                <button class="btn-primary" onclick="connectWS()">Connect</button>
+                <button class="btn-danger" onclick="disconnectWS()">Disconnect</button>
+            </div>
+            
+            <div class="log-container" id="ws-log"></div>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="ws-sent">0</div>
+                    <div class="stat-label">Sent</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="ws-received">0</div>
+                    <div class="stat-label">Received</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="ws-errors">0</div>
+                    <div class="stat-label">Errors</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- WebSocket Actions Panel -->
+        <div class="panel full-width">
+            <h2>WebSocket Actions</h2>
+            
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
+                <!-- Subscribe -->
+                <div>
+                    <h3 style="color: #4ecca3; margin-bottom: 10px;">Subscribe</h3>
+                    <div class="form-group">
+                        <label>Topic</label>
+                        <input type="text" id="sub-topic" value="test-topic">
+                    </div>
+                    <div class="form-group">
+                        <label>Partition</label>
+                        <input type="number" id="sub-partition" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Offset</label>
+                        <select id="sub-offset">
+                            <option value="latest">latest</option>
+                            <option value="earliest">earliest</option>
+                            <option value="0">0</option>
+                        </select>
+                    </div>
+                    <button class="btn-success" onclick="wsSubscribe()">Subscribe</button>
+                </div>
+                
+                <!-- Unsubscribe -->
+                <div>
+                    <h3 style="color: #e94560; margin-bottom: 10px;">Unsubscribe</h3>
+                    <div class="form-group">
+                        <label>Topic</label>
+                        <input type="text" id="unsub-topic" value="test-topic">
+                    </div>
+                    <div class="form-group">
+                        <label>Partition</label>
+                        <input type="number" id="unsub-partition" value="0">
+                    </div>
+                    <button class="btn-danger" onclick="wsUnsubscribe()">Unsubscribe</button>
+                </div>
+                
+                <!-- Produce -->
+                <div>
+                    <h3 style="color: #f78166; margin-bottom: 10px;">Produce</h3>
+                    <div class="form-group">
+                        <label>Topic</label>
+                        <input type="text" id="prod-topic" value="test-topic">
+                    </div>
+                    <div class="form-group">
+                        <label>Key</label>
+                        <input type="text" id="prod-key" value="key1">
+                    </div>
+                    <div class="form-group">
+                        <label>Value</label>
+                        <input type="text" id="prod-value" value="Hello, DataCore!">
+                    </div>
+                    <button class="btn-warning" onclick="wsProduce()">Produce</button>
+                </div>
+                
+                <!-- Commit / Ping -->
+                <div>
+                    <h3 style="color: #00d9ff; margin-bottom: 10px;">Other</h3>
+                    <div class="form-group">
+                        <label>Group ID (for commit)</label>
+                        <input type="text" id="commit-group" value="test-group">
+                    </div>
+                    <div class="form-group">
+                        <label>Offset (for commit)</label>
+                        <input type="number" id="commit-offset" value="0">
+                    </div>
+                    <button class="btn-primary" onclick="wsCommit()">Commit</button>
+                    <button class="btn-primary" onclick="wsPing()">Ping</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- REST API Test Panel -->
+        <div class="panel full-width">
+            <h2>REST API Test</h2>
+            
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px;">
+                <div>
+                    <div class="form-group">
+                        <label>Base URL</label>
+                        <input type="text" id="rest-base" value="http://localhost:8080">
+                    </div>
+                    <div class="actions">
+                        <button class="btn-primary" onclick="restHealth()">Health Check</button>
+                        <button class="btn-primary" onclick="restListTopics()">List Topics</button>
+                        <button class="btn-primary" onclick="restSSEStats()">SSE Stats</button>
+                        <button class="btn-primary" onclick="restWSStats()">WS Stats</button>
+                    </div>
+                </div>
+                <div>
+                    <label>Response</label>
+                    <pre id="rest-response" style="height: 150px; overflow-y: auto;">Click a button to test...</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let sseConnection = null;
+        let wsConnection = null;
+        let sseStats = { messages: 0, errors: 0, reconnects: 0 };
+        let wsStats = { sent: 0, received: 0, errors: 0 };
+
+        // Utility functions
+        function getTime() {
+            return new Date().toLocaleTimeString('ko-KR', { hour12: false });
+        }
+
+        function addLog(containerId, type, message) {
+            const container = document.getElementById(containerId);
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <span class="log-time">${getTime()}</span>
+                <span class="log-type ${type}">${type.toUpperCase()}</span>
+                <span class="log-data">${escapeHtml(message)}</span>
+            `;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+            
+            // Limit log entries
+            while (container.children.length > 100) {
+                container.removeChild(container.firstChild);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function updateStatus(elementId, status) {
+            const el = document.getElementById(elementId);
+            el.className = 'status ' + status.toLowerCase();
+            el.textContent = status;
+        }
+
+        function updateSSEStats() {
+            document.getElementById('sse-messages').textContent = sseStats.messages;
+            document.getElementById('sse-errors').textContent = sseStats.errors;
+            document.getElementById('sse-reconnects').textContent = sseStats.reconnects;
+        }
+
+        function updateWSStats() {
+            document.getElementById('ws-sent').textContent = wsStats.sent;
+            document.getElementById('ws-received').textContent = wsStats.received;
+            document.getElementById('ws-errors').textContent = wsStats.errors;
+        }
+
+        // SSE Functions
+        function connectSSE() {
+            if (sseConnection) {
+                addLog('sse-log', 'info', 'Already connected. Disconnect first.');
+                return;
+            }
+
+            const url = document.getElementById('sse-url').value;
+            addLog('sse-log', 'info', 'Connecting to ' + url);
+            updateStatus('sse-status', 'Connecting');
+
+            try {
+                sseConnection = new EventSource(url);
+
+                sseConnection.onopen = function(e) {
+                    addLog('sse-log', 'success', 'Connected!');
+                    updateStatus('sse-status', 'Connected');
+                };
+
+                sseConnection.onmessage = function(e) {
+                    sseStats.messages++;
+                    updateSSEStats();
+                    addLog('sse-log', 'message', e.data);
+                };
+
+                sseConnection.addEventListener('subscribed', function(e) {
+                    addLog('sse-log', 'success', '[subscribed] ' + e.data);
+                });
+
+                sseConnection.addEventListener('message', function(e) {
+                    sseStats.messages++;
+                    updateSSEStats();
+                    addLog('sse-log', 'message', '[message] ' + e.data);
+                });
+
+                sseConnection.addEventListener('heartbeat', function(e) {
+                    addLog('sse-log', 'info', '[heartbeat] ' + e.data);
+                });
+
+                sseConnection.addEventListener('error', function(e) {
+                    addLog('sse-log', 'error', '[error] ' + (e.data || 'Connection error'));
+                });
+
+                sseConnection.onerror = function(e) {
+                    sseStats.errors++;
+                    updateSSEStats();
+                    if (sseConnection.readyState === EventSource.CONNECTING) {
+                        sseStats.reconnects++;
+                        updateSSEStats();
+                        addLog('sse-log', 'info', 'Reconnecting...');
+                        updateStatus('sse-status', 'Connecting');
+                    } else if (sseConnection.readyState === EventSource.CLOSED) {
+                        addLog('sse-log', 'error', 'Connection closed');
+                        updateStatus('sse-status', 'Disconnected');
+                        sseConnection = null;
+                    }
+                };
+
+            } catch (err) {
+                addLog('sse-log', 'error', 'Failed to connect: ' + err.message);
+                updateStatus('sse-status', 'Disconnected');
+            }
+        }
+
+        function disconnectSSE() {
+            if (sseConnection) {
+                sseConnection.close();
+                sseConnection = null;
+                addLog('sse-log', 'info', 'Disconnected');
+                updateStatus('sse-status', 'Disconnected');
+            }
+        }
+
+        // WebSocket Functions
+        function connectWS() {
+            if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+                addLog('ws-log', 'info', 'Already connected. Disconnect first.');
+                return;
+            }
+
+            const url = document.getElementById('ws-url').value;
+            addLog('ws-log', 'info', 'Connecting to ' + url);
+            updateStatus('ws-status', 'Connecting');
+
+            try {
+                wsConnection = new WebSocket(url);
+
+                wsConnection.onopen = function(e) {
+                    addLog('ws-log', 'success', 'Connected!');
+                    updateStatus('ws-status', 'Connected');
+                };
+
+                wsConnection.onmessage = function(e) {
+                    wsStats.received++;
+                    updateWSStats();
+                    
+                    try {
+                        const data = JSON.parse(e.data);
+                        const type = data.type || 'unknown';
+                        addLog('ws-log', 'message', `[${type}] ${e.data}`);
+                    } catch {
+                        addLog('ws-log', 'message', e.data);
+                    }
+                };
+
+                wsConnection.onerror = function(e) {
+                    wsStats.errors++;
+                    updateWSStats();
+                    addLog('ws-log', 'error', 'WebSocket error');
+                };
+
+                wsConnection.onclose = function(e) {
+                    addLog('ws-log', 'info', `Connection closed (code: ${e.code}, reason: ${e.reason || 'none'})`);
+                    updateStatus('ws-status', 'Disconnected');
+                    wsConnection = null;
+                };
+
+            } catch (err) {
+                addLog('ws-log', 'error', 'Failed to connect: ' + err.message);
+                updateStatus('ws-status', 'Disconnected');
+            }
+        }
+
+        function disconnectWS() {
+            if (wsConnection) {
+                wsConnection.close(1000, 'User disconnect');
+                wsConnection = null;
+            }
+        }
+
+        function wsSend(message) {
+            if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+                addLog('ws-log', 'error', 'Not connected');
+                return;
+            }
+            
+            const json = JSON.stringify(message);
+            wsConnection.send(json);
+            wsStats.sent++;
+            updateWSStats();
+            addLog('ws-log', 'send', json);
+        }
+
+        function wsSubscribe() {
+            wsSend({
+                action: 'subscribe',
+                topic: document.getElementById('sub-topic').value,
+                partition: parseInt(document.getElementById('sub-partition').value),
+                offset: document.getElementById('sub-offset').value
+            });
+        }
+
+        function wsUnsubscribe() {
+            wsSend({
+                action: 'unsubscribe',
+                topic: document.getElementById('unsub-topic').value,
+                partition: parseInt(document.getElementById('unsub-partition').value)
+            });
+        }
+
+        function wsProduce() {
+            wsSend({
+                action: 'produce',
+                topic: document.getElementById('prod-topic').value,
+                key: document.getElementById('prod-key').value,
+                value: document.getElementById('prod-value').value,
+                headers: { "source": "web-client" }
+            });
+        }
+
+        function wsCommit() {
+            wsSend({
+                action: 'commit',
+                topic: document.getElementById('sub-topic').value,
+                partition: parseInt(document.getElementById('sub-partition').value),
+                offset: document.getElementById('commit-offset').value,
+                group_id: document.getElementById('commit-group').value
+            });
+        }
+
+        function wsPing() {
+            wsSend({ action: 'ping' });
+        }
+
+        // REST API Functions
+        async function restRequest(path) {
+            const base = document.getElementById('rest-base').value;
+            const responseEl = document.getElementById('rest-response');
+            
+            try {
+                responseEl.textContent = 'Loading...';
+                const response = await fetch(base + path);
+                const data = await response.text();
+                
+                try {
+                    const json = JSON.parse(data);
+                    responseEl.textContent = JSON.stringify(json, null, 2);
+                } catch {
+                    responseEl.textContent = data;
+                }
+            } catch (err) {
+                responseEl.textContent = 'Error: ' + err.message;
+            }
+        }
+
+        function restHealth() { restRequest('/health'); }
+        function restListTopics() { restRequest('/v1/topics'); }
+        function restSSEStats() { restRequest('/v1/sse/stats'); }
+        function restWSStats() { restRequest('/v1/ws/stats'); }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            addLog('sse-log', 'info', 'SSE client ready');
+            addLog('ws-log', 'info', 'WebSocket client ready');
+        });
+    </script>
+</body>
+</html>

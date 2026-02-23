@@ -1,0 +1,24 @@
+# config.production.toml
+[broker]
+id = 1
+advertised_host = "datacore.production.local"
+port = 9092
+admin_port = 8080
+
+[storage]
+engine = "s3"
+dir = "/tmp/datacore"
+s3_bucket = "${S3_BUCKET}"
+s3_endpoint = "${S3_ENDPOINT}"
+s3_region = "${S3_REGION}"
+s3_access_key = "${AWS_ACCESS_KEY_ID}"
+s3_secret_key = "${AWS_SECRET_ACCESS_KEY}"
+s3_path_style = true
+
+[auth]
+enabled = true
+jwt_secret = "${JWT_SECRET}"
+
+[logging]
+level = "info"
+format = "json"

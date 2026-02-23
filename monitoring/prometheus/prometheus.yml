@@ -1,0 +1,59 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: datacore
+    replica: '{{.ExternalURL}}'
+
+# 알림 규칙
+rule_files:
+  - "alert_rules.yml"
+
+# 알림 매니저
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# 스크랩 대상
+scrape_configs:
+  # Prometheus 자체 모니터링
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # DataCore 메트릭
+  - job_name: "datacore"
+    static_configs:
+      - targets: ["datacore:9092"]
+    metrics_path: /metrics
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # OpenTelemetry Collector
+  - job_name: "otel-collector"
+    static_configs:
+      - targets: ["otel-collector:8889"]
+    metrics_path: /metrics
+
+  # Grafana
+  - job_name: "grafana"
+    static_configs:
+      - targets: ["grafana:3000"]
+
+  # Loki
+  - job_name: "loki"
+    static_configs:
+      - targets: ["loki:3100"]
+
+  # Docker 데몹 메트릭 (옵션)
+  - job_name: "docker"
+    static_configs:
+      - targets: ["host.docker.internal:9323"]
+
+# 원격 저장소 (Cortex/Thanos 등 연동 가능)
+remote_write: []
+
+# 원격 읽기
+remote_read: []

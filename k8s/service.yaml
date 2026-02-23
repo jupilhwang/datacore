@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: datacore
+  namespace: datacore
+  labels:
+    app: datacore
+spec:
+  selector:
+    app: datacore
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+    - name: admin
+      port: 8080
+      targetPort: 8080

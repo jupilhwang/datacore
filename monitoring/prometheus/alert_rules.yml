@@ -1,0 +1,53 @@
+groups:
+  - name: datacore_alerts
+    interval: 30s
+    rules:
+      # 높은 오류율
+      - alert: DataCoreHighErrorRate
+        expr: rate(datacore_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DataCore has high error rate"
+          description: "Error rate is {{ $value }} errors/sec over the last 5 minutes"
+
+      # 높은 지연시간
+      - alert: DataCoreHighLatency
+        expr: histogram_quantile(0.95, rate(datacore_request_duration_seconds_bucket[5m])) > 1.0
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DataCore has high latency"
+          description: "95th percentile latency is {{ $value }}s"
+
+      # 메모리 사용량 높음
+      - alert: DataCoreHighMemoryUsage
+        expr: (datacore_memory_used_bytes / datacore_memory_total_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DataCore memory usage is high"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      # 디스크 사용량 높음
+      - alert: DataCoreHighDiskUsage
+        expr: (datacore_disk_used_bytes / datacore_disk_total_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DataCore disk usage is high"
+          description: "Disk usage is {{ $value | humanizePercentage }}"
+
+      # 서비스 다운
+      - alert: DataCoreDown
+        expr: up{job="datacore"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DataCore service is down"
+          description: "DataCore has been down for more than 1 minute"

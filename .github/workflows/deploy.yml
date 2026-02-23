@@ -1,0 +1,40 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to deploy (e.g., v0.44.2)'
+        required: true
+        default: 'latest'
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        uses: webfactory/ssh-action@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PROD_SSH_PRIVATE_KEY }}
+
+      - name: Execute deployment script on server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} << 'EOF'
+            cd /opt/datacore
+            
+            # Pull latest code or configuration
+            git pull origin main
+            
+            # Export the version to deploy
+            export DATACORE_VERSION=${{ github.event.inputs.version }}
+            
+            # Run the deployment script
+            chmod +x scripts/deploy.sh
+            ./scripts/deploy.sh
+          EOF

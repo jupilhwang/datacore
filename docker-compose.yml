@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  datacore:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: datacore:latest
+    container_name: datacore-broker
+    ports:
+      - "9092:9092"   # Kafka Protocol
+      - "8080:8080"   # REST API / Iceberg / WS
+    volumes:
+      - ./config.toml:/app/config.toml
+      # - ./data:/app/data  # If using persistent storage plugin
+    environment:
+      - LOG_LEVEL=info
+      - STORAGE_ENGINE=memory # memory, s3, postgres
+      # Env variables for S3 or Postgres can be added here
+      # - S3_ENDPOINT=http://minio:9000
+      # - S3_BUCKET=datacore
+    restart: unless-stopped
+    networks:
+      - datacore-network
+
+networks:
+  datacore-network:
+    driver: bridge

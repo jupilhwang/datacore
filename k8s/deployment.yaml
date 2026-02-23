@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datacore
+  namespace: datacore
+  labels:
+    app: datacore
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: datacore
+  template:
+    metadata:
+      labels:
+        app: datacore
+    spec:
+      containers:
+      - name: datacore
+        image: datacore:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9092
+          name: kafka
+        - containerPort: 8080
+          name: admin
+        envFrom:
+        - secretRef:
+            name: datacore-secrets
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config.toml
+          subPath: config.toml
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: admin
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: admin
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1024Mi
+      volumes:
+      - name: config-volume
+        configMap:
+          name: datacore-config
