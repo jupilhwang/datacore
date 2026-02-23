@@ -327,48 +327,192 @@ fn (w &IcebergWriter) generate_manifest_path(snapshot_id i64) string {
 		'-')}.avro'
 }
 
-/// encode_manifest encodes manifest file content.
-/// Note: real Iceberg manifests use Avro format; here JSON is used as a mock.
+/// encode_manifest encodes manifest file content in Avro Object Container File format.
+/// Implements the Iceberg Manifest File Avro schema per the Iceberg spec.
 fn (w &IcebergWriter) encode_manifest(data_files []IcebergDataFile) ![]u8 {
-	// Simplified manifest JSON - build string directly
-	mut sb := strings.new_builder(2048)
+	// Avro Object Container File format:
+	// - 4-byte magic: 'O', 'b', 'j', 0x01
+	// - file-level metadata (map<bytes>), including schema and codec
+	// - 16-byte sync marker
+	// - blocks: [count varint][size varint][data bytes][sync marker]
 
-	sb.write_string('{')
-	sb.write_string('"manifestVersion":2,')
-	sb.write_string('"schemaId":${w.table_metadata.current_schema_id},')
-	sb.write_string('"partitionSpecId":${w.table_metadata.default_spec_id},')
-	sb.write_string('"addedFiles":${data_files.len},')
-	sb.write_string('"existingFiles":0,')
-	sb.write_string('"deletedFiles":0,')
+	// Iceberg manifest file Avro schema (manifest_entry records)
+	manifest_schema := '{"type":"record","name":"manifest_entry","fields":[' +
+		'{"name":"status","type":"int"},' +
+		'{"name":"snapshot_id","type":["null","long"],"default":null},' +
+		'{"name":"sequence_number","type":["null","long"],"default":null},' +
+		'{"name":"file_sequence_number","type":["null","long"],"default":null},' +
+		'{"name":"data_file","type":{"type":"record","name":"r2","fields":[' +
+		'{"name":"content","type":"int"},' + '{"name":"file_path","type":"string"},' +
+		'{"name":"file_format","type":"string"},' +
+		'{"name":"partition","type":{"type":"record","name":"r102","fields":[]}},' +
+		'{"name":"record_count","type":"long"},' + '{"name":"file_size_in_bytes","type":"long"},' +
+		'{"name":"column_sizes","type":["null",{"type":"array","items":{"type":"record","name":"r104","fields":[{"name":"key","type":"int"},{"name":"value","type":"long"}]}}],"default":null},' +
+		'{"name":"value_counts","type":["null",{"type":"array","items":{"type":"record","name":"r105","fields":[{"name":"key","type":"int"},{"name":"value","type":"long"}]}}],"default":null},' +
+		'{"name":"null_value_counts","type":["null",{"type":"array","items":{"type":"record","name":"r106","fields":[{"name":"key","type":"int"},{"name":"value","type":"long"}]}}],"default":null},' +
+		'{"name":"lower_bounds","type":["null",{"type":"array","items":{"type":"record","name":"r108","fields":[{"name":"key","type":"int"},{"name":"value","type":"bytes"}]}}],"default":null},' +
+		'{"name":"upper_bounds","type":["null",{"type":"array","items":{"type":"record","name":"r109","fields":[{"name":"key","type":"int"},{"name":"value","type":"bytes"}]}}],"default":null}' +
+		']}}}]}'
 
-	// partitions
-	sb.write_string('"partitions":[')
-	for i, file in data_files {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('${json.encode(file.partition)}')
+	// Generate 16-byte sync marker from snapshot/schema metadata
+	sync_source := '${w.table_metadata.table_uuid}-${w.table_metadata.current_snapshot_id}'
+	sync_marker := avro_generate_sync_marker(sync_source)
+
+	// Build Avro file-level metadata
+	mut meta_map := map[string]string{}
+	meta_map['avro.schema'] = manifest_schema
+	meta_map['avro.codec'] = 'null'
+	meta_map['iceberg.schema'] = manifest_schema
+	meta_map['format-version'] = w.table_metadata.format_version.str()
+	meta_map['partition-spec-id'] = w.table_metadata.default_spec_id.str()
+	meta_map['schema-id'] = w.table_metadata.current_schema_id.str()
+	meta_map['content'] = 'data'
+
+	mut buf := []u8{}
+
+	// Magic bytes: Obj\x01
+	buf << u8(`O`)
+	buf << u8(`b`)
+	buf << u8(`j`)
+	buf << u8(0x01)
+
+	// File-level metadata as Avro map<bytes>
+	avro_write_meta_map(mut buf, meta_map)
+
+	// Sync marker (16 bytes)
+	buf << sync_marker
+
+	// Encode each data file as a manifest_entry record
+	mut records_buf := []u8{}
+	for file in data_files {
+		avro_write_manifest_entry(mut records_buf, file, w.table_metadata.current_snapshot_id)
 	}
-	sb.write_string('],')
 
-	// files
-	sb.write_string('"files":[')
-	for i, file in data_files {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{')
-		sb.write_string('"filePath":"${file.file_path}",')
-		sb.write_string('"fileFormat":"${file.file_format}",')
-		sb.write_string('"recordCount":${file.record_count},')
-		sb.write_string('"fileSizeInBytes":${file.file_size_in_bytes}')
-		sb.write_string('}')
+	if records_buf.len > 0 {
+		// Block: [count][byte_count][data][sync_marker]
+		avro_write_varint(mut buf, i64(data_files.len))
+		avro_write_varint(mut buf, i64(records_buf.len))
+		buf << records_buf
+		buf << sync_marker
 	}
-	sb.write_string(']')
 
-	sb.write_string('}')
+	// End-of-file block: count=0
+	buf << u8(0)
 
-	return sb.str().bytes()
+	return buf
+}
+
+/// avro_generate_sync_marker generates a 16-byte sync marker from a string.
+fn avro_generate_sync_marker(source string) []u8 {
+	mut result := []u8{len: 16}
+	src_bytes := source.bytes()
+	for i in 0 .. 16 {
+		result[i] = if i < src_bytes.len { src_bytes[i] } else { u8(i * 13 + 7) }
+	}
+	// XOR mixing for better distribution
+	for i in 1 .. 16 {
+		result[i] ^= result[i - 1]
+	}
+	return result
+}
+
+/// avro_write_varint writes a zigzag-encoded varint to the buffer.
+fn avro_write_varint(mut buf []u8, n i64) {
+	// Zigzag encoding: (n << 1) ^ (n >> 63)
+	mut v := u64((n << 1) ^ (n >> 63))
+	for {
+		if v <= 0x7F {
+			buf << u8(v)
+			break
+		}
+		buf << u8((v & 0x7F) | 0x80)
+		v >>= 7
+	}
+}
+
+/// avro_write_string writes an Avro string (length-prefixed bytes).
+fn avro_write_string(mut buf []u8, s string) {
+	avro_write_varint(mut buf, i64(s.len))
+	buf << s.bytes()
+}
+
+/// avro_write_bytes writes Avro bytes (length-prefixed).
+fn avro_write_bytes(mut buf []u8, data []u8) {
+	avro_write_varint(mut buf, i64(data.len))
+	buf << data
+}
+
+/// avro_write_meta_map writes the Avro file-level metadata map<bytes>.
+fn avro_write_meta_map(mut buf []u8, meta map[string]string) {
+	if meta.len == 0 {
+		buf << u8(0)
+		return
+	}
+
+	// Map block: [count varint] followed by [key string][value bytes] pairs, then 0
+	avro_write_varint(mut buf, i64(meta.len))
+	for key, value in meta {
+		avro_write_string(mut buf, key)
+		avro_write_bytes(mut buf, value.bytes())
+	}
+	// End of map
+	buf << u8(0)
+}
+
+/// avro_write_nullable_long writes an Avro union [null, long] with non-null value.
+fn avro_write_nullable_long(mut buf []u8, value i64) {
+	// Union index 1 = long
+	avro_write_varint(mut buf, 1)
+	avro_write_varint(mut buf, value)
+}
+
+/// avro_write_manifest_entry writes a single manifest_entry Avro record.
+fn avro_write_manifest_entry(mut buf []u8, file IcebergDataFile, snapshot_id i64) {
+	// status: 1 = ADDED (int)
+	avro_write_varint(mut buf, 1)
+
+	// snapshot_id: union [null, long] - use snapshot_id
+	avro_write_nullable_long(mut buf, snapshot_id)
+
+	// sequence_number: union [null, long]
+	avro_write_nullable_long(mut buf, 0)
+
+	// file_sequence_number: union [null, long]
+	avro_write_nullable_long(mut buf, 0)
+
+	// data_file record:
+	// content: 0 = DATA
+	avro_write_varint(mut buf, 0)
+
+	// file_path: string
+	avro_write_string(mut buf, file.file_path)
+
+	// file_format: string
+	avro_write_string(mut buf, file.file_format)
+
+	// partition: empty record (no partition fields in schema for simplicity)
+	// (already encoded as an empty struct - nothing to write)
+
+	// record_count: long
+	avro_write_varint(mut buf, file.record_count)
+
+	// file_size_in_bytes: long
+	avro_write_varint(mut buf, file.file_size_in_bytes)
+
+	// column_sizes: union [null, array] - write null (union index 0)
+	buf << u8(0)
+
+	// value_counts: union [null, array] - write null
+	buf << u8(0)
+
+	// null_value_counts: union [null, array] - write null
+	buf << u8(0)
+
+	// lower_bounds: union [null, array] - write null
+	buf << u8(0)
+
+	// upper_bounds: union [null, array] - write null
+	buf << u8(0)
 }
 
 /// encode_metadata_json encodes table metadata as JSON.

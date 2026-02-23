@@ -264,6 +264,38 @@ pub mut:
 	metadata          TableMetadataRest @[json: 'metadata']
 }
 
+/// CommitTransactionRequest is a multi-table transaction commit request.
+pub struct CommitTransactionRequest {
+pub mut:
+	table_changes []TableChange @[json: 'table-changes']
+}
+
+/// TableChange is a single table change within a transaction.
+pub struct TableChange {
+pub mut:
+	identifier   TableIdentifierRest @[json: 'identifier']
+	requirements []TableRequirement  @[json: 'requirements']
+	updates      []TableUpdate       @[json: 'updates']
+}
+
+/// CommitTransactionResponse is a multi-table transaction commit response.
+pub struct CommitTransactionResponse {
+pub mut:
+	committed_changes []CommittedTableChange @[json: 'committed-changes']
+}
+
+/// CommittedTableChange is a single committed table change result.
+pub struct CommittedTableChange {
+pub mut:
+	identifier        TableIdentifierRest @[json: 'identifier']
+	metadata_location string              @[json: 'metadata-location']
+}
+
+/// to_json returns a JSON string.
+pub fn (r CommitTransactionResponse) to_json() string {
+	return json.encode(r)
+}
+
 /// RegisterTableRequest is a table registration request.
 pub struct RegisterTableRequest {
 pub mut:
