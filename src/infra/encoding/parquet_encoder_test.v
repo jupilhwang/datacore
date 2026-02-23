@@ -236,9 +236,9 @@ fn test_plain_int64_encoding() {
 	// by searching for known byte patterns of the first value (100 LE = 64 00 00 00 00 00 00 00)
 	mut found := false
 	for i := 0; i < page.len - 7; i++ {
-		if page[i] == 0x64 && page[i + 1] == 0x00 && page[i + 2] == 0x00
-			&& page[i + 3] == 0x00 && page[i + 4] == 0x00 && page[i + 5] == 0x00
-			&& page[i + 6] == 0x00 && page[i + 7] == 0x00 {
+		if page[i] == 0x64 && page[i + 1] == 0x00 && page[i + 2] == 0x00 && page[i + 3] == 0x00
+			&& page[i + 4] == 0x00 && page[i + 5] == 0x00 && page[i + 6] == 0x00
+			&& page[i + 7] == 0x00 {
 			found = true
 			break
 		}

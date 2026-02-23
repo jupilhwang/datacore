@@ -162,11 +162,13 @@ pub:
 	format_version int = 3
 }
 
-/// generate_table_uuid generates a new table UUID.
-pub fn generate_table_uuid() string {
-	now := time.now()
-	hash := md5.sum(now.str().bytes())
-	return '${hash[0..8].hex()}-${hash[8..12].hex()}-${hash[12..16].hex()}-${hash[16..20].hex()}-${hash[20..32].hex()}'
+/// generate_table_uuid generates a UUID for a new table.
+/// seed: deterministic input (e.g. table location or name) for reproducible UUIDs.
+///       Pass '' to fall back to a timestamp-based value.
+pub fn generate_table_uuid(seed string) string {
+	input := if seed != '' { seed } else { time.now().str() }
+	hash := md5.sum(input.bytes())
+	return '${hash[0..4].hex()}-${hash[4..6].hex()}-${hash[6..8].hex()}-${hash[8..10].hex()}-${hash[10..16].hex()}'
 }
 
 /// generate_snapshot_id generates a new snapshot ID.

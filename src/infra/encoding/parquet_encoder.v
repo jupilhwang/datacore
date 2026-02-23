@@ -201,9 +201,9 @@ pub mut:
 // ColumnData holds the collected values for a single column before encoding.
 struct ColumnData {
 mut:
-	name       string
-	dtype      ParquetDataType
-	required   bool
+	name     string
+	dtype    ParquetDataType
+	required bool
 	// For int64 columns (offset, timestamp)
 	i64_values []i64
 	// For int32 columns (partition)
@@ -336,7 +336,8 @@ fn encode_plain_int64_page(values []i64, null_count i64, codec i32) []u8 {
 
 // encode_plain_int64_page_opt encodes int64 values with optional definition levels.
 fn encode_plain_int64_page_opt(values []i64, null_count i64, is_optional bool, codec i32) []u8 {
-	mut data := []u8{}
+	// Pre-allocate: 8 bytes per int64 value
+	mut data := []u8{cap: values.len * 8}
 	for v in values {
 		uv := u64(v)
 		data << u8(uv & 0xFF)
@@ -359,7 +360,8 @@ fn encode_plain_int32_page(values []i32, null_count i64, codec i32) []u8 {
 
 // encode_plain_int32_page_opt encodes int32 values with optional definition levels.
 fn encode_plain_int32_page_opt(values []i32, null_count i64, is_optional bool, codec i32) []u8 {
-	mut data := []u8{}
+	// Pre-allocate: 4 bytes per int32 value
+	mut data := []u8{cap: values.len * 4}
 	for v in values {
 		uv := u32(v)
 		data << u8(uv & 0xFF)
@@ -379,7 +381,12 @@ fn encode_plain_byte_array_page(values [][]u8, null_count i64, codec i32) []u8 {
 
 // encode_plain_byte_array_page_opt encodes byte arrays with optional definition levels.
 fn encode_plain_byte_array_page_opt(values [][]u8, null_count i64, is_optional bool, codec i32) []u8 {
-	mut data := []u8{}
+	// Pre-allocate: 4-byte length header per value + sum of all value bytes
+	mut total_bytes := values.len * 4
+	for v in values {
+		total_bytes += v.len
+	}
+	mut data := []u8{cap: total_bytes}
 	for v in values {
 		l := u32(v.len)
 		data << u8(l & 0xFF)
@@ -402,7 +409,8 @@ fn encode_rle_definition_levels(count int) []u8 {
 	}
 	// Run-length header encodes (count << 1 | 0) meaning run-length mode with 'count' repetitions
 	run_header := u32(count) << 1
-	mut rle_data := []u8{}
+	// varint needs at most ceil(32/7)=5 bytes; +1 for the value byte
+	mut rle_data := []u8{cap: 6}
 	mut rh := run_header
 	for rh >= 0x80 {
 		rle_data << u8((rh & 0x7F) | 0x80)
@@ -413,7 +421,7 @@ fn encode_rle_definition_levels(count int) []u8 {
 	rle_data << u8(0x01)
 
 	rle_len := u32(rle_data.len)
-	mut result := []u8{}
+	mut result := []u8{cap: 4 + rle_data.len}
 	result << u8(rle_len & 0xFF)
 	result << u8((rle_len >> 8) & 0xFF)
 	result << u8((rle_len >> 16) & 0xFF)
@@ -426,7 +434,8 @@ fn encode_rle_definition_levels(count int) []u8 {
 // Page structure: Thrift PageHeader | page_body
 // page_body = [def_levels] + column_data
 // is_optional: if true, prepends RLE-encoded definition levels (max_def_level=1, all present).
-fn encode_data_page_v1(data []u8, num_values int, _ i64, is_optional bool, _ i32) []u8 {
+// _uncompressed_size and _codec are reserved for future compression support; currently unused.
+fn encode_data_page_v1(data []u8, num_values int, _uncompressed_size i64, is_optional bool, _codec i32) []u8 {
 	// Build definition levels if this is an optional column
 	def_levels_bytes := if is_optional {
 		encode_rle_definition_levels(num_values)
@@ -450,7 +459,8 @@ fn encode_data_page_v1(data []u8, num_values int, _ i64, is_optional bool, _ i32
 	dph_bytes := dph.bytes()
 
 	// Page body = definition_levels + column_data
-	mut page_body := []u8{}
+	page_body_len := def_levels_bytes.len + data.len
+	mut page_body := []u8{cap: page_body_len}
 	page_body << def_levels_bytes
 	page_body << data
 
@@ -472,7 +482,7 @@ fn encode_data_page_v1(data []u8, num_values int, _ i64, is_optional bool, _ i32
 	ph.write_struct_end()
 	ph_bytes := ph.bytes()
 
-	mut result := []u8{}
+	mut result := []u8{cap: ph_bytes.len + page_body.len}
 	result << ph_bytes
 	result << page_body
 	return result
@@ -480,7 +490,7 @@ fn encode_data_page_v1(data []u8, num_values int, _ i64, is_optional bool, _ i32
 
 // collect_column_data extracts per-column values from the record set.
 fn collect_column_data(records []ParquetRecord, schema ParquetSchema) []ColumnData {
-	mut cols := []ColumnData{}
+	mut cols := []ColumnData{cap: schema.columns.len}
 	for col in schema.columns {
 		cols << ColumnData{
 			name:     col.name
@@ -539,12 +549,12 @@ fn encode_column_chunk(col ColumnData, codec i32) ([]u8, i64) {
 	mut page_bytes := []u8{}
 	match col.dtype {
 		.int64, .timestamp_millis, .timestamp_micros {
-			page_bytes = encode_plain_int64_page_opt(col.i64_values, col.null_count,
-				is_optional, codec)
+			page_bytes = encode_plain_int64_page_opt(col.i64_values, col.null_count, is_optional,
+				codec)
 		}
 		.int32 {
-			page_bytes = encode_plain_int32_page_opt(col.i32_values, col.null_count,
-				is_optional, codec)
+			page_bytes = encode_plain_int32_page_opt(col.i32_values, col.null_count, is_optional,
+				codec)
 		}
 		else {
 			page_bytes = encode_plain_byte_array_page_opt(col.bytes_values, col.null_count,
@@ -817,15 +827,15 @@ fn encode_file_metadata(schema ParquetSchema, num_rows i64, col_chunks_meta []Co
 
 // ColChunkMeta holds metadata about a single column chunk for footer encoding.
 struct ColChunkMeta {
-	col_name      string
-	physical_type i32
-	file_offset   i64
+	col_name         string
+	physical_type    i32
+	file_offset      i64
 	data_page_offset i64
-	total_size    i64
-	num_values    i64
-	null_count    i64
-	min_val       []u8
-	max_val       []u8
+	total_size       i64
+	num_values       i64
+	null_count       i64
+	min_val          []u8
+	max_val          []u8
 }
 
 /// encode encodes all records in the current buffer to real Parquet format.
@@ -842,14 +852,15 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	// Collect column values
 	cols := collect_column_data(e.records, schema)
 
-	// Start building the file bytes
-	mut file_bytes := []u8{}
+	// Estimate initial file buffer capacity: magic(4) + ~100 bytes overhead per record + magic(4)
+	estimated_size := 8 + int(e.current_size) + 4096
+	mut file_bytes := []u8{cap: estimated_size}
 
 	// 1. Write magic number at start
 	file_bytes << parquet_magic
 
 	// 2. Encode each column chunk and append to file
-	mut col_metas := []ColChunkMeta{}
+	mut col_metas := []ColChunkMeta{cap: cols.len}
 
 	for col in cols {
 		chunk_start := i64(file_bytes.len)
@@ -920,7 +931,7 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 
 	mut row_group := ParquetRowGroup{
 		row_count: e.records.len
-		columns:   []
+		columns:   []ParquetColumnChunk{cap: col_metas.len}
 	}
 
 	for cm in col_metas {
@@ -953,7 +964,7 @@ pub fn encode_batch(records []ParquetRecord, compression ParquetCompression) !([
 	mut encoder := ParquetEncoder{
 		compression:   compression
 		buffer:        []
-		records:       records.clone()
+		records:       records
 		current_size:  i64(records.len * 100)
 		max_file_size: 134217728
 	}
@@ -1005,9 +1016,9 @@ pub fn extract_parquet_info(data []u8, file_path string) ParquetFileInfo {
 	_ = u32(footer_len_bytes[0]) | (u32(footer_len_bytes[1]) << 8) | (u32(footer_len_bytes[2]) << 16) | (u32(footer_len_bytes[3]) << 24)
 
 	return ParquetFileInfo{
-		file_path:   file_path
+		file_path:    file_path
 		record_count: 0
-		file_size:   i64(data.len)
-		compression: 'UNCOMPRESSED'
+		file_size:    i64(data.len)
+		compression:  'UNCOMPRESSED'
 	}
 }

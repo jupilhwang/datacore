@@ -50,8 +50,9 @@ pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, sch
 		return error('Table already exists: ${identifier.name}')
 	}
 
-	// Generate table UUID
-	table_uuid := generate_table_uuid()
+	// Generate table UUID deterministically from location so the same table
+	// recreated at the same path always yields the same UUID.
+	table_uuid := generate_table_uuid(location)
 	now := time.now()
 
 	// Create initial metadata
@@ -75,7 +76,7 @@ pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, sch
 	metadata_path := '${table_path}/metadata/00001-${table_uuid}.metadata.json'
 
 	// Generate and save metadata JSON
-	metadata_json := c.encode_metadata(metadata)
+	metadata_json := encode_metadata(metadata)
 	c.adapter.put_object(metadata_path, metadata_json.bytes())!
 
 	// Create version hint file (tracks current metadata version)
@@ -137,7 +138,7 @@ pub fn (mut c HadoopCatalog) update_table(identifier IcebergTableIdentifier, met
 	metadata_path := '${table_path}/metadata/${new_version:05d}-${metadata.table_uuid}.metadata.json'
 
 	// Save metadata
-	metadata_json := c.encode_metadata(metadata)
+	metadata_json := encode_metadata(metadata)
 	c.adapter.put_object(metadata_path, metadata_json.bytes())!
 
 	// Update version hint
@@ -234,7 +235,7 @@ pub fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, 
 	new_version := metadata.snapshots.len + 1
 	metadata_path := '${table_path}/metadata/${new_version:05d}-${metadata.table_uuid}.metadata.json'
 
-	metadata_json := c.encode_metadata(metadata)
+	metadata_json := encode_metadata(metadata)
 	c.adapter.put_object(metadata_path, metadata_json.bytes())!
 
 	version_hint_path := '${table_path}/metadata/version-hint.text'
@@ -264,9 +265,11 @@ fn (mut c HadoopCatalog) namespace_path(namespace []string) string {
 }
 
 /// encode_metadata encodes metadata as a JSON string.
-fn (mut c HadoopCatalog) encode_metadata(metadata IcebergMetadata) string {
-	// Iceberg metadata JSON format - build string directly
-	mut sb := strings.new_builder(4096)
+fn encode_metadata(metadata IcebergMetadata) string {
+	// Estimate initial capacity: base fields + per-schema/snapshot overhead
+	estimated_size := 512 + metadata.schemas.len * 256 + metadata.partition_specs.len * 128 +
+		metadata.snapshots.len * 512
+	mut sb := strings.new_builder(estimated_size)
 
 	sb.write_string('{')
 	sb.write_string('"formatVersion":${metadata.format_version},')
@@ -349,21 +352,13 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 	mut metadata := IcebergMetadata{}
 
 	// format-version / formatVersion
-	if v := json_extract_int(json_str, 'format-version') {
-		metadata.format_version = v
-	} else if v2 := json_extract_int(json_str, 'formatVersion') {
-		metadata.format_version = v2
-	} else {
-		metadata.format_version = 2
+	metadata.format_version = json_extract_int_dual(json_str, 'format-version', 'formatVersion') or {
+		2
 	}
 
 	// table-uuid / tableUuid
-	if v := json_extract_string(json_str, 'table-uuid') {
-		metadata.table_uuid = v
-	} else if v2 := json_extract_string(json_str, 'tableUuid') {
-		metadata.table_uuid = v2
-	} else {
-		metadata.table_uuid = generate_table_uuid()
+	metadata.table_uuid = json_extract_string_dual(json_str, 'table-uuid', 'tableUuid') or {
+		generate_table_uuid(json_str)
 	}
 
 	// location
@@ -372,34 +367,23 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 	}
 
 	// last-updated-ms / lastUpdatedMs
-	if v := json_extract_i64(json_str, 'last-updated-ms') {
-		metadata.last_updated_ms = v
-	} else if v2 := json_extract_i64(json_str, 'lastUpdatedMs') {
-		metadata.last_updated_ms = v2
-	} else {
-		metadata.last_updated_ms = time.now().unix_milli()
+	metadata.last_updated_ms = json_extract_i64_dual(json_str, 'last-updated-ms', 'lastUpdatedMs') or {
+		time.now().unix_milli()
 	}
 
 	// current-schema-id / currentSchemaId
-	if v := json_extract_int(json_str, 'current-schema-id') {
-		metadata.current_schema_id = v
-	} else if v2 := json_extract_int(json_str, 'currentSchemaId') {
-		metadata.current_schema_id = v2
+	metadata.current_schema_id = json_extract_int_dual(json_str, 'current-schema-id', 'currentSchemaId') or {
+		0
 	}
 
 	// default-spec-id / defaultSpecId
-	if v := json_extract_int(json_str, 'default-spec-id') {
-		metadata.default_spec_id = v
-	} else if v2 := json_extract_int(json_str, 'defaultSpecId') {
-		metadata.default_spec_id = v2
+	metadata.default_spec_id = json_extract_int_dual(json_str, 'default-spec-id', 'defaultSpecId') or {
+		0
 	}
 
 	// current-snapshot-id / currentSnapshotId
-	if v := json_extract_i64(json_str, 'current-snapshot-id') {
-		metadata.current_snapshot_id = v
-	} else if v2 := json_extract_i64(json_str, 'currentSnapshotId') {
-		metadata.current_snapshot_id = v2
-	}
+	metadata.current_snapshot_id = json_extract_i64_dual(json_str, 'current-snapshot-id',
+		'currentSnapshotId') or { i64(0) }
 
 	// properties
 	if props_str := json_extract_object(json_str, 'properties') {
@@ -412,10 +396,8 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 	}
 
 	// partition-specs / partitionSpecs
-	if specs_str := json_extract_array(json_str, 'partition-specs') {
+	if specs_str := json_extract_array_dual(json_str, 'partition-specs', 'partitionSpecs') {
 		metadata.partition_specs = json_parse_partition_specs(specs_str)
-	} else if specs_str2 := json_extract_array(json_str, 'partitionSpecs') {
-		metadata.partition_specs = json_parse_partition_specs(specs_str2)
 	}
 
 	// snapshots
@@ -428,87 +410,137 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 
 // --- JSON parsing helpers ---
 
+// json_extract_string_dual tries kebab key first, then camelCase key.
+fn json_extract_string_dual(json_str string, kebab string, camel string) ?string {
+	if v := json_extract_string(json_str, kebab) {
+		return v
+	}
+	return json_extract_string(json_str, camel)
+}
+
+// json_extract_int_dual tries kebab key first, then camelCase key.
+fn json_extract_int_dual(json_str string, kebab string, camel string) ?int {
+	if v := json_extract_int(json_str, kebab) {
+		return v
+	}
+	return json_extract_int(json_str, camel)
+}
+
+// json_extract_i64_dual tries kebab key first, then camelCase key.
+fn json_extract_i64_dual(json_str string, kebab string, camel string) ?i64 {
+	if v := json_extract_i64(json_str, kebab) {
+		return v
+	}
+	return json_extract_i64(json_str, camel)
+}
+
+// json_extract_array_dual tries kebab key first, then camelCase key.
+fn json_extract_array_dual(json_str string, kebab string, camel string) ?string {
+	if v := json_extract_array(json_str, kebab) {
+		return v
+	}
+	return json_extract_array(json_str, camel)
+}
+
+// json_find_value_start finds the start index of the value after "key": in json_str,
+// returning the offset into json_str where the value begins (skipping whitespace).
+// Returns -1 if not found.
+fn json_find_value_start(json_str string, key string) int {
+	needle := '"${key}"'
+	key_idx := json_str.index(needle) or { return -1 }
+	mut pos := key_idx + needle.len
+
+	// Skip to ':'
+	for pos < json_str.len && json_str[pos] != `:` {
+		pos++
+	}
+	if pos >= json_str.len {
+		return -1
+	}
+	pos++ // skip ':'
+
+	// Skip whitespace
+	for pos < json_str.len
+		&& (json_str[pos] == ` ` || json_str[pos] == `\t` || json_str[pos] == `\n` || json_str[pos] == `\r`) {
+		pos++
+	}
+	if pos >= json_str.len {
+		return -1
+	}
+	return pos
+}
+
 /// json_extract_string extracts a string value by key from a flat JSON object.
 fn json_extract_string(json_str string, key string) ?string {
-	needle := '"${key}"'
-	idx := json_str.index(needle) or { return none }
-	rest := json_str[idx + needle.len..]
-	colon_idx := rest.index(':') or { return none }
-	after_colon := rest[colon_idx + 1..].trim_space()
-
-	if after_colon.starts_with('"') {
-		// String value
-		end := after_colon[1..].index('"') or { return none }
-		return after_colon[1..end + 1]
+	pos := json_find_value_start(json_str, key)
+	if pos < 0 || json_str[pos] != `"` {
+		return none
 	}
-	return none
+	// pos points to opening quote; find closing quote
+	start := pos + 1
+	mut end := start
+	for end < json_str.len && json_str[end] != `"` {
+		end++
+	}
+	if end >= json_str.len {
+		return none
+	}
+	return json_str[start..end]
 }
 
 /// json_extract_int extracts an integer value by key from a flat JSON object.
 fn json_extract_int(json_str string, key string) ?int {
-	needle := '"${key}"'
-	idx := json_str.index(needle) or { return none }
-	rest := json_str[idx + needle.len..]
-	colon_idx := rest.index(':') or { return none }
-	after_colon := rest[colon_idx + 1..].trim_space()
-
-	// Read until non-numeric
-	mut end := 0
-	for end < after_colon.len && (after_colon[end] >= `0` && after_colon[end] <= `9`
-		|| (end == 0 && after_colon[end] == `-`)) {
-		end++
-	}
-	if end == 0 {
+	pos := json_find_value_start(json_str, key)
+	if pos < 0 {
 		return none
 	}
-	return after_colon[0..end].int()
+
+	// Read until non-numeric
+	mut end := pos
+	for end < json_str.len
+		&& ((json_str[end] >= `0` && json_str[end] <= `9`) || (end == pos && json_str[end] == `-`)) {
+		end++
+	}
+	if end == pos {
+		return none
+	}
+	return json_str[pos..end].int()
 }
 
 /// json_extract_i64 extracts an i64 value by key from a flat JSON object.
 fn json_extract_i64(json_str string, key string) ?i64 {
-	needle := '"${key}"'
-	idx := json_str.index(needle) or { return none }
-	rest := json_str[idx + needle.len..]
-	colon_idx := rest.index(':') or { return none }
-	after_colon := rest[colon_idx + 1..].trim_space()
-
-	mut end := 0
-	for end < after_colon.len && (after_colon[end] >= `0` && after_colon[end] <= `9`
-		|| (end == 0 && after_colon[end] == `-`)) {
-		end++
-	}
-	if end == 0 {
+	pos := json_find_value_start(json_str, key)
+	if pos < 0 {
 		return none
 	}
-	return after_colon[0..end].i64()
+
+	mut end := pos
+	for end < json_str.len
+		&& ((json_str[end] >= `0` && json_str[end] <= `9`) || (end == pos && json_str[end] == `-`)) {
+		end++
+	}
+	if end == pos {
+		return none
+	}
+	return json_str[pos..end].i64()
 }
 
 /// json_extract_object extracts a JSON object {...} by key.
 fn json_extract_object(json_str string, key string) ?string {
-	needle := '"${key}"'
-	idx := json_str.index(needle) or { return none }
-	rest := json_str[idx + needle.len..]
-	colon_idx := rest.index(':') or { return none }
-	after_colon := rest[colon_idx + 1..].trim_space()
-
-	if !after_colon.starts_with('{') {
+	pos := json_find_value_start(json_str, key)
+	if pos < 0 || json_str[pos] != `{` {
 		return none
 	}
-	return json_find_matching_brace(after_colon, `{`, `}`)
+	return json_find_matching_brace(json_str[pos..], `{`, `}`)
 }
 
 /// json_extract_array extracts a JSON array [...] by key.
 fn json_extract_array(json_str string, key string) ?string {
-	needle := '"${key}"'
-	idx := json_str.index(needle) or { return none }
-	rest := json_str[idx + needle.len..]
-	colon_idx := rest.index(':') or { return none }
-	after_colon := rest[colon_idx + 1..].trim_space()
-
-	if !after_colon.starts_with('[') {
+	pos := json_find_value_start(json_str, key)
+	if pos < 0 || json_str[pos] != `[` {
 		return none
 	}
-	return json_find_matching_brace(after_colon, `[`, `]`)
+	return json_find_matching_brace(json_str[pos..], `[`, `]`)
 }
 
 /// json_find_matching_brace finds the matching closing brace/bracket.
@@ -564,8 +596,8 @@ fn json_parse_string_map(obj_str string) map[string]string {
 	mut pos := 0
 	for pos < inner.len {
 		// Skip whitespace and commas
-		for pos < inner.len && (inner[pos] == ` ` || inner[pos] == `\t`
-			|| inner[pos] == `\n` || inner[pos] == `,`) {
+		for pos < inner.len
+			&& (inner[pos] == ` ` || inner[pos] == `\t` || inner[pos] == `\n` || inner[pos] == `,`) {
 			pos++
 		}
 		if pos >= inner.len {
@@ -636,8 +668,8 @@ fn json_split_array_items(arr_str string) []string {
 	mut pos := 0
 	for pos < inner.len {
 		// Skip commas and whitespace
-		for pos < inner.len && (inner[pos] == `,` || inner[pos] == ` ` || inner[pos] == `\n`
-			|| inner[pos] == `\t`) {
+		for pos < inner.len
+			&& (inner[pos] == `,` || inner[pos] == ` ` || inner[pos] == `\n` || inner[pos] == `\t`) {
 			pos++
 		}
 		if pos >= inner.len {
@@ -678,11 +710,7 @@ fn json_parse_schemas(arr_str string) []IcebergSchema {
 	items := json_split_array_items(arr_str)
 	for item in items {
 		mut schema := IcebergSchema{}
-		if v := json_extract_int(item, 'schema-id') {
-			schema.schema_id = v
-		} else if v2 := json_extract_int(item, 'schemaId') {
-			schema.schema_id = v2
-		}
+		schema.schema_id = json_extract_int_dual(item, 'schema-id', 'schemaId') or { 0 }
 		if fields_str := json_extract_array(item, 'fields') {
 			schema.fields = json_parse_fields(fields_str)
 		}
@@ -724,11 +752,7 @@ fn json_parse_partition_specs(arr_str string) []IcebergPartitionSpec {
 	items := json_split_array_items(arr_str)
 	for item in items {
 		mut spec := IcebergPartitionSpec{}
-		if v := json_extract_int(item, 'spec-id') {
-			spec.spec_id = v
-		} else if v2 := json_extract_int(item, 'specId') {
-			spec.spec_id = v2
-		}
+		spec.spec_id = json_extract_int_dual(item, 'spec-id', 'specId') or { 0 }
 		if fields_str := json_extract_array(item, 'fields') {
 			spec.fields = json_parse_partition_fields(fields_str)
 		}
@@ -743,16 +767,8 @@ fn json_parse_partition_fields(arr_str string) []IcebergPartitionField {
 	items := json_split_array_items(arr_str)
 	for item in items {
 		mut pfield := IcebergPartitionField{}
-		if v := json_extract_int(item, 'source-id') {
-			pfield.source_id = v
-		} else if v2 := json_extract_int(item, 'sourceId') {
-			pfield.source_id = v2
-		}
-		if v := json_extract_int(item, 'field-id') {
-			pfield.field_id = v
-		} else if v2 := json_extract_int(item, 'fieldId') {
-			pfield.field_id = v2
-		}
+		pfield.source_id = json_extract_int_dual(item, 'source-id', 'sourceId') or { 0 }
+		pfield.field_id = json_extract_int_dual(item, 'field-id', 'fieldId') or { 0 }
 		if v := json_extract_string(item, 'name') {
 			pfield.name = v
 		}
@@ -770,26 +786,14 @@ fn json_parse_snapshots(arr_str string) []IcebergSnapshot {
 	items := json_split_array_items(arr_str)
 	for item in items {
 		mut snap := IcebergSnapshot{}
-		if v := json_extract_i64(item, 'snapshot-id') {
-			snap.snapshot_id = v
-		} else if v2 := json_extract_i64(item, 'snapshotId') {
-			snap.snapshot_id = v2
+		snap.snapshot_id = json_extract_i64_dual(item, 'snapshot-id', 'snapshotId') or { i64(0) }
+		snap.timestamp_ms = json_extract_i64_dual(item, 'timestamp-ms', 'timestampMs') or {
+			i64(0)
 		}
-		if v := json_extract_i64(item, 'timestamp-ms') {
-			snap.timestamp_ms = v
-		} else if v2 := json_extract_i64(item, 'timestampMs') {
-			snap.timestamp_ms = v2
+		snap.manifest_list = json_extract_string_dual(item, 'manifest-list', 'manifestList') or {
+			''
 		}
-		if v := json_extract_string(item, 'manifest-list') {
-			snap.manifest_list = v
-		} else if v2 := json_extract_string(item, 'manifestList') {
-			snap.manifest_list = v2
-		}
-		if v := json_extract_int(item, 'schema-id') {
-			snap.schema_id = v
-		} else if v2 := json_extract_int(item, 'schemaId') {
-			snap.schema_id = v2
-		}
+		snap.schema_id = json_extract_int_dual(item, 'schema-id', 'schemaId') or { 0 }
 		if summary_str := json_extract_object(item, 'summary') {
 			snap.summary = json_parse_string_map(summary_str)
 		}
@@ -802,13 +806,13 @@ fn json_parse_snapshots(arr_str string) []IcebergSnapshot {
 /// Connects to AWS Glue via HTTP API with SigV4 authentication.
 pub struct GlueCatalog {
 pub mut:
-	region         string
-	warehouse      string
-	adapter        &S3StorageAdapter
-	access_key     string
-	secret_key     string
-	session_token  string
-	glue_endpoint  string
+	region        string
+	warehouse     string
+	adapter       &S3StorageAdapter
+	access_key    string
+	secret_key    string
+	session_token string
+	glue_endpoint string
 }
 
 /// new_glue_catalog creates a new Glue catalog.
@@ -842,7 +846,7 @@ pub fn new_glue_catalog_with_credentials(adapter &S3StorageAdapter, region strin
 /// create_table creates a new table in Glue.
 pub fn (c &GlueCatalog) create_table(identifier IcebergTableIdentifier, schema IcebergSchema, spec IcebergPartitionSpec, location string) !IcebergMetadata {
 	db_name := if identifier.namespace.len > 0 { identifier.namespace[0] } else { 'default' }
-	table_uuid := generate_table_uuid()
+	table_uuid := generate_table_uuid(location)
 	now := time.now()
 
 	metadata := IcebergMetadata{
@@ -862,8 +866,7 @@ pub fn (c &GlueCatalog) create_table(identifier IcebergTableIdentifier, schema I
 	}
 
 	// Encode metadata as Iceberg-compatible JSON
-	mut catalog := new_hadoop_catalog(c.adapter, c.warehouse)
-	metadata_json := catalog.encode_metadata(metadata)
+	metadata_json := encode_metadata(metadata)
 
 	// Glue CreateTable request body
 	request_body := c.build_create_table_request(db_name, identifier.name, location, metadata_json,
@@ -892,8 +895,7 @@ pub fn (c &GlueCatalog) load_table(identifier IcebergTableIdentifier) !IcebergMe
 pub fn (c &GlueCatalog) update_table(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
 	db_name := if identifier.namespace.len > 0 { identifier.namespace[0] } else { 'default' }
 
-	mut catalog := new_hadoop_catalog(c.adapter, c.warehouse)
-	metadata_json := catalog.encode_metadata(metadata)
+	metadata_json := encode_metadata(metadata)
 
 	request_body := c.build_update_table_request(db_name, identifier.name, metadata.location,
 		metadata_json)
@@ -976,7 +978,8 @@ fn (c &GlueCatalog) call_glue_api(action string, body string) !string {
 
 	// Build authorization header if credentials are present
 	if c.access_key.len > 0 && c.secret_key.len > 0 {
-		auth := c.sigv4_authorization('POST', '/', '', req_headers, body, date_stamp, amz_date)
+		auth := c.sigv4_authorization('POST', '/', '', req_headers, body, date_stamp,
+			amz_date)
 		req_headers['Authorization'] = auth
 	}
 
@@ -1062,8 +1065,7 @@ fn (c &GlueCatalog) build_create_table_request(db_name string, table_name string
 	col_defs.write_string(']')
 
 	return '{"DatabaseName":"${db_name}","TableInput":{"Name":"${table_name}",' +
-		'"StorageDescriptor":{"Columns":${col_defs.str()},' +
-		'"Location":"${location}",' +
+		'"StorageDescriptor":{"Columns":${col_defs.str()},' + '"Location":"${location}",' +
 		'"InputFormat":"org.apache.iceberg.mr.mapred.IcebergInputFormat",' +
 		'"OutputFormat":"org.apache.iceberg.mr.mapred.IcebergOutputFormat",' +
 		'"SerdeInfo":{"SerializationLibrary":"org.apache.iceberg.mr.hive.HiveIcebergSerDe"}},' +
@@ -1093,11 +1095,15 @@ fn (c &GlueCatalog) parse_glue_table_response(response string, identifier Iceber
 	}
 
 	// Fallback: reconstruct from Glue table structure
-	location_str := if loc := json_extract_string(response, 'Location') { loc } else { '${c.warehouse}/${identifier.name}' }
+	location_str := if loc := json_extract_string(response, 'Location') {
+		loc
+	} else {
+		'${c.warehouse}/${identifier.name}'
+	}
 
 	return IcebergMetadata{
 		format_version:      2
-		table_uuid:          generate_table_uuid()
+		table_uuid:          generate_table_uuid(location_str)
 		location:            location_str
 		last_updated_ms:     time.now().unix_milli()
 		schemas:             [create_default_schema()]
@@ -1154,7 +1160,7 @@ fn iceberg_type_to_glue(iceberg_type string) string {
 }
 
 /// load_metadata_at loads Iceberg metadata from a specific metadata file path via S3 adapter.
-pub fn (c &GlueCatalog) load_metadata_at(metadata_location string) !IcebergMetadata {
+pub fn (mut c GlueCatalog) load_metadata_at(metadata_location string) !IcebergMetadata {
 	data, _ := c.adapter.get_object(metadata_location, -1, -1) or {
 		return error('Failed to read metadata at ${metadata_location}: ${err}')
 	}
@@ -1187,7 +1193,9 @@ pub fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hado
 	// Upsert: try create first, fall back to update when the table already exists in Glue.
 	c.create_table(identifier, schema, spec, location) or {
 		// Table already exists in Glue — sync metadata via update_table instead.
-		c.update_table(identifier, metadata) or { return err }
+		c.update_table(identifier, metadata) or {
+			return error('export_table failed: create_table failed, update_table also failed for ${identifier.name}: ${err}')
+		}
 		return metadata
 	}
 	return metadata

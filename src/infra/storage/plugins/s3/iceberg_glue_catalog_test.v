@@ -10,8 +10,8 @@ module s3
 // without a real S3 backend.
 fn build_test_hadoop_catalog() HadoopCatalog {
 	return HadoopCatalog{
-		adapter:   &S3StorageAdapter{}
-		warehouse: 's3://test-bucket/warehouse'
+		adapter:    &S3StorageAdapter{}
+		warehouse:  's3://test-bucket/warehouse'
 		properties: {}
 	}
 }

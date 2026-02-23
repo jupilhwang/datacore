@@ -507,16 +507,16 @@ fn (mut api IcebergCatalogAPI) rename_table(body string) (int, string) {
 
 	// Load source table metadata
 	metadata := api.catalog.load_table(src) or {
-		return api.error_response(404, 'Source table not found: ${req.source.namespace.join(".")}.${req.source.name}')
+		return api.error_response(404, 'Source table not found: ${req.source.namespace.join('.')}.${req.source.name}')
 	}
 
 	// Ensure destination namespace exists
 	if !api.catalog.namespace_exists(dst.namespace) {
-		return api.error_response(404, 'Destination namespace not found: ${dst.namespace.join(".")}')
+		return api.error_response(404, 'Destination namespace not found: ${dst.namespace.join('.')}')
 	}
 
 	// Create destination table with copied metadata
-	dst_location := '${api.warehouse}/${dst.namespace.join("/")}/${dst.name}'
+	dst_location := '${api.warehouse}/${dst.namespace.join('/')}/${dst.name}'
 	mut dst_metadata := metadata
 	dst_metadata.location = dst_location
 
@@ -570,7 +570,7 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 
 		// Load current metadata for this table
 		mut metadata := api.catalog.load_table(identifier) or {
-			return api.error_response(404, 'Table not found: ${change.identifier.namespace.join(".")}.${change.identifier.name}')
+			return api.error_response(404, 'Table not found: ${change.identifier.namespace.join('.')}.${change.identifier.name}')
 		}
 
 		// Validate requirements

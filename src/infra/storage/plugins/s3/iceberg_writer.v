@@ -343,12 +343,10 @@ fn (w &IcebergWriter) encode_manifest(data_files []IcebergDataFile) ![]u8 {
 		'{"name":"sequence_number","type":["null","long"],"default":null},' +
 		'{"name":"file_sequence_number","type":["null","long"],"default":null},' +
 		'{"name":"data_file","type":{"type":"record","name":"r2","fields":[' +
-		'{"name":"content","type":"int"},' +
-		'{"name":"file_path","type":"string"},' +
+		'{"name":"content","type":"int"},' + '{"name":"file_path","type":"string"},' +
 		'{"name":"file_format","type":"string"},' +
 		'{"name":"partition","type":{"type":"record","name":"r102","fields":[]}},' +
-		'{"name":"record_count","type":"long"},' +
-		'{"name":"file_size_in_bytes","type":"long"},' +
+		'{"name":"record_count","type":"long"},' + '{"name":"file_size_in_bytes","type":"long"},' +
 		'{"name":"column_sizes","type":["null",{"type":"array","items":{"type":"record","name":"r104","fields":[{"name":"key","type":"int"},{"name":"value","type":"long"}]}}],"default":null},' +
 		'{"name":"value_counts","type":["null",{"type":"array","items":{"type":"record","name":"r105","fields":[{"name":"key","type":"int"},{"name":"value","type":"long"}]}}],"default":null},' +
 		'{"name":"null_value_counts","type":["null",{"type":"array","items":{"type":"record","name":"r106","fields":[{"name":"key","type":"int"},{"name":"value","type":"long"}]}}],"default":null},' +

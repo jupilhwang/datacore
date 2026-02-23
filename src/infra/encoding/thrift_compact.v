@@ -29,15 +29,17 @@ pub mut:
 // new_thrift_writer creates a new ThriftWriter.
 pub fn new_thrift_writer() ThriftWriter {
 	return ThriftWriter{
-		buf:           []u8{}
+		// Pre-allocate a reasonable default capacity to avoid early reallocations.
+		buf:           []u8{cap: 256}
 		last_field_id: 0
-		field_stack:   []i16{}
+		field_stack:   []i16{cap: 8}
 	}
 }
 
 // bytes returns the encoded bytes.
+// Returns a reference to the internal buffer — callers must not modify the ThriftWriter after calling bytes().
 pub fn (w &ThriftWriter) bytes() []u8 {
-	return w.buf.clone()
+	return w.buf
 }
 
 // write_varint32 encodes an unsigned 32-bit integer as a variable-length integer.
@@ -144,8 +146,28 @@ pub fn (mut w ThriftWriter) write_binary(field_id i16, data []u8) {
 }
 
 // write_string writes a UTF-8 string field.
+// Writes directly from the string's internal byte representation to avoid an intermediate []u8 allocation.
 pub fn (mut w ThriftWriter) write_string(field_id i16, val string) {
-	w.write_binary(field_id, val.bytes())
+	w.write_field_header(thrift_type_binary, field_id)
+	w.write_varint32(u32(val.len))
+	for i in 0 .. val.len {
+		w.buf << val[i]
+	}
+}
+
+// write_raw_binary writes a raw binary value (length-prefixed) without field header.
+pub fn (mut w ThriftWriter) write_raw_binary(data []u8) {
+	w.write_varint32(u32(data.len))
+	w.buf << data
+}
+
+// write_raw_string writes a raw string value without field header.
+// Writes directly from the string's internal byte representation to avoid an intermediate []u8 allocation.
+pub fn (mut w ThriftWriter) write_raw_string(val string) {
+	w.write_varint32(u32(val.len))
+	for i in 0 .. val.len {
+		w.buf << val[i]
+	}
 }
 
 // write_list_begin writes a list header (element type and count).
@@ -170,17 +192,6 @@ pub fn (mut w ThriftWriter) write_raw_i32(val i32) {
 // write_raw_i64 writes an i64 value directly as zigzag varint (no field header).
 pub fn (mut w ThriftWriter) write_raw_i64(val i64) {
 	w.write_varint64(zigzag64(val))
-}
-
-// write_raw_binary writes a raw binary value (length-prefixed) without field header.
-pub fn (mut w ThriftWriter) write_raw_binary(data []u8) {
-	w.write_varint32(u32(data.len))
-	w.buf << data
-}
-
-// write_raw_string writes a raw string value without field header.
-pub fn (mut w ThriftWriter) write_raw_string(val string) {
-	w.write_raw_binary(val.bytes())
 }
 
 // write_raw_struct_begin starts an inline struct (within a list, etc.) - saves field context.

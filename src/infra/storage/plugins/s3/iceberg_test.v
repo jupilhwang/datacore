@@ -98,8 +98,7 @@ fn test_decode_metadata_roundtrip() {
 	import_json := '{"formatVersion":2,"tableUuid":"11111111-2222-3333-4444-555555555555",' +
 		'"location":"s3://test-bucket/warehouse/mydb/mytable",' +
 		'"lastUpdatedMs":1700000000000,"currentSchemaId":0,"defaultSpecId":0,' +
-		'"currentSnapshotId":0,' +
-		'"properties":{"owner":"datacore"},' +
+		'"currentSnapshotId":0,' + '"properties":{"owner":"datacore"},' +
 		'"schemas":[{"schemaId":0,"fields":[{"id":1,"name":"offset","type":"long","required":true}]}],' +
 		'"partitionSpecs":[{"specId":0,"fields":[{"sourceId":2,"fieldId":1000,"name":"ts_day","transform":"day"}]}],' +
 		'"snapshots":[]}'
@@ -226,10 +225,10 @@ fn test_encode_manifest_empty_files() {
 	schema := create_default_schema()
 	spec := create_default_partition_spec()
 	metadata := IcebergMetadata{
-		format_version:    2
-		table_uuid:        '00000000-0000-0000-0000-000000000002'
-		schemas:           [schema]
-		partition_specs:   [spec]
+		format_version:  2
+		table_uuid:      '00000000-0000-0000-0000-000000000002'
+		schemas:         [schema]
+		partition_specs: [spec]
 	}
 
 	writer := build_test_writer(metadata, schema, spec)
@@ -308,4 +307,3 @@ fn build_test_writer(metadata IcebergMetadata, schema IcebergSchema, spec Iceber
 		partition_buffers: {}
 	}
 }
-
