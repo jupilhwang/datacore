@@ -83,7 +83,11 @@ jobs:
       - name: Build
         run: |
           cd src
-          v -prod -enable-globals -d use_openssl -cflags -static -o ../bin/${{ matrix.artifact_name }} .
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            v -prod -enable-globals -d use_openssl -o ../bin/${{ matrix.artifact_name }} .
+          else
+            v -prod -enable-globals -d use_openssl -cflags -static -o ../bin/${{ matrix.artifact_name }} .
+          fi
 
       - name: Create archive
         run: |
