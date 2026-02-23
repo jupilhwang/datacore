@@ -224,6 +224,23 @@ pub fn (mut c HadoopCatalog) load_metadata_at(metadata_location string) !Iceberg
 	}
 	return c.decode_metadata(data.bytestr())
 }
+
+/// commit_metadata writes the given metadata as a new versioned metadata JSON file to S3
+/// and updates the version-hint.text pointer.
+pub fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
+	table_path := c.table_path(identifier)
+
+	// Derive next version number from existing snapshot count (same convention as update_table)
+	new_version := metadata.snapshots.len + 1
+	metadata_path := '${table_path}/metadata/${new_version:05d}-${metadata.table_uuid}.metadata.json'
+
+	metadata_json := c.encode_metadata(metadata)
+	c.adapter.put_object(metadata_path, metadata_json.bytes())!
+
+	version_hint_path := '${table_path}/metadata/version-hint.text'
+	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
+}
+
 fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {
 	table_path := c.table_path(identifier)
 	metadata_path := '${table_path}/metadata/'
@@ -1143,6 +1160,75 @@ pub fn (c &GlueCatalog) load_metadata_at(metadata_location string) !IcebergMetad
 	}
 	mut tmp_catalog := new_hadoop_catalog(c.adapter, c.warehouse)
 	return tmp_catalog.decode_metadata(data.bytestr())
+}
+
+// --- GlueCatalog <-> HadoopCatalog synchronization ---
+
+/// export_table loads a single table from HadoopCatalog and upserts it into GlueCatalog.
+/// Returns the metadata that was written to Glue.
+pub fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) !IcebergMetadata {
+	metadata := hadoop_catalog.load_table(identifier)!
+
+	// Prefer metadata.location; fall back to computed warehouse path.
+	location := if metadata.location.len > 0 {
+		metadata.location
+	} else {
+		'${c.warehouse}/${identifier.namespace.join('/')}/${identifier.name}'
+	}
+
+	// Determine current schema and partition spec for create_table signature.
+	schema := if metadata.schemas.len > 0 { metadata.schemas[0] } else { create_default_schema() }
+	spec := if metadata.partition_specs.len > 0 {
+		metadata.partition_specs[0]
+	} else {
+		create_default_partition_spec()
+	}
+
+	// Upsert: try create first, fall back to update when the table already exists in Glue.
+	c.create_table(identifier, schema, spec, location) or {
+		// Table already exists in Glue — sync metadata via update_table instead.
+		c.update_table(identifier, metadata) or { return err }
+		return metadata
+	}
+	return metadata
+}
+
+/// export_all exports every table in HadoopCatalog (under the given namespaces) to GlueCatalog.
+/// Callers pass the list of namespaces to enumerate; use [[]] for the root namespace.
+pub fn (c &GlueCatalog) export_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergMetadata {
+	mut results := []IcebergMetadata{}
+
+	for ns in namespaces {
+		tables := hadoop_catalog.list_tables(ns)!
+		for tbl in tables {
+			meta := c.export_table(tbl, mut hadoop_catalog)!
+			results << meta
+		}
+	}
+
+	return results
+}
+
+/// import_table loads a single table from GlueCatalog and commits its metadata to HadoopCatalog.
+pub fn (c &GlueCatalog) import_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) ! {
+	metadata := c.load_table(identifier)!
+	hadoop_catalog.commit_metadata(identifier, metadata)!
+}
+
+/// import_all imports every Iceberg table listed in GlueCatalog into HadoopCatalog.
+/// Callers pass the namespaces to enumerate; use [[]] for the root / "default" namespace.
+pub fn (c &GlueCatalog) import_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergTableIdentifier {
+	mut imported := []IcebergTableIdentifier{}
+
+	for ns in namespaces {
+		tables := c.list_tables(ns)!
+		for tbl in tables {
+			c.import_table(tbl, mut hadoop_catalog)!
+			imported << tbl
+		}
+	}
+
+	return imported
 }
 
 /// create_catalog creates the appropriate catalog based on catalog type.
