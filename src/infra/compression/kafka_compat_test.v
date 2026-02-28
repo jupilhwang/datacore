@@ -7,9 +7,10 @@ module compression
 // ============================================================
 
 /// test_snappy_c_xerial_decompress tests decompressing data in xerial snappy-java format.
-/// Kafka Java clients produce data with the 16-byte xerial header:
+/// Kafka Java clients (kafka-clients / snappy-java) produce data with the 16-byte xerial header:
 ///   [8 bytes magic] [4 bytes version] [4 bytes compatible version]
-/// followed by chunks: [4 bytes uncompressed_len BE] [4 bytes compressed_len BE] [data]
+/// followed by chunks: [4 bytes compressed_len BE] [compressed_len bytes of raw snappy data]
+/// Note: the old assumption of [uncompressed_len][compressed_len][data] was incorrect.
 fn test_snappy_c_xerial_decompress() {
 	c := new_snappy_compressor_c()
 
@@ -19,19 +20,15 @@ fn test_snappy_c_xerial_decompress() {
 	// First, compress with raw snappy C to get the chunk data
 	compressed_chunk := c.compress(payload) or { panic('compress failed: ${err}') }
 
-	// Build xerial frame manually
-	// magic: 0x82 'S' 'N' 'A' 'P' 'P' 'Y' 0x00
+	// Build xerial frame manually — actual kafka-clients format:
+	//   [8B magic][4B version][4B compat_version] then chunks: [4B compressed_len][data]
 	mut frame := []u8{}
 	frame << [u8(0x82), 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00] // magic
 	// version = 1 (BE int32)
 	frame << [u8(0x00), 0x00, 0x00, 0x01]
 	// compatible version = 1 (BE int32)
 	frame << [u8(0x00), 0x00, 0x00, 0x01]
-	// chunk: uncompressed_len BE
-	ulen := u32(payload.len)
-	frame << [u8((ulen >> 24) & 0xff), u8((ulen >> 16) & 0xff), u8((ulen >> 8) & 0xff),
-		u8(ulen & 0xff)]
-	// chunk: compressed_len BE
+	// chunk: compressed_len BE only (no separate uncompressed_len field)
 	clen := u32(compressed_chunk.len)
 	frame << [u8((clen >> 24) & 0xff), u8((clen >> 16) & 0xff), u8((clen >> 8) & 0xff),
 		u8(clen & 0xff)]
@@ -281,6 +278,7 @@ fn test_snappy_c_old_ppy_format_decompresses() {
 
 /// test_snappy_c_new_xerial_still_works_after_ppy_changes ensures the new xerial format
 /// (0x82 SNAPPY\0 magic) is still handled correctly after adding PPY\0 support.
+/// Uses the correct chunk format: [4B compressed_len][data] (no separate uncompressed_len).
 fn test_snappy_c_new_xerial_still_works_after_ppy_changes() {
 	c := new_snappy_compressor_c()
 
@@ -291,9 +289,7 @@ fn test_snappy_c_new_xerial_still_works_after_ppy_changes() {
 	frame << [u8(0x82), 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00]
 	frame << [u8(0x00), 0x00, 0x00, 0x01]
 	frame << [u8(0x00), 0x00, 0x00, 0x01]
-	ulen := u32(payload.len)
-	frame << [u8((ulen >> 24) & 0xff), u8((ulen >> 16) & 0xff), u8((ulen >> 8) & 0xff),
-		u8(ulen & 0xff)]
+	// chunk: compressed_len only (no separate uncompressed_len field)
 	clen := u32(compressed_chunk.len)
 	frame << [u8((clen >> 24) & 0xff), u8((clen >> 16) & 0xff), u8((clen >> 8) & 0xff),
 		u8(clen & 0xff)]

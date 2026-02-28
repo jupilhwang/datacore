@@ -363,6 +363,12 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					producer_id := header_reader.read_i64() or { 0 }
 					producer_epoch := header_reader.read_i16() or { 0 }
 					base_sequence := header_reader.read_i32() or { 0 }
+					// records_count field (4 bytes) must be consumed to advance reader to offset 61
+					// where the actual record/compressed data begins
+					records_count := header_reader.read_i32() or { 0 }
+
+					h.logger.debug('RecordBatch records_count', observability.field_string('topic',
+						topic_name), observability.field_int('records_count', int(records_count)))
 
 					// Compression type is stored in the lower 3 bits of attributes (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
 					compression_type_val := attributes & 0x07
@@ -405,8 +411,12 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 							observability.field_int('compression_type_val', compression_type_val),
 							observability.field_string('compression_name', compression_type.str()))
 
-						// Kafka compressed RecordBatch layout: header (61 bytes) + CRC (4 bytes) + compressed_records (nested RecordBatch)
-						header_size := 65
+						// RecordBatch v2 header layout (61 bytes total):
+						// baseOffset(8) + batchLength(4) + partitionLeaderEpoch(4) + magic(1)
+						// + crc(4) + attributes(2) + lastOffsetDelta(4) + firstTimestamp(8)
+						// + maxTimestamp(8) + producerId(8) + producerEpoch(2)
+						// + baseSequence(4) + recordsCount(4) = 61 bytes
+						header_size := 61
 						compressed_data := records_to_parse[header_size..]
 
 						// Log compressed data details

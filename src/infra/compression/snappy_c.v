@@ -136,26 +136,27 @@ fn is_ppy_snappy(data []u8) bool {
 }
 
 /// decompress_xerial_new decompresses new-style xerial snappy-java framed data (kafka-clients format).
-/// Frame layout:
+/// Frame layout (snappy-java / kafka-clients):
 ///   [8 bytes magic 0x82SNAPPY\0] [4 bytes version BE] [4 bytes compat version BE]
 ///   then one or more chunks:
-///     [4 bytes uncompressed_len BE] [4 bytes compressed_len BE] [compressed_len bytes]
+///     [4 bytes compressed_len BE] [compressed_len bytes of snappy data]
+/// Note: each chunk is a raw snappy block (varint-prefixed uncompressed size + compressed payload).
+///       The C snappy library handles the varint internally via snappy_uncompressed_length.
 fn (c &SnappyCompressorC) decompress_xerial_new(data []u8) ![]u8 {
 	mut result := []u8{}
 	mut pos := xerial_snappy_header_len // skip 16-byte header
 
 	for pos < data.len {
-		// Need at least 8 bytes for the two length fields
-		if pos + 8 > data.len {
+		// Need at least 4 bytes for the compressed_len field
+		if pos + 4 > data.len {
 			return error('snappy xerial: truncated chunk header at offset ${pos}')
 		}
 
-		uncompressed_len := read_be_i32(data, pos)
-		compressed_len := read_be_i32(data, pos + 4)
-		pos += 8
+		compressed_len := read_be_i32(data, pos)
+		pos += 4
 
-		if compressed_len < 0 || uncompressed_len < 0 {
-			return error('snappy xerial: negative chunk length (u=${uncompressed_len}, c=${compressed_len})')
+		if compressed_len <= 0 {
+			return error('snappy xerial: invalid compressed_len=${compressed_len} at offset ${pos - 4}')
 		}
 		if pos + compressed_len > data.len {
 			return error('snappy xerial: chunk data truncated at offset ${pos}')
