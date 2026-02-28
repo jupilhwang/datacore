@@ -76,10 +76,11 @@ fn parse_describe_topic_partitions_request(mut reader BinaryReader, version i16)
 
 	response_partition_limit := reader.read_i32()!
 
-	// Cursor (nullable): uvarint 0 = null, 1 = present (Kafka compact nullable convention)
-	cursor_len := reader.read_compact_array_len()!
+	// Cursor (nullable struct): Kafka nullable struct 컨벤션
+	// -1 (0xFF) = null, 1 (0x01) = present + 필드
+	cursor_indicator := reader.read_i8()!
 	mut cursor := ?DescribeTopicPartitionsCursor(none)
-	if cursor_len >= 0 {
+	if cursor_indicator >= 0 {
 		topic_name := reader.read_compact_string()!
 		partition_index := reader.read_i32()!
 		reader.skip_tagged_fields()!
@@ -140,7 +141,8 @@ pub fn (r DescribeTopicPartitionsResponse) encode(version i16) []u8 {
 					writer.write_i32(e)
 				}
 			} else {
-				writer.write_i8(-1) // null array
+				// null compact array: uvarint(0) = 0x00 (Kafka compact 프로토콜 표준)
+				writer.write_compact_array_len(-1)
 			}
 			// last_known_elr (nullable compact array)
 			if lke := p.last_known_elr {
@@ -149,7 +151,8 @@ pub fn (r DescribeTopicPartitionsResponse) encode(version i16) []u8 {
 					writer.write_i32(e)
 				}
 			} else {
-				writer.write_i8(-1) // null array
+				// null compact array: uvarint(0) = 0x00 (Kafka compact 프로토콜 표준)
+				writer.write_compact_array_len(-1)
 			}
 			// offline_replicas
 			writer.write_compact_array_len(p.offline_replicas.len)
@@ -163,14 +166,15 @@ pub fn (r DescribeTopicPartitionsResponse) encode(version i16) []u8 {
 		writer.write_tagged_fields()
 	}
 
-	// next_cursor (nullable): uvarint 0 = null, uvarint 1 = present
+	// next_cursor (nullable struct):
+	// null → 1바이트 -1 (0xFF), present → 1바이트 +1 (0x01) + 필드
 	if nc := r.next_cursor {
-		writer.write_compact_array_len(0) // present (1 element => encode as len+1=1 but we use 0+1=1 for presence flag)
+		writer.write_i8(1) // nullable struct present indicator: 1 (0x01)
 		writer.write_compact_string(nc.topic_name)
 		writer.write_i32(nc.partition_index)
 		writer.write_tagged_fields()
 	} else {
-		writer.write_compact_array_len(-1) // null (uvarint 0)
+		writer.write_i8(-1) // nullable struct null indicator: -1 (0xFF)
 	}
 
 	writer.write_tagged_fields()
@@ -237,14 +241,15 @@ fn (mut h Handler) process_describe_topic_partitions(req DescribeTopicPartitions
 			}
 
 			partitions << DescribeTopicPartitionsPartition{
-				error_code:               0
-				partition_index:          i32(i)
-				leader_id:                h.broker_id
-				leader_epoch:             0
-				replica_nodes:            [h.broker_id]
-				isr_nodes:                [h.broker_id]
-				eligible_leader_replicas: none
-				last_known_elr:           none
+				error_code:      0
+				partition_index: i32(i)
+				leader_id:       h.broker_id
+				leader_epoch:    0
+				replica_nodes:   [h.broker_id]
+				isr_nodes:       [h.broker_id]
+				// 빈 배열로 설정: Kafka Java 클라이언트가 null 대신 빈 리스트로 역직렬화하도록
+				eligible_leader_replicas: []i32{}
+				last_known_elr:           []i32{}
 				offline_replicas:         []
 			}
 			total_partitions += 1
