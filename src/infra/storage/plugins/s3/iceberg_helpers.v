@@ -5,12 +5,25 @@ import os
 import domain
 import infra.observability
 
-/// is_iceberg_enabled checks whether the Iceberg table format is enabled.
-/// Note: in real implementations, check Iceberg activation via env var or config file
-fn (a &S3StorageAdapter) is_iceberg_enabled() bool {
-	// Check Iceberg activation from environment variable
+/// is_iceberg_enabled_with_config checks whether Iceberg is enabled based on config and env var.
+/// 우선순위: env var가 설정된 경우 env var 값 사용, 미설정 시 config.enabled 사용.
+pub fn is_iceberg_enabled_with_config(config IcebergConfig) bool {
 	iceberg_env := os.getenv('DATACORE_ICEBERG_ENABLED')
-	return iceberg_env == 'true' || iceberg_env == '1'
+	// env var가 명시적으로 설정된 경우 env var 값이 우선
+	if iceberg_env == 'true' || iceberg_env == '1' {
+		return true
+	}
+	if iceberg_env == 'false' || iceberg_env == '0' {
+		return false
+	}
+	// env var 미설정 시 config.enabled 사용
+	return config.enabled
+}
+
+/// is_iceberg_enabled checks whether the Iceberg table format is enabled.
+/// 어댑터에 저장된 iceberg_config를 사용하여 활성화 여부를 판단.
+fn (a &S3StorageAdapter) is_iceberg_enabled() bool {
+	return is_iceberg_enabled_with_config(a.iceberg_config)
 }
 
 /// get_or_create_iceberg_writer gets an existing Iceberg Writer or creates a new one.
@@ -24,16 +37,11 @@ fn (mut a S3StorageAdapter) get_or_create_iceberg_writer(topic string, partition
 	}
 	a.iceberg_lock.runlock()
 
-	// Create Iceberg config with defaults
-	config := IcebergConfig{
-		enabled:           true
-		format:            'parquet'
-		compression:       'zstd'
-		write_mode:        'append'
-		partition_by:      ['timestamp', 'topic']
-		max_rows_per_file: 1000000
-		max_file_size_mb:  128
-		schema_evolution:  true
+	// 어댑터에 저장된 iceberg_config 사용 (런타임 config와 연결)
+	// format_version 미설정 시 안정 스펙 기본값 2 적용
+	mut config := a.iceberg_config
+	if config.format_version == 0 {
+		config.format_version = 2
 	}
 
 	// Build table location

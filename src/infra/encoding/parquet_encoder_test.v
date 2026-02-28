@@ -88,8 +88,11 @@ fn test_thrift_compact_string_field() {
 
 fn test_parquet_encoder_empty_records() {
 	mut enc := new_parquet_encoder('uncompressed', 128) or { panic(err) }
-	result := enc.encode()
-	assert result == error('no records to encode'), 'empty encoder should return error'
+	if _, _ := enc.encode() {
+		assert false, 'empty encoder should return error but succeeded'
+	} else {
+		assert err == error('no records to encode'), 'empty encoder should return error'
+	}
 }
 
 fn test_parquet_encoder_single_record() {
@@ -150,8 +153,11 @@ fn test_parquet_encoder_reset() {
 	enc.reset()
 	assert enc.record_count() == 0
 
-	result := enc.encode()
-	assert result == error('no records to encode'), 'after reset, encode should fail'
+	if _, _ := enc.encode() {
+		assert false, 'after reset, encode should fail but succeeded'
+	} else {
+		assert err == error('no records to encode'), 'after reset, encode should fail'
+	}
 }
 
 fn test_parquet_file_structure_integrity() {

@@ -55,7 +55,7 @@ fn test_commit_metadata_encodes_and_builds_path() {
 	mut hadoop := build_test_hadoop_catalog()
 	metadata := build_test_metadata('events')
 
-	encoded := hadoop.encode_metadata(metadata)
+	encoded := encode_metadata(metadata)
 
 	// Must be non-empty JSON
 	assert encoded.len > 0
@@ -102,7 +102,7 @@ fn test_export_table_metadata_roundtrip() {
 	mut hadoop := build_test_hadoop_catalog()
 	original := build_test_metadata('orders')
 
-	encoded := hadoop.encode_metadata(original)
+	encoded := encode_metadata(original)
 	decoded := hadoop.decode_metadata(encoded) or { panic('decode failed: ${err}') }
 
 	assert decoded.table_uuid == original.table_uuid
@@ -161,7 +161,7 @@ fn test_import_table_metadata_preservation() {
 		}
 	}
 
-	encoded := hadoop.encode_metadata(metadata)
+	encoded := encode_metadata(metadata)
 	decoded := hadoop.decode_metadata(encoded) or { panic('decode failed: ${err}') }
 
 	assert decoded.table_uuid == metadata.table_uuid
@@ -285,7 +285,7 @@ fn test_export_table_upsert_falls_back_to_warehouse_path() {
 	}
 	empty_location_metadata := IcebergMetadata{
 		format_version:      2
-		table_uuid:          generate_table_uuid()
+		table_uuid:          generate_table_uuid('')
 		location:            ''
 		last_updated_ms:     1700000000000
 		schemas:             [create_default_schema()]

@@ -88,11 +88,11 @@ pub mut:
 /// FileFormat: file format (PARQUET, ORC, AVRO)
 /// RecordCount: number of records
 /// FileSizeInBytes: file size in bytes
-/// ColumnSizes: per-column size information
-/// ValueCounts: per-column value counts
-/// NullValueCounts: per-column NULL counts
-/// LowerBounds: per-column minimum values
-/// UpperBounds: per-column maximum values
+/// ColumnSizes: per-column size information (key = field_id)
+/// ValueCounts: per-column value counts (key = field_id)
+/// NullValueCounts: per-column NULL counts (key = field_id)
+/// LowerBounds: per-column minimum values serialized as Iceberg binary (key = field_id)
+/// UpperBounds: per-column maximum values serialized as Iceberg binary (key = field_id)
 /// Partition: partition values
 pub struct IcebergDataFile {
 pub mut:
@@ -100,11 +100,11 @@ pub mut:
 	file_format        string
 	record_count       i64
 	file_size_in_bytes i64
-	column_sizes       map[string]i64
-	value_counts       map[string]i64
-	null_value_counts  map[string]i64
-	lower_bounds       map[string]string
-	upper_bounds       map[string]string
+	column_sizes       map[int]i64
+	value_counts       map[int]i64
+	null_value_counts  map[int]i64
+	lower_bounds       map[int][]u8
+	upper_bounds       map[int][]u8
 	partition          map[string]string
 	// v3 Row Lineage support
 	row_lineage_first i64
@@ -125,7 +125,8 @@ pub mut:
 /// Properties: table properties
 pub struct IcebergMetadata {
 pub mut:
-	format_version      int = 3
+	// 기본값 2: v3 기능(row lineage 등) 미구현으로 안정 스펙인 v2 사용
+	format_version      int = 2
 	table_uuid          string
 	location            string
 	last_updated_ms     i64
@@ -250,6 +251,7 @@ pub fn create_default_partition_spec() IcebergPartitionSpec {
 }
 
 /// IcebergConfig represents Iceberg Writer configuration.
+/// format_version: Iceberg 포맷 버전 (기본값 2 - 안정 스펙, v3 기능 미구현)
 pub struct IcebergConfig {
 pub mut:
 	enabled           bool
@@ -260,6 +262,7 @@ pub mut:
 	max_rows_per_file int = 1000000
 	max_file_size_mb  int = 128
 	schema_evolution  bool
+	format_version    int = 2
 }
 
 /// create_partition_spec_from_config creates a partition specification from config.

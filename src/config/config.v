@@ -155,6 +155,7 @@ pub:
 /// max_rows_per_file: maximum rows per file
 /// max_file_size_mb: maximum file size (MB)
 /// schema_evolution: whether schema evolution is supported
+/// format_version: Iceberg 포맷 버전 (기본값 2 - 안정 스펙, v3 기능 미구현)
 pub struct IcebergConfig {
 pub:
 	enabled           bool
@@ -165,6 +166,7 @@ pub:
 	max_rows_per_file int      = 1000000
 	max_file_size_mb  int      = 128
 	schema_evolution  bool     = true
+	format_version    int      = 2
 }
 
 /// S3StorageConfig represents the S3 storage configuration.
@@ -510,6 +512,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			max_rows_per_file: get_int(doc, 'storage.s3.iceberg.max_rows_per_file', 1000000)
 			max_file_size_mb:  get_int(doc, 'storage.s3.iceberg.max_file_size_mb', 128)
 			schema_evolution:  get_bool(doc, 'storage.s3.iceberg.schema_evolution', true)
+			format_version:    get_int(doc, 'storage.s3.iceberg.format_version', 2)
 		}
 	}
 

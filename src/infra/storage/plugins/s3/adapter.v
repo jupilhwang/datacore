@@ -94,6 +94,8 @@ pub mut:
 	// Iceberg table writers (when Iceberg is enabled)
 	iceberg_writers map[string]&IcebergWriter
 	iceberg_lock    sync.RwMutex
+	// Iceberg 런타임 설정 (config 패키지와의 연결)
+	iceberg_config IcebergConfig
 }
 
 /// CachedTopic holds cached topic information.
