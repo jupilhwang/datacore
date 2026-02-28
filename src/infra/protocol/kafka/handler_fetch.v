@@ -334,8 +334,9 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			}
 		}
 
-		// Look up preferred compression type from topic configuration
-		mut preferred_compression := h.get_topic_compression_type(topic_name)
+		// Kafka 프로토콜 호환성: RecordBatch 헤더는 비압축 상태여야 Consumer가 파싱 가능하므로
+		// Fetch 경로에서는 재압축을 수행하지 않는다.
+		preferred_compression := compression.CompressionType.none
 
 		// Fetch data from each partition
 		mut partitions := []FetchResponsePartition{}
@@ -370,13 +371,6 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			// first_offset: use the actual offset of the first record returned.
 			records_data := encode_record_batch_zerocopy(result.records, result.first_offset)
 			total_records += result.records.len
-
-			// If the record carries a preserved compression type, it takes priority over topic config
-			if result.records.len > 0 && result.records[0].compression_type > 0 {
-				preferred_compression = compression.compression_type_from_u8(result.records[0].compression_type) or {
-					preferred_compression
-				}
-			}
 
 			// Apply schema decoding if configured for this topic
 			mut records_for_compression := records_data.clone()
