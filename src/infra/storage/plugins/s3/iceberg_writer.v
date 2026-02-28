@@ -32,9 +32,12 @@ pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table
 		create_default_partition_spec()
 	}
 
+	// config.format_version이 설정된 경우 사용, 미설정(0)이면 안정 스펙 2 사용
+	format_version := if config.format_version > 0 { config.format_version } else { 2 }
+
 	// Initialize table metadata
 	metadata := IcebergMetadata{
-		format_version:      2
+		format_version:      format_version
 		table_uuid:          generate_table_uuid(table_location)
 		location:            table_location
 		last_updated_ms:     time.now().unix_milli()
@@ -207,23 +210,33 @@ pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) !
 			file_format:        'PARQUET'
 			record_count:       metadata.num_rows
 			file_size_in_bytes: i64(data.len)
-			column_sizes:       map[string]i64{}
-			value_counts:       map[string]i64{}
-			null_value_counts:  map[string]i64{}
-			lower_bounds:       map[string]string{}
-			upper_bounds:       map[string]string{}
+			column_sizes:       map[int]i64{}
+			value_counts:       map[int]i64{}
+			null_value_counts:  map[int]i64{}
+			lower_bounds:       map[int][]u8{}
+			upper_bounds:       map[int][]u8{}
 			partition:          partition_values
 		}
 
-		// Add column statistics
+		// 컬럼 이름 -> field_id 매핑 생성
+		mut name_to_field_id := map[string]int{}
+		for field in w.current_schema.fields {
+			name_to_field_id[field.name] = field.id
+		}
+
+		// Parquet 메타데이터에서 컬럼 통계 추출 후 DataFile에 기록
 		for row_group in metadata.row_groups {
 			for chunk in row_group.columns {
-				col_name := chunk.column_name
-				data_file.column_sizes[col_name] = chunk.data_size
-				data_file.value_counts[col_name] = chunk.value_count
-				data_file.null_value_counts[col_name] = chunk.null_count
-				data_file.lower_bounds[col_name] = chunk.min_value
-				data_file.upper_bounds[col_name] = chunk.max_value
+				field_id := name_to_field_id[chunk.column_name] or { continue }
+				data_file.column_sizes[field_id] = chunk.data_size
+				data_file.value_counts[field_id] = chunk.value_count
+				data_file.null_value_counts[field_id] = chunk.null_count
+				if chunk.min_bytes.len > 0 {
+					data_file.lower_bounds[field_id] = chunk.min_bytes.clone()
+				}
+				if chunk.max_bytes.len > 0 {
+					data_file.upper_bounds[field_id] = chunk.max_bytes.clone()
+				}
 			}
 		}
 
@@ -499,20 +512,111 @@ fn avro_write_manifest_entry(mut buf []u8, file IcebergDataFile, snapshot_id i64
 	// file_size_in_bytes: long
 	avro_write_varint(mut buf, file.file_size_in_bytes)
 
-	// column_sizes: union [null, array] - write null (union index 0)
-	buf << u8(0)
+	// column_sizes: union [null, array<{key:int,value:long}>]
+	avro_write_nullable_int_long_map(mut buf, file.column_sizes)
 
-	// value_counts: union [null, array] - write null
-	buf << u8(0)
+	// value_counts: union [null, array<{key:int,value:long}>]
+	avro_write_nullable_int_long_map(mut buf, file.value_counts)
 
-	// null_value_counts: union [null, array] - write null
-	buf << u8(0)
+	// null_value_counts: union [null, array<{key:int,value:long}>]
+	avro_write_nullable_int_long_map(mut buf, file.null_value_counts)
 
-	// lower_bounds: union [null, array] - write null
-	buf << u8(0)
+	// lower_bounds: union [null, array<{key:int,value:bytes}>]
+	avro_write_nullable_int_bytes_map(mut buf, file.lower_bounds)
 
-	// upper_bounds: union [null, array] - write null
+	// upper_bounds: union [null, array<{key:int,value:bytes}>]
+	avro_write_nullable_int_bytes_map(mut buf, file.upper_bounds)
+}
+
+/// avro_write_nullable_int_long_map writes Avro union [null, array<{key:int,value:long}>].
+/// map이 비어있으면 null(0)을, 아니면 non-null(2=union index 1)로 인코딩
+fn avro_write_nullable_int_long_map(mut buf []u8, m map[int]i64) {
+	if m.len == 0 {
+		// union index 0 = null
+		buf << u8(0)
+		return
+	}
+	// union index 1 = array (zigzag(1) = 2)
+	avro_write_varint(mut buf, 1)
+	avro_write_int_long_map(mut buf, m)
+}
+
+/// avro_write_nullable_int_bytes_map writes Avro union [null, array<{key:int,value:bytes}>].
+fn avro_write_nullable_int_bytes_map(mut buf []u8, m map[int][]u8) {
+	if m.len == 0 {
+		// union index 0 = null
+		buf << u8(0)
+		return
+	}
+	// union index 1 = array
+	avro_write_varint(mut buf, 1)
+	avro_write_int_bytes_map(mut buf, m)
+}
+
+/// avro_write_int_long_map writes Avro array<{key:int,value:long}> (Iceberg map entry style).
+/// Iceberg spec: map은 array of {key, value} record로 인코딩
+pub fn avro_write_int_long_map(mut buf []u8, m map[int]i64) {
+	if m.len == 0 {
+		buf << u8(0)
+		return
+	}
+	// array block: count 값 (zigzag encoded)
+	avro_write_varint(mut buf, i64(m.len))
+	for key, value in m {
+		// key: int (zigzag encoded)
+		avro_write_varint(mut buf, i64(key))
+		// value: long (zigzag encoded)
+		avro_write_varint(mut buf, value)
+	}
+	// array 종료: count = 0
 	buf << u8(0)
+}
+
+/// avro_write_int_bytes_map writes Avro array<{key:int,value:bytes}> (Iceberg map entry style).
+pub fn avro_write_int_bytes_map(mut buf []u8, m map[int][]u8) {
+	if m.len == 0 {
+		buf << u8(0)
+		return
+	}
+	avro_write_varint(mut buf, i64(m.len))
+	for key, value in m {
+		// key: int
+		avro_write_varint(mut buf, i64(key))
+		// value: bytes (length-prefixed)
+		avro_write_bytes(mut buf, value)
+	}
+	buf << u8(0)
+}
+
+/// iceberg_serialize_long serializes an int64 value to Iceberg binary format (little-endian 8 bytes).
+pub fn iceberg_serialize_long(v i64) []u8 {
+	uv := u64(v)
+	return [
+		u8(uv & 0xFF),
+		u8((uv >> 8) & 0xFF),
+		u8((uv >> 16) & 0xFF),
+		u8((uv >> 24) & 0xFF),
+		u8((uv >> 32) & 0xFF),
+		u8((uv >> 40) & 0xFF),
+		u8((uv >> 48) & 0xFF),
+		u8((uv >> 56) & 0xFF),
+	]
+}
+
+/// iceberg_serialize_int serializes an int32 value to Iceberg binary format (little-endian 4 bytes).
+pub fn iceberg_serialize_int(v i32) []u8 {
+	uv := u32(v)
+	return [
+		u8(uv & 0xFF),
+		u8((uv >> 8) & 0xFF),
+		u8((uv >> 16) & 0xFF),
+		u8((uv >> 24) & 0xFF),
+	]
+}
+
+/// iceberg_serialize_string serializes a string value to Iceberg binary format (UTF-8 bytes).
+pub fn iceberg_serialize_string(s string) []u8 {
+	return s.bytes()
 }
 
 /// encode_metadata_json encodes table metadata as JSON.

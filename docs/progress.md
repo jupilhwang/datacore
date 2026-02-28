@@ -1,5 +1,56 @@
 # Progress Log
 
+## 2026-02-28 - Iceberg Bug Fixes (Config/Stats/Tests)
+
+- Config/Runtime disconnect fixed: enabled flag + format_version now properly injected
+- Format version consistency: v3 default -> v2 across all components
+- Manifest column stats: real min/max/null_count from Parquet chunks
+- REST API tests: 16 endpoint tests via MockIcebergCatalog
+- PDCA: 1 iteration (pre-existing test fix), 68/68 tests passing
+
+---
+
+## 2026-02-28 (2)
+
+### 작업: IcebergCatalogAPI 단위 테스트 추가
+
+**Branch:** `feature/iceberg-fixes-v1`
+
+#### 완료 내용
+
+- `src/interface/rest/iceberg_catalog_api_test.v` 신규 생성
+- MockIcebergCatalog (인메모리) 구현: `IcebergCatalog` 인터페이스 전체 구현
+- 총 16개 테스트 함수, 모두 통과
+
+#### 테스트 목록
+
+| 테스트 | 검증 내용 |
+|--------|-----------|
+| test_list_namespaces_empty | 빈 목록일 때 200 응답 |
+| test_create_namespace | 네임스페이스 생성 및 200 반환 |
+| test_create_namespace_already_exists | 중복 생성 시 500 오류 |
+| test_drop_namespace | 빈 네임스페이스 삭제 시 204 반환 |
+| test_drop_namespace_not_empty | 테이블 존재 시 409 반환 |
+| test_get_namespace_not_found | 존재하지 않는 네임스페이스 404 |
+| test_list_tables_empty | 빈 네임스페이스 테이블 목록 200 |
+| test_create_table | 테이블 생성 메타데이터 반환 |
+| test_load_table | 기존 테이블 메타데이터 로드 |
+| test_table_not_found | 존재하지 않는 테이블 404 |
+| test_drop_table | 테이블 삭제 후 204 반환 |
+| test_invalid_path | 잘못된 경로 400 반환 |
+| test_method_not_allowed | 허용되지 않은 메서드 405 |
+| test_create_table_empty_name | 이름 없는 테이블 400 반환 |
+| test_config_endpoint | /v1/config 엔드포인트 200 반환 |
+| test_create_table_namespace_not_found | 없는 네임스페이스에 테이블 생성 404 |
+
+#### 실행 명령
+
+```
+cd src && v -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib" test interface/rest/
+```
+
+---
+
 ## 2026-02-28
 
 ### PDCA: Kafka 압축 버그 수정 (CHECK PASS)

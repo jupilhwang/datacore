@@ -172,6 +172,8 @@ pub mut:
 	null_count  i64
 	min_value   string
 	max_value   string
+	min_bytes   []u8
+	max_bytes   []u8
 	compression ParquetCompression
 }
 
@@ -943,6 +945,8 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 			null_count:  cm.null_count
 			min_value:   min_offset.str()
 			max_value:   max_offset.str()
+			min_bytes:   cm.min_val.clone()
+			max_bytes:   cm.max_val.clone()
 			compression: e.compression
 		}
 	}
