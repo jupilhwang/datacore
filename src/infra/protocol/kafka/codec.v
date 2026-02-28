@@ -180,17 +180,9 @@ pub fn (mut r BinaryReader) read_string() !string {
 }
 
 /// read_nullable_string reads a nullable length-prefixed string (i16 length; -1 means null).
+// Delegates to read_string since both formats share identical wire encoding.
 pub fn (mut r BinaryReader) read_nullable_string() !string {
-	len := r.read_i16()!
-	if len < 0 {
-		return ''
-	}
-	if r.remaining() < int(len) {
-		return error('not enough data for nullable string')
-	}
-	str := r.data[r.pos..r.pos + int(len)].bytestr()
-	r.pos += int(len)
-	return str
+	return r.read_string()!
 }
 
 /// read_compact_string reads a compact string (unsigned varint length + 1).
@@ -640,88 +632,46 @@ pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	}
 }
 
-/// parse_nested_record_batch parses a nested (inner) RecordBatch after decompression.
+/// parse_nested_record_batch parses records from decompressed Kafka RecordBatch data.
 ///
-/// Kafka RecordBatch compression structure:
-/// ┌────────────────────────────────────────────────────────┐
-/// │ Outer RecordBatch Header (61 bytes)                    │
-/// ├────────────────────────────────────────────────────────┤
-/// │ Compressed Inner RecordBatch                           │
-/// │ - last_offset_delta (relative offset)                  │
-/// │ - batch_length                                         │
-/// │ - attributes (no compression flag)                     │
-/// │ - timestamps                                           │
-/// ├────────────────────────────────────────────────────────┤
-/// │ Records                                                │
-/// └────────────────────────────────────────────────────────┘
+/// Kafka compresses the records field of a RecordBatch, NOT an inner RecordBatch.
+/// After decompression, the data is a sequence of Record v2 entries:
 ///
-/// The decompressed data is in nested RecordBatch format,
-/// starting with last_offset_delta instead of base_offset.
+///   [varint: record_length][i8: attributes][varint: timestamp_delta]
+///   [varint: offset_delta][varint: key_length][bytes: key]
+///   [varint: value_length][bytes: value][varint: headers_count]...
+///
+/// There is NO nested RecordBatch header (no base_offset, batch_length, magic, CRC, etc.).
 pub fn parse_nested_record_batch(data []u8) !ParsedRecordBatch {
-	if data.len < 20 {
-		return error('nested record batch too small')
+	if data.len == 0 {
+		return ParsedRecordBatch{
+			records: []
+		}
 	}
 
 	mut reader := new_reader(data)
+	mut records := []domain.Record{}
 
-	// Nested RecordBatch header layout (differs from outer RecordBatch):
-	// 1. last_offset_delta (4 bytes): offset to add to outer RecordBatch base_offset
-	// 2. batch_length (4 bytes): length of record data including header
-	// 3. partition_leader_epoch (4 bytes): partition leader epoch
-	// 4. magic (1 byte): 2 (RecordBatch v2)
-	// 5. CRC (4 bytes): CRC32-C (optional; some clients omit this)
-	// Remaining fields are identical to a standard RecordBatch
-
-	last_offset_delta := reader.read_i32()!
-	batch_length := reader.read_i32()!
-	partition_leader_epoch := reader.read_i32()!
-	magic := reader.read_i8()!
-
-	if magic != 2 {
-		return error('nested record batch has invalid magic: ${magic}')
-	}
-
-	// CRC32-C validation (optional)
-	// Kafka does not always include a CRC in nested RecordBatches.
-	// When present, it covers from attributes to the end of the batch.
-	stored_crc := u32(reader.read_i32()!)
-	crc_start_pos := reader.pos
-	crc_data := data[crc_start_pos..20 + int(batch_length)]
-
-	// Continue even if CRC validation fails (compatibility with some clients)
-	calculated_crc := crc32c_checksum(crc_data)
-	if stored_crc != calculated_crc {
-		// Log-only on CRC mismatch; continue for Kafka client compatibility
-	}
-
-	// Remaining header fields are the same as a standard RecordBatch
-	attributes := reader.read_i16()!
-	first_timestamp := reader.read_i64()!
-	max_timestamp := reader.read_i64()!
-	producer_id := reader.read_i64()!
-	producer_epoch := reader.read_i16()!
-	base_sequence := reader.read_i32()!
-	record_count := reader.read_i32()!
-
-	// Parse records
-	mut records := []domain.Record{cap: int(record_count)}
-	for _ in 0 .. record_count {
-		record := parse_record(mut reader, first_timestamp) or { break }
+	// Parse records until the buffer is exhausted.
+	// base_timestamp=0 because compressed records use relative timestamp deltas.
+	for reader.remaining() > 0 {
+		record := parse_record(mut reader, i64(0)) or { break }
 		records << record
 	}
 
-	// base_offset comes from the outer RecordBatch (initialized to 0)
+	last_offset_delta := if records.len > 0 { i32(records.len - 1) } else { i32(0) }
+
 	return ParsedRecordBatch{
 		base_offset:            0
-		partition_leader_epoch: partition_leader_epoch
-		magic:                  magic
-		attributes:             attributes
+		partition_leader_epoch: 0
+		magic:                  2
+		attributes:             0
 		last_offset_delta:      last_offset_delta
-		first_timestamp:        first_timestamp
-		max_timestamp:          max_timestamp
-		producer_id:            producer_id
-		producer_epoch:         producer_epoch
-		base_sequence:          base_sequence
+		first_timestamp:        0
+		max_timestamp:          0
+		producer_id:            -1
+		producer_epoch:         -1
+		base_sequence:          -1
 		records:                records
 	}
 }
@@ -855,7 +805,17 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 		return []u8{}
 	}
 
-	mut writer := new_writer()
+	// Estimate per-record size: ~100 bytes overhead + key + value + headers
+	// Pre-allocating avoids repeated []u8 growth during encoding.
+	mut estimated_record_size := 0
+	for r in records {
+		estimated_record_size += 30 + r.key.len + r.value.len
+	}
+
+	// RecordBatch fixed header = 12 (baseOffset + batchLength) + 9 (epoch + magic + CRC)
+	// CRC-covered section = 2+4+8+8+8+2+4+4 = 40 bytes of fixed fields
+	estimated_total := 12 + 9 + 40 + estimated_record_size
+	mut writer := new_writer_with_capacity(estimated_total)
 
 	// Compute timestamps from records.
 	// Use the first record's timestamp as the base; fall back to now if unset.
@@ -875,7 +835,7 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 	}
 
 	// Encode records first to determine batch size
-	mut records_data := new_writer()
+	mut records_data := new_writer_with_capacity(estimated_record_size)
 	for i, record in records {
 		encode_record(mut records_data, record, i, first_timestamp)
 	}
@@ -886,7 +846,8 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 	// Per the Kafka spec, CRC-32C covers from attributes to the end of the batch
 	// (not from partitionLeaderEpoch).
 	// CRC = crc32c(attributes...end_of_batch)
-	mut crc_data := new_writer()
+	crc_fixed_size := 2 + 4 + 8 + 8 + 8 + 2 + 4 + 4 // 40 bytes of fixed fields
+	mut crc_data := new_writer_with_capacity(crc_fixed_size + records_bytes.len)
 	crc_data.write_i16(0)
 	crc_data.write_i32(i32(records.len - 1))
 	crc_data.write_i64(first_timestamp)
@@ -920,8 +881,10 @@ pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 
 /// encode_record encodes a single record in RecordBatch v2 format.
 fn encode_record(mut writer BinaryWriter, record domain.Record, offset_delta int, base_timestamp i64) {
-	// Build the record body first to compute its length
-	mut body := new_writer()
+	// Pre-allocate body capacity: fixed overhead (attributes + timestamps + varint sizes) +
+	// actual key/value/header data to avoid incremental []u8 growth.
+	estimated_body := 20 + record.key.len + record.value.len
+	mut body := new_writer_with_capacity(estimated_body)
 
 	body.write_i8(0)
 

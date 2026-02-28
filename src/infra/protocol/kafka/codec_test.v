@@ -62,3 +62,52 @@ fn test_varint_negative() {
 	val := reader.read_varint()!
 	assert val == -100
 }
+
+// test_parse_nested_record_batch_direct_records tests that decompressed Kafka
+// RecordBatch data (a sequence of Records, NOT a nested RecordBatch header)
+// is parsed correctly.
+//
+// Hex data: 22 00 00 01 16 74 65 73 74 20 73 6e 61 70 70 79 00
+// Decoded:
+//   22 = varint 17 (record_length)
+//   00 = i8 attributes
+//   00 = varint 0 (timestamp_delta, zigzag: 0)
+//   00 = varint 0 (offset_delta, zigzag: 0)
+//   01 = varint -1 (key_length, zigzag: 1 -> -1, null key)
+//   16 = varint 11 (value_length, zigzag: 22 -> 11)
+//   74 65 73 74 20 73 6e 61 70 70 79 = "test snappy" (11 bytes)
+//   00 = varint 0 (headers_count)
+fn test_parse_nested_record_batch_direct_records() {
+	data := [
+		u8(0x22), // varint record_length = 17
+		u8(0x00), // attributes
+		u8(0x00), // timestamp_delta (zigzag 0)
+		u8(0x00), // offset_delta (zigzag 0)
+		u8(0x01), // key_length (zigzag 1 -> -1, null)
+		u8(0x16), // value_length (zigzag 22 -> 11)
+		u8(0x74),
+		u8(0x65),
+		u8(0x73),
+		u8(0x74),
+		u8(0x20), // "test "
+		u8(0x73),
+		u8(0x6e),
+		u8(0x61),
+		u8(0x70),
+		u8(0x70),
+		u8(0x79), // "snappy"
+		u8(0x00), // headers_count = 0
+	]
+
+	result := kafka.parse_nested_record_batch(data)!
+
+	assert result.records.len == 1, 'expected 1 record, got ${result.records.len}'
+	assert result.records[0].value == 'test snappy'.bytes(), 'expected value "test snappy"'
+	assert result.records[0].key.len == 0, 'expected null/empty key'
+}
+
+// test_parse_nested_record_batch_empty tests empty data returns empty records.
+fn test_parse_nested_record_batch_empty() {
+	result := kafka.parse_nested_record_batch([])!
+	assert result.records.len == 0
+}
