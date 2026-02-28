@@ -169,3 +169,136 @@ fn test_gzip_normal_still_works() {
 
 	assert result == original
 }
+
+// ============================================================
+// Test: snappy old PPY\0 format (Kafka older clients / snappy-java 1.0.x)
+// ============================================================
+
+/// test_snappy_c_old_ppy_format_detected tests that the old PPY\0 magic is recognized
+/// as a xerial-family format and not treated as raw snappy.
+/// Old format structure (actual Confluent 8.1.1 data - 12-byte header):
+///   [4B magic "PPY\0"] [4B version BE] [4B chunk_count BE]  = 12-byte header
+///   then chunks: [4B compressed_len BE] [compressed_len bytes of snappy data]
+fn test_snappy_c_old_ppy_format_detected() {
+	// Actual 36-byte payload from Kafka Confluent 8.1.1 (snappy codec, "test snappy" message).
+	// Structure: 12-byte header (PPY\0 + ver=1 + count=1) + 4-byte compressed_len(20) + 20 bytes snappy data.
+	ppy_data := [
+		u8(0x50),
+		0x50,
+		0x59,
+		0x00, // magic "PPY\0"
+		0x00,
+		0x00,
+		0x00,
+		0x01, // version = 1
+		0x00,
+		0x00,
+		0x00,
+		0x01, // chunk_count = 1
+		0x00,
+		0x00,
+		0x00,
+		0x14, // compressed_len = 20
+		0x12,
+		0x44,
+		0x22,
+		0x00, // snappy data (20 bytes)...
+		0x00,
+		0x00,
+		0x01,
+		0x16,
+		0x74,
+		0x65,
+		0x73,
+		0x74,
+		0x20,
+		0x73,
+		0x6e,
+		0x61,
+		0x70,
+		0x70,
+		0x79,
+		0x00,
+	]
+
+	// is_xerial_snappy must detect this format
+	assert is_xerial_snappy(ppy_data), 'PPY\\0 old format must be detected as xerial family'
+}
+
+/// test_snappy_c_old_ppy_format_decompresses tests that the old PPY\0 framed data
+/// decompresses correctly via decompress().
+/// Actual 36-byte payload from Confluent 8.1.1: 12-byte header + 4-byte compressed_len + 20 bytes snappy.
+/// Decompresses to Kafka record bytes containing "test snappy".
+fn test_snappy_c_old_ppy_format_decompresses() {
+	c := new_snappy_compressor_c()
+
+	// Actual 36-byte payload from Kafka Confluent 8.1.1 (snappy codec, message = "test snappy")
+	ppy_data := [
+		u8(0x50),
+		0x50,
+		0x59,
+		0x00, // magic "PPY\0"
+		0x00,
+		0x00,
+		0x00,
+		0x01, // version = 1
+		0x00,
+		0x00,
+		0x00,
+		0x01, // chunk_count = 1
+		0x00,
+		0x00,
+		0x00,
+		0x14, // compressed_len = 20
+		0x12,
+		0x44,
+		0x22,
+		0x00, // snappy data (20 bytes)
+		0x00,
+		0x00,
+		0x01,
+		0x16,
+		0x74,
+		0x65,
+		0x73,
+		0x74,
+		0x20,
+		0x73,
+		0x6e,
+		0x61,
+		0x70,
+		0x70,
+		0x79,
+		0x00,
+	]
+
+	result := c.decompress(ppy_data) or { panic('PPY\\0 decompress failed: ${err}') }
+
+	// Decompressed result contains "test snappy" (within Kafka record bytes)
+	result_str := result.bytestr()
+	assert result_str.contains('test snappy'), 'expected "test snappy" in decompressed output, got hex: ${result.hex()}'
+}
+
+/// test_snappy_c_new_xerial_still_works_after_ppy_changes ensures the new xerial format
+/// (0x82 SNAPPY\0 magic) is still handled correctly after adding PPY\0 support.
+fn test_snappy_c_new_xerial_still_works_after_ppy_changes() {
+	c := new_snappy_compressor_c()
+
+	payload := 'xerial new format round trip'.bytes()
+	compressed_chunk := c.compress(payload) or { panic('compress failed') }
+
+	mut frame := []u8{}
+	frame << [u8(0x82), 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00]
+	frame << [u8(0x00), 0x00, 0x00, 0x01]
+	frame << [u8(0x00), 0x00, 0x00, 0x01]
+	ulen := u32(payload.len)
+	frame << [u8((ulen >> 24) & 0xff), u8((ulen >> 16) & 0xff), u8((ulen >> 8) & 0xff),
+		u8(ulen & 0xff)]
+	clen := u32(compressed_chunk.len)
+	frame << [u8((clen >> 24) & 0xff), u8((clen >> 16) & 0xff), u8((clen >> 8) & 0xff),
+		u8(clen & 0xff)]
+	frame << compressed_chunk
+
+	result := c.decompress(frame) or { panic('new xerial decompress failed: ${err}') }
+	assert result == payload, 'new xerial format must still work: expected ${payload}, got ${result}'
+}
