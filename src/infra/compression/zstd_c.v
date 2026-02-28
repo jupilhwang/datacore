@@ -72,8 +72,13 @@ pub fn (c &ZstdCompressorC) compress(data []u8) ![]u8 {
 	return result
 }
 
+// zstd_int_max is the maximum safe value for casting u64 to int without overflow.
+const zstd_int_max = u64(0x7fff_ffff)
+
 /// decompress decompresses Zstd Frame format data.
 /// Can handle ZSTD-compressed data produced by Kafka.
+/// Guards against u64->int overflow when ZSTD_getFrameContentSize returns
+/// ZSTD_CONTENTSIZE_ERROR (u64_max - 1) or values larger than 2GB.
 pub fn (c &ZstdCompressorC) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
@@ -82,12 +87,19 @@ pub fn (c &ZstdCompressorC) decompress(data []u8) ![]u8 {
 	// Read original size from frame
 	content_size := C.ZSTD_getFrameContentSize(data.data, usize(data.len))
 
-	// Handle special return values
-	if content_size == zstd_contentsize_error {
-		return error('zstd decompression failed: invalid frame header')
+	// Guard: ZSTD_CONTENTSIZE_ERROR = u64_max - 1, ZSTD_CONTENTSIZE_UNKNOWN = u64_max.
+	// Any value near u64 max is either an error or unknown — use streaming instead.
+	// Also guard against values that would overflow int (> 2GB).
+	if content_size >= zstd_contentsize_error || content_size > zstd_int_max {
+		// ZSTD_CONTENTSIZE_ERROR means invalid frame header
+		if content_size == zstd_contentsize_error {
+			return error('zstd decompression failed: invalid frame header')
+		}
+		// ZSTD_CONTENTSIZE_UNKNOWN or oversized: fall back to streaming
+		return c.decompress_streaming(data)
 	}
 
-	// Use streaming decompression when original size is unknown
+	// Use streaming decompression when original size is unknown or zero
 	if content_size == zstd_contentsize_unknown || content_size == 0 {
 		return c.decompress_streaming(data)
 	}
@@ -101,6 +113,11 @@ pub fn (c &ZstdCompressorC) decompress(data []u8) ![]u8 {
 	if C.ZSTD_isError(decompressed_size) != 0 {
 		err_name := C.ZSTD_getErrorName(decompressed_size)
 		return error('zstd decompression failed: ${cstring_to_string(err_name)}')
+	}
+
+	// Guard: decompressed_size must not exceed int range before slicing
+	if decompressed_size > zstd_int_max {
+		return error('zstd: decompressed data exceeds 2GB limit')
 	}
 
 	result = unsafe { result[..int(decompressed_size)] }
@@ -182,27 +199,6 @@ fn (c &ZstdCompressorC) decompress_streaming(data []u8) ![]u8 {
 /// compression_type returns the compression type.
 pub fn (c &ZstdCompressorC) compression_type() CompressionType {
 	return CompressionType.zstd
-}
-
-/// cstring_to_string converts a C string to a V string.
-fn cstring_to_string(cstr &u8) string {
-	if isnulptr(cstr) {
-		return ''
-	}
-	mut len := 0
-	for unsafe { cstr[len] != 0 } {
-		len++
-	}
-	mut res := []u8{len: len}
-	for i in 0 .. len {
-		res[i] = unsafe { cstr[i] }
-	}
-	return res.bytestr()
-}
-
-/// isnulptr checks whether a pointer is nullptr.
-fn isnulptr(ptr &u8) bool {
-	return ptr == unsafe { nil }
 }
 
 // ZstdInBuffer struct (snake_case)
