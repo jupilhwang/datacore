@@ -35,7 +35,7 @@ pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table
 	// Initialize table metadata
 	metadata := IcebergMetadata{
 		format_version:      2
-		table_uuid:          generate_table_uuid()
+		table_uuid:          generate_table_uuid(table_location)
 		location:            table_location
 		last_updated_ms:     time.now().unix_milli()
 		schemas:             [schema]

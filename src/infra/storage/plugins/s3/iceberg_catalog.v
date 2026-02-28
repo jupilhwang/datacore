@@ -372,9 +372,8 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 	}
 
 	// current-schema-id / currentSchemaId
-	metadata.current_schema_id = json_extract_int_dual(json_str, 'current-schema-id', 'currentSchemaId') or {
-		0
-	}
+	metadata.current_schema_id = json_extract_int_dual(json_str, 'current-schema-id',
+		'currentSchemaId') or { 0 }
 
 	// default-spec-id / defaultSpecId
 	metadata.default_spec_id = json_extract_int_dual(json_str, 'default-spec-id', 'defaultSpecId') or {
@@ -460,8 +459,8 @@ fn json_find_value_start(json_str string, key string) int {
 	pos++ // skip ':'
 
 	// Skip whitespace
-	for pos < json_str.len
-		&& (json_str[pos] == ` ` || json_str[pos] == `\t` || json_str[pos] == `\n` || json_str[pos] == `\r`) {
+	for pos < json_str.len && (json_str[pos] == ` ` || json_str[pos] == `\t`
+		|| json_str[pos] == `\n` || json_str[pos] == `\r`) {
 		pos++
 	}
 	if pos >= json_str.len {
@@ -497,8 +496,8 @@ fn json_extract_int(json_str string, key string) ?int {
 
 	// Read until non-numeric
 	mut end := pos
-	for end < json_str.len
-		&& ((json_str[end] >= `0` && json_str[end] <= `9`) || (end == pos && json_str[end] == `-`)) {
+	for end < json_str.len && ((json_str[end] >= `0` && json_str[end] <= `9`)
+		|| (end == pos && json_str[end] == `-`)) {
 		end++
 	}
 	if end == pos {
@@ -515,8 +514,8 @@ fn json_extract_i64(json_str string, key string) ?i64 {
 	}
 
 	mut end := pos
-	for end < json_str.len
-		&& ((json_str[end] >= `0` && json_str[end] <= `9`) || (end == pos && json_str[end] == `-`)) {
+	for end < json_str.len && ((json_str[end] >= `0` && json_str[end] <= `9`)
+		|| (end == pos && json_str[end] == `-`)) {
 		end++
 	}
 	if end == pos {
@@ -787,9 +786,7 @@ fn json_parse_snapshots(arr_str string) []IcebergSnapshot {
 	for item in items {
 		mut snap := IcebergSnapshot{}
 		snap.snapshot_id = json_extract_i64_dual(item, 'snapshot-id', 'snapshotId') or { i64(0) }
-		snap.timestamp_ms = json_extract_i64_dual(item, 'timestamp-ms', 'timestampMs') or {
-			i64(0)
-		}
+		snap.timestamp_ms = json_extract_i64_dual(item, 'timestamp-ms', 'timestampMs') or { i64(0) }
 		snap.manifest_list = json_extract_string_dual(item, 'manifest-list', 'manifestList') or {
 			''
 		}

@@ -77,6 +77,7 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 			protocol_type: req.protocol_type
 			state:         .preparing_rebalance
 			members:       []
+			members_map:   map[string]int{}
 		}
 	}
 
@@ -89,37 +90,40 @@ pub fn (mut c GroupCoordinator) join_group(req JoinGroupRequest) JoinGroupRespon
 		metadata:          if req.protocols.len > 0 { req.protocols[0].metadata } else { []u8{} }
 	}
 
-	// Find existing member index (avoid clone where possible)
-	mut member_idx := -1
-	for i, m in group.members {
-		if m.member_id == member_id {
-			member_idx = i
-			break
-		}
-	}
-
-	// Update member list efficiently
+	// O(1) member lookup via members_map
 	mut updated_members := []domain.GroupMember{}
-	if member_idx >= 0 {
-		// Update existing member - pre-allocate capacity instead of clone
+	mut updated_map := map[string]int{}
+
+	if idx := group.members_map[member_id] {
+		// Update existing member in-place
 		updated_members = []domain.GroupMember{cap: group.members.len}
 		for i, m in group.members {
-			if i == member_idx {
+			if i == idx {
 				updated_members << member
 			} else {
 				updated_members << m
 			}
+		}
+		// Rebuild map (indices stay the same since we replaced, not inserted)
+		for i, m in updated_members {
+			updated_map[m.member_id] = i
 		}
 	} else {
 		// Add new member (single allocation)
 		updated_members = []domain.GroupMember{cap: group.members.len + 1}
 		updated_members << group.members
 		updated_members << member
+		// Copy existing map entries then add new member
+		for k, v in group.members_map {
+			updated_map[k] = v
+		}
+		updated_map[member_id] = updated_members.len - 1
 	}
 
 	group = domain.ConsumerGroup{
 		...group
-		members: updated_members
+		members:     updated_members
+		members_map: updated_map
 	}
 
 	// Increment generation and set leader
@@ -192,7 +196,7 @@ pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupRespon
 		}
 	}
 
-	// Find this member's assignment
+	// Find this member's assignment from the request (leader provides these)
 	for a in req.assignments {
 		if a.member_id == req.member_id {
 			return SyncGroupResponse{
@@ -202,18 +206,15 @@ pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupRespon
 		}
 	}
 
-	// If not the leader, find assignment from stored state
-	for m in group.members {
-		if m.member_id == req.member_id {
-			return SyncGroupResponse{
-				error_code: 0
-				assignment: m.assignment
-			}
+	// If not the leader, retrieve assignment from stored state via O(1) map lookup
+	idx := group.members_map[req.member_id] or {
+		return SyncGroupResponse{
+			error_code: i16(domain.ErrorCode.unknown_member_id)
 		}
 	}
-
 	return SyncGroupResponse{
-		error_code: i16(domain.ErrorCode.unknown_member_id)
+		error_code: 0
+		assignment: group.members[idx].assignment
 	}
 }
 
@@ -247,37 +248,54 @@ pub fn (mut c GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatRespons
 		}
 	}
 
-	// Verify member exists
-	for m in group.members {
-		if m.member_id == req.member_id {
-			return HeartbeatResponse{
-				error_code: 0
-			}
+	// O(1) member existence check via members_map
+	_ = group.members_map[req.member_id] or {
+		return HeartbeatResponse{
+			error_code: i16(domain.ErrorCode.unknown_member_id)
 		}
 	}
 
 	return HeartbeatResponse{
-		error_code: i16(domain.ErrorCode.unknown_member_id)
+		error_code: 0
 	}
 }
 
 /// leave_group handles a group leave request.
 /// Removes the member from the group and triggers rebalancing.
 pub fn (mut c GroupCoordinator) leave_group(group_id string, member_id string) i16 {
-	group := c.storage.load_group(group_id) or { return i16(domain.ErrorCode.group_id_not_found) }
-
-	// Remove member
-	mut new_members := []domain.GroupMember{}
-	for m in group.members {
-		if m.member_id != member_id {
-			new_members << m
-		}
+	mut group := c.storage.load_group(group_id) or {
+		return i16(domain.ErrorCode.group_id_not_found)
 	}
+
+	// O(1) member lookup to find the index to remove
+	idx := group.members_map[member_id] or {
+		// Member not found is treated as success (idempotent leave)
+		return 0
+	}
+
+	// Swap-and-pop for O(1) removal: swap with last element, then delete last
+	mut new_members := group.members.clone()
+	mut new_map := map[string]int{}
+	for k, v in group.members_map {
+		new_map[k] = v
+	}
+
+	last_idx := new_members.len - 1
+	if idx != last_idx {
+		// Swap the target member with the last member
+		last_member_id := new_members[last_idx].member_id
+		new_members[idx] = new_members[last_idx]
+		new_map[last_member_id] = idx
+	}
+	// Remove last element
+	new_members.delete_last()
+	new_map.delete(member_id)
 
 	new_group := domain.ConsumerGroup{
 		...group
-		members: new_members
-		state:   if new_members.len == 0 {
+		members:     new_members
+		members_map: new_map
+		state:       if new_members.len == 0 {
 			domain.GroupState.empty
 		} else {
 			domain.GroupState.preparing_rebalance
@@ -299,7 +317,9 @@ pub fn (mut c GroupCoordinator) describe_group(group_id string) !domain.Consumer
 	return c.storage.load_group(group_id)
 }
 
-/// generate_id generates a unique ID.
+/// generate_id generates a unique numeric ID string.
+// Returns a raw i64 string to avoid duplicate prefixes when the caller
+// already prepends a "member-<group_id>-" prefix.
 fn generate_id() string {
-	return 'member-${rand.i64()}'
+	return rand.i64().str()
 }

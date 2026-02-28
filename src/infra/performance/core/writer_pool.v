@@ -8,15 +8,20 @@ import sync
 // WriterPool - BinaryWriter reuse pool
 
 /// WriterPool reuses BinaryWriter objects to minimize memory allocations.
+/// Each size class has its own dedicated slice for O(1) get/return operations.
 @[heap]
 pub struct WriterPool {
 pub mut:
 	config PoolConfig
 mut:
-	pool       []&PooledWriter
-	stats      WriterPoolStats
-	lock       sync.Mutex
-	is_running bool
+	tiny_pool   []&PooledWriter
+	small_pool  []&PooledWriter
+	medium_pool []&PooledWriter
+	large_pool  []&PooledWriter
+	huge_pool   []&PooledWriter
+	stats       WriterPoolStats
+	lock        sync.Mutex
+	is_running  bool
 }
 
 /// PooledWriter is a BinaryWriter wrapper managed by the pool.
@@ -51,27 +56,28 @@ pub mut:
 // Global WriterPool instance
 __global g_writer_pool = &WriterPool(unsafe { nil })
 
+/// init_global_writer_pool explicitly initializes the global WriterPool.
+/// Must be called once at application startup before using the global pool.
+pub fn init_global_writer_pool(config PoolConfig) {
+	g_writer_pool = new_writer_pool(config)
+}
+
 /// get_global_writer_pool returns the global WriterPool instance.
-/// Initializes with default configuration if not yet initialized.
+/// Requires init_global_writer_pool() to be called first at startup.
 pub fn get_global_writer_pool() &WriterPool {
-	if g_writer_pool == unsafe { nil } {
-		g_writer_pool = new_writer_pool(PoolConfig{
-			max_tiny:   500
-			max_small:  200
-			max_medium: 50
-			max_large:  10
-			max_huge:   2
-		})
-	}
 	return g_writer_pool
 }
 
 /// new_writer_pool creates a new WriterPool.
 pub fn new_writer_pool(config PoolConfig) &WriterPool {
 	mut pool := &WriterPool{
-		config:     config
-		pool:       []&PooledWriter{cap: config.max_small}
-		is_running: true
+		config:      config
+		tiny_pool:   []&PooledWriter{cap: config.max_tiny}
+		small_pool:  []&PooledWriter{cap: config.max_small}
+		medium_pool: []&PooledWriter{cap: config.max_medium}
+		large_pool:  []&PooledWriter{cap: config.max_large}
+		huge_pool:   []&PooledWriter{cap: config.max_huge}
+		is_running:  true
 	}
 	pool.prewarm()
 	return pool
@@ -81,7 +87,7 @@ pub fn new_writer_pool(config PoolConfig) &WriterPool {
 fn (mut p WriterPool) prewarm() {
 	// Prewarm primarily with small size class (most commonly used)
 	for _ in 0 .. p.config.prewarm_small {
-		p.pool << p.allocate_writer(.small)
+		p.small_pool << p.allocate_writer(.small)
 	}
 }
 
@@ -100,6 +106,7 @@ fn (mut p WriterPool) allocate_writer(sc SizeClass) &PooledWriter {
 
 /// get retrieves a BinaryWriter from the pool.
 /// Must be returned with return_writer() after use.
+/// O(1): pops directly from the dedicated size-class slice.
 pub fn (mut p WriterPool) get(min_size int) &PooledWriter {
 	if !p.is_running {
 		return p.allocate_writer(get_size_class(min_size))
@@ -110,17 +117,61 @@ pub fn (mut p WriterPool) get(min_size int) &PooledWriter {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	// Find a writer of appropriate size from the pool
-	for i := p.pool.len - 1; i >= 0; i-- {
-		mut writer := p.pool[i]
-		if writer.size_class == sc {
-			// Remove from pool and return
-			p.pool.delete(i)
-			writer.reset()
-			p.stats.hits += 1
-			p.stats.bytes_saved += u64(writer.cap)
-			return writer
+	// O(1): pop the last element from the dedicated size-class slice
+	mut writer := &PooledWriter(unsafe { nil })
+	found := match sc {
+		.tiny {
+			if p.tiny_pool.len > 0 {
+				writer = p.tiny_pool[p.tiny_pool.len - 1]
+				p.tiny_pool.delete_last()
+				true
+			} else {
+				false
+			}
 		}
+		.small {
+			if p.small_pool.len > 0 {
+				writer = p.small_pool[p.small_pool.len - 1]
+				p.small_pool.delete_last()
+				true
+			} else {
+				false
+			}
+		}
+		.medium {
+			if p.medium_pool.len > 0 {
+				writer = p.medium_pool[p.medium_pool.len - 1]
+				p.medium_pool.delete_last()
+				true
+			} else {
+				false
+			}
+		}
+		.large {
+			if p.large_pool.len > 0 {
+				writer = p.large_pool[p.large_pool.len - 1]
+				p.large_pool.delete_last()
+				true
+			} else {
+				false
+			}
+		}
+		.huge {
+			if p.huge_pool.len > 0 {
+				writer = p.huge_pool[p.huge_pool.len - 1]
+				p.huge_pool.delete_last()
+				true
+			} else {
+				false
+			}
+		}
+	}
+
+	if found {
+		writer.reset()
+		p.stats.hits += 1
+		p.stats.bytes_saved += u64(writer.cap)
+		return writer
 	}
 
 	// Not found in pool - allocate new
@@ -140,6 +191,7 @@ pub fn (mut p WriterPool) get_guard(min_size int) WriterGuard {
 }
 
 /// return_writer returns a writer to the pool.
+/// O(1): appends directly to the dedicated size-class slice.
 pub fn (mut p WriterPool) return_writer(mut writer PooledWriter) {
 	if !p.is_running || &writer == unsafe { nil } {
 		return
@@ -148,13 +200,19 @@ pub fn (mut p WriterPool) return_writer(mut writer PooledWriter) {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	// Check maximum size limit
+	// O(1): check count directly from dedicated slice length
 	current_count := p.count_by_class(writer.size_class)
 	max_for_class := p.max_for_class(writer.size_class)
 
 	if current_count < max_for_class {
 		writer.reset()
-		p.pool << &writer
+		match writer.size_class {
+			.tiny { p.tiny_pool << &writer }
+			.small { p.small_pool << &writer }
+			.medium { p.medium_pool << &writer }
+			.large { p.large_pool << &writer }
+			.huge { p.huge_pool << &writer }
+		}
 		p.stats.returns += 1
 	} else {
 		p.stats.discards += 1
@@ -162,14 +220,15 @@ pub fn (mut p WriterPool) return_writer(mut writer PooledWriter) {
 }
 
 /// count_by_class returns the number of writers of the specified size class.
+/// O(1): direct slice length lookup.
 fn (p &WriterPool) count_by_class(sc SizeClass) int {
-	mut count := 0
-	for writer in p.pool {
-		if writer.size_class == sc {
-			count++
-		}
+	return match sc {
+		.tiny { p.tiny_pool.len }
+		.small { p.small_pool.len }
+		.medium { p.medium_pool.len }
+		.large { p.large_pool.len }
+		.huge { p.huge_pool.len }
 	}
-	return count
 }
 
 /// max_for_class returns the maximum number of writers for the specified size class.
@@ -195,7 +254,11 @@ pub fn (mut p WriterPool) shutdown() {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 	p.is_running = false
-	p.pool.clear()
+	p.tiny_pool.clear()
+	p.small_pool.clear()
+	p.medium_pool.clear()
+	p.large_pool.clear()
+	p.huge_pool.clear()
 }
 
 // PooledWriter methods

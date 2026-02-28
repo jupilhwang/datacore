@@ -9,6 +9,7 @@ import config as cfg
 import domain
 import infra.compression
 import infra.observability
+import infra.performance.core as perf_core
 import interface.grpc as iface_grpc
 import infra.protocol.kafka
 import infra.storage.plugins.memory
@@ -157,12 +158,12 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 				logger.info('Waiting ${wait_secs}s before next registration attempt')
 				time.sleep(wait_secs * time.second)
 			}
-			domain.BrokerInfo{}
+			// Continue to next attempt; register_success remains false
+			continue
 		}
-		if broker_info.broker_id > 0 {
-			register_success = true
-			break
-		}
+		// Registration succeeded — no sentinel check needed
+		register_success = true
+		break
 	}
 
 	if !register_success {
@@ -225,4 +226,21 @@ pub fn init_grpc_server(conf cfg.Config, storage port.StoragePort, mut logger ob
 		observability.field_int('port', conf.grpc.port))
 
 	return srv
+}
+
+// init_writer_pool initializes the global WriterPool at application startup.
+// Must be called before any pooled_writer() or release_writer() calls.
+pub fn init_writer_pool(config perf_core.PoolConfig) {
+	perf_core.init_global_writer_pool(config)
+}
+
+// default_writer_pool_config returns the default PoolConfig for the global WriterPool.
+pub fn default_writer_pool_config() perf_core.PoolConfig {
+	return perf_core.PoolConfig{
+		max_tiny:   500
+		max_small:  200
+		max_medium: 50
+		max_large:  10
+		max_huge:   2
+	}
 }

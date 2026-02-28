@@ -11,6 +11,28 @@ module cli
 import net as _
 import time as _
 
+/// print_group_help prints help text for the group command.
+pub fn print_group_help() {
+	println('\x1b[33mGroup Commands:\x1b[0m')
+	println('')
+	println('Usage: datacore group <command> [options]')
+	println('')
+	println('Commands:')
+	println('  list          List consumer groups')
+	println('  describe      Describe a consumer group')
+	println('  delete        Delete a consumer group')
+	println('  reset-offset  Reset consumer group offset')
+	println('')
+	println('Options:')
+	println('  -b, --bootstrap-server  Broker address (default: localhost:9092)')
+	println('  -g, --group             Group ID')
+	println('  -t, --topic             Topic name (for reset-offset)')
+	println('  -p, --partition         Partition (for reset-offset, default: 0)')
+	println('  -o, --offset            Target offset (for reset-offset)')
+	println('      --to-earliest       Reset to earliest offset')
+	println('      --to-latest         Reset to latest offset')
+}
+
 /// GroupOptions is a struct holding group command options.
 pub struct GroupOptions {
 pub:
