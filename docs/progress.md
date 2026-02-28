@@ -1,5 +1,14 @@
 # Progress Log
 
+## 2026-02-28: Iceberg 리팩토링 (refactor/iceberg-cleanup-v1)
+
+- IcebergConfig 중복 타입 통합: config.IcebergConfig 제거, s3.IcebergConfig으로 단일화
+- flush_all_partitions() stats 로직 추출: collect_column_stats() 메서드 분리
+- iceberg_writer.v 파일 분할: 745줄 -> iceberg_writer.v(289), iceberg_avro.v(282), iceberg_metadata.v(182)
+- QA: 68/68 테스트 통과, fmt/lint/build 클린
+
+---
+
 ## 2026-02-28 - Iceberg Bug Fixes (Config/Stats/Tests)
 
 - Config/Runtime disconnect fixed: enabled flag + format_version now properly injected

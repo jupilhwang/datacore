@@ -255,14 +255,14 @@ pub fn create_default_partition_spec() IcebergPartitionSpec {
 pub struct IcebergConfig {
 pub mut:
 	enabled           bool
-	format            string = 'parquet'
-	compression       string = 'zstd'
-	write_mode        string = 'append'
-	partition_by      []string
-	max_rows_per_file int = 1000000
-	max_file_size_mb  int = 128
-	schema_evolution  bool
-	format_version    int = 2
+	format            string   = 'parquet'
+	compression       string   = 'zstd'
+	write_mode        string   = 'append'
+	partition_by      []string = ['timestamp', 'topic']
+	max_rows_per_file int      = 1000000
+	max_file_size_mb  int      = 128
+	schema_evolution  bool     = true
+	format_version    int      = 2
 }
 
 /// create_partition_spec_from_config creates a partition specification from config.

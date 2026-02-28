@@ -80,17 +80,17 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 		s_config.endpoint), observability.field_string('access_key', masked_key))
 
 	if mut s3_adapter := s3.new_s3_adapter(s_config) {
-		// config 패키지의 IcebergConfig를 s3 어댑터에 주입 (런타임 연결)
+		// config 패키지의 iceberg_ 필드들을 s3 어댑터의 IcebergConfig에 주입 (런타임 연결)
 		s3_adapter.iceberg_config = s3.IcebergConfig{
-			enabled:           conf.storage.s3.iceberg.enabled
-			format:            conf.storage.s3.iceberg.format
-			compression:       conf.storage.s3.iceberg.compression
-			write_mode:        conf.storage.s3.iceberg.write_mode
-			partition_by:      conf.storage.s3.iceberg.partition_by
-			max_rows_per_file: conf.storage.s3.iceberg.max_rows_per_file
-			max_file_size_mb:  conf.storage.s3.iceberg.max_file_size_mb
-			schema_evolution:  conf.storage.s3.iceberg.schema_evolution
-			format_version:    conf.storage.s3.iceberg.format_version
+			enabled:           conf.storage.s3.iceberg_enabled
+			format:            conf.storage.s3.iceberg_format
+			compression:       conf.storage.s3.iceberg_compression
+			write_mode:        conf.storage.s3.iceberg_write_mode
+			partition_by:      conf.storage.s3.iceberg_partition_by
+			max_rows_per_file: conf.storage.s3.iceberg_max_rows_per_file
+			max_file_size_mb:  conf.storage.s3.iceberg_max_file_size_mb
+			schema_evolution:  conf.storage.s3.iceberg_schema_evolution
+			format_version:    conf.storage.s3.iceberg_format_version
 		}
 		s3_adapter.start_workers()
 		return StorageResult{
