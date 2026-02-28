@@ -1,5 +1,13 @@
 # Changelog
 
+### v0.47.1 - Iceberg Module Refactoring
+
+- refactor: IcebergConfig 중복 타입 통합 (config/s3 -> s3 단일 타입)
+- refactor: flush_all_partitions() stats 로직을 collect_column_stats()로 추출
+- refactor: iceberg_writer.v를 3개 파일로 분할 (iceberg_writer, iceberg_avro, iceberg_metadata)
+- 기본값 통일: partition_by=['timestamp','topic'], schema_evolution=true
+
+---
 
 ## 2026-02-28 - Iceberg 버그 수정 (feature/iceberg-fixes-v1)
 

@@ -146,29 +146,6 @@ pub:
 	segment_size_bytes int = 1073741824
 }
 
-/// IcebergConfig represents the S3 Iceberg table format configuration.
-/// enabled: whether to use Iceberg format
-/// format: file format (parquet, orc, avro)
-/// compression: compression method (none, snappy, gzip, zstd)
-/// write_mode: write mode (append, overwrite)
-/// partition_by: list of partitioning columns
-/// max_rows_per_file: maximum rows per file
-/// max_file_size_mb: maximum file size (MB)
-/// schema_evolution: whether schema evolution is supported
-/// format_version: Iceberg 포맷 버전 (기본값 2 - 안정 스펙, v3 기능 미구현)
-pub struct IcebergConfig {
-pub:
-	enabled           bool
-	format            string   = 'parquet'
-	compression       string   = 'zstd'
-	write_mode        string   = 'append'
-	partition_by      []string = ['timestamp', 'topic']
-	max_rows_per_file int      = 1000000
-	max_file_size_mb  int      = 128
-	schema_evolution  bool     = true
-	format_version    int      = 2
-}
-
 /// S3StorageConfig represents the S3 storage configuration.
 /// endpoint: S3 endpoint URL
 /// bucket: S3 bucket name
@@ -181,7 +158,15 @@ pub:
 /// compaction_interval_ms: compaction interval (milliseconds)
 /// target_segment_bytes: target segment size (bytes)
 /// index_cache_ttl_ms: partition index cache TTL (milliseconds)
-/// iceberg: Iceberg table format configuration
+/// iceberg_enabled: whether to use Iceberg format
+/// iceberg_format: file format (parquet, orc, avro)
+/// iceberg_compression: compression method (none, snappy, gzip, zstd)
+/// iceberg_write_mode: write mode (append, overwrite)
+/// iceberg_partition_by: list of partitioning columns
+/// iceberg_max_rows_per_file: maximum rows per file
+/// iceberg_max_file_size_mb: maximum file size (MB)
+/// iceberg_schema_evolution: whether schema evolution is supported
+/// iceberg_format_version: Iceberg format version (default 2 - stable spec)
 pub struct S3StorageConfig {
 pub mut:
 	endpoint   string
@@ -202,8 +187,16 @@ pub mut:
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
-	// Iceberg configuration
-	iceberg IcebergConfig
+	// Iceberg table format configuration (flattened from IcebergConfig for TOML parsing)
+	iceberg_enabled           bool
+	iceberg_format            string   = 'parquet'
+	iceberg_compression       string   = 'zstd'
+	iceberg_write_mode        string   = 'append'
+	iceberg_partition_by      []string = ['timestamp', 'topic']
+	iceberg_max_rows_per_file int      = 1000000
+	iceberg_max_file_size_mb  int      = 128
+	iceberg_schema_evolution  bool     = true
+	iceberg_format_version    int      = 2
 }
 
 /// SqliteStorageConfig represents the SQLite storage configuration.
@@ -490,7 +483,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		s3.secret_key = get_string(doc, 'storage.s3.secret_key', '')
 	}
 
-	// parse Iceberg configuration
+	// parse Iceberg configuration from [storage.s3.iceberg] section
 	iceberg_enabled := get_bool(doc, 'storage.s3.iceberg.enabled', false)
 	if iceberg_enabled {
 		mut partition_by := []string{}
@@ -503,17 +496,19 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			partition_by = ['timestamp', 'topic']
 		}
 
-		s3.iceberg = IcebergConfig{
-			enabled:           iceberg_enabled
-			format:            get_string(doc, 'storage.s3.iceberg.format', 'parquet')
-			compression:       get_string(doc, 'storage.s3.iceberg.compression', 'zstd')
-			write_mode:        get_string(doc, 'storage.s3.iceberg.write_mode', 'append')
-			partition_by:      partition_by
-			max_rows_per_file: get_int(doc, 'storage.s3.iceberg.max_rows_per_file', 1000000)
-			max_file_size_mb:  get_int(doc, 'storage.s3.iceberg.max_file_size_mb', 128)
-			schema_evolution:  get_bool(doc, 'storage.s3.iceberg.schema_evolution', true)
-			format_version:    get_int(doc, 'storage.s3.iceberg.format_version', 2)
-		}
+		s3.iceberg_enabled = iceberg_enabled
+		s3.iceberg_format = get_string(doc, 'storage.s3.iceberg.format', 'parquet')
+		s3.iceberg_compression = get_string(doc, 'storage.s3.iceberg.compression', 'zstd')
+		s3.iceberg_write_mode = get_string(doc, 'storage.s3.iceberg.write_mode', 'append')
+		s3.iceberg_partition_by = partition_by
+		s3.iceberg_max_rows_per_file = get_int(doc, 'storage.s3.iceberg.max_rows_per_file',
+			1000000)
+		s3.iceberg_max_file_size_mb = get_int(doc, 'storage.s3.iceberg.max_file_size_mb',
+			128)
+		s3.iceberg_schema_evolution = get_bool(doc, 'storage.s3.iceberg.schema_evolution',
+			true)
+		s3.iceberg_format_version = get_int(doc, 'storage.s3.iceberg.format_version',
+			2)
 	}
 
 	// parse SQLite configuration
@@ -1011,8 +1006,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		}
 	}
 
-	// Iceberg configuration (default - disabled)
-	s3.iceberg = IcebergConfig{}
+	// Iceberg configuration defaults (disabled by default; fields use struct default values)
 
 	sqlite := SqliteStorageConfig{}
 
