@@ -436,58 +436,112 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 			}
 		}
 		.describe_configs {
-			h.handle_describe_configs(req.body, version)!
+			h.handle_describe_configs(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.describe_acls {
-			h.handle_describe_acls(req.body, version)!
+			h.handle_describe_acls(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.create_acls {
-			h.handle_create_acls(req.body, version)!
+			h.handle_create_acls(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.delete_acls {
-			h.handle_delete_acls(req.body, version)!
+			h.handle_delete_acls(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.alter_configs {
-			h.handle_alter_configs(req.body, version)!
+			h.handle_alter_configs(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.create_partitions {
-			h.handle_create_partitions(req.body, version)!
+			h.handle_create_partitions(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.delete_records {
-			h.handle_delete_records(req.body, version)!
+			h.handle_delete_records(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.alter_replica_log_dirs {
-			h.handle_alter_replica_log_dirs(req.body, version)!
+			h.handle_alter_replica_log_dirs(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.describe_log_dirs {
-			h.handle_describe_log_dirs(req.body, version)!
+			h.handle_describe_log_dirs(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.incremental_alter_configs {
-			h.handle_incremental_alter_configs(req.body, version)!
+			h.handle_incremental_alter_configs(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.describe_topic_partitions {
-			h.handle_describe_topic_partitions(req.body, version)!
+			h.handle_describe_topic_partitions(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.share_group_heartbeat {
-			h.handle_share_group_heartbeat(req.body, version)!
+			h.handle_share_group_heartbeat(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.share_fetch {
-			h.handle_share_fetch(req.body, version)!
+			h.handle_share_fetch(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.share_acknowledge {
-			h.handle_share_acknowledge(req.body, version)!
+			h.handle_share_acknowledge(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.initialize_share_group_state {
-			h.handle_initialize_share_group_state(req.body, version)!
+			h.handle_initialize_share_group_state(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.read_share_group_state {
-			h.handle_read_share_group_state(req.body, version)!
+			h.handle_read_share_group_state(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.write_share_group_state {
-			h.handle_write_share_group_state(req.body, version)!
+			h.handle_write_share_group_state(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		.delete_share_group_state {
-			h.handle_delete_share_group_state(req.body, version)!
+			h.handle_delete_share_group_state(req.body, version) or {
+				success = false
+				return err
+			}
 		}
 		else {
 			h.logger.warn('Unsupported API key', observability.field_int('api_key', int(api_key)))

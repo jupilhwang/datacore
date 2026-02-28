@@ -24,6 +24,27 @@ pub:
 	new_partitions   int = -1
 }
 
+/// print_topic_help prints help text for the topic command.
+pub fn print_topic_help() {
+	println('\x1b[33mTopic Commands:\x1b[0m')
+	println('')
+	println('Usage: datacore topic <command> [options]')
+	println('')
+	println('Commands:')
+	println('  create    Create a new topic')
+	println('  list      List all topics')
+	println('  delete    Delete a topic')
+	println('  describe  Describe a topic')
+	println('  alter     Alter a topic (e.g. increase partition count)')
+	println('')
+	println('Options:')
+	println('  -b, --bootstrap-server  Broker address (default: localhost:9092)')
+	println('  -t, --topic             Topic name')
+	println('  -p, --partitions        Number of partitions (default: 1)')
+	println('  -r, --replication-factor Replication factor (default: 1)')
+	println('      --new-partitions    New partition count (for alter)')
+}
+
 /// parse_topic_options parses topic command options.
 pub fn parse_topic_options(args []string) TopicOptions {
 	mut opts := TopicOptions{}

@@ -52,13 +52,45 @@ pub fn (c &Lz4CompressorC) compress(data []u8) ![]u8 {
 	return result
 }
 
+// lz4_frame_magic is the LZ4 frame magic bytes in little-endian order.
+// 0x184D2204 stored as bytes: 04 22 4D 18
+const lz4_frame_magic = [u8(0x04), 0x22, 0x4d, 0x18]
+
 /// decompress decompresses LZ4 Frame format data.
-/// Can handle LZ4-compressed data produced by Kafka.
+/// Handles two variants:
+///   1. Standard LZ4 frame (magic at offset 0): decompress directly.
+///   2. Kafka kafka-clients format (4-byte BE length prefix before frame):
+///      [4 bytes original_size BE] [LZ4 frame magic 04 22 4D 18 ...]
 pub fn (c &Lz4CompressorC) decompress(data []u8) ![]u8 {
 	if data.len == 0 {
 		return []u8{}
 	}
 
+	// Detect Kafka's 4-byte prefix: if magic is NOT at offset 0 but IS at offset 4,
+	// skip the 4-byte length field and decompress the remaining LZ4 frame.
+	actual_data := if has_kafka_lz4_prefix(data) { data[4..] } else { data }
+
+	return c.decompress_lz4_frame(actual_data)
+}
+
+/// has_kafka_lz4_prefix reports whether data has a 4-byte Kafka length prefix
+/// before a valid LZ4 frame magic (04 22 4D 18).
+fn has_kafka_lz4_prefix(data []u8) bool {
+	if data.len < 8 {
+		return false
+	}
+	// LZ4 frame magic must NOT be at offset 0
+	if data[0] == lz4_frame_magic[0] && data[1] == lz4_frame_magic[1]
+		&& data[2] == lz4_frame_magic[2] && data[3] == lz4_frame_magic[3] {
+		return false
+	}
+	// LZ4 frame magic must be at offset 4
+	return data[4] == lz4_frame_magic[0] && data[5] == lz4_frame_magic[1]
+		&& data[6] == lz4_frame_magic[2] && data[7] == lz4_frame_magic[3]
+}
+
+/// decompress_lz4_frame decompresses a standard LZ4 frame payload.
+fn (c &Lz4CompressorC) decompress_lz4_frame(data []u8) ![]u8 {
 	// Create decompression context
 	mut dctx := unsafe { nil }
 	create_result := C.LZ4F_createDecompressionContext(&dctx, lz4f_version)
@@ -165,7 +197,13 @@ fn C.LZ4F_getErrorName(code usize) &char
 // LZ4F version constant
 const lz4f_version = u32(100)
 
-// Lz4FrameInfo struct (used in V) - snake_case applied
+// C struct binding for LZ4F_frameInfo_t.
+// Field order and types must exactly match the C definition:
+//   blockSizeID, blockMode, contentChecksumFlag, frameType: u32 each
+//   contentSize: u64 (unsigned long long)
+//   dictID, blockChecksumFlag: u32 each
+// This layout mirrors LZ4F_frameInfo_t from lz4frame.h so that the struct can be
+// passed directly (via voidptr) to C.LZ4F_getFrameInfo and read back correctly.
 struct Lz4FrameInfo {
 	block_size_id         u32
 	block_mode            u32

@@ -1424,7 +1424,7 @@ fn test_parse_describe_topic_partitions_request() {
 	writer.write_compact_string('topic-b')
 	writer.write_i8(0)
 	writer.write_i32(100)
-	writer.write_compact_array_len(-1)
+	writer.write_i8(-1) // cursor null indicator: nullable struct null = 0xFF(-1)
 	writer.write_i8(0)
 
 	mut reader := new_reader(writer.bytes())
@@ -1488,7 +1488,7 @@ fn test_handler_describe_topic_partitions_success() {
 	writer.write_compact_string('test-topic')
 	writer.write_i8(0)
 	writer.write_i32(2000)
-	writer.write_compact_array_len(-1)
+	writer.write_i8(-1) // cursor null indicator: nullable struct null = 0xFF(-1)
 	writer.write_i8(0)
 
 	result := handler.handle_describe_topic_partitions(writer.bytes(), 0) or {
@@ -1509,7 +1509,7 @@ fn test_handler_describe_topic_partitions_not_found() {
 	writer.write_compact_string('nonexistent')
 	writer.write_i8(0)
 	writer.write_i32(2000)
-	writer.write_compact_array_len(-1)
+	writer.write_i8(-1) // cursor null indicator: nullable struct null = 0xFF(-1)
 	writer.write_i8(0)
 
 	result := handler.handle_describe_topic_partitions(writer.bytes(), 0) or {

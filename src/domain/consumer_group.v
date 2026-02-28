@@ -8,6 +8,7 @@ module domain
 /// leader: leader member ID
 /// state: group state
 /// members: list of group members
+/// members_map: index map for O(1) member lookup (member_id -> members array index)
 pub struct ConsumerGroup {
 pub:
 	group_id      string
@@ -17,6 +18,7 @@ pub:
 	leader        string
 	state         GroupState
 	members       []GroupMember
+	members_map   map[string]int
 }
 
 /// GroupState represents the state of a consumer group.

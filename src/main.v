@@ -189,6 +189,9 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	mut logger := observability.get_logger()
 
+	// Initialize global writer pool for protocol encoding
+	startup.init_writer_pool(startup.default_writer_pool_config())
+
 	// Log configuration summary
 	logger.info('Broker configuration summary', observability.field_string('host', conf.broker.host),
 		observability.field_int('port', conf.broker.port), observability.field_int('broker_id',
@@ -400,23 +403,7 @@ fn run_topic(args []string) ! {
 			cli.run_topic_alter(opts)!
 		}
 		'help', '-h', '--help' {
-			println('\x1b[33mTopic Commands:\x1b[0m')
-			println('')
-			println('Usage: datacore topic <command> [options]')
-			println('')
-			println('Commands:')
-			println('  create    Create a new topic')
-			println('  list      List all topics')
-			println('  delete    Delete a topic')
-			println('  describe  Describe a topic')
-			println('  alter     Alter a topic (e.g. increase partition count)')
-			println('')
-			println('Options:')
-			println('  -b, --bootstrap-server  Broker address (default: localhost:9092)')
-			println('  -t, --topic             Topic name')
-			println('  -p, --partitions        Number of partitions (default: 1)')
-			println('  -r, --replication-factor Replication factor (default: 1)')
-			println('      --new-partitions    New partition count (for alter)')
+			cli.print_topic_help()
 		}
 		else {
 			return error('Unknown topic command: ${args[0]}')
@@ -470,24 +457,7 @@ fn run_group(args []string) ! {
 			cli.run_group_reset_offset(opts)!
 		}
 		'help', '-h', '--help' {
-			println('\x1b[33mGroup Commands:\x1b[0m')
-			println('')
-			println('Usage: datacore group <command> [options]')
-			println('')
-			println('Commands:')
-			println('  list          List consumer groups')
-			println('  describe      Describe a consumer group')
-			println('  delete        Delete a consumer group')
-			println('  reset-offset  Reset consumer group offset')
-			println('')
-			println('Options:')
-			println('  -b, --bootstrap-server  Broker address (default: localhost:9092)')
-			println('  -g, --group             Group ID')
-			println('  -t, --topic             Topic name (for reset-offset)')
-			println('  -p, --partition         Partition (for reset-offset, default: 0)')
-			println('  -o, --offset            Target offset (for reset-offset)')
-			println('      --to-earliest       Reset to earliest offset')
-			println('      --to-latest         Reset to latest offset')
+			cli.print_group_help()
 		}
 		else {
 			return error('Unknown group command: ${args[0]}')

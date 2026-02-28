@@ -9,6 +9,7 @@
 /src/src
 
 # Build outputs
+/bin/
 /build/
 /dist/
 /target/
@@ -36,6 +37,7 @@ logs/
 /data/
 *.db
 *.sqlite
+.watch
 
 # Test coverage
 coverage/
