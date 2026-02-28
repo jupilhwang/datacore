@@ -1,6 +1,51 @@
 # Changelog
 
 
+## 2026-02-28 - Iceberg 버그 수정 (feature/iceberg-fixes-v1)
+
+### 브랜치: feature/iceberg-fixes-v1
+
+#### 수정된 버그 및 구현 갭
+
+- **Config/Runtime 연결 누락** (`config.v`, `startup.v`, `adapter.v`):
+  - `IcebergConfig.format_version` 필드 추가 (default: 2)
+  - `enabled` 플래그가 실제 런타임에 반영되도록 수정 (env var 오버라이드 유지)
+  - startup.v에서 config -> adapter 의존성 주입 연결
+
+- **Format Version 불일치** (`iceberg_types.v`, `iceberg_writer.v`):
+  - `IcebergMetadata.format_version` 기본값 v3 -> v2로 수정
+  - 전체 컴포넌트 간 format-version 일관성 확보
+
+- **Manifest Column Stats 미기록** (`iceberg_types.v`, `iceberg_helpers.v`, `iceberg_writer.v`, `parquet_encoder.v`):
+  - `IcebergDataFile` 통계 필드 타입 수정: `map[string]` -> `map[int]`, bounds `string` -> `[]u8`
+  - `ParquetColumnChunk`에 `min_bytes`/`max_bytes` 필드 추가
+  - Parquet 청크에서 실제 min/max/null_count 추출하여 Avro manifest에 기록
+  - 직렬화 헬퍼 함수 6개 추가
+
+#### 추가된 테스트
+
+- `src/infra/storage/plugins/s3/iceberg_config_test.v` (신규, 9개 테스트)
+- `src/infra/storage/plugins/s3/iceberg_test.v` (7개 신규 테스트)
+- `src/interface/rest/iceberg_catalog_api_test.v` (신규, 16개 테스트) — MockIcebergCatalog 기반
+
+#### 테스트 호환성 수정
+
+- `parquet_encoder_test.v`: `encode()` 튜플 반환값 대응
+- `iceberg_glue_catalog_test.v`: `encode_metadata` 자유함수화, `generate_table_uuid` 시그니처 대응
+
+#### 테스트 결과
+
+- **68/68 PASS** (32 신규 + 36 기존)
+- **v fmt -verify**: 통과
+- **v vet**: 에러 0개
+- **PDCA 반복**: 1회 (기존 테스트 깨짐 수정 후 통과)
+
+#### 커밋
+
+- `67db0e3` — fix(iceberg): config-runtime 연결, format version 일관성, manifest column stats 실제 기록
+
+---
+
 ## 2026-02-28 - Kafka 압축 버그 수정 (fix/kafka-compression-bug)
 
 ### 브랜치: fix/kafka-compression-bug
