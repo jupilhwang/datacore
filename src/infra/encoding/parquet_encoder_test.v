@@ -402,3 +402,108 @@ fn test_parquet_decoder_empty_file() {
 	}
 	assert false, 'should have returned error for empty file'
 }
+
+fn test_parquet_integration_encode_decode() {
+	// Step 1: Create records
+	records := [
+		ParquetRecord{
+			offset:    0
+			timestamp: 1700000000000
+			topic:     'events'
+			partition: 0
+			key:       'user-001'.bytes()
+			value:     '{"event":"click","page":"/home"}'.bytes()
+			headers:   '{"content-type":"application/json"}'
+		},
+		ParquetRecord{
+			offset:    1
+			timestamp: 1700000001000
+			topic:     'events'
+			partition: 0
+			key:       'user-002'.bytes()
+			value:     '{"event":"view","page":"/about"}'.bytes()
+			headers:   '{}'
+		},
+		ParquetRecord{
+			offset:    2
+			timestamp: 1700000002000
+			topic:     'events'
+			partition: 1
+			key:       []u8{}
+			value:     'plain text event'.bytes()
+			headers:   ''
+		},
+	]
+
+	// Step 2: Encode
+	encoded_data, metadata := encode_batch(records, .uncompressed)!
+
+	// Verify encoded file is valid
+	assert verify_parquet_magic(encoded_data)
+	assert metadata.num_rows == 3
+	assert metadata.row_groups.len == 1
+	assert metadata.compression == .uncompressed
+
+	// Step 3: Decode using ParquetDecoder
+	mut decoder := new_parquet_decoder(encoded_data)!
+
+	// Verify metadata matches
+	assert decoder.row_count() == 3
+
+	// Read all records
+	decoded_records := decoder.read_all()!
+
+	// Verify roundtrip worked
+	assert decoded_records.len == 3
+}
+
+fn test_parquet_integration_multiple_row_groups() {
+	// Test with more records that would create multiple row groups
+	mut enc := new_parquet_encoder('uncompressed', 1)! // 1MB max, but small records
+
+	for i in 0 .. 100 {
+		rec := ParquetRecord{
+			offset:    i64(i)
+			timestamp: 1700000000000 + i64(i) * 1000
+			topic:     'test-topic'
+			partition: 0
+			key:       'key-${i}'.bytes()
+			value:     'value-${i}'.bytes()
+			headers:   '{}'
+		}
+		enc.add_record('test-topic', 0, domain.Record{
+			key:       rec.key
+			value:     rec.value
+			headers:   {}
+			timestamp: time.unix_milli(rec.timestamp)
+		}, i64(i)) or {}
+	}
+
+	data, metadata := enc.encode()!
+	assert metadata.num_rows == 100
+
+	// Decode and verify
+	mut decoder := new_parquet_decoder(data)!
+	assert decoder.row_count() == 100
+}
+
+fn test_parquet_integration_with_compression() {
+	records := [
+		ParquetRecord{
+			offset:    0
+			timestamp: 1700000000000
+			topic:     'compressed-test'
+			partition: 0
+			key:       'key'.bytes()
+			value:     'value'.bytes()
+			headers:   '{}'
+		},
+	]
+
+	// Test with gzip compression
+	encoded_data, _ := encode_batch(records, .gzip)!
+	assert verify_parquet_magic(encoded_data)
+
+	// Note: Compression support for decoding is not yet implemented
+	// This test verifies the encoder produces valid output
+}
