@@ -79,7 +79,7 @@ pub fn (mut p ParquetMetadataParser) parse(data []u8) !ParsedMetadata {
 		|| data[data.len - 2] != u8(`R`) || data[data.len - 1] != u8(`1`) {
 		return error('invalid parquet magic at end')
 	}
-	footer_len := u32(data[data.len - 8]) | (u32(data[data.len - 7]) << 8) | (u32(data[data.len - 6]) << 16) | (u32(data[data.len - 5]) << 24)
+	footer_len := read_le_u32(data, data.len - 8)
 	footer_start := data.len - 8 - int(footer_len)
 	if footer_start < 4 {
 		return error('invalid footer: footer extends before start magic')
@@ -383,15 +383,13 @@ fn (mut p ParquetMetadataParser) skip_field(field_type u8) ! {
 		}
 		thrift_type_struct {
 			p.reader.read_struct_begin()
-			mut last_fid := i16(0)
 			for {
-				ft, delta := p.reader.read_field_header() or {
+				ft, _ := p.reader.read_field_header() or {
 					if err.msg() == 'stop byte encountered' {
 						break
 					}
 					return err
 				}
-				last_fid += delta
 				p.skip_field(ft)!
 			}
 		}

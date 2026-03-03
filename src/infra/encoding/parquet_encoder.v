@@ -1,204 +1,11 @@
 // Encodes Kafka Records to Parquet file format.
 // Implements a real Parquet writer using Thrift Compact Protocol for metadata encoding.
 // Spec: https://parquet.apache.org/docs/file-format/
+// Shared types are in parquet_types.v.
 module encoding
 
 import domain
 import json
-
-// Parquet physical types (parquet.thrift Type enum).
-const parquet_type_boolean = i32(0)
-const parquet_type_int32 = i32(1)
-const parquet_type_int64 = i32(2)
-const parquet_type_int96 = i32(3)
-const parquet_type_float = i32(4)
-const parquet_type_double = i32(5)
-const parquet_type_byte_array = i32(6)
-const parquet_type_fixed_len_byte_array = i32(7)
-
-// Parquet encoding types (parquet.thrift Encoding enum).
-const parquet_encoding_plain = i32(0)
-const parquet_encoding_rle = i32(3)
-const parquet_encoding_bit_packed = i32(4)
-
-// Parquet compression codecs (parquet.thrift CompressionCodec enum).
-const parquet_compression_uncompressed = i32(0)
-const parquet_compression_snappy = i32(1)
-const parquet_compression_gzip = i32(2)
-const parquet_compression_lzo = i32(3)
-const parquet_compression_brotli = i32(4)
-const parquet_compression_lz4 = i32(5)
-const parquet_compression_zstd = i32(6)
-
-// Parquet page types (parquet.thrift PageType enum).
-const parquet_page_data = i32(0)
-const parquet_page_index = i32(1)
-const parquet_page_dictionary = i32(2)
-const parquet_page_data_v2 = i32(3)
-
-// Parquet field repetition types (parquet.thrift FieldRepetitionType enum).
-const parquet_required = i32(0)
-const parquet_optional = i32(1)
-const parquet_repeated = i32(2)
-
-// Parquet converted types for logical annotations.
-const parquet_converted_type_utf8 = i32(0)
-const parquet_converted_type_timestamp_millis = i32(9)
-
-// Parquet magic bytes written at start and end of file.
-const parquet_magic = [u8(`P`), u8(`A`), u8(`R`), u8(`1`)]
-
-/// ParquetCompression represents the compression method for Parquet files.
-pub enum ParquetCompression {
-	uncompressed
-	snappy
-	gzip
-	lzo
-	brotli
-	lz4
-	zstd
-}
-
-/// Converts ParquetCompression to a string.
-pub fn (pc ParquetCompression) str() string {
-	return match pc {
-		.uncompressed { 'UNCOMPRESSED' }
-		.snappy { 'SNAPPY' }
-		.gzip { 'GZIP' }
-		.lzo { 'LZO' }
-		.brotli { 'BROTLI' }
-		.lz4 { 'LZ4' }
-		.zstd { 'ZSTD' }
-	}
-}
-
-// to_thrift_codec returns the Thrift codec integer for the given compression.
-fn (pc ParquetCompression) to_thrift_codec() i32 {
-	return match pc {
-		.uncompressed { parquet_compression_uncompressed }
-		.snappy { parquet_compression_snappy }
-		.gzip { parquet_compression_gzip }
-		.lzo { parquet_compression_lzo }
-		.brotli { parquet_compression_brotli }
-		.lz4 { parquet_compression_lz4 }
-		.zstd { parquet_compression_zstd }
-	}
-}
-
-/// Parses ParquetCompression from a string.
-pub fn parquet_compression_from_string(s string) !ParquetCompression {
-	return match s.to_lower() {
-		'uncompressed', 'none' { ParquetCompression.uncompressed }
-		'snappy' { ParquetCompression.snappy }
-		'gzip' { ParquetCompression.gzip }
-		'lzo' { ParquetCompression.lzo }
-		'brotli' { ParquetCompression.brotli }
-		'lz4' { ParquetCompression.lz4 }
-		'zstd', 'zstandard' { ParquetCompression.zstd }
-		else { return error('unknown parquet compression: ${s}') }
-	}
-}
-
-/// ParquetSchema represents the schema of a Parquet file.
-pub struct ParquetSchema {
-pub mut:
-	columns []ParquetColumn
-}
-
-/// ParquetColumn represents a Parquet column definition.
-pub struct ParquetColumn {
-pub mut:
-	name     string
-	typ      ParquetDataType
-	required bool
-}
-
-/// ParquetDataType represents a Parquet data type.
-pub enum ParquetDataType {
-	boolean
-	int32
-	int64
-	float
-	double
-	binary
-	string
-	timestamp_millis
-	timestamp_micros
-}
-
-// to_physical_type returns the Parquet physical type integer for metadata encoding.
-fn (dt ParquetDataType) to_physical_type() i32 {
-	return match dt {
-		.boolean { parquet_type_boolean }
-		.int32 { parquet_type_int32 }
-		.int64 { parquet_type_int64 }
-		.float { parquet_type_float }
-		.double { parquet_type_double }
-		.binary { parquet_type_byte_array }
-		.string { parquet_type_byte_array }
-		.timestamp_millis { parquet_type_int64 }
-		.timestamp_micros { parquet_type_int64 }
-	}
-}
-
-// has_converted_type returns whether this type requires a ConvertedType annotation.
-fn (dt ParquetDataType) has_converted_type() bool {
-	return dt == .string || dt == .timestamp_millis || dt == .timestamp_micros
-}
-
-// converted_type returns the Parquet ConvertedType integer if applicable.
-fn (dt ParquetDataType) converted_type() i32 {
-	return match dt {
-		.string { parquet_converted_type_utf8 }
-		.timestamp_millis { parquet_converted_type_timestamp_millis }
-		else { 0 }
-	}
-}
-
-/// ParquetRowGroup represents a Row Group in a Parquet file.
-pub struct ParquetRowGroup {
-pub mut:
-	row_count int
-	columns   []ParquetColumnChunk
-}
-
-/// ParquetColumnChunk represents a column chunk.
-pub struct ParquetColumnChunk {
-pub mut:
-	column_name string
-	data_offset i64
-	data_size   i64
-	value_count i64
-	null_count  i64
-	min_value   string
-	max_value   string
-	min_bytes   []u8
-	max_bytes   []u8
-	compression ParquetCompression
-}
-
-/// ParquetMetadata represents Parquet file metadata.
-pub struct ParquetMetadata {
-pub mut:
-	schema      ParquetSchema
-	row_groups  []ParquetRowGroup
-	created_by  string
-	num_rows    i64
-	compression ParquetCompression
-	file_size   i64
-}
-
-/// ParquetRecord represents a record to be written to a Parquet file.
-pub struct ParquetRecord {
-pub mut:
-	offset    i64
-	timestamp i64
-	topic     string
-	partition int
-	key       []u8
-	value     []u8
-	headers   string
-}
 
 // ColumnData holds the collected values for a single column before encoding.
 struct ColumnData {
@@ -341,15 +148,7 @@ fn encode_plain_int64_page_opt(values []i64, null_count i64, is_optional bool, c
 	// Pre-allocate: 8 bytes per int64 value
 	mut data := []u8{cap: values.len * 8}
 	for v in values {
-		uv := u64(v)
-		data << u8(uv & 0xFF)
-		data << u8((uv >> 8) & 0xFF)
-		data << u8((uv >> 16) & 0xFF)
-		data << u8((uv >> 24) & 0xFF)
-		data << u8((uv >> 32) & 0xFF)
-		data << u8((uv >> 40) & 0xFF)
-		data << u8((uv >> 48) & 0xFF)
-		data << u8((uv >> 56) & 0xFF)
+		write_le_u64(mut data, u64(v))
 	}
 
 	return encode_data_page_v1(data, values.len, null_count, is_optional, codec)
@@ -365,11 +164,7 @@ fn encode_plain_int32_page_opt(values []i32, null_count i64, is_optional bool, c
 	// Pre-allocate: 4 bytes per int32 value
 	mut data := []u8{cap: values.len * 4}
 	for v in values {
-		uv := u32(v)
-		data << u8(uv & 0xFF)
-		data << u8((uv >> 8) & 0xFF)
-		data << u8((uv >> 16) & 0xFF)
-		data << u8((uv >> 24) & 0xFF)
+		write_le_u32(mut data, u32(v))
 	}
 
 	return encode_data_page_v1(data, values.len, null_count, is_optional, codec)
@@ -390,11 +185,7 @@ fn encode_plain_byte_array_page_opt(values [][]u8, null_count i64, is_optional b
 	}
 	mut data := []u8{cap: total_bytes}
 	for v in values {
-		l := u32(v.len)
-		data << u8(l & 0xFF)
-		data << u8((l >> 8) & 0xFF)
-		data << u8((l >> 16) & 0xFF)
-		data << u8((l >> 24) & 0xFF)
+		write_le_u32(mut data, u32(v.len))
 		data << v
 	}
 
@@ -424,10 +215,7 @@ fn encode_rle_definition_levels(count int) []u8 {
 
 	rle_len := u32(rle_data.len)
 	mut result := []u8{cap: 4 + rle_data.len}
-	result << u8(rle_len & 0xFF)
-	result << u8((rle_len >> 8) & 0xFF)
-	result << u8((rle_len >> 16) & 0xFF)
-	result << u8((rle_len >> 24) & 0xFF)
+	write_le_u32(mut result, rle_len)
 	result << rle_data
 	return result
 }
@@ -578,17 +366,9 @@ fn i64_min_bytes(values []i64) []u8 {
 			min = v
 		}
 	}
-	uv := u64(min)
-	return [
-		u8(uv & 0xFF),
-		u8((uv >> 8) & 0xFF),
-		u8((uv >> 16) & 0xFF),
-		u8((uv >> 24) & 0xFF),
-		u8((uv >> 32) & 0xFF),
-		u8((uv >> 40) & 0xFF),
-		u8((uv >> 48) & 0xFF),
-		u8((uv >> 56) & 0xFF),
-	]
+	mut result := []u8{cap: 8}
+	write_le_u64(mut result, u64(min))
+	return result
 }
 
 fn i64_max_bytes(values []i64) []u8 {
@@ -601,17 +381,9 @@ fn i64_max_bytes(values []i64) []u8 {
 			max = v
 		}
 	}
-	uv := u64(max)
-	return [
-		u8(uv & 0xFF),
-		u8((uv >> 8) & 0xFF),
-		u8((uv >> 16) & 0xFF),
-		u8((uv >> 24) & 0xFF),
-		u8((uv >> 32) & 0xFF),
-		u8((uv >> 40) & 0xFF),
-		u8((uv >> 48) & 0xFF),
-		u8((uv >> 56) & 0xFF),
-	]
+	mut result := []u8{cap: 8}
+	write_le_u64(mut result, u64(max))
+	return result
 }
 
 fn i32_min_bytes(values []i32) []u8 {
@@ -624,8 +396,9 @@ fn i32_min_bytes(values []i32) []u8 {
 			min = v
 		}
 	}
-	uv := u32(min)
-	return [u8(uv & 0xFF), u8((uv >> 8) & 0xFF), u8((uv >> 16) & 0xFF), u8((uv >> 24) & 0xFF)]
+	mut result := []u8{cap: 4}
+	write_le_u32(mut result, u32(min))
+	return result
 }
 
 fn i32_max_bytes(values []i32) []u8 {
@@ -638,8 +411,9 @@ fn i32_max_bytes(values []i32) []u8 {
 			max = v
 		}
 	}
-	uv := u32(max)
-	return [u8(uv & 0xFF), u8((uv >> 8) & 0xFF), u8((uv >> 16) & 0xFF), u8((uv >> 24) & 0xFF)]
+	mut result := []u8{cap: 4}
+	write_le_u32(mut result, u32(max))
+	return result
 }
 
 // encode_file_metadata encodes the Parquet FileMetaData as Thrift Compact Protocol bytes.
@@ -902,11 +676,7 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	file_bytes << footer_bytes
 
 	// 4. Write 4-byte footer length (little-endian)
-	fl := u32(footer_bytes.len)
-	file_bytes << u8(fl & 0xFF)
-	file_bytes << u8((fl >> 8) & 0xFF)
-	file_bytes << u8((fl >> 16) & 0xFF)
-	file_bytes << u8((fl >> 24) & 0xFF)
+	write_le_u32(mut file_bytes, u32(footer_bytes.len))
 
 	// 5. Write magic number at end
 	file_bytes << parquet_magic
@@ -974,19 +744,6 @@ pub fn encode_batch(records []ParquetRecord, compression ParquetCompression) !([
 	}
 
 	return encoder.encode()!
-}
-
-/// ParquetFileInfo represents Parquet file information.
-pub struct ParquetFileInfo {
-pub:
-	file_path     string
-	record_count  i64
-	file_size     i64
-	min_offset    i64
-	max_offset    i64
-	min_timestamp i64
-	max_timestamp i64
-	compression   string
 }
 
 // parse_page_header_num_values reads the num_values field from a Thrift-encoded PageHeader+DataPageHeader.
@@ -1064,10 +821,7 @@ pub fn decode_plain_int64_page(data []u8) ![]i64 {
 	mut values := []i64{cap: num_values}
 	for i in 0 .. num_values {
 		offset := data_start + i * 8
-		val := i64(data[offset]) | i64(data[offset + 1]) << 8 | i64(data[offset + 2]) << 16 | i64(data[
-			offset + 3]) << 24 | i64(data[offset + 4]) << 32 | i64(data[offset + 5]) << 40 | i64(data[
-			offset + 6]) << 48 | i64(data[offset + 7]) << 56
-		values << val
+		values << read_le_i64(data, offset)
 	}
 
 	return values
@@ -1085,9 +839,7 @@ pub fn decode_plain_int32_page(data []u8) ![]i32 {
 	mut values := []i32{cap: num_values}
 	for i in 0 .. num_values {
 		offset := data_start + i * 4
-		val := i32(data[offset]) | i32(data[offset + 1]) << 8 | i32(data[offset + 2]) << 16 | i32(data[
-			offset + 3]) << 24
-		values << val
+		values << read_le_i32(data, offset)
 	}
 
 	return values
@@ -1106,8 +858,7 @@ pub fn decode_plain_byte_array_page(data []u8) ![][]u8 {
 		if pos + 4 > data.len {
 			return error('invalid page: not enough data to read byte array length')
 		}
-		arr_len := int(u32(data[pos]) | u32(data[pos + 1]) << 8 | u32(data[pos + 2]) << 16 | u32(data[
-			pos + 3]) << 24)
+		arr_len := int(read_le_u32(data, pos))
 		pos += 4
 
 		if pos + arr_len > data.len {
@@ -1147,8 +898,7 @@ pub fn extract_parquet_info(data []u8, file_path string) ParquetFileInfo {
 
 	// Read footer length from bytes [len-8..len-4] (little-endian i32)
 	// Validated to ensure the file length is consistent
-	footer_len_bytes := data[data.len - 8..data.len - 4]
-	_ = u32(footer_len_bytes[0]) | (u32(footer_len_bytes[1]) << 8) | (u32(footer_len_bytes[2]) << 16) | (u32(footer_len_bytes[3]) << 24)
+	_ = read_le_u32(data, data.len - 8)
 
 	return ParquetFileInfo{
 		file_path:    file_path

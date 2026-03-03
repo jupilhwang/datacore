@@ -95,39 +95,37 @@ fn (mut d ParquetDecoder) decode_columns(group ParsedRowGroup) !DecodedColumns {
 			continue
 		}
 		col_data := d.data[offset..]
-		result = decode_column_by_name(name, col_data, result)
+		decode_column_by_name(name, col_data, mut result)
 	}
 	return result
 }
 
 // decode_column_by_name decodes a single named column and stores result in cols.
-fn decode_column_by_name(name string, col_data []u8, cols DecodedColumns) DecodedColumns {
-	mut c := cols
+fn decode_column_by_name(name string, col_data []u8, mut cols DecodedColumns) {
 	match name {
 		'offset' {
-			c.offsets = decode_plain_int64_page(col_data) or { []i64{} }
+			cols.offsets = decode_plain_int64_page(col_data) or { []i64{} }
 		}
 		'timestamp' {
-			c.timestamps = decode_plain_int64_page(col_data) or { []i64{} }
+			cols.timestamps = decode_plain_int64_page(col_data) or { []i64{} }
 		}
 		'topic' {
-			c.topics = decode_plain_byte_array_page(col_data) or { [][]u8{} }
+			cols.topics = decode_plain_byte_array_page(col_data) or { [][]u8{} }
 		}
 		'partition' {
-			c.partitions = decode_plain_int32_page(col_data) or { []i32{} }
+			cols.partitions = decode_plain_int32_page(col_data) or { []i32{} }
 		}
 		'key' {
-			c.keys = decode_optional_byte_array_page(col_data) or { [][]u8{} }
+			cols.keys = decode_optional_byte_array_page(col_data) or { [][]u8{} }
 		}
 		'value' {
-			c.values = decode_optional_byte_array_page(col_data) or { [][]u8{} }
+			cols.values = decode_optional_byte_array_page(col_data) or { [][]u8{} }
 		}
 		'headers' {
-			c.headers = decode_optional_byte_array_page(col_data) or { [][]u8{} }
+			cols.headers = decode_optional_byte_array_page(col_data) or { [][]u8{} }
 		}
 		else {}
 	}
-	return c
 }
 
 // build_records constructs ParquetRecord slice from decoded columns.
@@ -161,8 +159,7 @@ fn decode_optional_byte_array_page(data []u8) ![][]u8 {
 		if pos + 4 > data.len {
 			break
 		}
-		arr_len := int(u32(data[pos]) | u32(data[pos + 1]) << 8 | u32(data[pos + 2]) << 16 | u32(data[
-			pos + 3]) << 24)
+		arr_len := int(read_le_u32(data, pos))
 		pos += 4
 		if pos + arr_len > data.len {
 			break
@@ -179,8 +176,7 @@ fn skip_definition_levels_if_present(data []u8, pos int) int {
 	if pos + 4 > data.len {
 		return pos
 	}
-	def_len := int(u32(data[pos]) | u32(data[pos + 1]) << 8 | u32(data[pos + 2]) << 16 | u32(data[
-		pos + 3]) << 24)
+	def_len := int(read_le_u32(data, pos))
 	remaining := data.len - pos
 	// Heuristic: def_len must be positive, fit in remaining data, and leave room for values.
 	if def_len > 0 && def_len < remaining && pos + 4 + def_len < data.len {
