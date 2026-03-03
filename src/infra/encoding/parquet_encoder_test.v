@@ -345,3 +345,60 @@ fn test_decode_plain_byte_array_roundtrip() {
 	assert decoded[1] == values[1]
 	assert decoded[2] == values[2]
 }
+
+fn test_parquet_decoder_roundtrip() {
+	// First encode some records
+	records := [
+		ParquetRecord{
+			offset:    0
+			timestamp: 1700000000000
+			topic:     'test-topic'
+			partition: 0
+			key:       'key1'.bytes()
+			value:     'value1'.bytes()
+			headers:   '{"key":"val"}'
+		},
+		ParquetRecord{
+			offset:    1
+			timestamp: 1700000001000
+			topic:     'test-topic'
+			partition: 0
+			key:       'key2'.bytes()
+			value:     'value2'.bytes()
+			headers:   '{}'
+		},
+	]
+
+	encoded_data, _ := encode_batch(records, .uncompressed) or { panic(err) }
+
+	// Now decode with ParquetDecoder
+	mut decoder := new_parquet_decoder(encoded_data) or { panic(err) }
+
+	// Verify metadata
+	assert decoder.row_count() == 2
+	assert decoder.schema().columns.len == 7
+
+	// Read records
+	decoded_records := decoder.read_all() or { panic(err) }
+	assert decoded_records.len == 2
+
+	// First record
+	assert decoded_records[0].offset == 0
+	assert decoded_records[0].topic == 'test-topic'
+	assert decoded_records[0].key.bytestr() == 'key1'
+	assert decoded_records[0].value.bytestr() == 'value1'
+
+	// Second record
+	assert decoded_records[1].offset == 1
+	assert decoded_records[1].key.bytestr() == 'key2'
+	assert decoded_records[1].value.bytestr() == 'value2'
+}
+
+fn test_parquet_decoder_empty_file() {
+	// Invalid/empty file should return error
+	_ := new_parquet_decoder([]u8{}) or {
+		assert err.msg().contains('file too small')
+		return
+	}
+	assert false, 'should have returned error for empty file'
+}
