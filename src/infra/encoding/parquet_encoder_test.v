@@ -263,3 +263,50 @@ fn test_default_parquet_schema() {
 	assert schema.columns[4].name == 'key'
 	assert schema.columns[4].required == false
 }
+
+fn test_parquet_metadata_parse() {
+	// First create a valid parquet file
+	mut enc := new_parquet_encoder('uncompressed', 128) or { panic(err) }
+	rec := make_test_record('key', 'value', 1700000000000)
+	enc.add_record('test-topic', 0, rec, 0) or { panic(err) }
+	data, _ := enc.encode() or { panic(err) }
+
+	// Now parse the metadata from the file
+	mut parser := new_parquet_metadata_parser()
+	metadata := parser.parse(data) or { panic(err) }
+
+	// Verify metadata structure
+	assert metadata.schema.len == 7
+	assert metadata.num_rows == 1
+	assert metadata.row_groups.len == 1
+
+	// Check first column is 'offset'
+	first_col := metadata.schema[0]
+	assert first_col.name == 'offset'
+	assert first_col.typ == .int64
+}
+
+fn test_parquet_metadata_invalid_magic() {
+	mut parser := new_parquet_metadata_parser()
+	// Invalid magic bytes
+	invalid_data := [u8(0x00), 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+	_ := parser.parse(invalid_data) or {
+		assert err.msg().contains('invalid parquet magic')
+		return
+	}
+	assert false, 'should have returned error for invalid magic'
+}
+
+fn test_parquet_metadata_footer_length() {
+	mut enc := new_parquet_encoder('uncompressed', 128) or { panic(err) }
+	rec := make_test_record('k', 'v', 1700000000000)
+	enc.add_record('topic', 0, rec, 5) or { panic(err) }
+	data, _ := enc.encode() or { panic(err) }
+
+	mut parser := new_parquet_metadata_parser()
+	metadata := parser.parse(data) or { panic(err) }
+
+	// Verify footer was parsed correctly
+	assert metadata.num_rows == 1
+	assert metadata.row_groups[0].row_count == 1
+}
