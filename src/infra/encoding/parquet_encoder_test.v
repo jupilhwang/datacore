@@ -310,3 +310,38 @@ fn test_parquet_metadata_footer_length() {
 	assert metadata.num_rows == 1
 	assert metadata.row_groups[0].row_count == 1
 }
+
+fn test_decode_plain_int64_roundtrip() {
+	// Encode with existing encoder
+	values := [i64(100), i64(200), i64(300)]
+	page := encode_plain_int64_page(values, 0, parquet_compression_uncompressed)
+
+	// Decode with new decoder
+	decoded := decode_plain_int64_page(page) or { panic(err) }
+	assert decoded.len == 3
+	assert decoded[0] == 100
+	assert decoded[1] == 200
+	assert decoded[2] == 300
+}
+
+fn test_decode_plain_int32_roundtrip() {
+	values := [i32(10), i32(20), i32(30)]
+	page := encode_plain_int32_page(values, 0, parquet_compression_uncompressed)
+
+	decoded := decode_plain_int32_page(page) or { panic(err) }
+	assert decoded.len == 3
+	assert decoded[0] == 10
+	assert decoded[1] == 20
+	assert decoded[2] == 30
+}
+
+fn test_decode_plain_byte_array_roundtrip() {
+	values := [[u8(0x01), 0x02], [u8(0x03), 0x04, 0x05], [u8(0x06)]]
+	page := encode_plain_byte_array_page(values, 0, parquet_compression_uncompressed)
+
+	decoded := decode_plain_byte_array_page(page) or { panic(err) }
+	assert decoded.len == 3
+	assert decoded[0] == values[0]
+	assert decoded[1] == values[1]
+	assert decoded[2] == values[2]
+}

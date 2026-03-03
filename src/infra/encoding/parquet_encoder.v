@@ -989,6 +989,137 @@ pub:
 	compression   string
 }
 
+// parse_page_header_num_values reads the num_values field from a Thrift-encoded PageHeader+DataPageHeader.
+// Returns (num_values, data_start_pos) where data_start_pos is the byte offset of column data.
+fn parse_page_header_num_values(data []u8) !(i32, int) {
+	mut r := new_thrift_reader(data)
+	r.read_struct_begin()
+	mut last_fid := i16(0)
+	mut num_values := i32(0)
+
+	for {
+		field_type, delta := r.read_field_header() or {
+			if err.msg() == 'stop byte encountered' {
+				break
+			}
+			return err
+		}
+		last_fid += delta
+		match last_fid {
+			1 {
+				_ = r.read_i32()!
+			} // page_type
+			2 {
+				_ = r.read_i32()!
+			} // uncompressed_page_size
+			3 {
+				_ = r.read_i32()!
+			} // compressed_page_size
+			5 {
+				// DataPageHeader (nested struct, field 5)
+				r.read_struct_begin()
+				mut dph_last_fid := i16(0)
+				for {
+					dt_field_type, dt_delta := r.read_field_header() or {
+						if err.msg() == 'stop byte encountered' {
+							break
+						}
+						return err
+					}
+					dph_last_fid += dt_delta
+					match dph_last_fid {
+						1 {
+							num_values = r.read_i32()!
+						}
+						else {
+							// skip encoding fields (i32 zigzag varint)
+							if dt_field_type == thrift_type_i32 {
+								_ = r.read_varint32()!
+							}
+						}
+					}
+				}
+			}
+			else {
+				// skip unknown field by type
+				if field_type == thrift_type_i32 {
+					_ = r.read_varint32()!
+				}
+			}
+		}
+	}
+
+	return num_values, r.pos
+}
+
+// decode_plain_int64_page decodes a PLAIN-encoded int64 data page.
+// Returns the decoded values. Expects required column (no definition levels).
+pub fn decode_plain_int64_page(data []u8) ![]i64 {
+	num_values, data_start := parse_page_header_num_values(data)!
+
+	if data_start + num_values * 8 > data.len {
+		return error('invalid page: not enough data for ${num_values} int64 values')
+	}
+
+	mut values := []i64{cap: num_values}
+	for i in 0 .. num_values {
+		offset := data_start + i * 8
+		val := i64(data[offset]) | i64(data[offset + 1]) << 8 | i64(data[offset + 2]) << 16 | i64(data[
+			offset + 3]) << 24 | i64(data[offset + 4]) << 32 | i64(data[offset + 5]) << 40 | i64(data[
+			offset + 6]) << 48 | i64(data[offset + 7]) << 56
+		values << val
+	}
+
+	return values
+}
+
+// decode_plain_int32_page decodes a PLAIN-encoded int32 data page.
+// Returns the decoded values. Expects required column (no definition levels).
+pub fn decode_plain_int32_page(data []u8) ![]i32 {
+	num_values, data_start := parse_page_header_num_values(data)!
+
+	if data_start + num_values * 4 > data.len {
+		return error('invalid page: not enough data for ${num_values} int32 values')
+	}
+
+	mut values := []i32{cap: num_values}
+	for i in 0 .. num_values {
+		offset := data_start + i * 4
+		val := i32(data[offset]) | i32(data[offset + 1]) << 8 | i32(data[offset + 2]) << 16 | i32(data[
+			offset + 3]) << 24
+		values << val
+	}
+
+	return values
+}
+
+// decode_plain_byte_array_page decodes a PLAIN-encoded byte array data page.
+// Returns the decoded values. Expects required column (no definition levels).
+// Each value is encoded as: 4-byte little-endian length followed by the bytes.
+pub fn decode_plain_byte_array_page(data []u8) ![][]u8 {
+	num_values, data_start := parse_page_header_num_values(data)!
+
+	mut values := [][]u8{cap: num_values}
+	mut pos := data_start
+
+	for _ in 0 .. num_values {
+		if pos + 4 > data.len {
+			return error('invalid page: not enough data to read byte array length')
+		}
+		arr_len := int(u32(data[pos]) | u32(data[pos + 1]) << 8 | u32(data[pos + 2]) << 16 | u32(data[
+			pos + 3]) << 24)
+		pos += 4
+
+		if pos + arr_len > data.len {
+			return error('invalid page: not enough data to read byte array of length ${arr_len}')
+		}
+		values << data[pos..pos + arr_len].clone()
+		pos += arr_len
+	}
+
+	return values
+}
+
 /// extract_parquet_info extracts basic information from a Parquet file.
 /// Validates magic bytes and reads footer length.
 pub fn extract_parquet_info(data []u8, file_path string) ParquetFileInfo {
