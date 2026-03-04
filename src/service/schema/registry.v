@@ -7,6 +7,7 @@ import service.port
 import sync
 import time
 import crypto.md5
+import infra.performance.core
 
 /// SchemaRegistry provides schema management functionality.
 /// Responsible for schema registration, retrieval, versioning, and compatibility checks.
@@ -507,7 +508,7 @@ fn (r &SchemaRegistry) check_compatibility_internal(subject string, schema_str s
 fn (mut r SchemaRegistry) persist_schema(subject string, schema domain.Schema, version domain.SchemaVersion) ! {
 	// Create record to store in the __schemas topic
 	// Format: JSON with schema details
-	record_data := '{"subject":"${subject}","version":${version.version},"id":${schema.id},"schemaType":"${schema.schema_type.str()}","schema":${escape_json_string(schema.schema_str)}}'
+	record_data := '{"subject":"${subject}","version":${version.version},"id":${schema.id},"schemaType":"${schema.schema_type.str()}","schema":"${core.escape_json_string(schema.schema_str)}"}'
 
 	record := domain.Record{
 		key:       subject.bytes()

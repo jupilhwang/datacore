@@ -263,7 +263,7 @@ fn decode_field(mut reader ProtoReader, field ProtoField, wire_type int) !string
 			}
 			str := reader.data[reader.pos..reader.pos + int(len)].bytestr()
 			reader.pos += int(len)
-			return '"${escape_json_str(str)}"'
+			return '"${core.escape_json_string(str)}"'
 		}
 		'bytes' {
 			len := proto_decode_varint(mut reader)!

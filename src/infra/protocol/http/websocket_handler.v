@@ -5,6 +5,7 @@ import crypto.sha1
 import encoding.base64
 import domain
 import net
+import service.schema
 import service.streaming
 import service.port
 import time
@@ -227,7 +228,7 @@ fn (mut h WebSocketHandler) receiver_loop(conn_id string, mut conn net.TcpConn) 
 				break
 			}
 			.continuation {
-				// TODO: implement fragmented frame message handling
+				// TODO(jira#XXX): implement fragmented frame message handling
 			}
 		}
 	}
@@ -427,27 +428,29 @@ fn (mut h WebSocketHandler) handle_close(conn_id string, mut conn net.TcpConn, p
 
 /// parse_ws_message parses a WebSocket message from JSON.
 fn parse_ws_message(json_str string) !domain.WebSocketMessage {
-	// simple JSON parsing (TODO: replace with a proper JSON library)
-	action_str := extract_json_string(json_str, 'action') or { return error('Missing action') }
+	// TODO(jira#XXX): replace with a proper JSON library
+	action_str := schema.extract_json_string(json_str, 'action') or {
+		return error('Missing action')
+	}
 	action := domain.websocket_action_from_str(action_str) or {
 		return error('Invalid action: ${action_str}')
 	}
 
-	topic := extract_json_string(json_str, 'topic') or { '' }
+	topic := schema.extract_json_string(json_str, 'topic') or { '' }
 
-	partition := if p := extract_json_int(json_str, 'partition') {
+	partition := if p := schema.extract_json_int(json_str, 'partition') {
 		i32(p)
 	} else {
 		none
 	}
 
-	offset := extract_json_string(json_str, 'offset')
-	key := extract_json_string(json_str, 'key')
-	value := extract_json_string(json_str, 'value')
-	group_id := extract_json_string(json_str, 'group_id')
+	offset := schema.extract_json_string(json_str, 'offset')
+	key := schema.extract_json_string(json_str, 'key')
+	value := schema.extract_json_string(json_str, 'value')
+	group_id := schema.extract_json_string(json_str, 'group_id')
 
 	// header parsing (simplified)
-	headers := extract_json_object(json_str, 'headers')
+	headers := schema.extract_json_object(json_str, 'headers')
 
 	return domain.WebSocketMessage{
 		action:    action
@@ -459,169 +462,6 @@ fn parse_ws_message(json_str string) !domain.WebSocketMessage {
 		headers:   headers
 		group_id:  group_id
 	}
-}
-
-/// extract_json_string extracts a string value from JSON.
-fn extract_json_string(json_str string, key string) ?string {
-	pattern := '"${key}":'
-	idx := json_str.index(pattern) or { return none }
-	start := idx + pattern.len
-
-	// skip whitespace
-	mut pos := start
-	for pos < json_str.len && json_str[pos] in [` `, `\t`, `\n`, `\r`] {
-		pos++
-	}
-
-	if pos >= json_str.len {
-		return none
-	}
-
-	// check string value
-	if json_str[pos] == `"` {
-		pos++
-		mut end := pos
-		for end < json_str.len && json_str[end] != `"` {
-			if json_str[end] == `\\` {
-				end++
-			}
-			end++
-		}
-		return unescape_json_string(json_str[pos..end])
-	}
-
-	// check for null
-	if json_str[pos..].starts_with('null') {
-		return none
-	}
-
-	return none
-}
-
-/// extract_json_int extracts an integer value from JSON.
-fn extract_json_int(json_str string, key string) ?int {
-	pattern := '"${key}":'
-	idx := json_str.index(pattern) or { return none }
-	start := idx + pattern.len
-
-	// skip whitespace
-	mut pos := start
-	for pos < json_str.len && json_str[pos] in [` `, `\t`, `\n`, `\r`] {
-		pos++
-	}
-
-	if pos >= json_str.len {
-		return none
-	}
-
-	// parse number
-	mut end := pos
-	if json_str[end] == `-` {
-		end++
-	}
-	for end < json_str.len && json_str[end] >= `0` && json_str[end] <= `9` {
-		end++
-	}
-
-	if end == pos {
-		return none
-	}
-
-	return json_str[pos..end].int()
-}
-
-/// extract_json_object extracts an object value from JSON (simplified - returns single-level map).
-fn extract_json_object(json_str string, key string) map[string]string {
-	mut result := map[string]string{}
-
-	pattern := '"${key}":'
-	idx := json_str.index(pattern) or { return result }
-	start := idx + pattern.len
-
-	// find opening brace
-	mut pos := start
-	for pos < json_str.len && json_str[pos] != `{` {
-		pos++
-	}
-	if pos >= json_str.len {
-		return result
-	}
-
-	// find matching closing brace
-	mut depth := 1
-	mut obj_start := pos + 1
-	pos++
-	for pos < json_str.len && depth > 0 {
-		if json_str[pos] == `{` {
-			depth++
-		} else if json_str[pos] == `}` {
-			depth--
-		}
-		pos++
-	}
-
-	if depth != 0 {
-		return result
-	}
-
-	obj_str := json_str[obj_start..pos - 1]
-
-	// parse key-value pairs (simplified)
-	mut in_key := true
-	mut current_key := ''
-	mut i := 0
-	for i < obj_str.len {
-		if obj_str[i] == `"` {
-			i++
-			mut end := i
-			for end < obj_str.len && obj_str[end] != `"` {
-				if obj_str[end] == `\\` {
-					end++
-				}
-				end++
-			}
-			str_val := obj_str[i..end]
-			if in_key {
-				current_key = str_val
-			} else {
-				result[current_key] = str_val
-			}
-			i = end + 1
-		} else if obj_str[i] == `:` {
-			in_key = false
-			i++
-		} else if obj_str[i] == `,` {
-			in_key = true
-			i++
-		} else {
-			i++
-		}
-	}
-
-	return result
-}
-
-/// unescape_json_string unescapes JSON string escape sequences.
-fn unescape_json_string(s string) string {
-	mut result := ''
-	mut i := 0
-	for i < s.len {
-		if s[i] == `\\` && i + 1 < s.len {
-			result += match s[i + 1] {
-				`"` { '"' }
-				`\\` { '\\' }
-				`n` { '\n' }
-				`r` { '\r' }
-				`t` { '\t' }
-				else { s[i + 1].ascii_str() }
-			}
-			i += 2
-		} else {
-			result += s[i].ascii_str()
-			i++
-		}
-	}
-	return result
 }
 
 // Statistics

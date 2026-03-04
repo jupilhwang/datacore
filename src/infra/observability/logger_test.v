@@ -2,6 +2,7 @@
 module observability
 
 import time
+import infra.performance.core
 
 fn test_log_levels() {
 	// Create logger at debug level
@@ -84,10 +85,10 @@ fn test_log_level_str() {
 }
 
 fn test_escape_json_string() {
-	assert escape_json_string('hello') == 'hello'
-	assert escape_json_string('hello"world') == 'hello\\"world'
-	assert escape_json_string('line1\nline2') == 'line1\\nline2'
-	assert escape_json_string('tab\there') == 'tab\\there'
+	assert core.escape_json_string('hello') == 'hello'
+	assert core.escape_json_string('hello"world') == 'hello\\"world'
+	assert core.escape_json_string('line1\nline2') == 'line1\\nline2'
+	assert core.escape_json_string('tab\there') == 'tab\\there'
 }
 
 fn test_field_constructors() {

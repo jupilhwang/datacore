@@ -2,11 +2,9 @@
 // Provides JSON parsing helper functions for schema validation and compatibility checks
 module schema
 
-import infra.performance.core
-
 // extract_json_string extracts the string value for a given key from JSON
 // Returns the value if found, otherwise returns none
-fn extract_json_string(json_str string, key string) ?string {
+pub fn extract_json_string(json_str string, key string) ?string {
 	// Find "key": "value" pattern
 	key_pattern := '"${key}"'
 	key_pos := json_str.index(key_pattern) or { return none }
@@ -49,7 +47,7 @@ fn extract_json_string(json_str string, key string) ?string {
 
 // extract_json_int extracts the integer value for a given key from JSON
 // Returns the value if found, otherwise returns none
-fn extract_json_int(json_str string, key string) ?int {
+pub fn extract_json_int(json_str string, key string) ?int {
 	// Find "key": value pattern
 	key_pattern := '"${key}"'
 	key_pos := json_str.index(key_pattern) or { return none }
@@ -309,7 +307,73 @@ fn is_valid_json(s string) bool {
 	return false
 }
 
-// escape_json_string is now moved to core/utils.v.
-fn escape_json_string(s string) string {
-	return '"' + core.escape_json_string(s) + '"'
+/// extract_json_object extracts an object value from JSON (simplified - returns single-level map).
+pub fn extract_json_object(json_str string, key string) map[string]string {
+	mut result := map[string]string{}
+
+	pattern := '"${key}":'
+	idx := json_str.index(pattern) or { return result }
+	start := idx + pattern.len
+
+	// find opening brace
+	mut pos := start
+	for pos < json_str.len && json_str[pos] != `{` {
+		pos++
+	}
+	if pos >= json_str.len {
+		return result
+	}
+
+	// find matching closing brace
+	mut depth := 1
+	mut obj_start := pos + 1
+	pos++
+	for pos < json_str.len && depth > 0 {
+		if json_str[pos] == `{` {
+			depth++
+		} else if json_str[pos] == `}` {
+			depth--
+		}
+		pos++
+	}
+
+	if depth != 0 {
+		return result
+	}
+
+	obj_str := json_str[obj_start..pos - 1]
+
+	// parse key-value pairs (simplified)
+	mut in_key := true
+	mut current_key := ''
+	mut i := 0
+	for i < obj_str.len {
+		if obj_str[i] == `"` {
+			i++
+			mut end := i
+			for end < obj_str.len && obj_str[end] != `"` {
+				if obj_str[end] == `\\` {
+					end++
+				}
+				end++
+			}
+			str_val := obj_str[i..end]
+			if in_key {
+				current_key = str_val
+			} else {
+				result[current_key] = str_val
+			}
+			i = end + 1
+		} else if obj_str[i] == `:` {
+			in_key = false
+			i++
+		} else if obj_str[i] == `,` {
+			in_key = true
+			i++
+		} else {
+			i++
+		}
+	}
+
+	return result
 }

@@ -480,7 +480,7 @@ pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChange
 	}
 
 	// Inspect assignments for all topics to identify partitions needing change
-	// TODO: Need method to get topic list
+	// TODO(jira#XXX): Need method to get topic list
 	// Currently returning empty plan
 
 	a.logger.info('Generated reassignment plan', observability.field_string('plan_id',

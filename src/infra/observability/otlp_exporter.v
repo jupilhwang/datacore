@@ -5,6 +5,7 @@ module observability
 import net.http
 import sync
 import time
+import infra.performance.core
 
 // OTLP Exporter Configuration
 
@@ -191,7 +192,7 @@ fn (e &OTLPExporter) build_log_record(entry LogEntry) string {
 	sb << ',"observedTimeUnixNano":"${entry.timestamp.unix_nano()}"'.bytes()
 	sb << ',"severityNumber":${severity_number}'.bytes()
 	sb << ',"severityText":"${entry.level.str()}"'.bytes()
-	sb << ',"body":{"stringValue":"${escape_json_string(entry.message)}"}'.bytes()
+	sb << ',"body":{"stringValue":"${core.escape_json_string(entry.message)}"}'.bytes()
 
 	// Add trace context if present
 	if entry.context.trace_id.len > 0 {
@@ -203,10 +204,10 @@ fn (e &OTLPExporter) build_log_record(entry LogEntry) string {
 
 	// Add attributes
 	sb << ',"attributes":['.bytes()
-	sb << '{"key":"logger.name","value":{"stringValue":"${escape_json_string(entry.logger_name)}"}}'.bytes()
+	sb << '{"key":"logger.name","value":{"stringValue":"${core.escape_json_string(entry.logger_name)}"}}'.bytes()
 
 	for f in entry.fields {
-		sb << ',{"key":"${escape_json_string(f.key)}","value":{"stringValue":"${escape_json_string(f.value)}"}}'.bytes()
+		sb << ',{"key":"${core.escape_json_string(f.key)}","value":{"stringValue":"${core.escape_json_string(f.value)}"}}'.bytes()
 	}
 	sb << ']}'.bytes()
 
@@ -296,7 +297,7 @@ fn (e &OTLPExporter) build_span_record(span &Span) string {
 	if span.context.parent_id.len > 0 {
 		sb << ',"parentSpanId":"${span.context.parent_id}"'.bytes()
 	}
-	sb << ',"name":"${escape_json_string(span.name)}"'.bytes()
+	sb << ',"name":"${core.escape_json_string(span.name)}"'.bytes()
 	sb << ',"kind":${kind}'.bytes()
 	sb << ',"startTimeUnixNano":"${span.start_time.unix_nano()}"'.bytes()
 	sb << ',"endTimeUnixNano":"${span.end_time.unix_nano()}"'.bytes()
@@ -318,7 +319,7 @@ fn (e &OTLPExporter) build_span_record(span &Span) string {
 			if i > 0 {
 				sb << ','.bytes()
 			}
-			sb << '{"name":"${escape_json_string(event.name)}"'.bytes()
+			sb << '{"name":"${core.escape_json_string(event.name)}"'.bytes()
 			sb << ',"timeUnixNano":"${event.timestamp.unix_nano()}"}'.bytes()
 		}
 		sb << ']'.bytes()
@@ -327,7 +328,7 @@ fn (e &OTLPExporter) build_span_record(span &Span) string {
 	// Status
 	sb << ',"status":{"code":${status_code}'.bytes()
 	if span.status_msg.len > 0 {
-		sb << ',"message":"${escape_json_string(span.status_msg)}"'.bytes()
+		sb << ',"message":"${core.escape_json_string(span.status_msg)}"'.bytes()
 	}
 	sb << '}'.bytes()
 
@@ -337,10 +338,10 @@ fn (e &OTLPExporter) build_span_record(span &Span) string {
 
 // build_attribute builds OTLP attribute JSON
 fn (e &OTLPExporter) build_attribute(attr SpanAttribute) string {
-	key := escape_json_string(attr.key)
+	key := core.escape_json_string(attr.key)
 	value := match attr.value {
 		string {
-			'{"stringValue":"${escape_json_string(attr.value as string)}"}'
+			'{"stringValue":"${core.escape_json_string(attr.value as string)}"}'
 		}
 		i64 {
 			'{"intValue":"${attr.value as i64}"}'
@@ -353,7 +354,7 @@ fn (e &OTLPExporter) build_attribute(attr SpanAttribute) string {
 		}
 		[]string {
 			vals := (attr.value as []string).map(fn (s string) string {
-				return '{"stringValue":"${escape_json_string(s)}"}'
+				return '{"stringValue":"${core.escape_json_string(s)}"}'
 			})
 			'{"arrayValue":{"values":[${vals.join(',')}]}}'
 		}
@@ -503,7 +504,7 @@ fn (e &OTLPExporter) build_metric_record(name string, metric &Metric) string {
 	mut sb := []u8{cap: 512}
 	sb << '{"name":"${name}"'.bytes()
 	if metric.help.len > 0 {
-		sb << ',"description":"${escape_json_string(metric.help)}"'.bytes()
+		sb << ',"description":"${core.escape_json_string(metric.help)}"'.bytes()
 	}
 
 	match metric.metric_type {

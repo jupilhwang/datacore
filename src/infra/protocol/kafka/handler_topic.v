@@ -232,7 +232,7 @@ pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
 			writer.write_uuid(t.topic_id)
 		}
 		writer.write_i16(t.error_code)
-		// v5+: error_message (nullable string, we send null for now)
+		// TODO(jira#XXX): implement error_message handling for v5+
 		if version >= 5 {
 			if is_flexible {
 				writer.write_compact_nullable_string(none)

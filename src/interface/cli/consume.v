@@ -341,7 +341,7 @@ fn parse_list_offsets_response(response []u8) !i64 {
 	// Find offset in response (offset is 8 bytes)
 	// This is an approximate heuristic - skip to expected offset position
 
-	// Return 0 as fallback for now
+	// TODO(jira#XXX): implement proper offset handling
 	return 0
 }
 
@@ -506,7 +506,7 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 		// Attempt to extract at least one record
 		// Records are length-prefixed with varints
 
-		// Return placeholder only for now
+		// TODO(jira#XXX): implement real offset tracking
 		// Full implementation must decode varints and record format
 	}
 

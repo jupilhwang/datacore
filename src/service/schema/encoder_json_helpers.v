@@ -98,11 +98,6 @@ fn hex_to_int(s string) int {
 	return result
 }
 
-fn escape_json_str(s string) string {
-	return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r',
-		'\\r').replace('\t', '\\t')
-}
-
 // JSON Field Extraction
 
 fn extract_json_field(json_str string, field_name string) ?string {

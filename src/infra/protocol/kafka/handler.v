@@ -190,25 +190,21 @@ fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 
 /// encode_record_with_schema encodes a record according to a schema.
 /// Currently only validates schema configuration and logs.
-/// Actual encoding will be activated after the encoder module is updated.
+// TODO(jira#XXX): implement actual schema encoding after encoder module update
 fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema_obj &domain.Schema) ![]u8 {
-	// Log schema info; encoding will be implemented after encoder module update
 	h.logger.debug('Schema encoding configured', observability.field_string('schema_type',
 		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
-	// Return original value for now; real encoding will be added after encoder module update
 	return record.value
 }
 
 /// decode_record_with_schema decodes a record according to a schema.
 /// Currently only validates schema configuration and logs.
-/// Actual decoding will be activated after the encoder module is updated.
+// TODO(jira#XXX): implement actual schema decoding after encoder module update
 fn (mut h Handler) decode_record_with_schema(record_data []u8, schema_obj &domain.Schema) ![]u8 {
-	// Log schema info; decoding will be implemented after encoder module update
 	h.logger.debug('Schema decoding configured', observability.field_string('schema_type',
 		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
-	// Return original data for now; real decoding will be added after encoder module update
 	return record_data
 }
 

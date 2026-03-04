@@ -106,7 +106,7 @@ pub fn (f &SubscriptionFilter) matches(record domain.Record) bool {
 		if record.key.len == 0 {
 			return false
 		}
-		// Simple glob matching (TODO: implement proper glob/regex)
+		// TODO(jira#XXX): implement proper glob/regex
 		if !simple_match(pattern, record.key.bytestr()) {
 			return false
 		}

@@ -434,7 +434,7 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 					continue
 				}
 
-				// TODO: Actually persist config changes when config storage is implemented
+				// TODO(jira#XXX): Actually persist config changes when config storage is implemented
 				// For now, just return success (configs are accepted but not persisted)
 				results << AlterConfigsResult{
 					error_code:    0

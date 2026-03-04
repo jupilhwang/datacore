@@ -302,7 +302,7 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 			// Check if it matches our broker ID
 			if broker_id_str == '${h.broker_id}' {
 				mut configs := []DescribeConfigsEntry{}
-				// TODO: Add actual broker configs if needed
+				// TODO(jira#XXX): Add actual broker configs if needed
 
 				results << DescribeConfigsResult{
 					error_code:    0

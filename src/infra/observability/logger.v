@@ -552,11 +552,6 @@ pub fn log_fatal(msg string, fields ...LogField) {
 
 // Formatting functions
 
-/// Escapes a JSON string
-fn escape_json_string(s string) string {
-	return core.escape_json_string(s)
-}
-
 /// Formats a log entry in JSON format.
 fn format_entry_json(entry LogEntry) string {
 	mut sb := []u8{cap: 256}
@@ -565,9 +560,9 @@ fn format_entry_json(entry LogEntry) string {
 	sb << '","level":"'.bytes()
 	sb << entry.level.str().bytes()
 	sb << '","logger":"'.bytes()
-	sb << escape_json_string(entry.logger_name).bytes()
+	sb << core.escape_json_string(entry.logger_name).bytes()
 	sb << '","msg":"'.bytes()
-	sb << escape_json_string(entry.message).bytes()
+	sb << core.escape_json_string(entry.message).bytes()
 	sb << '"'.bytes()
 
 	// Add trace context if present
@@ -590,9 +585,9 @@ fn format_entry_json(entry LogEntry) string {
 	// Add fields
 	for f in entry.fields {
 		sb << ',"'.bytes()
-		sb << escape_json_string(f.key).bytes()
+		sb << core.escape_json_string(f.key).bytes()
 		sb << '":"'.bytes()
-		sb << escape_json_string(f.value).bytes()
+		sb << core.escape_json_string(f.value).bytes()
 		sb << '"'.bytes()
 	}
 
@@ -706,7 +701,7 @@ fn build_otlp_log_record(entry LogEntry) string {
 	sb << '{"timeUnixNano":"${entry.timestamp.unix_nano()}"'.bytes()
 	sb << ',"severityNumber":${severity_number}'.bytes()
 	sb << ',"severityText":"${entry.level.str()}"'.bytes()
-	sb << ',"body":{"stringValue":"${escape_json_string(entry.message)}"}'.bytes()
+	sb << ',"body":{"stringValue":"${core.escape_json_string(entry.message)}"}'.bytes()
 
 	// Add trace context
 	if entry.context.trace_id.len > 0 {
@@ -718,9 +713,9 @@ fn build_otlp_log_record(entry LogEntry) string {
 
 	// Add attributes
 	sb << ',"attributes":['.bytes()
-	sb << '{"key":"logger","value":{"stringValue":"${escape_json_string(entry.logger_name)}"}}'.bytes()
+	sb << '{"key":"logger","value":{"stringValue":"${core.escape_json_string(entry.logger_name)}"}}'.bytes()
 	for f in entry.fields {
-		sb << ',{"key":"${escape_json_string(f.key)}","value":{"stringValue":"${escape_json_string(f.value)}"}}'.bytes()
+		sb << ',{"key":"${core.escape_json_string(f.key)}","value":{"stringValue":"${core.escape_json_string(f.value)}"}}'.bytes()
 	}
 	sb << ']}'.bytes()
 
@@ -737,8 +732,7 @@ fn send_otlp_http(endpoint string, payload string) {
 		_ := $env('PATH')
 	}
 
-	// Using simple approach for now
-	// TODO: Implement proper HTTP client with retry
+	// Note: using simple approach; TODO(jira#XXX): implement proper HTTP client with retry
 	_ = endpoint
 	_ = payload
 }

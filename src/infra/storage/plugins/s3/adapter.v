@@ -1277,6 +1277,7 @@ fn generate_topic_id(name string) []u8 {
 	return hash[0..16]
 }
 
+// TODO(jira#XXX): Implement S3 shared partition state persistence
 /// save_share_partition_state saves a SharePartition state (not yet implemented for S3).
 pub fn (mut a S3StorageAdapter) save_share_partition_state(state domain.SharePartitionState) ! {
 	return error('share partition state persistence not yet implemented for S3')
