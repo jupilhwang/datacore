@@ -19,6 +19,58 @@ const hmac_block_size = 64
 const s3_read_timeout_ms = 15000
 const s3_write_timeout_ms = 15000
 
+/// inc_error atomically increments the s3_error_count metric.
+fn (mut a S3StorageAdapter) inc_error() {
+	a.metrics_lock.@lock()
+	a.metrics.s3_error_count++
+	a.metrics_lock.unlock()
+}
+
+/// inc_get atomically increments the s3_get_count metric.
+fn (mut a S3StorageAdapter) inc_get() {
+	a.metrics_lock.@lock()
+	a.metrics.s3_get_count++
+	a.metrics_lock.unlock()
+}
+
+/// inc_put atomically increments the s3_put_count metric.
+fn (mut a S3StorageAdapter) inc_put() {
+	a.metrics_lock.@lock()
+	a.metrics.s3_put_count++
+	a.metrics_lock.unlock()
+}
+
+/// inc_delete atomically increments the s3_delete_count metric.
+fn (mut a S3StorageAdapter) inc_delete() {
+	a.metrics_lock.@lock()
+	a.metrics.s3_delete_count++
+	a.metrics_lock.unlock()
+}
+
+/// inc_list atomically increments the s3_list_count metric.
+fn (mut a S3StorageAdapter) inc_list() {
+	a.metrics_lock.@lock()
+	a.metrics.s3_list_count++
+	a.metrics_lock.unlock()
+}
+
+/// build_object_url constructs the full S3 object URL for the given key.
+/// Uses path-style or virtual-hosted style based on configuration.
+fn (a &S3StorageAdapter) build_object_url(key string) string {
+	endpoint := a.get_endpoint()
+	return if a.config.use_path_style {
+		'${endpoint}/${a.config.bucket_name}/${key}'
+	} else {
+		'${endpoint}/${key}'
+	}
+}
+
+/// configure_request_timeouts sets read and write timeouts on the given HTTP request.
+fn (a &S3StorageAdapter) configure_request_timeouts(mut req http.Request) {
+	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+}
+
 /// is_network_error detects network errors such as DNS resolution failures, connection refused, and timeouts.
 /// Identifies transient errors that may occur when connecting to S3 endpoints in Docker container environments.
 fn is_network_error(err_str string) bool {
@@ -47,17 +99,9 @@ pub:
 /// If start is negative, retrieves the entire object.
 /// Retries with exponential backoff on DNS/network errors.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
-	// Metric: S3 GET request
-	a.metrics_lock.@lock()
-	a.metrics.s3_get_count++
-	a.metrics_lock.unlock()
+	a.inc_get()
 
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
+	url := a.build_object_url(key)
 
 	mut last_err := ''
 	for attempt in 0 .. max_retries {
@@ -76,13 +120,10 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			header: headers
 		}) or {
 			last_err = 'S3 GET prepare failed: ${err}'
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error(last_err)
 		}
-		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+		a.configure_request_timeouts(mut req)
 
 		resp := req.do() or {
 			last_err = 'S3 GET failed: ${err}'
@@ -103,26 +144,17 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			}
 
 			// Non-network error or last retry: fail immediately
-			// Metric: S3 error
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error(last_err)
 		}
 
 		if resp.status_code == 404 {
-			// Metric: S3 error
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error('Object not found: ${key}')
 		}
 		// 206 Partial Content is also a success for Range requests
 		if resp.status_code != 200 && resp.status_code != 206 {
-			// Metric: S3 error
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error('S3 GET failed with status ${resp.status_code}')
 		}
 
@@ -130,10 +162,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 		return resp.body.bytes(), etag
 	}
 
-	// Metric: S3 error
-	a.metrics_lock.@lock()
-	a.metrics.s3_error_count++
-	a.metrics_lock.unlock()
+	a.inc_error()
 	return error(last_err)
 }
 
@@ -149,16 +178,10 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 /// Adds jitter to prevent thundering herd on concurrent retries.
 fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries_ int) ! {
 	// Metric: S3 PUT request (counted once, including retries)
-	a.metrics_lock.@lock()
-	a.metrics.s3_put_count++
-	a.metrics_lock.unlock()
+	a.inc_put()
 
+	url := a.build_object_url(key)
 	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
 
 	mut last_err := ''
 	for attempt in 0 .. max_retries_ {
@@ -171,13 +194,10 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			data:   data.bytestr()
 		}) or {
 			last_err = 'S3 PUT prepare failed: ${err}'
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error(last_err)
 		}
-		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+		a.configure_request_timeouts(mut req)
 
 		resp := req.do() or {
 			last_err = 'S3 PUT failed: ${err}'
@@ -212,10 +232,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 				'bucket':   a.config.bucket_name
 				'retries':  max_retries_.str()
 			})
-			// Metric: S3 error
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error(last_err)
 		}
 
@@ -242,16 +259,10 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			continue
 		}
 
-		// Metric: S3 error
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('S3 PUT failed with status ${resp.status_code}')
 	}
-	// Metric: S3 error
-	a.metrics_lock.@lock()
-	a.metrics.s3_error_count++
-	a.metrics_lock.unlock()
+	a.inc_error()
 	return error(last_err)
 }
 
@@ -259,12 +270,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 /// Uses If-None-Match: * header to prevent concurrent creation.
 /// Returns an error if the object already exists (412 Precondition Failed).
 fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
+	url := a.build_object_url(key)
 
 	mut headers := a.sign_request('PUT', key, '', data)
 	headers.add_custom('If-None-Match', '*') or {}
@@ -275,8 +281,7 @@ fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 		header: headers
 		data:   data.bytestr()
 	}) or { return error('S3 PUT prepare failed: ${err}') }
-	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+	a.configure_request_timeouts(mut req)
 
 	resp := req.do() or { return error('S3 PUT failed: ${err}') }
 
@@ -292,12 +297,7 @@ fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 /// Uses If-Match header to implement optimistic locking.
 /// Returns an 'etag_mismatch' error on 412 Precondition Failed when ETag does not match.
 fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag string) ! {
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
+	url := a.build_object_url(key)
 
 	mut headers := a.sign_request('PUT', key, '', data)
 	headers.add_custom('If-Match', etag) or {}
@@ -308,8 +308,7 @@ fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag stri
 		header: headers
 		data:   data.bytestr()
 	}) or { return error('S3 PUT prepare failed: ${err}') }
-	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+	a.configure_request_timeouts(mut req)
 
 	resp := req.do() or { return error('S3 PUT failed: ${err}') }
 
@@ -324,18 +323,9 @@ fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag stri
 /// delete_object deletes an object from S3.
 /// Returns 200 or 204 status code on successful deletion.
 fn (mut a S3StorageAdapter) delete_object(key string) ! {
-	// Metric: S3 DELETE request
-	a.metrics_lock.@lock()
-	a.metrics.s3_delete_count++
-	a.metrics_lock.unlock()
+	a.inc_delete()
 
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
-
+	url := a.build_object_url(key)
 	headers := a.sign_request('DELETE', key, '', []u8{})
 
 	mut req := http.prepare(http.FetchConfig{
@@ -343,27 +333,18 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 		method: .delete
 		header: headers
 	}) or {
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('S3 DELETE prepare failed: ${err}')
 	}
-	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+	a.configure_request_timeouts(mut req)
 
 	resp := req.do() or {
-		// Metric: S3 error
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('S3 DELETE failed: ${err}')
 	}
 
 	if resp.status_code !in [200, 204] {
-		// Metric: S3 error
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('S3 DELETE failed with status ${resp.status_code}')
 	}
 }
@@ -413,10 +394,7 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 /// Uses the ListObjectsV2 API to fetch the object list.
 /// Includes retry logic to handle network issues such as OpenSSL errors.
 fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
-	// Metric: S3 LIST request
-	a.metrics_lock.@lock()
-	a.metrics.s3_list_count++
-	a.metrics_lock.unlock()
+	a.inc_list()
 
 	endpoint := a.get_endpoint()
 	query := 'prefix=${prefix}&list-type=2'
@@ -441,13 +419,10 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 			header: headers
 		}) or {
 			last_err = 'S3 LIST prepare failed: ${err}'
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error(last_err)
 		}
-		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+		a.configure_request_timeouts(mut req)
 
 		resp := req.do() or {
 			last_err = 'S3 LIST failed: ${err}'
@@ -475,10 +450,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)
 				continue
 			}
-			// Metric: S3 error
-			a.metrics_lock.@lock()
-			a.metrics.s3_error_count++
-			a.metrics_lock.unlock()
+			a.inc_error()
 			return error(last_err)
 		}
 
@@ -502,17 +474,11 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 			continue
 		}
 
-		// Metric: S3 error
-		a.metrics_lock.@lock()
-		a.metrics.s3_error_count++
-		a.metrics_lock.unlock()
+		a.inc_error()
 		return error('S3 LIST failed with status ${resp.status_code}')
 	}
 
-	// Metric: S3 error
-	a.metrics_lock.@lock()
-	a.metrics.s3_error_count++
-	a.metrics_lock.unlock()
+	a.inc_error()
 	return error(last_err)
 }
 
@@ -541,7 +507,7 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 		h.add_custom('Content-Length', body.len.str()) or {}
 	}
 
-	if a.config.access_key.len == 0 || a.config.secret_key.len == 0 {
+	if a.config.access_key == '' || a.config.secret_key == '' {
 		return h
 	}
 
@@ -587,7 +553,7 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 /// Uses the custom endpoint (MinIO/LocalStack) if configured.
 /// Otherwise returns the AWS S3 endpoint in path-style or virtual-hosted style.
 fn (a &S3StorageAdapter) get_endpoint() string {
-	if a.config.endpoint.len > 0 {
+	if a.config.endpoint != '' {
 		return a.config.endpoint
 	}
 	if a.config.use_path_style {
@@ -601,7 +567,7 @@ fn (a &S3StorageAdapter) get_endpoint() string {
 /// Host header is a required signed header in SigV4 signing.
 /// Includes bucket name in host when using virtual-hosted style.
 fn (a &S3StorageAdapter) get_host() string {
-	if a.config.endpoint.len > 0 {
+	if a.config.endpoint != '' {
 		// For custom endpoints (MinIO/LocalStack, etc.)
 		// Include bucket name in host if using virtual-hosted style
 		if !a.config.use_path_style {
@@ -616,132 +582,6 @@ fn (a &S3StorageAdapter) get_host() string {
 	} else {
 		return '${a.config.bucket_name}.s3.${a.config.region}.amazonaws.com'
 	}
-}
-
-/// canonicalize_query sorts and encodes query parameters for AWS SigV4.
-/// Sorts query parameters alphabetically and applies URL encoding.
-fn (a &S3StorageAdapter) canonicalize_query(query string) string {
-	if query == '' {
-		return ''
-	}
-
-	// Parse query string into map
-	mut params := map[string]string{}
-	for pair in query.split('&') {
-		parts := pair.split_nth('=', 2)
-		if parts.len == 2 {
-			// URL-decode then re-encode keys and values for AWS SigV4
-			key := url_decode(parts[0])
-			value := url_decode(parts[1])
-			params[key] = value
-		}
-	}
-
-	// Sort keys alphabetically
-	mut keys := []string{}
-	for k in params.keys() {
-		keys << k
-	}
-	keys.sort()
-
-	// Build canonical query string
-	mut result := []string{}
-	for key in keys {
-		// AWS SigV4 requires specific encoding
-		encoded_key := url_encode_for_sigv4(key)
-		encoded_value := url_encode_for_sigv4(params[key])
-		result << '${encoded_key}=${encoded_value}'
-	}
-
-	return result.join('&')
-}
-
-/// url_decode decodes a percent-encoded string.
-/// Example: %20 -> space, %2F -> /
-fn url_decode(s string) string {
-	mut result := s
-	mut i := 0
-	for i < result.len {
-		if result[i] == u8(`%`) && i + 2 < result.len {
-			hex_str := result[i + 1..i + 3]
-			if is_hex_char(hex_str[0]) && is_hex_char(hex_str[1]) {
-				c := hex_to_u8(hex_str)
-				result = result[0..i] + c.ascii_str() + result[i + 3..]
-			} else {
-				i++
-			}
-		} else {
-			i++
-		}
-	}
-	return result
-}
-
-/// is_hex_char checks whether a character is a valid hexadecimal digit.
-/// Accepts characters in the range 0-9, A-F, a-f.
-fn is_hex_char(c u8) bool {
-	return (c >= `0` && c <= `9`) || (c >= `A` && c <= `F`) || (c >= `a` && c <= `f`)
-}
-
-/// hex_to_u8 converts a two-character hexadecimal string to a byte.
-/// Example: "4A" -> 74
-fn hex_to_u8(s string) u8 {
-	mut result := u8(0)
-	for c in s {
-		result <<= 4
-		if c >= `0` && c <= `9` {
-			result += c - `0`
-		} else if c >= `A` && c <= `F` {
-			result += c - `A` + 10
-		} else if c >= `a` && c <= `f` {
-			result += c - `a` + 10
-		}
-	}
-	return result
-}
-
-/// u8_to_hex converts a byte to a two-character uppercase hexadecimal string.
-/// Example: 74 -> "4A"
-fn u8_to_hex(c u8) string {
-	high := (c >> 4) & 0x0F
-	low := c & 0x0F
-	mut high_hex := '0'
-	mut low_hex := '0'
-
-	if high < 10 {
-		high_hex = (u8(`0`) + high).ascii_str()
-	} else {
-		high_hex = (u8(`A`) + high - 10).ascii_str()
-	}
-
-	if low < 10 {
-		low_hex = (u8(`0`) + low).ascii_str()
-	} else {
-		low_hex = (u8(`A`) + low - 10).ascii_str()
-	}
-
-	return high_hex + low_hex
-}
-
-/// url_encode_for_sigv4 encodes a string according to AWS SigV4 requirements.
-/// Does not encode A-Z, a-z, 0-9, -, ., _, ~ characters.
-/// All other characters are percent-encoded in %XX format.
-fn url_encode_for_sigv4(s string) string {
-	mut result := []u8{}
-	for c in s {
-		match c {
-			`A`...`Z`, `a`...`z`, `0`...`9`, `-`, `.`, `_`, `~` {
-				result << c
-			}
-			else {
-				result << u8(`%`)
-				hex := u8_to_hex(c)
-				result << hex[0]
-				result << hex[1]
-			}
-		}
-	}
-	return result.bytestr()
 }
 
 /// parse_list_objects_response parses an S3 ListObjectsV2 XML response.
