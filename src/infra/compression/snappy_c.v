@@ -47,7 +47,7 @@ pub fn (c &SnappyCompressorC) compress(data []u8) ![]u8 {
 
 // xerial_snappy_magic is the 8-byte magic header used by xerial snappy-java (kafka-clients).
 // Format: 0x82 'S' 'N' 'A' 'P' 'P' 'Y' 0x00
-const xerial_snappy_magic = [u8(0x82), 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00]
+const xerial_snappy_magic = [u8(0x82), 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00]!
 
 // xerial_snappy_header_len is the total size of the xerial snappy-java file header (16 bytes):
 //   8 bytes magic + 4 bytes version + 4 bytes compatible version
@@ -56,7 +56,7 @@ const xerial_snappy_header_len = 16
 // snappy_ppy_magic is the 4-byte magic header used by the old snappy-java format (1.0.x).
 // Produced by older Kafka clients using snappy-java prior to the 0x82 SNAPPY\0 format.
 // Format: 'P' 'P' 'Y' 0x00
-const snappy_ppy_magic = [u8(0x50), 0x50, 0x59, 0x00]
+const snappy_ppy_magic = [u8(0x50), 0x50, 0x59, 0x00]!
 
 // snappy_ppy_header_len is the total size of the old PPY\0 format header (12 bytes):
 //   4 bytes magic + 4 bytes version + 4 bytes chunk_count

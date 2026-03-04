@@ -14,7 +14,7 @@ pub struct Lz4Compressor {
 }
 
 /// LZ4 magic number
-const lz4_magic_number = [u8(0x04), 0x22, 0x4d, 0x18]
+const lz4_magic_number = [u8(0x04), 0x22, 0x4d, 0x18]!
 
 /// LZ4 frame header flags
 const lz4_frame_version = u8(0x40)
@@ -36,7 +36,7 @@ pub fn (c &Lz4Compressor) compress(data []u8) ![]u8 {
 	mut result := []u8{cap: data.len + 32}
 
 	// Magic number
-	result << lz4_magic_number
+	result << lz4_magic_number[..]
 
 	// Frame header
 	flg := lz4_frame_version | 0x00

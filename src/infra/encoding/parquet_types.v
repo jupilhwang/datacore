@@ -42,7 +42,7 @@ const parquet_converted_type_utf8 = i32(0)
 const parquet_converted_type_timestamp_millis = i32(9)
 
 // Parquet magic bytes written at start and end of file.
-const parquet_magic = [u8(`P`), u8(`A`), u8(`R`), u8(`1`)]
+const parquet_magic = [u8(`P`), u8(`A`), u8(`R`), u8(`1`)]!
 
 /// ParquetCompression represents the compression method for Parquet files.
 pub enum ParquetCompression {

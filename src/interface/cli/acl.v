@@ -111,10 +111,10 @@ pub fn parse_acl_options(args []string) AclOptions {
 
 /// run_acl_create creates a new ACL binding.
 pub fn run_acl_create(opts AclOptions) ! {
-	if opts.principal.len == 0 {
+	if opts.principal == '' {
 		return error('Principal is required. Use: --principal User:alice')
 	}
-	if opts.resource_name.len == 0 {
+	if opts.resource_name == '' {
 		return error('Resource name is required. Use: --resource <name>')
 	}
 
@@ -189,10 +189,10 @@ pub fn run_acl_list(opts AclOptions) ! {
 
 /// run_acl_delete deletes an ACL binding.
 pub fn run_acl_delete(opts AclOptions) ! {
-	if opts.principal.len == 0 {
+	if opts.principal == '' {
 		return error('Principal is required. Use: --principal User:alice')
 	}
-	if opts.resource_name.len == 0 {
+	if opts.resource_name == '' {
 		return error('Resource name is required. Use: --resource <name>')
 	}
 
@@ -386,7 +386,7 @@ fn build_describe_acls_request(principal string, host string, resource_type u8, 
 	body << resource_type
 
 	// ResourceNameFilter (compact nullable string)
-	if resource_name.len > 0 {
+	if resource_name != '' {
 		body << u8(resource_name.len + 1)
 		body << resource_name.bytes()
 	} else {
@@ -397,7 +397,7 @@ fn build_describe_acls_request(principal string, host string, resource_type u8, 
 	body << pattern_type
 
 	// PrincipalFilter (compact nullable string)
-	if principal.len > 0 {
+	if principal != '' {
 		body << u8(principal.len + 1)
 		body << principal.bytes()
 	} else {
@@ -405,7 +405,7 @@ fn build_describe_acls_request(principal string, host string, resource_type u8, 
 	}
 
 	// HostFilter (compact nullable string)
-	if host.len > 0 && host != '*' {
+	if host != '' && host != '*' {
 		body << u8(host.len + 1)
 		body << host.bytes()
 	} else {
@@ -434,7 +434,7 @@ fn build_delete_acls_request(principal string, host string, resource_type u8, re
 	body << resource_type
 
 	// ResourceNameFilter (compact nullable string)
-	if resource_name.len > 0 {
+	if resource_name != '' {
 		body << u8(resource_name.len + 1)
 		body << resource_name.bytes()
 	} else {
@@ -445,7 +445,7 @@ fn build_delete_acls_request(principal string, host string, resource_type u8, re
 	body << pattern_type
 
 	// PrincipalFilter (compact nullable string)
-	if principal.len > 0 {
+	if principal != '' {
 		body << u8(principal.len + 1)
 		body << principal.bytes()
 	} else {
@@ -453,7 +453,7 @@ fn build_delete_acls_request(principal string, host string, resource_type u8, re
 	}
 
 	// HostFilter (compact nullable string)
-	if host.len > 0 && host != '*' {
+	if host != '' && host != '*' {
 		body << u8(host.len + 1)
 		body << host.bytes()
 	} else {

@@ -173,7 +173,7 @@ pub mut:
 	bucket     string
 	access_key string
 	secret_key string
-	region     string = 'us-east-1'
+	region     string = 'us-west-2'
 	prefix     string = 'datacore/'
 	timezone   string = 'UTC'
 	// batch configuration
@@ -447,6 +447,12 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		secret_key:                   ''
 	}
 
+	s3.endpoint = if s3.endpoint == '' {
+		'https://${s3.bucket}.s3.${s3.region}.amazonaws.com'
+	} else {
+		s3.endpoint
+	}
+
 	// S3 credentials priority: CLI args > env vars > ~/.aws/credentials > config.toml
 	// priority 1: CLI arguments
 	if cli_access_key := cli_args['s3-access-key'] {
@@ -702,7 +708,7 @@ fn get_config_string(cli_args map[string]string, cli_key string, env_key string,
 	}
 
 	// priority 3: TOML file (skip empty keys)
-	if toml_key.len > 0 {
+	if toml_key != '' {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.string()
 		}
@@ -725,7 +731,7 @@ fn get_config_int(cli_args map[string]string, cli_key string, env_key string, do
 	}
 
 	// priority 3: TOML file (skip empty keys)
-	if toml_key.len > 0 {
+	if toml_key != '' {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.int()
 		}
@@ -748,7 +754,7 @@ fn get_config_i64(cli_args map[string]string, cli_key string, env_key string, do
 	}
 
 	// priority 3: TOML file (skip empty keys)
-	if toml_key.len > 0 {
+	if toml_key != '' {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.i64()
 		}
@@ -771,7 +777,7 @@ fn get_config_bool(cli_args map[string]string, cli_key string, env_key string, d
 	}
 
 	// priority 3: TOML file (skip empty keys)
-	if toml_key.len > 0 {
+	if toml_key != '' {
 		if toml_val := doc.value_opt(toml_key) {
 			return toml_val.bool()
 		}

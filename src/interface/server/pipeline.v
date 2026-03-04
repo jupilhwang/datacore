@@ -36,8 +36,7 @@ mut:
 	total_completed u64
 }
 
-/// new_pipeline - creates a new request pipeline
-/// new_pipeline - creates a new request pipeline
+/// new_pipeline creates a new request pipeline with the given capacity.
 pub fn new_pipeline(max_pending int) &RequestPipeline {
 	return &RequestPipeline{
 		max_pending: max_pending
@@ -45,8 +44,7 @@ pub fn new_pipeline(max_pending int) &RequestPipeline {
 	}
 }
 
-/// enqueue - adds a new request to the pipeline
-/// enqueue - adds a new request to the pipeline
+/// enqueue adds a new request to the pipeline.
 pub fn (mut p RequestPipeline) enqueue(correlation_id i32, api_key i16, api_version i16, data []u8) ! {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -65,8 +63,7 @@ pub fn (mut p RequestPipeline) enqueue(correlation_id i32, api_key i16, api_vers
 	p.total_enqueued += 1
 }
 
-/// complete - completes a request with a response
-/// complete - completes a request with a response
+/// complete marks a request as completed with the given response data.
 pub fn (mut p RequestPipeline) complete(correlation_id i32, response []u8) ! {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -83,8 +80,7 @@ pub fn (mut p RequestPipeline) complete(correlation_id i32, response []u8) ! {
 	return error('correlation_id ${correlation_id} not found in pipeline')
 }
 
-/// complete_with_error - completes a request with an error
-/// complete_with_error - completes a request with an error
+/// complete_with_error marks a request as completed with an error message.
 pub fn (mut p RequestPipeline) complete_with_error(correlation_id i32, err_msg string) ! {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -101,8 +97,7 @@ pub fn (mut p RequestPipeline) complete_with_error(correlation_id i32, err_msg s
 	return error('correlation_id ${correlation_id} not found in pipeline')
 }
 
-/// get_ready_responses - returns ready responses in order
-/// get_ready_responses - returns ready responses in order
+/// get_ready_responses returns all consecutively completed responses in order.
 pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -131,8 +126,7 @@ pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 	return ready
 }
 
-/// peek_first - returns the first pending request without removing it
-/// peek_first - returns the first pending request without removing it
+/// peek_first returns the first pending request without removing it.
 pub fn (mut p RequestPipeline) peek_first() ?PendingRequest {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -143,8 +137,7 @@ pub fn (mut p RequestPipeline) peek_first() ?PendingRequest {
 	return none
 }
 
-/// pending_count - returns the number of pending requests
-/// pending_count - returns the number of pending requests
+/// pending_count returns the number of pending requests.
 pub fn (mut p RequestPipeline) pending_count() int {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -152,8 +145,7 @@ pub fn (mut p RequestPipeline) pending_count() int {
 	return p.pending.len
 }
 
-/// is_full - checks if the pipeline cannot accept more requests
-/// is_full - checks if the pipeline cannot accept more requests
+/// is_full returns true if the pipeline cannot accept more requests.
 pub fn (mut p RequestPipeline) is_full() bool {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -161,8 +153,7 @@ pub fn (mut p RequestPipeline) is_full() bool {
 	return p.pending.len >= p.max_pending
 }
 
-/// clear - removes all pending requests
-/// clear - removes all pending requests
+/// clear removes all pending requests from the pipeline.
 pub fn (mut p RequestPipeline) clear() {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -170,8 +161,7 @@ pub fn (mut p RequestPipeline) clear() {
 	p.pending.clear()
 }
 
-/// get_stats - returns pipeline statistics
-/// get_stats - returns pipeline statistics
+/// get_stats returns a snapshot of pipeline statistics.
 pub fn (mut p RequestPipeline) get_stats() PipelineStats {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -193,8 +183,7 @@ pub:
 	total_completed u64
 }
 
-/// oldest_pending_age - returns the age of the oldest pending request in milliseconds
-/// oldest_pending_age - returns the age of the oldest pending request in milliseconds
+/// oldest_pending_age returns the age of the oldest pending request in milliseconds.
 pub fn (mut p RequestPipeline) oldest_pending_age() i64 {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
@@ -206,8 +195,7 @@ pub fn (mut p RequestPipeline) oldest_pending_age() i64 {
 	return (time.now() - p.pending[0].received_at).milliseconds()
 }
 
-/// has_timed_out - checks if any pending request has timed out
-/// has_timed_out - checks if any pending request has timed out
+/// has_timed_out returns true if any pending request has exceeded the given timeout.
 pub fn (mut p RequestPipeline) has_timed_out(timeout_ms i64) bool {
 	p.lock.@lock()
 	defer { p.lock.unlock() }

@@ -11,6 +11,7 @@
 module server
 
 import domain
+import infra.observability
 import infra.performance.engines
 import sync
 import time
@@ -25,6 +26,7 @@ mut:
 	state      ServerState
 	handler    RequestHandler
 	state_lock sync.Mutex
+	logger     &observability.Logger
 	// io_uring related (Linux only)
 	uring_server ?&engines.IoUringServer
 	// Connection information management
@@ -73,20 +75,19 @@ pub mut:
 	io_uring_enabled     bool
 }
 
-/// new_io_uring_tcp_server - creates an io_uring based TCP server
-/// new_io_uring_tcp_server - creates an io_uring based TCP server
+/// new_io_uring_tcp_server creates an io_uring based TCP server.
 pub fn new_io_uring_tcp_server(config ServerConfig, handler RequestHandler) &IoUringTcpServer {
 	return &IoUringTcpServer{
 		config:    config
 		state:     .stopped
 		handler:   handler
+		logger:    observability.get_named_logger('tcp.io_uring')
 		conn_info: map[int]&IoUringConnInfo{}
 		metrics:   IoUringServerMetrics{}
 	}
 }
 
-/// start - starts the io_uring TCP server
-/// start - starts the io_uring TCP server
+/// start starts the io_uring TCP server (blocking).
 pub fn (mut s IoUringTcpServer) start() ! {
 	s.state_lock.@lock()
 	if s.state != .stopped {
@@ -137,14 +138,10 @@ fn (mut s IoUringTcpServer) start_io_uring_mode() ! {
 		s.state = .running
 		s.state_lock.unlock()
 
-		println('╔═══════════════════════════════════════════════════════════╗')
-		println('║        DataCore Kafka-Compatible Broker (io_uring)       ║')
-		println('╠═══════════════════════════════════════════════════════════╣')
-		println('║  Listening: ${s.config.host}:${s.config.port}                              ║')
-		println('║  Broker ID: ${s.config.broker_id}                                          ║')
-		println('║  Mode: io_uring (Linux 5.1+)                              ║')
-		println('║  Queue Depth: ${s.config.io_uring_queue_depth}                                        ║')
-		println('╚═══════════════════════════════════════════════════════════╝')
+		s.logger.info('DataCore Kafka-Compatible Broker started (io_uring)', observability.field_string('host',
+			s.config.host), observability.field_int('port', s.config.port), observability.field_int('broker_id',
+			s.config.broker_id), observability.field_string('mode', 'io_uring (Linux 5.1+)'),
+			observability.field_int('queue_depth', int(s.config.io_uring_queue_depth)))
 
 		// Run event loop
 		s.io_uring_event_loop()
@@ -160,7 +157,8 @@ fn (mut s IoUringTcpServer) io_uring_event_loop() {
 			// Wait for events
 			events := uring.wait() or {
 				if s.is_running() {
-					eprintln('[io_uring] wait error: ${err}')
+					s.logger.error('[io_uring] wait error', observability.field_string('error',
+						err.str()))
 				}
 				continue
 			}
@@ -208,7 +206,7 @@ fn (mut s IoUringTcpServer) handle_io_uring_accept(client_fd int) {
 	s.metrics.active_connections = s.conn_info.len
 	s.metrics.total_connections++
 
-	println('[io_uring] New connection: fd=${client_fd}')
+	s.logger.info('[io_uring] New connection', observability.field_int('fd', client_fd))
 }
 
 /// handle_io_uring_recv handles received data.
@@ -256,7 +254,8 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 			conn.expected_size = int(u32(conn.recv_buf[0]) << 24 | u32(conn.recv_buf[1]) << 16 | u32(conn.recv_buf[2]) << 8 | u32(conn.recv_buf[3]))
 
 			if conn.expected_size <= 0 || conn.expected_size > s.config.max_request_size {
-				eprintln('[io_uring] Invalid request size: ${conn.expected_size} from fd=${fd}')
+				s.logger.error('[io_uring] Invalid request size', observability.field_int('size',
+					conn.expected_size), observability.field_int('fd', fd))
 				uring.close_connection(fd)
 				s.conn_info.delete(fd)
 				s.metrics.active_connections = s.conn_info.len
@@ -282,7 +281,8 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 		s.metrics.total_requests++
 
 		response := s.handler.handle_request(request_data, mut conn) or {
-			eprintln('[io_uring] Error handling request from fd=${fd}: ${err}')
+			s.logger.error('[io_uring] Error handling request', observability.field_int('fd',
+				fd), observability.field_string('error', err.str()))
 			// Generate minimal error response
 			s.create_error_response(request_data)
 		}
@@ -323,14 +323,13 @@ fn (mut s IoUringTcpServer) handle_io_uring_close(fd int) {
 	}
 
 	if _ := s.conn_info[fd] {
-		println('[io_uring] Connection closed: fd=${fd}')
+		s.logger.info('[io_uring] Connection closed', observability.field_int('fd', fd))
 		s.conn_info.delete(fd)
 		s.metrics.active_connections = s.conn_info.len
 	}
 }
 
-/// stop - stops the server
-/// stop - stops the server
+/// stop gracefully stops the io_uring TCP server.
 pub fn (mut s IoUringTcpServer) stop() {
 	s.state_lock.@lock()
 	if s.state != .running {
@@ -340,7 +339,7 @@ pub fn (mut s IoUringTcpServer) stop() {
 	s.state = .stopping
 	s.state_lock.unlock()
 
-	println('\n[io_uring] Initiating graceful shutdown...')
+	s.logger.info('[io_uring] Initiating graceful shutdown...')
 
 	$if linux {
 		if mut uring := s.uring_server {
@@ -354,31 +353,28 @@ pub fn (mut s IoUringTcpServer) stop() {
 	s.state = .stopped
 	s.state_lock.unlock()
 
-	println('[io_uring] Server stopped')
-	println('  Total connections: ${s.metrics.total_connections}')
-	println('  Total requests: ${s.metrics.total_requests}')
-	println('  Total bytes received: ${format_bytes(s.metrics.total_bytes_received)}')
-	println('  Total bytes sent: ${format_bytes(s.metrics.total_bytes_sent)}')
+	s.logger.info('[io_uring] Server stopped', observability.field_string('total_connections',
+		s.metrics.total_connections.str()), observability.field_string('total_requests',
+		s.metrics.total_requests.str()), observability.field_string('total_bytes_received',
+		format_bytes(s.metrics.total_bytes_received)), observability.field_string('total_bytes_sent',
+		format_bytes(s.metrics.total_bytes_sent)))
 }
 
-/// is_running - checks if the server is running
-/// is_running - checks if the server is running
+/// is_running returns true if the server is currently running.
 pub fn (mut s IoUringTcpServer) is_running() bool {
 	s.state_lock.@lock()
 	defer { s.state_lock.unlock() }
 	return s.state == .running
 }
 
-/// get_metrics - returns server metrics
-/// get_metrics - returns server metrics
+/// get_metrics returns a snapshot of the server's operational metrics.
 pub fn (s &IoUringTcpServer) get_metrics() IoUringServerMetrics {
 	return s.metrics
 }
 
 // io_uring availability check functions
 
-/// is_io_uring_available - checks if io_uring is available on the current platform
-/// is_io_uring_available - checks if io_uring is available on the current platform
+/// is_io_uring_available returns true if io_uring is available on the current platform.
 pub fn is_io_uring_available() bool {
 	$if linux {
 		return engines.is_io_uring_server_available()
@@ -387,8 +383,7 @@ pub fn is_io_uring_available() bool {
 	}
 }
 
-/// get_recommended_server_mode - returns the recommended server mode
-/// get_recommended_server_mode - returns the recommended server mode
+/// get_recommended_server_mode returns the recommended server mode string for the current platform.
 pub fn get_recommended_server_mode() string {
 	$if linux {
 		if engines.is_io_uring_server_available() {

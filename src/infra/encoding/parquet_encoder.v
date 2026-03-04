@@ -591,7 +591,7 @@ fn encode_file_metadata(schema ParquetSchema, num_rows i64, col_chunks_meta []Co
 	// end RowGroup
 
 	// Field 6: created_by
-	if created_by.len > 0 {
+	if created_by != '' {
 		w.write_string(6, created_by)
 	}
 
@@ -633,7 +633,7 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	mut file_bytes := []u8{cap: estimated_size}
 
 	// 1. Write magic number at start
-	file_bytes << parquet_magic
+	file_bytes << parquet_magic[..]
 
 	// 2. Encode each column chunk and append to file
 	mut col_metas := []ColChunkMeta{cap: cols.len}
@@ -679,7 +679,7 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	write_le_u32(mut file_bytes, u32(footer_bytes.len))
 
 	// 5. Write magic number at end
-	file_bytes << parquet_magic
+	file_bytes << parquet_magic[..]
 
 	// Build ParquetMetadata return value (for callers that inspect metadata)
 	mut min_offset := e.records[0].offset

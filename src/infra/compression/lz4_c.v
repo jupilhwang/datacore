@@ -54,7 +54,7 @@ pub fn (c &Lz4CompressorC) compress(data []u8) ![]u8 {
 
 // lz4_frame_magic is the LZ4 frame magic bytes in little-endian order.
 // 0x184D2204 stored as bytes: 04 22 4D 18
-const lz4_frame_magic = [u8(0x04), 0x22, 0x4d, 0x18]
+const lz4_frame_magic = [u8(0x04), 0x22, 0x4d, 0x18]!
 
 /// decompress decompresses LZ4 Frame format data.
 /// Handles two variants:

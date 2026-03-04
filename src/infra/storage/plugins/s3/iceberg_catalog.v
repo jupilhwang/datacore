@@ -345,7 +345,7 @@ fn encode_metadata(metadata IcebergMetadata) string {
 /// decode_metadata decodes a JSON string into IcebergMetadata.
 /// Parses all fields: format_version, table_uuid, location, schemas, partition_specs, snapshots.
 fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
-	if json_str.len == 0 {
+	if json_str == '' {
 		return error('Empty metadata JSON')
 	}
 
@@ -544,7 +544,7 @@ fn json_extract_array(json_str string, key string) ?string {
 
 /// json_find_matching_brace finds the matching closing brace/bracket.
 fn json_find_matching_brace(s string, open u8, close u8) ?string {
-	if s.len == 0 || s[0] != open {
+	if s == '' || s[0] != open {
 		return none
 	}
 	mut depth := 0

@@ -275,7 +275,7 @@ const crc32c_table = [
 	0x4C4623A6,
 	0x5F16D052,
 	0xAD7D5351,
-]
+]!
 
 // CPU feature detection
 
