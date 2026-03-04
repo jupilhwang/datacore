@@ -521,7 +521,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 /// Signing process: Canonical Request -> String to Sign -> Signing Key -> Signature
 fn (a &S3StorageAdapter) sign_request(method string, key string, query string, body []u8) http.Header {
 	mut h := http.Header{}
-	now := time.now().as_utc()
+	now := time.utc()
 
 	// Manual formatting to ensure UTC time
 	date_day := now.custom_format('YYYYMMDD')
