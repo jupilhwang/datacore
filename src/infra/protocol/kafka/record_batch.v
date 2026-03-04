@@ -73,7 +73,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 	// Base offset (8 bytes)
 	writer.write_i64(base_offset)
 
-	// Batch length placeholder (4 bytes) - filled in later
+	// TODO(jira#XXX): fill actual batch length (4 bytes)
 	_ = writer.data.len
 	writer.write_i32(0)
 
@@ -83,7 +83,7 @@ pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []
 	// Magic byte (1 byte) - version 2
 	writer.write_i8(2)
 
-	// CRC placeholder (4 bytes)
+	// TODO(jira#XXX): compute actual CRC (4 bytes)
 	crc_pos := writer.data.len
 	writer.write_i32(0)
 

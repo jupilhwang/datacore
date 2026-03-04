@@ -732,8 +732,7 @@ fn send_otlp_http(endpoint string, payload string) {
 		_ := $env('PATH')
 	}
 
-	// Using simple approach for now
-	// TODO(jira#XXX): Implement proper HTTP client with retry
+	// Note: using simple approach; TODO(jira#XXX): implement proper HTTP client with retry
 	_ = endpoint
 	_ = payload
 }

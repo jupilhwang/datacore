@@ -316,7 +316,7 @@ fn build_record_batch(messages []ProduceMessage) []u8 {
 		batch << u8(0)
 	}
 
-	// Batch length placeholder (4 bytes) - will be filled later
+	// TODO(jira#XXX): fill actual batch length (4 bytes) after batch is fully constructed
 	batch_len_pos := batch.len
 	for _ in 0 .. 4 {
 		batch << u8(0)
@@ -331,7 +331,7 @@ fn build_record_batch(messages []ProduceMessage) []u8 {
 	// Magic (1 byte) - v2 = 2
 	batch << u8(2)
 
-	// CRC placeholder (4 bytes) - simplified, will be 0
+	// TODO(jira#XXX): compute and fill real CRC (4 bytes) instead of zero placeholder
 	for _ in 0 .. 4 {
 		batch << u8(0)
 	}

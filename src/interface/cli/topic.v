@@ -210,7 +210,7 @@ pub fn run_topic_describe(opts TopicOptions) ! {
 	println('\x1b[33mTopic:\x1b[0m ${topic.name}')
 	println('  Internal:    ${topic.is_internal}')
 	println('  Partitions:  ${topic.partitions}')
-	// TODO: Add partition details (leader, replicas, ISR)
+	// TODO(jira#XXX): Add partition details (leader, replicas, ISR)
 }
 
 /// run_topic_delete deletes a topic.

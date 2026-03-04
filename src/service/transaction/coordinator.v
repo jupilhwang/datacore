@@ -253,8 +253,8 @@ pub fn (mut c TransactionCoordinator) end_txn(transactional_id string, producer_
 	}
 	c.store.save_transaction(meta_prepare)!
 
-	// Write marker (TODO: implement WriteTxnMarkers)
-	// Currently assumes markers are written successfully
+	// TODO(jira#XXX): implement WriteTxnMarkers
+	// Write marker (currently assumes markers are written successfully)
 
 	// Transition to complete state
 	complete_state := if result == .commit {
