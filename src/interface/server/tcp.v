@@ -14,8 +14,10 @@ module server
 
 import net
 import sync
+import sync.stdatomic
 import time
 import domain
+import infra.observability
 
 /// ServerConfig is a struct holding server configuration.
 /// Contains various options controlling TCP server behavior.
@@ -89,6 +91,8 @@ mut:
 	shutdown_chan chan bool
 	state_lock    sync.Mutex
 	worker_pool   &WorkerPool
+	// running_flag is an atomic bool (0=stopped, 1=running) for lock-free is_running() checks.
+	running_flag i64
 }
 
 /// new_server creates a new TCP server.
@@ -130,6 +134,7 @@ pub fn (mut s Server) start() ! {
 	s.state_lock.@lock()
 	s.state = .running
 	s.state_lock.unlock()
+	stdatomic.store_i64(&s.running_flag, 1)
 
 	println('╔═══════════════════════════════════════════════════════════╗')
 	println('║             DataCore Kafka-Compatible Broker              ║')
@@ -183,6 +188,7 @@ pub fn (mut s Server) stop() {
 	}
 	s.state = .stopping
 	s.state_lock.unlock()
+	stdatomic.store_i64(&s.running_flag, 0)
 
 	println('\n[DataCore] Initiating graceful shutdown...')
 
@@ -231,10 +237,9 @@ pub fn (mut s Server) stop() {
 }
 
 /// is_running checks whether the server is running.
+/// Uses atomic load for lock-free access from hot-path loops.
 pub fn (mut s Server) is_running() bool {
-	s.state_lock.@lock()
-	defer { s.state_lock.unlock() }
-	return s.state == .running
+	return stdatomic.load_i64(&s.running_flag) == 1
 }
 
 /// get_state returns the current server state.
@@ -330,6 +335,11 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 	// Create request pipeline for this connection
 	mut pipeline := new_pipeline(s.config.max_pending_requests)
 
+	// Pre-allocate request buffer at connection level to avoid per-request allocation.
+	// Reuse across requests; grow only when request_size exceeds current capacity.
+	initial_buf_cap := 65536 // 64 KB initial capacity covers most Kafka requests
+	mut request_buf := []u8{len: initial_buf_cap}
+
 	// Request processing loop (persistent connection)
 	for s.is_running() {
 		// Check request timeout
@@ -358,8 +368,14 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 			break
 		}
 
-		// Read request body
-		mut request_buf := []u8{len: request_size}
+		// Read request body — reuse connection-level buffer to avoid per-request allocation
+		if request_size <= request_buf.cap {
+			unsafe {
+				request_buf.len = request_size
+			}
+		} else {
+			request_buf = []u8{len: request_size}
+		}
 		mut total_read := 0
 		for total_read < request_size {
 			n := conn.read(mut request_buf[total_read..]) or { break }
@@ -385,10 +401,18 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 			api_version := i16(u16(request_buf[2]) << 8 | u16(request_buf[3]))
 			correlation_id := i32(u32(request_buf[4]) << 24 | u32(request_buf[5]) << 16 | u32(request_buf[6]) << 8 | u32(request_buf[7]))
 
-			println('[Request] api_key=${api_key}, version=${api_version}, correlation_id=${correlation_id}, size=${request_size}')
+			observability.log_with_context('tcp', .debug, 'Request', 'Incoming request',
+				{
+				'api_key':        api_key.str()
+				'api_version':    api_version.str()
+				'correlation_id': correlation_id.str()
+				'size':           request_size.str()
+			})
 
 			// Add to pipeline queue (supports pipelining)
-			pipeline.enqueue(correlation_id, api_key, api_version, request_buf) or {
+			// Clone request_buf so the pipeline owns an independent copy;
+			// the connection-level buffer is reused for subsequent reads.
+			pipeline.enqueue(correlation_id, api_key, api_version, request_buf[..request_size].clone()) or {
 				eprintln('[Connection] Pipeline full for ${client_addr}: ${err}')
 				break
 			}
@@ -460,7 +484,11 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				}
 			}
 
-			println('[Response] api_key=${api_key}, response_size=${response.len}')
+			observability.log_with_context('tcp', .debug, 'Response', 'Response ready',
+				{
+				'api_key': api_key.str()
+				'size':    response.len.str()
+			})
 
 			// Mark request as completed
 			pipeline.complete(correlation_id, response) or {}
@@ -469,21 +497,37 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 			ready := pipeline.get_ready_responses()
 			for req in ready {
 				if req.error_msg.len > 0 {
-					eprintln('[Response] Error for correlation_id=${req.correlation_id}: ${req.error_msg}')
+					observability.log_with_context('tcp', .warn, 'Response', 'Response error',
+						{
+						'correlation_id': req.correlation_id.str()
+						'error':          req.error_msg
+					})
 					// Send response even with error to prevent client timeout
 				}
 
 				// Debug: log Fetch responses
-				if api_key == 1 && req.response_data.len < 200 {
-					eprintln('[Response] Fetch hex (${req.response_data.len} bytes): ${req.response_data.hex()}')
+				$if debug {
+					if api_key == 1 && req.response_data.len < 200 {
+						observability.log_with_context('tcp', .debug, 'Response', 'Fetch response hex',
+							{
+							'size': req.response_data.len.str()
+							'hex':  req.response_data.hex()
+						})
+					}
 				}
 
 				conn.write(req.response_data) or {
-					eprintln('[Connection] Error sending response to ${client_addr}: ${err}')
+					observability.log_with_context('tcp', .error, 'Connection', 'Error sending response',
+						{
+						'client_addr': client_addr
+						'error':       err.str()
+					})
 					break
 				}
 
-				println('[Response] Sent ${req.response_data.len} bytes')
+				observability.log_with_context('tcp', .debug, 'Response', 'Sent', {
+					'bytes': req.response_data.len.str()
+				})
 				client.bytes_sent += u64(req.response_data.len)
 			}
 		}

@@ -281,17 +281,13 @@ fn (mut a S3StorageAdapter) update_partition_index_with_segment(topic string, pa
 		}
 	}
 
-	// Always add if segment does not yet exist
-	// Check for duplicates by comparing segment keys
-	mut segment_exists := false
+	// Check for duplicates using a set-based lookup: O(1) vs O(n)
+	mut segment_key_set := map[string]bool{}
 	for seg in index.log_segments {
-		if seg.key == segment_key {
-			segment_exists = true
-			break
-		}
+		segment_key_set[seg.key] = true
 	}
 
-	if !segment_exists {
+	if segment_key !in segment_key_set {
 		index.log_segments << LogSegment{
 			start_offset: base_offset
 			end_offset:   end_offset
@@ -303,11 +299,10 @@ fn (mut a S3StorageAdapter) update_partition_index_with_segment(topic string, pa
 		// Sort segments by start_offset to maintain order
 		index.log_segments.sort(a.start_offset < b.start_offset)
 
-		// Update high_watermark to max end_offset + 1
-		for seg in index.log_segments {
-			if seg.end_offset + 1 > index.high_watermark {
-				index.high_watermark = seg.end_offset + 1
-			}
+		// Update high_watermark: only need to check new segment vs current value
+		new_candidate := end_offset + 1
+		if new_candidate > index.high_watermark {
+			index.high_watermark = new_candidate
 		}
 
 		// Write updated index to S3

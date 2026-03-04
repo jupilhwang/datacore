@@ -101,7 +101,7 @@ pub fn parse_request(data []u8) !Request {
 	}
 
 	// Remaining data is the request body
-	body := reader.data[reader.pos..].clone()
+	body := reader.data[reader.pos..]
 
 	return Request{
 		header: RequestHeader{
