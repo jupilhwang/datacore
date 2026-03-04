@@ -153,7 +153,7 @@ pub fn new_postgres_adapter(config PostgresConfig) !&PostgresStorageAdapter {
 	adapter.load_topic_cache()!
 
 	// Initialize cluster metadata port for multi-broker support
-	cluster_id := 'datacore-cluster' // TODO: make configurable
+	cluster_id := 'datacore-cluster' // TODO(jira#XXX): make cluster_id configurable
 	adapter.cluster_metadata = new_cluster_metadata_port(adapter.pool, cluster_id)!
 
 	adapter.initialized = true

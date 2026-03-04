@@ -282,7 +282,7 @@ const crc32c_table = [
 /// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
 /// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
 pub fn cpu_supports_hw_crc32c() bool {
-	// TODO: return true when hardware acceleration is supported via C interop
+	// TODO(jira#XXX): return true when hardware acceleration is supported via C interop
 	return false
 }
 

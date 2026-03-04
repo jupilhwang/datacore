@@ -109,7 +109,7 @@ pub fn (mut e AvroEncoder) decode(data []u8, schema_str string) ![]u8 {
 		}
 		'string' {
 			str := decode_string(mut reader)!
-			escape_json_string(str)
+			'"${core.escape_json_string(str)}"'
 		}
 		'bytes' {
 			bytes := decode_bytes(mut reader)!
@@ -300,7 +300,7 @@ fn (mut e AvroEncoder) decode_value_by_type(field_type string, mut reader AvroRe
 	match field_type {
 		'string' {
 			str := decode_string(mut reader)!
-			return escape_json_string(str)
+			return '"${core.escape_json_string(str)}"'
 		}
 		'bytes' {
 			bytes := decode_bytes(mut reader)!
@@ -459,7 +459,7 @@ fn (mut e AvroEncoder) decode_enum(mut reader AvroReader, schema AvroSchema) !st
 	}
 
 	symbol := schema.symbols[symbol_index]
-	return escape_json_string(symbol)
+	return '"${core.escape_json_string(symbol)}"'
 }
 
 // Array encoding/decoding

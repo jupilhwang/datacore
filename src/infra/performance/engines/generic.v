@@ -108,6 +108,6 @@ pub fn (mut e GenericPerformanceEngine) get_stats() core.PerformanceStats {
 		engine_name:   e.name()
 		buffer_hits:   buf_stats.total_hits()
 		buffer_misses: buf_stats.total_misses()
-		ops_count:     0 // TODO: track other operations
+		ops_count:     0 // TODO(jira#XXX): track other operations
 	}
 }

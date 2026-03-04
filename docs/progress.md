@@ -1,5 +1,61 @@
 # Progress Log
 
+## 2026-03-04: escape_json_string wrapper 제거, extract_json_object 통합, TODO 포맷 정리 (feature/cleanup-duplicates-todos-v1)
+
+### Task 1: escape_json_string wrapper 제거
+- `logger.v`의 `fn escape_json_string` wrapper 제거 → 모든 호출처를 `core.escape_json_string`으로 직접 교체 (7곳)
+- `otlp_exporter.v`도 같은 모듈 내 wrapper 참조 → `core.escape_json_string`으로 교체 (8곳), `import infra.performance.core` 추가
+- `json_utils.v`의 `fn escape_json_string` (따옴표 추가 wrapper) 제거
+  - `avro_encoder.v` 3곳: `'"${core.escape_json_string(s)}"'` 인라인으로 교체
+  - `registry.v` 1곳: `'"${core.escape_json_string(s)}"'`으로 교체, `import infra.performance.core` 추가
+- `logger_test.v`: `escape_json_string` → `core.escape_json_string` 교체, import 추가
+
+### Task 2: extract_json_object 통합
+- `json_utils.v`에 `pub fn extract_json_object(json_str string, key string) map[string]string` 추가 (websocket_handler.v 로직 이전)
+- `websocket_handler.v`: `schema.extract_json_object` 호출로 변경, 기존 `fn extract_json_object` 정의 제거 (69줄 감소)
+
+### Task 3: TODO 포맷 통일 (`// TODO:` → `// TODO(jira#XXX):`)
+- `websocket_handler.v:431` - simple JSON parsing 주석
+- `handler_config.v:305` - Add actual broker configs
+- `crc32c.v:285` - hardware acceleration
+- `postgres/adapter.v:156` - make cluster_id configurable
+- `generic.v:111` - track other operations
+- `manager.v:22` - LinuxPerformanceEngine 초기화
+- `partition_assigner.v:483` - Need method to get topic list
+- `broker_registry.v:431` - Perform rebalancing
+- `streaming_port.v:109` - implement proper glob/regex
+
+### 검증
+- `v fmt -w .`: 이상 없음 (모든 파일 Already formatted)
+- `make build`: 빌드 성공, 경고 없음 (v0.47.1)
+- `v -enable-globals test infra/observability/logger_test.v`: PASS
+- `v -enable-globals test service/schema/`: 2/2 PASS
+
+---
+
+## 2026-03-04: 중복 함수 제거 및 TODO/Stub 정리 (feature/cleanup-duplicates-todos-v1)
+
+### Task 1: escape_json_str 중복 제거
+- `encoder_json_helpers.v`의 `escape_json_str` 제거 (`.replace()` 체인 구현)
+- `protobuf_encoder.v`에서 `core.escape_json_string` 직접 사용으로 변경 (canonical 구현 사용)
+
+### Task 2: extract_json_string/int 중복 제거
+- `json_utils.v`의 `extract_json_string`, `extract_json_int`를 `pub fn`으로 노출
+- `websocket_handler.v`에 `import service.schema` 추가
+- `websocket_handler.v`의 `extract_json_string`, `extract_json_int`, `unescape_json_string` 제거 (111줄 감소)
+- `parse_ws_message`에서 `schema.extract_json_string`, `schema.extract_json_int` 사용
+
+### Task 3: TODO 정리
+- IMPORTANT 6개: `TODO(jira#XXX):` 자리표시 추가 (topic.v, websocket_handler.v, handler_admin.v, logger.v, s3/adapter.v, coordinator.v)
+- FUTURE 4개: `docs/FUTURE_FEATURES.md`에 CRC32C 하드웨어 가속, 리밸런싱, 토픽 목록 메서드, JSON 파싱 라이브러리 섹션 추가
+
+### 검증
+- `v fmt -w .`: 이상 없음 (모든 파일 Already formatted)
+- `make build`: 빌드 성공 (v0.47.1)
+- 테스트 실패 70개 모두 기존 실패와 동일 (`writer_pool.v` 글로벌 변수 플래그 미지정 등 기존 문제)
+
+---
+
 ## 2026-02-28: Iceberg 리팩토링 (refactor/iceberg-cleanup-v1)
 
 - IcebergConfig 중복 타입 통합: config.IcebergConfig 제거, s3.IcebergConfig으로 단일화

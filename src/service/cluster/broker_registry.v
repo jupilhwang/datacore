@@ -428,7 +428,7 @@ pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 			return
 		}
 
-		// TODO: Perform rebalancing for all topics
+		// TODO(jira#XXX): Perform rebalancing for all topics
 		// Currently only calls callback; actual rebalancing is handled externally
 		r.logger.info('Triggering partition rebalance for all topics', observability.field_int('active_brokers',
 			i64(active_brokers.len)))

@@ -19,7 +19,7 @@ pub fn new_performance_manager(config core.PerformanceConfig) &PerformanceManage
 
 	$if linux {
 		if config.enable_linux_optimizations {
-			// TODO: initialize when LinuxPerformanceEngine is fully implemented
+			// TODO(jira#XXX): initialize when LinuxPerformanceEngine is fully implemented
 			// For now, use Generic but log that Linux is available
 			// mut linux_engine := engines.LinuxPerformanceEngine{}
 			// engine = linux_engine
