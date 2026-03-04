@@ -346,6 +346,14 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		active_broker_ids << h.broker_id
 	}
 
+	// Pre-compute replica/isr lists once to avoid per-partition clone overhead
+	// Optimization note: clone-once here prevents active_broker_ids from being
+	// recalculated on every partition iteration, but a per-partition clone of
+	// replica_nodes/isr_nodes is still required because MetadataResponsePartition
+	// holds []i32 by value (ownership), making a shared reference impossible.
+	replica_nodes := active_broker_ids.clone()
+	isr_nodes := active_broker_ids.clone()
+
 	// Specific topics requested
 	if req.topics.len > 0 {
 		for req_topic in req.topics {
@@ -414,8 +422,8 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 					partition_index:  i32(p)
 					leader_id:        leader_id
 					leader_epoch:     0
-					replica_nodes:    active_broker_ids.clone()
-					isr_nodes:        active_broker_ids.clone()
+					replica_nodes:    replica_nodes.clone()
+					isr_nodes:        isr_nodes.clone()
 					offline_replicas: []
 				}
 			}
@@ -452,8 +460,8 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 					partition_index:  i32(p)
 					leader_id:        leader_id
 					leader_epoch:     0
-					replica_nodes:    active_broker_ids.clone()
-					isr_nodes:        active_broker_ids.clone()
+					replica_nodes:    replica_nodes.clone()
+					isr_nodes:        isr_nodes.clone()
 					offline_replicas: []
 				}
 			}

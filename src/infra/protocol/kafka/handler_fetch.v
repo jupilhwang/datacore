@@ -372,9 +372,9 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			records_data := encode_record_batch_zerocopy(result.records, result.first_offset)
 			total_records += result.records.len
 
-			// Apply schema decoding if configured for this topic
-			mut records_for_compression := records_data.clone()
-			if schema := h.get_topic_schema(topic_name) {
+			// Apply schema decoding if configured for this topic.
+			// Clone is deferred: only performed when schema decoding is needed.
+			schema_decoded_data := if schema := h.get_topic_schema(topic_name) {
 				h.logger.debug('Decoding records with schema', observability.field_string('topic',
 					topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
 
@@ -395,8 +395,15 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 					}
 				}
 				// Re-encode decoded records as RecordBatch
-				records_for_compression = encode_record_batch_zerocopy(decoded_records,
-					result.first_offset)
+				encode_record_batch_zerocopy(decoded_records, result.first_offset)
+			} else {
+				[]u8{}
+			}
+			// Use schema-decoded data if available, otherwise use records_data directly (no clone)
+			records_for_compression := if schema_decoded_data.len > 0 {
+				schema_decoded_data
+			} else {
+				records_data
 			}
 
 			// Apply compression
@@ -535,15 +542,6 @@ fn (mut h Handler) handle_fetch(body []u8, version i16) ![]u8 {
 	resp := h.process_fetch(req, version)!
 
 	encoded := resp.encode(version)
-	// Print response info for debugging
-	eprintln('[Fetch] Response version=${version}, size=${encoded.len} bytes')
-	if encoded.len > 0 && encoded.len < 200 {
-		eprintln('[Fetch] First 100 bytes: ${encoded[..if encoded.len > 100 {
-			100
-		} else {
-			encoded.len
-		}].hex()}')
-	}
 
 	return encoded
 }

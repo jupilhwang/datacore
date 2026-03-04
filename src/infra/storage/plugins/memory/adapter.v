@@ -539,7 +539,9 @@ fn (mut a MemoryStorageAdapter) append_mmap(topic &TopicStore, partition int, re
 	mut record_bytes := [][]u8{cap: records.len}
 	for record in records {
 		// Simple serialization: key_len(4) + key + value_len(4) + value
-		mut data := []u8{}
+		// Pre-allocate with estimated capacity: 4 (key_len) + key + 4 (value_len) + value
+		estimated_cap := 8 + record.key.len + record.value.len
+		mut data := []u8{cap: estimated_cap}
 		// key length
 		key_len := record.key.len
 		data << u8(key_len >> 24)
@@ -922,19 +924,13 @@ pub:
 
 /// get_stats returns the current storage statistics.
 pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
-	a.topics_lock.rlock()
-	topics_snapshot := a.topics.clone()
-	a.topics_lock.runlock()
-
-	a.groups_lock.rlock()
-	group_count := a.groups.len
-	a.groups_lock.runlock()
-
 	mut total_partitions := 0
 	mut total_records := i64(0)
 	mut total_bytes := i64(0)
 
-	for _, topic in topics_snapshot {
+	a.topics_lock.rlock()
+	topic_count := a.topics.len
+	for _, topic in a.topics {
 		total_partitions += topic.partitions.len
 
 		for i in 0 .. topic.partitions.len {
@@ -943,9 +939,14 @@ pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 			// Note: total_bytes is approximate without iterating records
 		}
 	}
+	a.topics_lock.runlock()
+
+	a.groups_lock.rlock()
+	group_count := a.groups.len
+	a.groups_lock.runlock()
 
 	return StorageStats{
-		topic_count:      topics_snapshot.len
+		topic_count:      topic_count
 		total_partitions: total_partitions
 		total_records:    total_records
 		total_bytes:      total_bytes
@@ -1024,18 +1025,19 @@ pub fn (mut a MemoryStorageAdapter) delete_share_partition_state(group_id string
 	key := '${group_id}:${topic_name}:${partition}'
 	a.share_partition_states.delete(key)
 
-	// Remove key from the group index
-	if keys := a.share_partition_by_group[group_id] {
-		mut new_keys := []string{cap: keys.len}
-		for k in keys {
-			if k != key {
-				new_keys << k
+	// Remove key from the group index using swap-remove for O(1) deletion (order is not significant)
+	if mut keys := a.share_partition_by_group[group_id] {
+		for i, k in keys {
+			if k == key {
+				keys[i] = keys[keys.len - 1]
+				keys.delete_last()
+				break
 			}
 		}
-		if new_keys.len == 0 {
+		if keys.len == 0 {
 			a.share_partition_by_group.delete(group_id)
 		} else {
-			a.share_partition_by_group[group_id] = new_keys
+			a.share_partition_by_group[group_id] = keys
 		}
 	}
 }

@@ -339,17 +339,28 @@ pub fn load_config(path string) !Config {
 /// cli_args: CLI argument map (parsed by parse_cli_args)
 /// returns: loaded Config or error
 pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
-	// check if file exists
 	if !os.exists(path) {
-		// if file does not exist, use default config with CLI/env overrides
 		return load_default_config_with_overrides(cli_args)
 	}
 
 	content := os.read_file(path) or { return error('Failed to read config file: ${err}') }
-
 	doc := toml.parse_text(content) or { return error('Failed to parse config file: ${err}') }
 
-	// parse broker configuration (with priority cascade)
+	mut cfg := Config{
+		broker:          parse_broker_config(cli_args, doc)
+		rest:            parse_rest_config(cli_args, doc)
+		grpc:            parse_grpc_config(cli_args, doc)
+		storage:         parse_storage_config(cli_args, doc)
+		schema_registry: parse_schema_registry_config(doc)
+		observability:   parse_observability_config(doc)
+		telemetry:       parse_telemetry_config(doc)
+	}
+
+	cfg.validate()!
+	return cfg
+}
+
+fn parse_broker_config(cli_args map[string]string, doc toml.Doc) BrokerConfig {
 	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
 		doc, 'broker.host', '0.0.0.0')
 	// broker_id: if not set via config/env, generate deterministically from server identity (0 used as sentinel)
@@ -358,7 +369,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 	if broker_id == 0 {
 		broker_id = generate_deterministic_broker_id()
 	}
-	broker := BrokerConfig{
+	return BrokerConfig{
 		host:               broker_host
 		port:               get_config_int(cli_args, 'broker-port', 'DATACORE_BROKER_PORT',
 			doc, 'broker.port', 9092)
@@ -376,9 +387,10 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		advertised_host:    get_config_string(cli_args, 'advertised-host', 'DATACORE_ADVERTISED_HOST',
 			doc, 'broker.advertised_host', broker_host)
 	}
+}
 
-	// parse REST configuration (with priority cascade)
-	rest := RestConfig{
+fn parse_rest_config(cli_args map[string]string, doc toml.Doc) RestConfig {
+	return RestConfig{
 		enabled:                   get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
 			doc, 'rest.enabled', true)
 		host:                      get_config_string(cli_args, 'rest-host', 'DATACORE_REST_HOST',
@@ -394,9 +406,10 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		ws_max_message_size:       get_int(doc, 'rest.ws_max_message_size', 1048576)
 		ws_ping_interval_ms:       get_int(doc, 'rest.ws_ping_interval_ms', 30000)
 	}
+}
 
-	// parse gRPC gateway configuration
-	grpc_gateway := GrpcGatewayConfig{
+fn parse_grpc_config(cli_args map[string]string, doc toml.Doc) GrpcGatewayConfig {
+	return GrpcGatewayConfig{
 		enabled:          get_config_bool(cli_args, 'grpc-enabled', 'DATACORE_GRPC_ENABLED',
 			doc, 'grpc.enabled', false)
 		host:             get_config_string(cli_args, 'grpc-host', 'DATACORE_GRPC_HOST',
@@ -407,18 +420,9 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			doc, 'grpc.max_connections', 10000)
 		max_message_size: get_int(doc, 'grpc.max_message_size', 4194304)
 	}
+}
 
-	// parse storage configuration (with priority cascade)
-	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
-		doc, 'storage.engine', 'memory')
-
-	// parse memory configuration
-	memory := MemoryStorageConfig{
-		max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 20240)
-		segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
-	}
-
-	// parse S3 configuration (with priority cascade)
+fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 	mut s3 := S3StorageConfig{
 		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
 			doc, 'storage.s3.endpoint', '')
@@ -517,113 +521,114 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			2)
 	}
 
-	// parse SQLite configuration
-	sqlite := SqliteStorageConfig{
-		path:         get_string(doc, 'storage.sqlite.path', 'datacore.db')
-		journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
-	}
+	return s3
+}
 
-	// parse PostgreSQL configuration (with priority cascade)
-	postgres := PostgresStorageConfig{
-		host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
-			doc, 'storage.postgres.host', 'localhost')
-		port:      get_config_int(cli_args, 'postgres-port', 'DATACORE_POSTGRES_PORT',
-			doc, 'storage.postgres.port', 5432)
-		database:  get_config_string(cli_args, 'postgres-database', 'DATACORE_POSTGRES_DATABASE',
-			doc, 'storage.postgres.database', 'datacore')
-		user:      get_config_string(cli_args, 'postgres-user', 'DATACORE_POSTGRES_USER',
-			doc, 'storage.postgres.user', '')
-		password:  get_config_string(cli_args, 'postgres-password', 'DATACORE_POSTGRES_PASSWORD',
-			doc, 'storage.postgres.password', '')
-		pool_size: get_config_int(cli_args, 'postgres-pool-size', 'DATACORE_POSTGRES_POOL_SIZE',
-			doc, 'storage.postgres.pool_size', 10)
-		sslmode:   get_config_string(cli_args, 'postgres-sslmode', 'DATACORE_POSTGRES_SSLMODE',
-			doc, 'storage.postgres.sslmode', 'disable')
+fn parse_storage_config(cli_args map[string]string, doc toml.Doc) StorageConfig {
+	return StorageConfig{
+		engine:   get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
+			doc, 'storage.engine', 'memory')
+		memory:   MemoryStorageConfig{
+			max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 20240)
+			segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
+		}
+		s3:       parse_s3_config(cli_args, doc)
+		sqlite:   SqliteStorageConfig{
+			path:         get_string(doc, 'storage.sqlite.path', 'datacore.db')
+			journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
+		}
+		postgres: PostgresStorageConfig{
+			host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
+				doc, 'storage.postgres.host', 'localhost')
+			port:      get_config_int(cli_args, 'postgres-port', 'DATACORE_POSTGRES_PORT',
+				doc, 'storage.postgres.port', 5432)
+			database:  get_config_string(cli_args, 'postgres-database', 'DATACORE_POSTGRES_DATABASE',
+				doc, 'storage.postgres.database', 'datacore')
+			user:      get_config_string(cli_args, 'postgres-user', 'DATACORE_POSTGRES_USER',
+				doc, 'storage.postgres.user', '')
+			password:  get_config_string(cli_args, 'postgres-password', 'DATACORE_POSTGRES_PASSWORD',
+				doc, 'storage.postgres.password', '')
+			pool_size: get_config_int(cli_args, 'postgres-pool-size', 'DATACORE_POSTGRES_POOL_SIZE',
+				doc, 'storage.postgres.pool_size', 10)
+			sslmode:   get_config_string(cli_args, 'postgres-sslmode', 'DATACORE_POSTGRES_SSLMODE',
+				doc, 'storage.postgres.sslmode', 'disable')
+		}
 	}
+}
 
-	storage := StorageConfig{
-		engine:   storage_engine
-		memory:   memory
-		s3:       s3
-		sqlite:   sqlite
-		postgres: postgres
-	}
-
-	// parse schema registry configuration
-	schema_registry := SchemaRegistryConfig{
+fn parse_schema_registry_config(doc toml.Doc) SchemaRegistryConfig {
+	return SchemaRegistryConfig{
 		enabled: get_bool(doc, 'schema_registry.enabled', true)
 		topic:   get_string(doc, 'schema_registry.topic', '__schemas')
 	}
+}
 
-	// parse observability configuration - OTel common
-	otel := OtelConfig{
-		enabled:             get_bool(doc, 'observability.otel.enabled', true)
-		service_name:        get_string(doc, 'observability.otel.service_name', 'datacore')
-		service_version:     get_string(doc, 'observability.otel.service_version', '0.44.4')
-		instance_id:         get_string(doc, 'observability.otel.instance_id', '')
-		environment:         get_string(doc, 'observability.otel.environment', 'development')
-		otlp_endpoint:       get_string(doc, 'observability.otel.otlp_endpoint', 'http://localhost:4317')
-		otlp_http_endpoint:  get_string(doc, 'observability.otel.otlp_http_endpoint',
-			'')
-		resource_attributes: get_string(doc, 'observability.otel.resource_attributes',
-			'')
+fn parse_observability_config(doc toml.Doc) ObservabilityConfig {
+	return ObservabilityConfig{
+		otel:    OtelConfig{
+			enabled:             get_bool(doc, 'observability.otel.enabled', true)
+			service_name:        get_string(doc, 'observability.otel.service_name', 'datacore')
+			service_version:     get_string(doc, 'observability.otel.service_version',
+				'0.44.4')
+			instance_id:         get_string(doc, 'observability.otel.instance_id', '')
+			environment:         get_string(doc, 'observability.otel.environment', 'development')
+			otlp_endpoint:       get_string(doc, 'observability.otel.otlp_endpoint', 'http://localhost:4317')
+			otlp_http_endpoint:  get_string(doc, 'observability.otel.otlp_http_endpoint',
+				'')
+			resource_attributes: get_string(doc, 'observability.otel.resource_attributes',
+				'')
+		}
+		metrics: MetricsConfig{
+			enabled:             get_bool(doc, 'observability.metrics.enabled', true)
+			exporter:            get_string(doc, 'observability.metrics.exporter', 'prometheus')
+			prometheus_endpoint: get_string(doc, 'observability.metrics.prometheus_endpoint',
+				'/metrics')
+			prometheus_port:     get_int(doc, 'observability.metrics.prometheus_port',
+				9093)
+			otlp_endpoint:       get_string(doc, 'observability.metrics.otlp_endpoint',
+				'')
+			collection_interval: get_int(doc, 'observability.metrics.collection_interval',
+				15)
+		}
+		logging: LoggingConfig{
+			enabled:              get_bool(doc, 'observability.logging.enabled', true)
+			level:                get_string(doc, 'observability.logging.level', 'debug')
+			format:               get_string(doc, 'observability.logging.format', 'json')
+			output:               get_string(doc, 'observability.logging.output', 'stdout')
+			otlp_endpoint:        get_string(doc, 'observability.logging.otlp_endpoint',
+				'')
+			otlp_export:          get_bool(doc, 'observability.logging.otlp_export', false)
+			console_output:       get_bool(doc, 'observability.logging.console_output',
+				true)
+			inject_trace_context: get_bool(doc, 'observability.logging.inject_trace_context',
+				true)
+		}
+		tracing: TracingConfig{
+			enabled:                 get_bool(doc, 'observability.tracing.enabled', false)
+			otlp_endpoint:           get_string(doc, 'observability.tracing.otlp_endpoint',
+				'')
+			sampler:                 get_string(doc, 'observability.tracing.sampler',
+				'trace_id_ratio')
+			sample_rate:             get_f64(doc, 'observability.tracing.sample_rate',
+				1.0)
+			batch_timeout_ms:        get_int(doc, 'observability.tracing.batch_timeout_ms',
+				5000)
+			max_batch_size:          get_int(doc, 'observability.tracing.max_batch_size',
+				512)
+			max_queue_size:          get_int(doc, 'observability.tracing.max_queue_size',
+				2048)
+			max_attributes_per_span: get_int(doc, 'observability.tracing.max_attributes_per_span',
+				128)
+			max_events_per_span:     get_int(doc, 'observability.tracing.max_events_per_span',
+				128)
+			max_links_per_span:      get_int(doc, 'observability.tracing.max_links_per_span',
+				128)
+		}
 	}
+}
 
-	// parse metrics configuration
-	metrics := MetricsConfig{
-		enabled:             get_bool(doc, 'observability.metrics.enabled', true)
-		exporter:            get_string(doc, 'observability.metrics.exporter', 'prometheus')
-		prometheus_endpoint: get_string(doc, 'observability.metrics.prometheus_endpoint',
-			'/metrics')
-		prometheus_port:     get_int(doc, 'observability.metrics.prometheus_port', 9093)
-		otlp_endpoint:       get_string(doc, 'observability.metrics.otlp_endpoint', '')
-		collection_interval: get_int(doc, 'observability.metrics.collection_interval',
-			15)
-	}
-
-	// parse logging configuration
-	logging := LoggingConfig{
-		enabled:              get_bool(doc, 'observability.logging.enabled', true)
-		level:                get_string(doc, 'observability.logging.level', 'debug')
-		format:               get_string(doc, 'observability.logging.format', 'json')
-		output:               get_string(doc, 'observability.logging.output', 'stdout')
-		otlp_endpoint:        get_string(doc, 'observability.logging.otlp_endpoint', '')
-		otlp_export:          get_bool(doc, 'observability.logging.otlp_export', false)
-		console_output:       get_bool(doc, 'observability.logging.console_output', true)
-		inject_trace_context: get_bool(doc, 'observability.logging.inject_trace_context',
-			true)
-	}
-
-	// parse tracing configuration
-	tracing := TracingConfig{
-		enabled:                 get_bool(doc, 'observability.tracing.enabled', false)
-		otlp_endpoint:           get_string(doc, 'observability.tracing.otlp_endpoint',
-			'')
-		sampler:                 get_string(doc, 'observability.tracing.sampler', 'trace_id_ratio')
-		sample_rate:             get_f64(doc, 'observability.tracing.sample_rate', 1.0)
-		batch_timeout_ms:        get_int(doc, 'observability.tracing.batch_timeout_ms',
-			5000)
-		max_batch_size:          get_int(doc, 'observability.tracing.max_batch_size',
-			512)
-		max_queue_size:          get_int(doc, 'observability.tracing.max_queue_size',
-			2048)
-		max_attributes_per_span: get_int(doc, 'observability.tracing.max_attributes_per_span',
-			128)
-		max_events_per_span:     get_int(doc, 'observability.tracing.max_events_per_span',
-			128)
-		max_links_per_span:      get_int(doc, 'observability.tracing.max_links_per_span',
-			128)
-	}
-
-	observability := ObservabilityConfig{
-		otel:    otel
-		metrics: metrics
-		logging: logging
-		tracing: tracing
-	}
-
-	// Task #15: Parse [telemetry] section
-	telemetry := TelemetryRootConfig{
+fn parse_telemetry_config(doc toml.Doc) TelemetryRootConfig {
+	return TelemetryRootConfig{
 		enabled:      get_bool(doc, 'telemetry.enabled', true)
 		service_name: get_string(doc, 'telemetry.service_name', 'datacore')
 		otlp:         TelemetryOtlpConfig{
@@ -639,21 +644,6 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			sample_rate: get_f64(doc, 'telemetry.traces.sample_rate', 1.0)
 		}
 	}
-
-	mut cfg := Config{
-		broker:          broker
-		rest:            rest
-		grpc:            grpc_gateway
-		storage:         storage
-		schema_registry: schema_registry
-		observability:   observability
-		telemetry:       telemetry
-	}
-
-	// validate configuration
-	cfg.validate()!
-
-	return cfg
 }
 
 // helper functions
@@ -922,169 +912,18 @@ pub fn (c Config) is_tracing_enabled() bool {
 /// cli_args: CLI argument map
 /// returns: Config with defaults applied and CLI/env overrides
 fn load_default_config_with_overrides(cli_args map[string]string) Config {
-	// create empty TOML doc
-	empty_doc := toml.Doc{}
-
-	// broker configuration (with priority cascade)
-	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
-		empty_doc, '', '0.0.0.0')
-	// broker_id: if not set via config/env, generate deterministically from server identity (0 used as sentinel)
-	mut broker_id := get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID', empty_doc,
-		'', 0)
-	if broker_id == 0 {
-		broker_id = generate_deterministic_broker_id()
-	}
-	broker := BrokerConfig{
-		host:               broker_host
-		port:               get_config_int(cli_args, 'broker-port', 'DATACORE_BROKER_PORT',
-			empty_doc, '', 9092)
-		broker_id:          broker_id
-		cluster_id:         get_config_string(cli_args, 'cluster-id', 'DATACORE_CLUSTER_ID',
-			empty_doc, '', 'datacore-cluster')
-		max_connections:    get_config_int(cli_args, 'max-connections', 'DATACORE_MAX_CONNECTIONS',
-			empty_doc, '', 10000)
-		max_request_size:   get_config_int(cli_args, 'max-request-size', 'DATACORE_MAX_REQUEST_SIZE',
-			empty_doc, '', 104857600)
-		request_timeout_ms: get_config_int(cli_args, 'request-timeout-ms', 'DATACORE_REQUEST_TIMEOUT_MS',
-			empty_doc, '', 30000)
-		idle_timeout_ms:    get_config_int(cli_args, 'idle-timeout-ms', 'DATACORE_IDLE_TIMEOUT_MS',
-			empty_doc, '', 600000)
-		advertised_host:    get_config_string(cli_args, 'advertised-host', 'DATACORE_ADVERTISED_HOST',
-			empty_doc, '', broker_host)
-	}
-
-	// REST configuration (with priority cascade)
-	rest := RestConfig{
-		enabled:         get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
-			empty_doc, '', true)
-		host:            get_config_string(cli_args, 'rest-host', 'DATACORE_REST_HOST',
-			empty_doc, '', '0.0.0.0')
-		port:            get_config_int(cli_args, 'rest-port', 'DATACORE_REST_PORT', empty_doc,
-			'', 8080)
-		max_connections: get_config_int(cli_args, 'rest-max-connections', 'DATACORE_REST_MAX_CONNECTIONS',
-			empty_doc, '', 1000)
-		static_dir:      get_config_string(cli_args, 'rest-static-dir', 'DATACORE_REST_STATIC_DIR',
-			empty_doc, '', 'tests/web')
-	}
-
-	// storage configuration (with priority cascade)
-	storage_engine := get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
-		empty_doc, '', 'memory')
-
-	memory := MemoryStorageConfig{}
-
-	// S3 configuration (with priority cascade)
-	mut s3 := S3StorageConfig{
-		endpoint: get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT', empty_doc,
-			'', '')
-		bucket:   get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET', empty_doc,
-			'', '')
-		region:   get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION', empty_doc,
-			'', 'us-east-1')
-		prefix:   get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX', empty_doc,
-			'', 'datacore/')
-		timezone: get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE', empty_doc,
-			'', 'UTC')
-	}
-
-	// S3 credentials priority: CLI args > env vars > ~/.aws/credentials
-	if cli_access_key := cli_args['s3-access-key'] {
-		s3.access_key = cli_access_key
-	}
-	if cli_secret_key := cli_args['s3-secret-key'] {
-		s3.secret_key = cli_secret_key
-	}
-
-	if s3.access_key == '' {
-		s3.access_key = os.getenv('AWS_ACCESS_KEY_ID')
-	}
-	if s3.secret_key == '' {
-		s3.secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-	}
-
-	if s3.access_key == '' || s3.secret_key == '' {
-		file_access, file_secret := load_s3_credentials_from_file()
-		if s3.access_key == '' {
-			s3.access_key = file_access
-		}
-		if s3.secret_key == '' {
-			s3.secret_key = file_secret
-		}
-	}
-
-	// Iceberg configuration defaults (disabled by default; fields use struct default values)
-
-	sqlite := SqliteStorageConfig{}
-
-	// PostgreSQL configuration (with priority cascade)
-	postgres := PostgresStorageConfig{
-		host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
-			empty_doc, '', 'localhost')
-		port:      get_config_int(cli_args, 'postgres-port', 'DATACORE_POSTGRES_PORT',
-			empty_doc, '', 5432)
-		database:  get_config_string(cli_args, 'postgres-database', 'DATACORE_POSTGRES_DATABASE',
-			empty_doc, '', 'datacore')
-		user:      get_config_string(cli_args, 'postgres-user', 'DATACORE_POSTGRES_USER',
-			empty_doc, '', '')
-		password:  get_config_string(cli_args, 'postgres-password', 'DATACORE_POSTGRES_PASSWORD',
-			empty_doc, '', '')
-		pool_size: get_config_int(cli_args, 'postgres-pool-size', 'DATACORE_POSTGRES_POOL_SIZE',
-			empty_doc, '', 10)
-		sslmode:   get_config_string(cli_args, 'postgres-sslmode', 'DATACORE_POSTGRES_SSLMODE',
-			empty_doc, '', 'disable')
-	}
-
-	storage := StorageConfig{
-		engine:   storage_engine
-		memory:   memory
-		s3:       s3
-		sqlite:   sqlite
-		postgres: postgres
-	}
-
-	// schema registry configuration
-	schema_registry := SchemaRegistryConfig{}
-
-	// gRPC gateway configuration (defaults)
-	grpc_gateway := GrpcGatewayConfig{
-		enabled:          get_config_bool(cli_args, 'grpc-enabled', 'DATACORE_GRPC_ENABLED',
-			empty_doc, '', false)
-		host:             get_config_string(cli_args, 'grpc-host', 'DATACORE_GRPC_HOST',
-			empty_doc, '', '0.0.0.0')
-		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT',
-			empty_doc, '', 9094)
-		max_connections:  get_config_int(cli_args, 'grpc-max-connections', 'DATACORE_GRPC_MAX_CONNECTIONS',
-			empty_doc, '', 10000)
-		max_message_size: 4194304
-	}
-
-	// observability configuration (defaults)
-	otel := OtelConfig{}
-
-	metrics := MetricsConfig{}
-
-	logging := LoggingConfig{}
-
-	tracing := TracingConfig{}
-
-	observability := ObservabilityConfig{
-		otel:    otel
-		metrics: metrics
-		logging: logging
-		tracing: tracing
-	}
-
-	// Task #15: telemetry defaults
-	telemetry := TelemetryRootConfig{}
-
+	// toml.Doc{} has a nil ast pointer that causes segfault on value_opt calls.
+	// toml.parse_text('') produces a properly initialized empty document.
+	// If even that fails, return a zero-value Config to avoid a nil ast segfault.
+	empty_doc := toml.parse_text('') or { return Config{} }
 	return Config{
-		broker:          broker
-		rest:            rest
-		grpc:            grpc_gateway
-		storage:         storage
-		schema_registry: schema_registry
-		observability:   observability
-		telemetry:       telemetry
+		broker:          parse_broker_config(cli_args, empty_doc)
+		rest:            parse_rest_config(cli_args, empty_doc)
+		grpc:            parse_grpc_config(cli_args, empty_doc)
+		storage:         parse_storage_config(cli_args, empty_doc)
+		schema_registry: parse_schema_registry_config(empty_doc)
+		observability:   parse_observability_config(empty_doc)
+		telemetry:       parse_telemetry_config(empty_doc)
 	}
 }
 

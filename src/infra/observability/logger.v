@@ -552,46 +552,60 @@ pub fn log_fatal(msg string, fields ...LogField) {
 
 // Formatting functions
 
+// Cached byte slices for fixed JSON strings used in format_entry_json.
+// Avoids repeated .bytes() conversion on every log call.
+const json_timestamp_prefix = '{"timestamp":"'.bytes()
+const json_level_prefix = '","level":"'.bytes()
+const json_logger_prefix = '","logger":"'.bytes()
+const json_msg_prefix = '","msg":"'.bytes()
+const json_quote_close = '"'.bytes()
+const json_trace_id_prefix = ',"trace_id":"'.bytes()
+const json_span_id_prefix = ',"span_id":"'.bytes()
+const json_service_prefix = ',"service":"'.bytes()
+const json_field_key_prefix = ',"'.bytes()
+const json_field_kv_sep = '":"'.bytes()
+const json_entry_suffix = '}\n'.bytes()
+
 /// Formats a log entry in JSON format.
 fn format_entry_json(entry LogEntry) string {
 	mut sb := []u8{cap: 256}
-	sb << '{"timestamp":"'.bytes()
+	sb << json_timestamp_prefix
 	sb << entry.timestamp.format_rfc3339().bytes()
-	sb << '","level":"'.bytes()
+	sb << json_level_prefix
 	sb << entry.level.str().bytes()
-	sb << '","logger":"'.bytes()
+	sb << json_logger_prefix
 	sb << core.escape_json_string(entry.logger_name).bytes()
-	sb << '","msg":"'.bytes()
+	sb << json_msg_prefix
 	sb << core.escape_json_string(entry.message).bytes()
-	sb << '"'.bytes()
+	sb << json_quote_close
 
 	// Add trace context if present
 	if entry.context.trace_id.len > 0 {
-		sb << ',"trace_id":"'.bytes()
+		sb << json_trace_id_prefix
 		sb << entry.context.trace_id.bytes()
-		sb << '"'.bytes()
+		sb << json_quote_close
 	}
 	if entry.context.span_id.len > 0 {
-		sb << ',"span_id":"'.bytes()
+		sb << json_span_id_prefix
 		sb << entry.context.span_id.bytes()
-		sb << '"'.bytes()
+		sb << json_quote_close
 	}
 	if entry.context.service != '' {
-		sb << ',"service":"'.bytes()
+		sb << json_service_prefix
 		sb << entry.context.service.bytes()
-		sb << '"'.bytes()
+		sb << json_quote_close
 	}
 
 	// Add fields
 	for f in entry.fields {
-		sb << ',"'.bytes()
+		sb << json_field_key_prefix
 		sb << core.escape_json_string(f.key).bytes()
-		sb << '":"'.bytes()
+		sb << json_field_kv_sep
 		sb << core.escape_json_string(f.value).bytes()
-		sb << '"'.bytes()
+		sb << json_quote_close
 	}
 
-	sb << '}\n'.bytes()
+	sb << json_entry_suffix
 	return sb.bytestr()
 }
 

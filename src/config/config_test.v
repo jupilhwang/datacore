@@ -52,3 +52,19 @@ fn test_load_config_from_file() {
 	assert cfg.broker.port > 0
 	assert cfg.broker.host != ''
 }
+
+fn test_load_config_no_file_uses_defaults() {
+	// load_config with non-existent path must use defaults without segfault
+	cfg := load_config('/non/existent/path/config.toml') or {
+		assert false, 'load_config should not return error for missing file: ${err}'
+		return
+	}
+	// verify all defaults are applied correctly
+	assert cfg.broker.port == 9092
+	assert cfg.broker.host == '0.0.0.0'
+	assert cfg.rest.port == 8080
+	assert cfg.rest.enabled == true
+	assert cfg.storage.engine == 'memory'
+	assert cfg.schema_registry.enabled == true
+	assert cfg.schema_registry.topic == '__schemas'
+}

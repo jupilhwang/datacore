@@ -398,7 +398,7 @@ pub mut:
 /// new_writer creates a new BinaryWriter.
 pub fn new_writer() BinaryWriter {
 	return BinaryWriter{
-		data: []u8{}
+		data: []u8{cap: 256}
 	}
 }
 

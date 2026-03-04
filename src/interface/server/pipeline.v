@@ -29,7 +29,9 @@ pub mut:
 /// Ensures responses are sent in the order requests were received.
 pub struct RequestPipeline {
 mut:
-	pending         []PendingRequest
+	pending []PendingRequest
+	// pending_idx maps correlation_id to its index in pending for O(1) complete() lookup.
+	pending_idx     map[i32]int
 	max_pending     int
 	lock            sync.Mutex
 	total_enqueued  u64
@@ -41,6 +43,7 @@ pub fn new_pipeline(max_pending int) &RequestPipeline {
 	return &RequestPipeline{
 		max_pending: max_pending
 		pending:     []PendingRequest{cap: max_pending}
+		pending_idx: map[i32]int{}
 	}
 }
 
@@ -53,6 +56,7 @@ pub fn (mut p RequestPipeline) enqueue(correlation_id i32, api_key i16, api_vers
 		return error('pipeline full: ${p.pending.len}/${p.max_pending} pending requests')
 	}
 
+	idx := p.pending.len
 	p.pending << PendingRequest{
 		correlation_id: correlation_id
 		api_key:        api_key
@@ -60,6 +64,7 @@ pub fn (mut p RequestPipeline) enqueue(correlation_id i32, api_key i16, api_vers
 		received_at:    time.now()
 		request_data:   data
 	}
+	p.pending_idx[correlation_id] = idx
 	p.total_enqueued += 1
 }
 
@@ -68,16 +73,12 @@ pub fn (mut p RequestPipeline) complete(correlation_id i32, response []u8) ! {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	for mut req in p.pending {
-		if req.correlation_id == correlation_id {
-			req.response_data = response
-			req.completed = true
-			p.total_completed += 1
-			return
-		}
+	idx := p.pending_idx[correlation_id] or {
+		return error('correlation_id ${correlation_id} not found in pipeline')
 	}
-
-	return error('correlation_id ${correlation_id} not found in pipeline')
+	p.pending[idx].response_data = response
+	p.pending[idx].completed = true
+	p.total_completed += 1
 }
 
 /// complete_with_error marks a request as completed with an error message.
@@ -85,16 +86,12 @@ pub fn (mut p RequestPipeline) complete_with_error(correlation_id i32, err_msg s
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 
-	for mut req in p.pending {
-		if req.correlation_id == correlation_id {
-			req.completed = true
-			req.error_msg = err_msg
-			p.total_completed += 1
-			return
-		}
+	idx := p.pending_idx[correlation_id] or {
+		return error('correlation_id ${correlation_id} not found in pipeline')
 	}
-
-	return error('correlation_id ${correlation_id} not found in pipeline')
+	p.pending[idx].completed = true
+	p.pending[idx].error_msg = err_msg
+	p.total_completed += 1
 }
 
 /// get_ready_responses returns all consecutively completed responses in order.
@@ -120,8 +117,19 @@ pub fn (mut p RequestPipeline) get_ready_responses() []PendingRequest {
 	// Use slicing to copy in O(ready_count) instead of O(n)
 	ready := p.pending[0..ready_count].clone()
 
+	// Remove flushed entries from the index map
+	for i in 0 .. ready_count {
+		p.pending_idx.delete(p.pending[i].correlation_id)
+	}
+
 	// Keep only remaining requests (single array reallocation)
 	p.pending = p.pending[ready_count..].clone()
+
+	// Decrement stored indices by ready_count instead of full re-index.
+	// Only the remaining (non-flushed) entries need their index adjusted.
+	for key, val in p.pending_idx {
+		p.pending_idx[key] = val - ready_count
+	}
 
 	return ready
 }
@@ -159,6 +167,7 @@ pub fn (mut p RequestPipeline) clear() {
 	defer { p.lock.unlock() }
 
 	p.pending.clear()
+	p.pending_idx.clear()
 }
 
 /// get_stats returns a snapshot of pipeline statistics.

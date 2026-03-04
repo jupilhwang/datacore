@@ -336,23 +336,35 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 				partition_leader_epoch := header_reader.read_i32() or { 0 }
 				magic := header_reader.read_i8() or { 0 }
 
-				// Detailed logging for RecordBatch header parsing
-				h.logger.debug('RecordBatch header parsing', observability.field_string('topic',
+				// Core entry-point log: always emitted (trace level) so production builds
+				// can observe RecordBatch processing without incurring hex-dump overhead.
+				h.logger.trace('RecordBatch processing', observability.field_string('topic',
 					topic_name), observability.field_int('partition', int(p.index)), observability.field_int('buffer_size',
 					records_to_parse.len), observability.field_int('base_offset', int(outer_base_offset)),
-					observability.field_int('batch_length', int(batch_length)), observability.field_int('leader_epoch',
-					int(partition_leader_epoch)), observability.field_int('magic', int(magic)))
+					observability.field_int('batch_length', int(batch_length)), observability.field_int('magic',
+					int(magic)))
 
-				// Inspect raw bytes - print first 32 bytes of header as hex
-				header_preview_len := if records_to_parse.len > 32 {
-					32
-				} else {
-					records_to_parse.len
+				// Detailed logging for RecordBatch header parsing
+				$if debug {
+					h.logger.debug('RecordBatch header parsing', observability.field_string('topic',
+						topic_name), observability.field_int('partition', int(p.index)),
+						observability.field_int('buffer_size', records_to_parse.len),
+						observability.field_int('base_offset', int(outer_base_offset)),
+						observability.field_int('batch_length', int(batch_length)), observability.field_int('leader_epoch',
+						int(partition_leader_epoch)), observability.field_int('magic',
+						int(magic)))
+					// Inspect raw bytes - print first 32 bytes of header as hex
+					header_preview_len := if records_to_parse.len > 32 {
+						32
+					} else {
+						records_to_parse.len
+					}
+					header_hex := records_to_parse[..header_preview_len].hex()
+					h.logger.debug('RecordBatch header raw bytes (hex)', observability.field_string('topic',
+						topic_name), observability.field_int('partition', int(p.index)),
+						observability.field_string('header_hex', header_hex), observability.field_int('header_preview_bytes',
+						header_preview_len))
 				}
-				header_hex := records_to_parse[..header_preview_len].hex()
-				h.logger.debug('RecordBatch header raw bytes (hex)', observability.field_string('topic',
-					topic_name), observability.field_int('partition', int(p.index)), observability.field_string('header_hex',
-					header_hex), observability.field_int('header_preview_bytes', header_preview_len))
 
 				if magic == 2 && records_to_parse.len >= 61 {
 					crc := header_reader.read_i32() or { 0 }
@@ -367,8 +379,10 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					// where the actual record/compressed data begins
 					records_count := header_reader.read_i32() or { 0 }
 
-					h.logger.debug('RecordBatch records_count', observability.field_string('topic',
-						topic_name), observability.field_int('records_count', int(records_count)))
+					$if debug {
+						h.logger.debug('RecordBatch records_count', observability.field_string('topic',
+							topic_name), observability.field_int('records_count', int(records_count)))
+					}
 
 					// Compression type is stored in the lower 3 bits of attributes (0=none, 1=gzip, 2=snappy, 3=lz4, 4=zstd)
 					compression_type_val := attributes & 0x07
@@ -376,19 +390,22 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 					is_transactional := (attributes >> 4) & 0x01
 					is_control := (attributes >> 5) & 0x01
 
-					h.logger.debug('RecordBatch attributes detailed', observability.field_string('topic',
-						topic_name), observability.field_int('partition', int(p.index)),
-						observability.field_string('attributes_raw', u8(attributes).hex()),
-						observability.field_int('attributes_int', int(attributes)), observability.field_int('compression_type_val',
-						compression_type_val), observability.field_int('timestamp_type',
-						int(timestamp_type)), observability.field_bool('is_transactional',
-						is_transactional == 1), observability.field_bool('is_control',
-						is_control == 1), observability.field_int('base_timestamp', int(base_timestamp)),
-						observability.field_int('max_timestamp', int(max_timestamp)),
-						observability.field_int('last_offset_delta', int(last_offset_delta)),
-						observability.field_int('producer_id', int(producer_id)), observability.field_int('producer_epoch',
-						int(producer_epoch)), observability.field_int('base_sequence',
-						int(base_sequence)), observability.field_string('crc', int(crc).hex()))
+					$if debug {
+						h.logger.debug('RecordBatch attributes detailed', observability.field_string('topic',
+							topic_name), observability.field_int('partition', int(p.index)),
+							observability.field_string('attributes_raw', u8(attributes).hex()),
+							observability.field_int('attributes_int', int(attributes)),
+							observability.field_int('compression_type_val', compression_type_val),
+							observability.field_int('timestamp_type', int(timestamp_type)),
+							observability.field_bool('is_transactional', is_transactional == 1),
+							observability.field_bool('is_control', is_control == 1), observability.field_int('base_timestamp',
+							int(base_timestamp)), observability.field_int('max_timestamp',
+							int(max_timestamp)), observability.field_int('last_offset_delta',
+							int(last_offset_delta)), observability.field_int('producer_id',
+							int(producer_id)), observability.field_int('producer_epoch',
+							int(producer_epoch)), observability.field_int('base_sequence',
+							int(base_sequence)), observability.field_string('crc', int(crc).hex()))
+					}
 
 					// Validate and convert compression type
 					if compression_type_val > 4 {
@@ -406,10 +423,12 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 							continue
 						}
 
-						h.logger.debug('Compression type detection', observability.field_string('topic',
-							topic_name), observability.field_int('partition', int(p.index)),
-							observability.field_int('compression_type_val', compression_type_val),
-							observability.field_string('compression_name', compression_type.str()))
+						$if debug {
+							h.logger.debug('Compression type detection', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_int('compression_type_val', compression_type_val),
+								observability.field_string('compression_name', compression_type.str()))
+						}
 
 						// RecordBatch v2 header layout (61 bytes total):
 						// baseOffset(8) + batchLength(4) + partitionLeaderEpoch(4) + magic(1)
@@ -420,25 +439,26 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						compressed_data := records_to_parse[header_size..]
 
 						// Log compressed data details
-						compressed_preview_len := if compressed_data.len > 64 {
-							64
-						} else {
-							compressed_data.len
+						$if debug {
+							compressed_preview_len := if compressed_data.len > 64 {
+								64
+							} else {
+								compressed_data.len
+							}
+							compressed_hex := compressed_data[..compressed_preview_len].hex()
+							h.logger.debug('Compressed data details', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_string('compression_type', compression_type.str()),
+								observability.field_int('total_record_size', records_to_parse.len),
+								observability.field_int('header_size', header_size), observability.field_int('compressed_data_len',
+								compressed_data.len), observability.field_string('compressed_data_start',
+								compressed_hex))
+							// Log before attempting decompression
+							h.logger.debug('Starting decompression attempt', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_string('compression_type', compression_type.str()),
+								observability.field_int('compressed_bytes', compressed_data.len))
 						}
-						compressed_hex := compressed_data[..compressed_preview_len].hex()
-						h.logger.debug('Compressed data details', observability.field_string('topic',
-							topic_name), observability.field_int('partition', int(p.index)),
-							observability.field_string('compression_type', compression_type.str()),
-							observability.field_int('total_record_size', records_to_parse.len),
-							observability.field_int('header_size', header_size), observability.field_int('compressed_data_len',
-							compressed_data.len), observability.field_string('compressed_data_start',
-							compressed_hex))
-
-						// Log before attempting decompression
-						h.logger.debug('Starting decompression attempt', observability.field_string('topic',
-							topic_name), observability.field_int('partition', int(p.index)),
-							observability.field_string('compression_type', compression_type.str()),
-							observability.field_int('compressed_bytes', compressed_data.len))
 
 						decompress_start := time.now()
 						decompressed_data = h.compression_service.decompress(compressed_data,
@@ -481,44 +501,50 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 						original_compression_type = u8(compression_type_val)
 
 						// Detailed logging on successful decompression
-						decompressed_preview_len := if decompressed_data.len > 32 {
-							32
-						} else {
-							decompressed_data.len
-						}
-						decompressed_hex := decompressed_data[..decompressed_preview_len].hex()
-						h.logger.debug('Decompression successful', observability.field_string('topic',
-							topic_name), observability.field_int('partition', int(p.index)),
-							observability.field_string('compression_type', compression_type.str()),
-							observability.field_int('compressed_size', compressed_data.len),
-							observability.field_int('decompressed_size', decompressed_data.len),
-							observability.field_string('decompressed_start', decompressed_hex),
-							observability.field_duration('decompress_time', decompress_time))
-
-						// Compute and log compression ratio metrics
-						if compressed_data.len > 0 {
-							ratio := f64(decompressed_data.len) / f64(compressed_data.len)
-							savings_pct := (1.0 - (f64(compressed_data.len) / f64(decompressed_data.len))) * 100.0
-							h.logger.debug('Compression ratio metrics', observability.field_string('topic',
+						$if debug {
+							decompressed_preview_len := if decompressed_data.len > 32 {
+								32
+							} else {
+								decompressed_data.len
+							}
+							decompressed_hex := decompressed_data[..decompressed_preview_len].hex()
+							h.logger.debug('Decompression successful', observability.field_string('topic',
 								topic_name), observability.field_int('partition', int(p.index)),
 								observability.field_string('compression_type', compression_type.str()),
 								observability.field_int('compressed_size', compressed_data.len),
 								observability.field_int('decompressed_size', decompressed_data.len),
-								observability.field_float('ratio', ratio), observability.field_float('savings_percent',
-								savings_pct), observability.field_duration('decompress_time',
-								decompress_time))
+								observability.field_string('decompressed_start', decompressed_hex),
+								observability.field_duration('decompress_time', decompress_time))
+							// Compute and log compression ratio metrics
+							if compressed_data.len > 0 {
+								ratio := f64(decompressed_data.len) / f64(compressed_data.len)
+								savings_pct := (1.0 - (f64(compressed_data.len) / f64(decompressed_data.len))) * 100.0
+								h.logger.debug('Compression ratio metrics', observability.field_string('topic',
+									topic_name), observability.field_int('partition',
+									int(p.index)), observability.field_string('compression_type',
+									compression_type.str()), observability.field_int('compressed_size',
+									compressed_data.len), observability.field_int('decompressed_size',
+									decompressed_data.len), observability.field_float('ratio',
+									ratio), observability.field_float('savings_percent',
+									savings_pct), observability.field_duration('decompress_time',
+									decompress_time))
+							}
 						}
 					} else {
-						h.logger.debug('No compression (uncompressed records)', observability.field_string('topic',
-							topic_name), observability.field_int('partition', int(p.index)),
-							observability.field_int('record_size', records_to_parse.len))
+						$if debug {
+							h.logger.debug('No compression (uncompressed records)', observability.field_string('topic',
+								topic_name), observability.field_int('partition', int(p.index)),
+								observability.field_int('record_size', records_to_parse.len))
+						}
 					}
 				} else {
 					// magic != 2: legacy MessageSet v0/v1
-					h.logger.debug('Legacy message format detected (magic != 2)', observability.field_string('topic',
-						topic_name), observability.field_int('partition', int(p.index)),
-						observability.field_int('magic', int(magic)), observability.field_int('buffer_size',
-						records_to_parse.len))
+					$if debug {
+						h.logger.debug('Legacy message format detected (magic != 2)',
+							observability.field_string('topic', topic_name), observability.field_int('partition',
+							int(p.index)), observability.field_int('magic', int(magic)),
+							observability.field_int('buffer_size', records_to_parse.len))
+					}
 				}
 			} else {
 				// Data smaller than 61 bytes (too small for RecordBatch header)

@@ -222,7 +222,6 @@ pub fn (mut h Handler) set_partition_assigner(assigner PartitionAssignerPtr) {
 pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnection) ![]u8 {
 	start_time := time.now()
 
-	// Parse request
 	req := parse_request(data) or {
 		h.logger.error('Failed to parse request', observability.field_err_str(err.str()),
 			observability.field_bytes('request_size', data.len))
@@ -239,332 +238,219 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 		observability.field_int('version', version), observability.field_int('correlation_id',
 		correlation_id), observability.field_bytes('request_size', data.len))
 
-	// Security: Check authentication for protected APIs
-	// Only enforce authentication if auth_manager is configured
-	// If auth_manager is none, authentication is disabled (optional)
-	is_public_api := api_key in [.api_versions, .sasl_handshake, .sasl_authenticate]
 	mut is_authenticated := false
-	if mut c := conn {
+	if c := conn {
 		is_authenticated = c.is_authenticated()
 	}
-	if h.auth_manager != none && !is_public_api && !is_authenticated {
-		h.logger.warn('Unauthorized request', observability.field_string('api', api_key.str()),
-			observability.field_int('correlation_id', correlation_id))
-		return error('${int(domain.ErrorCode.sasl_authentication_failed)}: Authentication required for ${api_key.str()}')
+	h.authorize_request(api_key, is_authenticated, correlation_id)!
+
+	// sasl_authenticate is handled separately to update conn state directly in this function.
+	// This avoids V interface mutation issues when passing conn through nested function calls.
+	if api_key == .sasl_authenticate {
+		sasl_result := h.handle_sasl_authenticate(req.body, version) or {
+			elapsed := time.since(start_time)
+			h.metrics.record_request(api_key.str(), elapsed.milliseconds(), false, data.len,
+				0)
+			return err
+		}
+		if principal := sasl_result.principal {
+			if mut c := conn {
+				c.set_authenticated(principal)
+			}
+		}
+		elapsed := time.since(start_time)
+		h.metrics.record_request(api_key.str(), elapsed.milliseconds(), true, data.len,
+			sasl_result.response_bytes.len)
+		h.logger.debug('Request completed', observability.field_string('api', api_key.str()),
+			observability.field_int('correlation_id', correlation_id), observability.field_bytes('response_size',
+			sasl_result.response_bytes.len), observability.field_duration('latency', elapsed))
+		return h.finalize_response(api_key, version, correlation_id, sasl_result.response_bytes)
 	}
 
-	// Dispatch based on API key
-	mut response_body := []u8{}
-	mut success := true
-
-	response_body = match api_key {
-		.api_versions {
-			h.handle_api_versions(version)
-		}
-		.metadata {
-			h.handle_metadata(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.find_coordinator {
-			h.handle_find_coordinator(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.produce {
-			h.handle_produce(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.fetch {
-			h.handle_fetch(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.list_offsets {
-			h.handle_list_offsets(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.offset_commit {
-			h.handle_offset_commit(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.offset_fetch {
-			h.handle_offset_fetch(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.join_group {
-			h.handle_join_group(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.sync_group {
-			h.handle_sync_group(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.heartbeat {
-			h.handle_heartbeat(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.leave_group {
-			h.handle_leave_group(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.list_groups {
-			h.handle_list_groups(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.describe_groups {
-			h.handle_describe_groups(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.delete_groups {
-			h.handle_delete_groups(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.create_topics {
-			h.handle_create_topics(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.delete_topics {
-			h.handle_delete_topics(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.init_producer_id {
-			h.handle_init_producer_id(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.add_partitions_to_txn {
-			h.handle_add_partitions_to_txn(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.add_offsets_to_txn {
-			h.handle_add_offsets_to_txn(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.end_txn {
-			h.handle_end_txn(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.write_txn_markers {
-			h.handle_write_txn_markers(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.txn_offset_commit {
-			h.handle_txn_offset_commit(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.consumer_group_heartbeat {
-			h.handle_consumer_group_heartbeat(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.consumer_group_describe {
-			h.handle_consumer_group_describe(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.sasl_handshake {
-			h.handle_sasl_handshake(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.sasl_authenticate {
-			sasl_result := h.handle_sasl_authenticate(req.body, version) or {
-				success = false
-				return err
-			}
-			// Update connection authentication state directly in handle_request
-			// to avoid V interface mutation issues with nested function calls
-			if principal := sasl_result.principal {
-				if mut c := conn {
-					c.set_authenticated(principal)
-				}
-			}
-			sasl_result.response_bytes
-		}
-		.describe_cluster {
-			h.handle_describe_cluster(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.describe_configs {
-			h.handle_describe_configs(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.describe_acls {
-			h.handle_describe_acls(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.create_acls {
-			h.handle_create_acls(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.delete_acls {
-			h.handle_delete_acls(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.alter_configs {
-			h.handle_alter_configs(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.create_partitions {
-			h.handle_create_partitions(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.delete_records {
-			h.handle_delete_records(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.alter_replica_log_dirs {
-			h.handle_alter_replica_log_dirs(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.describe_log_dirs {
-			h.handle_describe_log_dirs(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.incremental_alter_configs {
-			h.handle_incremental_alter_configs(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.describe_topic_partitions {
-			h.handle_describe_topic_partitions(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.share_group_heartbeat {
-			h.handle_share_group_heartbeat(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.share_fetch {
-			h.handle_share_fetch(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.share_acknowledge {
-			h.handle_share_acknowledge(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.initialize_share_group_state {
-			h.handle_initialize_share_group_state(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.read_share_group_state {
-			h.handle_read_share_group_state(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.write_share_group_state {
-			h.handle_write_share_group_state(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		.delete_share_group_state {
-			h.handle_delete_share_group_state(req.body, version) or {
-				success = false
-				return err
-			}
-		}
-		else {
-			h.logger.warn('Unsupported API key', observability.field_int('api_key', int(api_key)))
-			success = false
-			return error('unsupported API key: ${int(api_key)}')
-		}
+	response_body := h.dispatch_request(api_key, req.body, version) or {
+		elapsed := time.since(start_time)
+		h.metrics.record_request(api_key.str(), elapsed.milliseconds(), false, data.len,
+			0)
+		return err
 	}
 
 	elapsed := time.since(start_time)
-	latency_ms := elapsed.milliseconds()
-
-	// Record metrics
-	h.metrics.record_request(api_key.str(), latency_ms, success, data.len, response_body.len)
+	h.metrics.record_request(api_key.str(), elapsed.milliseconds(), true, data.len, response_body.len)
 
 	h.logger.debug('Request completed', observability.field_string('api', api_key.str()),
 		observability.field_int('correlation_id', correlation_id), observability.field_bytes('response_size',
 		response_body.len), observability.field_duration('latency', elapsed))
 
-	// Build response with header.
-	// Note: ApiVersions always uses a non-flexible header, even for v3+,
-	// because the client does not yet know the server capabilities.
+	return h.finalize_response(api_key, version, correlation_id, response_body)
+}
+
+// authorize_request enforces authentication for protected APIs.
+// Only enforced when auth_manager is configured; public APIs are always allowed.
+fn (mut h Handler) authorize_request(api_key ApiKey, is_authenticated bool, correlation_id i32) ! {
+	is_public_api := api_key in [.api_versions, .sasl_handshake, .sasl_authenticate]
+	if h.auth_manager == none || is_public_api {
+		return
+	}
+	if !is_authenticated {
+		h.logger.warn('Unauthorized request', observability.field_string('api', api_key.str()),
+			observability.field_int('correlation_id', correlation_id))
+		return error('${int(domain.ErrorCode.sasl_authentication_failed)}: Authentication required for ${api_key.str()}')
+	}
+}
+
+// dispatch_request routes the request body to the appropriate API handler and returns the response body.
+fn (mut h Handler) dispatch_request(api_key ApiKey, body []u8, version i16) ![]u8 {
+	return match api_key {
+		.api_versions {
+			h.handle_api_versions(version)
+		}
+		.metadata {
+			h.handle_metadata(body, version)!
+		}
+		.find_coordinator {
+			h.handle_find_coordinator(body, version)!
+		}
+		.produce {
+			h.handle_produce(body, version)!
+		}
+		.fetch {
+			h.handle_fetch(body, version)!
+		}
+		.list_offsets {
+			h.handle_list_offsets(body, version)!
+		}
+		.offset_commit {
+			h.handle_offset_commit(body, version)!
+		}
+		.offset_fetch {
+			h.handle_offset_fetch(body, version)!
+		}
+		.join_group {
+			h.handle_join_group(body, version)!
+		}
+		.sync_group {
+			h.handle_sync_group(body, version)!
+		}
+		.heartbeat {
+			h.handle_heartbeat(body, version)!
+		}
+		.leave_group {
+			h.handle_leave_group(body, version)!
+		}
+		.list_groups {
+			h.handle_list_groups(body, version)!
+		}
+		.describe_groups {
+			h.handle_describe_groups(body, version)!
+		}
+		.delete_groups {
+			h.handle_delete_groups(body, version)!
+		}
+		.create_topics {
+			h.handle_create_topics(body, version)!
+		}
+		.delete_topics {
+			h.handle_delete_topics(body, version)!
+		}
+		.init_producer_id {
+			h.handle_init_producer_id(body, version)!
+		}
+		.add_partitions_to_txn {
+			h.handle_add_partitions_to_txn(body, version)!
+		}
+		.add_offsets_to_txn {
+			h.handle_add_offsets_to_txn(body, version)!
+		}
+		.end_txn {
+			h.handle_end_txn(body, version)!
+		}
+		.write_txn_markers {
+			h.handle_write_txn_markers(body, version)!
+		}
+		.txn_offset_commit {
+			h.handle_txn_offset_commit(body, version)!
+		}
+		.consumer_group_heartbeat {
+			h.handle_consumer_group_heartbeat(body, version)!
+		}
+		.consumer_group_describe {
+			h.handle_consumer_group_describe(body, version)!
+		}
+		.sasl_handshake {
+			h.handle_sasl_handshake(body, version)!
+		}
+		.describe_cluster {
+			h.handle_describe_cluster(body, version)!
+		}
+		.describe_configs {
+			h.handle_describe_configs(body, version)!
+		}
+		.describe_acls {
+			h.handle_describe_acls(body, version)!
+		}
+		.create_acls {
+			h.handle_create_acls(body, version)!
+		}
+		.delete_acls {
+			h.handle_delete_acls(body, version)!
+		}
+		.alter_configs {
+			h.handle_alter_configs(body, version)!
+		}
+		.create_partitions {
+			h.handle_create_partitions(body, version)!
+		}
+		.delete_records {
+			h.handle_delete_records(body, version)!
+		}
+		.alter_replica_log_dirs {
+			h.handle_alter_replica_log_dirs(body, version)!
+		}
+		.describe_log_dirs {
+			h.handle_describe_log_dirs(body, version)!
+		}
+		.incremental_alter_configs {
+			h.handle_incremental_alter_configs(body, version)!
+		}
+		.describe_topic_partitions {
+			h.handle_describe_topic_partitions(body, version)!
+		}
+		.share_group_heartbeat {
+			h.handle_share_group_heartbeat(body, version)!
+		}
+		.share_fetch {
+			h.handle_share_fetch(body, version)!
+		}
+		.share_acknowledge {
+			h.handle_share_acknowledge(body, version)!
+		}
+		.initialize_share_group_state {
+			h.handle_initialize_share_group_state(body, version)!
+		}
+		.read_share_group_state {
+			h.handle_read_share_group_state(body, version)!
+		}
+		.write_share_group_state {
+			h.handle_write_share_group_state(body, version)!
+		}
+		.delete_share_group_state {
+			h.handle_delete_share_group_state(body, version)!
+		}
+		else {
+			h.logger.warn('Unsupported API key', observability.field_int('api_key', int(api_key)))
+			return error('unsupported API key: ${int(api_key)}')
+		}
+	}
+}
+
+// finalize_response builds the final response bytes with the appropriate header format.
+// Note: ApiVersions always uses a non-flexible header, even for v3+,
+// because the client does not yet know the server capabilities.
+fn (h Handler) finalize_response(api_key ApiKey, version i16, correlation_id i32, response_body []u8) []u8 {
 	if api_key == .api_versions {
 		return build_response(correlation_id, response_body)
 	}
-
-	is_flexible := is_flexible_version(api_key, version)
-	if is_flexible {
+	if is_flexible_version(api_key, version) {
 		return build_flexible_response(correlation_id, response_body)
 	}
 	return build_response(correlation_id, response_body)

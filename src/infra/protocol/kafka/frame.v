@@ -103,7 +103,7 @@ pub fn frame_from_bytes(data []u8) !Frame {
 	}
 
 	// Parse body based on API key
-	body_data := data[reader.pos..].clone()
+	body_data := data[reader.pos..]
 	body := parse_body(api_key, api_version, body_data)!
 
 	// Size covers everything except the size field itself

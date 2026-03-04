@@ -8,6 +8,7 @@
 module server
 
 import sync
+import sync.stdatomic
 import time
 import os
 import infra.performance.engines
@@ -35,8 +36,8 @@ pub mut:
 	total_timeouts     u64
 	total_rejected     u64
 	// NUMA statistics (v0.33.0)
-	numa_bindings      u64
-	numa_binding_fails u64
+	numa_bindings      i64
+	numa_binding_fails i64
 }
 
 /// WorkerPool manages a fixed-size pool of worker slots for connection handling.
@@ -50,7 +51,7 @@ mut:
 	running      bool
 	// NUMA-related fields (v0.33.0)
 	numa_node_count int
-	next_numa_node  int
+	next_numa_node  i64
 }
 
 /// new_worker_pool creates a new worker pool.
@@ -235,21 +236,15 @@ pub fn (mut wp WorkerPool) bind_worker_to_numa() {
 		return
 	}
 
-	// Select next node (round-robin)
-	wp.metrics_lock.@lock()
-	node := wp.next_numa_node
-	wp.next_numa_node = (wp.next_numa_node + 1) % wp.numa_node_count
-	wp.metrics_lock.unlock()
+	// Select next node using atomic fetch-and-add for lock-free round-robin
+	raw := stdatomic.add_i64(&wp.next_numa_node, 1) - 1
+	node := int(raw % i64(wp.numa_node_count))
 
 	// Attempt to bind to the NUMA node
 	if bind_thread_to_numa_node(node) {
-		wp.metrics_lock.@lock()
-		wp.metrics.numa_bindings++
-		wp.metrics_lock.unlock()
+		stdatomic.add_i64(&wp.metrics.numa_bindings, 1)
 	} else {
-		wp.metrics_lock.@lock()
-		wp.metrics.numa_binding_fails++
-		wp.metrics_lock.unlock()
+		stdatomic.add_i64(&wp.metrics.numa_binding_fails, 1)
 	}
 }
 

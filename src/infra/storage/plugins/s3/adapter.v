@@ -7,6 +7,7 @@ import time
 import json
 import crypto.md5
 import sync
+import sync.stdatomic
 import net.http
 import infra.observability
 
@@ -24,6 +25,7 @@ const fetch_size_multiplier = 2
 const fetch_offset_estimate_divisor = 100
 const max_offset_commit_buffer = 100
 const max_offset_commit_concurrent = 50
+const max_fetch_concurrent = 16
 
 /// s3_capability defines the storage capabilities of the S3 adapter.
 pub const s3_capability = domain.StorageCapability{
@@ -582,11 +584,9 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	}
 
 	// Update in-memory high_watermark so the next append gets a correct offset.
-	// Lock order: index_update_lock -> topic_lock
-	// All code paths MUST acquire locks in this order to prevent deadlocks.
+	// Only topic_lock is required here: topic_index_cache is guarded by topic_lock alone.
+	// index_update_lock is not needed for this cache-only update.
 	new_high_watermark := base_offset + i64(records.len)
-	a.index_update_lock.@lock()
-	defer { a.index_update_lock.unlock() }
 	a.topic_lock.@lock()
 	defer { a.topic_lock.unlock() }
 	if cached := a.topic_index_cache[partition_key] {
@@ -920,9 +920,7 @@ struct CommitResult {
 
 /// record_commit_start_metrics records commit start metrics.
 fn (mut a S3StorageAdapter) record_commit_start_metrics(count int) {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.offset_commit_count += i64(count)
+	stdatomic.add_i64(&a.metrics.offset_commit_count, count)
 }
 
 /// create_commit_channel creates a commit result channel.
@@ -1040,64 +1038,52 @@ fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []dom
 }
 
 fn (mut a S3StorageAdapter) record_commit_success_metrics(count int) {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.offset_commit_success_count += i64(count)
-	a.metrics.s3_put_count += i64(count)
+	stdatomic.add_i64(&a.metrics.offset_commit_success_count, count)
+	stdatomic.add_i64(&a.metrics.s3_put_count, count)
 }
 
 /// record_commit_failure_metrics records failure metrics.
 fn (mut a S3StorageAdapter) record_commit_failure_metrics(count int) {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.offset_commit_error_count += i64(count)
-	a.metrics.s3_error_count += i64(count)
+	stdatomic.add_i64(&a.metrics.offset_commit_error_count, count)
+	stdatomic.add_i64(&a.metrics.s3_error_count, count)
 }
 
 /// record_cache_hit increments the cache hit counter.
 fn (mut a S3StorageAdapter) record_cache_hit() {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.cache_hit_count++
+	stdatomic.add_i64(&a.metrics.cache_hit_count, 1)
 }
 
 /// record_cache_miss increments the cache miss and S3 GET counters.
 fn (mut a S3StorageAdapter) record_cache_miss() {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.cache_miss_count++
-	a.metrics.s3_get_count++
+	stdatomic.add_i64(&a.metrics.cache_miss_count, 1)
+	stdatomic.add_i64(&a.metrics.s3_get_count, 1)
 }
 
 /// record_sync_append_error increments the sync append error and S3 error counters.
 fn (mut a S3StorageAdapter) record_sync_append_error() {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.sync_append_error_count++
-	a.metrics.s3_error_count++
+	stdatomic.add_i64(&a.metrics.sync_append_error_count, 1)
+	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
 }
 
 /// record_sync_append_put increments the S3 PUT and sync append counters.
 fn (mut a S3StorageAdapter) record_sync_append_put() {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.s3_put_count++
-	a.metrics.sync_append_count++
+	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics.sync_append_count, 1)
 }
 
 /// record_sync_append_index_error increments only the sync append error counter.
 fn (mut a S3StorageAdapter) record_sync_append_index_error() {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.sync_append_error_count++
+	stdatomic.add_i64(&a.metrics.sync_append_error_count, 1)
 }
 
 /// record_sync_append_success increments the success counter and accumulates elapsed time.
+// NOTE: stdatomic.add_i64 delta parameter is int (i32), not i64.
+// Individual elapsed_ms values are typically small (< 2^31 ms = ~24 days per call),
+// so truncation of a single sample is acceptable. The i64 accumulator field
+// (sync_append_total_ms) handles the cumulative sum without overflow.
 fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
-	a.metrics_lock.@lock()
-	defer { a.metrics_lock.unlock() }
-	a.metrics.sync_append_success_count++
-	a.metrics.sync_append_total_ms += elapsed_ms
+	stdatomic.add_i64(&a.metrics.sync_append_success_count, 1)
+	stdatomic.add_i64(&a.metrics.sync_append_total_ms, int(elapsed_ms))
 }
 
 /// handle_commit_result handles the commit result.
@@ -1115,13 +1101,59 @@ fn (a &S3StorageAdapter) handle_commit_result(total_count int, failed []string, 
 	}
 }
 
+/// OffsetFetchResult holds the result of a single offset fetch operation.
+struct OffsetFetchItem {
+	result domain.OffsetFetchResult
+}
+
+/// fetch_single_offset fetches a single partition offset from S3.
+fn (mut a S3StorageAdapter) fetch_single_offset(group_id string, part domain.TopicPartition, ch chan OffsetFetchItem) {
+	key := a.offset_key(group_id, part.topic, part.partition)
+	data, _ := a.get_object(key, -1, -1) or {
+		ch <- OffsetFetchItem{
+			result: domain.OffsetFetchResult{
+				topic:      part.topic
+				partition:  part.partition
+				offset:     -1
+				metadata:   ''
+				error_code: 0
+			}
+		}
+		return
+	}
+
+	offset_data := json.decode(domain.PartitionOffset, data.bytestr()) or {
+		ch <- OffsetFetchItem{
+			result: domain.OffsetFetchResult{
+				topic:      part.topic
+				partition:  part.partition
+				offset:     -1
+				metadata:   ''
+				error_code: 0
+			}
+		}
+		return
+	}
+
+	ch <- OffsetFetchItem{
+		result: domain.OffsetFetchResult{
+			topic:      part.topic
+			partition:  part.partition
+			offset:     offset_data.offset
+			metadata:   offset_data.metadata
+			error_code: 0
+		}
+	}
+}
+
 /// fetch_offsets retrieves committed offsets.
+/// Cache hits are resolved immediately; S3 GETs are issued in parallel.
 pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
 	mut results := []domain.OffsetFetchResult{}
 
+	// Separate cache hits from partitions that require S3 GETs
+	mut s3_partitions := []domain.TopicPartition{}
 	for part in partitions {
-		key := a.offset_key(group_id, part.topic, part.partition)
-
 		// Try cache first
 		a.offset_lock.rlock()
 		cache_key := '${part.topic}:${part.partition}'
@@ -1140,38 +1172,31 @@ pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []doma
 				metadata:   ''
 				error_code: 0
 			}
-			continue
+		} else {
+			s3_partitions << part
 		}
+	}
 
-		// Fetch from S3
-		data, _ := a.get_object(key, -1, -1) or {
-			results << domain.OffsetFetchResult{
-				topic:      part.topic
-				partition:  part.partition
-				offset:     -1
-				metadata:   ''
-				error_code: 0
+	// Fetch remaining partitions from S3 in parallel (bounded concurrency)
+	if s3_partitions.len > 0 {
+		ch := chan OffsetFetchItem{cap: s3_partitions.len}
+		mut active := 0
+
+		for part in s3_partitions {
+			// Wait for a slot when concurrency limit is reached
+			for active >= max_fetch_concurrent {
+				item := <-ch
+				results << item.result
+				active--
 			}
-			continue
+			active++
+			spawn a.fetch_single_offset(group_id, part, ch)
 		}
 
-		offset_data := json.decode(domain.PartitionOffset, data.bytestr()) or {
-			results << domain.OffsetFetchResult{
-				topic:      part.topic
-				partition:  part.partition
-				offset:     -1
-				metadata:   ''
-				error_code: 0
-			}
-			continue
-		}
-
-		results << domain.OffsetFetchResult{
-			topic:      part.topic
-			partition:  part.partition
-			offset:     offset_data.offset
-			metadata:   offset_data.metadata
-			error_code: 0
+		// Collect remaining results
+		for _ in 0 .. active {
+			item := <-ch
+			results << item.result
 		}
 	}
 
