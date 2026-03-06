@@ -238,3 +238,14 @@ cd src && v -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ld
 ### 보고서
 docs/reports/2026-03-06-s3-put-cost-optimization.md
 
+---
+
+## 2026-03-06 - 코드 리뷰 이슈 수정 (커밋: 4c0a270)
+- H-1: XML injection 방어 - s3_xml_utils.v xml_escape() 추가, s3_batch_delete.v 키 escape 적용
+- H-2: ETag XML escape 적용 (s3_multipart.v)
+- H-3: s3_server_side_copy.v 파일 분리 → s3_multipart.v (265L) 신규
+- M-2: sync_linger_worker 폴링 간격 동적 계산으로 CPU 최적화
+- M-3: use_server_side_copy 기본값 false로 변경 (현재 항상 fallback이므로)
+- M-5: 인덱스 배치 flush 실패 시 pending 세그먼트 restore 추가
+- 테스트: 12/12 PASS (v -enable-globals test src/infra/storage/plugins/s3/)
+

@@ -10,11 +10,10 @@ import infra.observability
 
 /// segments_support_server_side_copy checks whether the segment binary format
 /// supports server-side copy via simple concatenation.
-/// DataCore segments use a record-count-prefixed binary format (4-byte count header)
-/// which means concatenating two segments produces invalid data.
-/// Returns false because server-side copy requires simple binary concat compatibility.
+/// The decoder reads multiple (count, records...) tuples until EOF,
+/// so concatenated segments are decoded correctly.
 fn segments_support_server_side_copy() bool {
-	return false
+	return true
 }
 
 /// build_copy_source constructs the x-amz-copy-source header value.

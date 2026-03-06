@@ -152,19 +152,20 @@ fn test_max_single_copy_size_is_5gib() {
 
 // -- segments_support_server_side_copy tests --
 
-fn test_segments_support_server_side_copy_returns_false() {
-	// DataCore uses a record-count-prefixed binary format, not simple concat.
-	// Server-side copy cannot merge these segments without re-encoding.
+fn test_segments_support_server_side_copy_returns_true() {
+	// Decoder reads concatenated (count, records...) tuples until EOF,
+	// so server-side copy via binary concat is now safe.
 	result := segments_support_server_side_copy()
-	assert result == false
+	assert result == true
 }
 
-// -- merge_segments_server_side fallback behavior --
+// -- merge_segments_server_side attempts copy when format is supported --
 
-fn test_merge_segments_server_side_falls_back_when_format_unsupported() {
-	// When segment format does not support server-side copy,
-	// merge_segments_server_side should return a specific error
-	// that signals the caller to use the traditional merge path.
+fn test_merge_segments_server_side_attempts_copy_when_supported() {
+	// With segment format now supporting server-side copy,
+	// merge_segments_server_side should NOT return 'server_side_copy_unsupported'.
+	// It will attempt the actual S3 copy, which fails in unit test (no real S3),
+	// but the error should be an S3 API error, not the format-unsupported sentinel.
 	mut adapter := S3StorageAdapter{
 		config: S3Config{
 			bucket_name: 'test-bucket'
@@ -201,12 +202,10 @@ fn test_merge_segments_server_side_falls_back_when_format_unsupported() {
 	}
 
 	adapter.merge_segments_server_side('test-topic', 0, mut index, segments) or {
-		// Should return fallback error because format is not simple concat
-		assert err.msg().contains('server_side_copy_unsupported')
+		// Should NOT be the format-unsupported fallback
+		assert !err.msg().contains('server_side_copy_unsupported'), 'should attempt copy, not fallback'
 		return
 	}
-	// If we get here, the function did not return an error, which is wrong
-	assert false, 'merge_segments_server_side should return server_side_copy_unsupported error'
 }
 
 // -- S3Config.use_server_side_copy default value --

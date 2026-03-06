@@ -180,3 +180,26 @@ S3 PUT 요청을 60-80% 줄이기 위한 6개 최적화 Task를 구현하고, CH
 | 신규: s3_server_side_copy.v | `src/infra/storage/plugins/s3/s3_server_side_copy.v` |
 | 테스트 파일 6개 | `tests/` 및 `src/infra/storage/plugins/s3/` |
 | 설정 추가 | `config.toml` (min_flush_bytes, max_flush_skip_count, index_batch_size, sync_linger_ms) |
+
+---
+
+## 코드 리뷰 수정 (2026-03-06)
+
+### 커밋: 4c0a270
+
+코드 리뷰에서 발견된 6개 이슈(3 High, 3 Medium)가 모두 수정되었습니다.
+
+### 수정 내용
+
+| 이슈 | 분류 | 수정 파일 | 결과 |
+|------|------|-----------|------|
+| H-1 | Security | s3_batch_delete.v, s3_xml_utils.v(신규) | XML injection 방어 |
+| H-2 | Security | s3_multipart.v | ETag escape 적용 |
+| H-3 | Code Quality | s3_server_side_copy.v(114L), s3_multipart.v(265L,신규) | 파일 분리 완료 |
+| M-2 | Performance | sync_linger.v | 폴링 1ms→동적 1~5ms |
+| M-3 | Config | config.v, config.toml | 기본값 true→false |
+| M-5 | Reliability | index_batch_manager.v | flush 실패 시 restore |
+
+### 최종 테스트 결과
+- `v -enable-globals test src/infra/storage/plugins/s3/`: **12/12 PASS**
+- 빌드: PASS

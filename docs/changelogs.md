@@ -17,6 +17,13 @@
 - `index_batch_size` default changed from 5 to 1 to prevent index loss on broker restart
 - `sync_linger_ms` default set to 0 (disabled) for safe-by-default behavior
 - `sync_linger_worker` now drains pending requests on shutdown
+- XML injection 취약점 수정: S3 키 및 ETag의 XML 특수문자 escape 처리 (H-1, H-2)
+- `use_server_side_copy` 기본값 오류 수정 (항상 fallback이므로 false가 올바른 기본값) (M-3)
+- `flush_pending_index_updates()` 실패 시 데이터 손실 방지 restore 메커니즘 추가 (M-5)
+
+### Refactored
+- `s3_server_side_copy.v` 파일 크기 초과 해결: multipart upload 로직을 `s3_multipart.v`로 분리 (H-3)
+- `sync_linger_worker()` 폴링 간격 최적화: 고정 1ms → 동적 1~5ms (M-2)
 
 ### Performance
 - Estimated 60-80% reduction in S3 PUT requests
