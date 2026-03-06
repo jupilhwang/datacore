@@ -67,7 +67,7 @@ pub mut:
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
 	// Index batch settings: accumulate N segments before writing index to S3
-	index_batch_size        int = 5
+	index_batch_size        int = 1
 	index_flush_interval_ms int = 500
 	// Sync linger: batch acks=1/-1 produce requests within a short window
 	// 0 = disabled (immediate per-request write); >0 = linger window in ms
@@ -1210,6 +1210,12 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 	if a.config.sync_linger_ms > 0 {
 		go a.sync_linger_worker()
 	}
+}
+
+/// stop_workers signals all background workers to stop.
+/// Workers drain pending buffers before exiting (graceful shutdown).
+pub fn (mut a S3StorageAdapter) stop_workers() {
+	a.compactor_running = false
 }
 
 /// get_metrics returns the current metrics snapshot.

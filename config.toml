@@ -165,6 +165,20 @@ offset_batch_enabled = true
 offset_flush_interval_ms = 100
 offset_flush_threshold_count = 50
 
+# Index batch update settings
+# index_batch_size = 1 means every segment flushes the index immediately (safe default)
+# Set > 1 to enable batching (reduces PUT cost but risks orphan segments on crash)
+index_batch_size = 1
+index_flush_interval_ms = 500
+
+# Sync linger: batch multiple sync-acks produce requests into one S3 PUT
+# 0 = disabled (default, no added latency)
+# 5 = 5ms linger window (reduces PUT cost for acks=1/-1 workloads)
+sync_linger_ms = 0
+
+# Server-side copy for compaction (currently always falls back - reserved for future)
+use_server_side_copy = true
+
 # -----------------------------------------------------------------------------
 # [storage.s3.iceberg] - S3 Iceberg 테이블 형식 설정
 # -----------------------------------------------------------------------------

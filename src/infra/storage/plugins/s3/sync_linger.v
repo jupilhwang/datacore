@@ -167,6 +167,7 @@ fn (mut a S3StorageAdapter) flush_sync_linger_buffer(topic string, partition int
 
 /// sync_linger_worker periodically checks for expired linger buffers and flushes them.
 /// Runs at 1ms resolution and stops when compactor_running becomes false.
+/// On shutdown, drains all remaining linger buffers to prevent goroutine leaks.
 fn (mut a S3StorageAdapter) sync_linger_worker() {
 	for a.compactor_running {
 		time.sleep(1 * time.millisecond)
@@ -195,10 +196,40 @@ fn (mut a S3StorageAdapter) sync_linger_worker() {
 			a.flush_sync_linger_buffer(topic, partition, item.buffer)
 		}
 	}
+
+	// Graceful shutdown: flush all remaining linger buffers
+	a.drain_all_sync_linger_buffers()
 }
 
 /// SyncLingerFlushItem pairs a partition key with its drained buffer for flushing.
 struct SyncLingerFlushItem {
 	partition_key string
 	buffer        SyncLingerBuffer
+}
+
+/// drain_all_sync_linger_buffers flushes all remaining linger buffers during shutdown.
+/// Ensures no goroutines are left permanently blocked on their result channels.
+fn (mut a S3StorageAdapter) drain_all_sync_linger_buffers() {
+	a.sync_linger_lock.lock()
+	mut remaining := []SyncLingerFlushItem{}
+	for key, _ in a.sync_linger_buffers {
+		buf := a.drain_sync_linger_buffer(key)
+		if buf.records.len > 0 {
+			remaining << SyncLingerFlushItem{
+				partition_key: key
+				buffer:        buf
+			}
+		}
+	}
+	a.sync_linger_lock.unlock()
+
+	for item in remaining {
+		parts := item.partition_key.split(':')
+		if parts.len != 2 {
+			continue
+		}
+		topic := parts[0]
+		partition := strconv.atoi(parts[1]) or { continue }
+		a.flush_sync_linger_buffer(topic, partition, item.buffer)
+	}
 }

@@ -123,7 +123,7 @@ fn (mut a S3StorageAdapter) upload_part_copy(dest_key string, upload_id string, 
 	copy_source := a.build_copy_source(source_key)
 	headers.add_custom('x-amz-copy-source', copy_source) or {}
 
-	if byte_range.len > 0 {
+	if byte_range != '' {
 		headers.add_custom('x-amz-copy-source-range', byte_range) or {}
 	}
 

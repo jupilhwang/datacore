@@ -75,6 +75,46 @@ fn parse_delete_objects_errors(body string) []string {
 	return errors
 }
 
+/// build_delete_request prepares an HTTP request for S3 Multi-Object Delete API.
+/// Sets Content-MD5 (required by AWS) and Content-Type headers.
+fn (mut a S3StorageAdapter) build_delete_request(url string, chunk []string) !http.Request {
+	xml_body := build_delete_objects_xml(chunk)
+	body_bytes := xml_body.bytes()
+
+	md5_hash := md5.sum(body_bytes)
+	content_md5 := base64.encode(md5_hash)
+
+	mut headers := a.sign_request('POST', '', 'delete', body_bytes)
+	headers.add_custom('Content-MD5', content_md5) or {}
+	headers.add_custom('Content-Type', 'application/xml') or {}
+
+	mut req := http.prepare(http.FetchConfig{
+		url:    url
+		method: .post
+		header: headers
+		data:   xml_body
+	}) or { return error('S3 batch DELETE prepare failed: ${err}') }
+	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+	return req
+}
+
+/// parse_delete_response validates the HTTP response and logs per-object errors.
+/// Returns an error for non-200 status codes.
+fn (a &S3StorageAdapter) parse_delete_response(resp http.Response) ! {
+	if resp.status_code != 200 {
+		return error('S3 batch DELETE failed with status ${resp.status_code}')
+	}
+
+	errors := parse_delete_objects_errors(resp.body)
+	for err_msg in errors {
+		observability.log_with_context('s3', .warn, 'S3Client', 'Batch delete partial error',
+			{
+			'error': err_msg
+		})
+	}
+}
+
 /// delete_objects_batch deletes multiple S3 objects using the Multi-Object Delete API.
 /// Automatically chunks requests at 1000 keys per batch (S3 API limit).
 /// Individual object errors in the response are logged as warnings (non-fatal).
@@ -90,46 +130,19 @@ fn (mut a S3StorageAdapter) delete_objects_batch(keys []string) ! {
 	url := '${endpoint}/${a.config.bucket_name}?delete'
 
 	for chunk in chunks {
-		xml_body := build_delete_objects_xml(chunk)
-		body_bytes := xml_body.bytes()
-
-		// Content-MD5 is required by AWS for Multi-Object Delete
-		md5_hash := md5.sum(body_bytes)
-		content_md5 := base64.encode(md5_hash)
-
-		mut headers := a.sign_request('POST', '', 'delete', body_bytes)
-		headers.add_custom('Content-MD5', content_md5) or {}
-		headers.add_custom('Content-Type', 'application/xml') or {}
-
-		mut req := http.prepare(http.FetchConfig{
-			url:    url
-			method: .post
-			header: headers
-			data:   xml_body
-		}) or {
+		mut req := a.build_delete_request(url, chunk) or {
 			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
-			return error('S3 batch DELETE prepare failed: ${err}')
+			return error(err.msg())
 		}
-		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 		resp := req.do() or {
 			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
 			return error('S3 batch DELETE failed: ${err}')
 		}
 
-		if resp.status_code != 200 {
+		a.parse_delete_response(resp) or {
 			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
-			return error('S3 batch DELETE failed with status ${resp.status_code}')
-		}
-
-		// Check for per-object errors in the response (non-fatal, log only)
-		errors := parse_delete_objects_errors(resp.body)
-		for err_msg in errors {
-			observability.log_with_context('s3', .warn, 'S3Client', 'Batch delete partial error',
-				{
-				'error': err_msg
-			})
+			return err
 		}
 	}
 }

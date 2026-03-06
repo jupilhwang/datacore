@@ -191,11 +191,12 @@ pub mut:
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
 	// index batch configuration: accumulate N segments before writing index to S3
-	index_batch_size        int = 5
+	index_batch_size        int = 1
 	index_flush_interval_ms int = 500
 	// sync linger: batch acks=1/-1 produce requests within a short window (ms)
-	// 0 = disabled (immediate per-request write); default 5ms
-	sync_linger_ms int = 5
+	// 0 = disabled (immediate per-request write, safe default)
+	// >0 = linger window in ms (reduces PUT cost but adds latency)
+	sync_linger_ms int
 	// Server-side copy: use S3 Multipart Copy for compaction to avoid data transfer
 	// When true, compaction tries server-side copy first, falls back to download-reupload
 	use_server_side_copy bool = true
@@ -462,10 +463,10 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 			100)
 		offset_flush_threshold_count: get_int(doc, 'storage.s3.offset_flush_threshold_count',
 			50)
-		index_batch_size:             get_int(doc, 'storage.s3.index_batch_size', 5)
+		index_batch_size:             get_int(doc, 'storage.s3.index_batch_size', 1)
 		index_flush_interval_ms:      get_int(doc, 'storage.s3.index_flush_interval_ms',
 			500)
-		sync_linger_ms:               get_int(doc, 'storage.s3.sync_linger_ms', 5)
+		sync_linger_ms:               get_int(doc, 'storage.s3.sync_linger_ms', 0)
 		use_server_side_copy:         get_bool(doc, 'storage.s3.use_server_side_copy',
 			true)
 		access_key:                   ''
