@@ -755,7 +755,13 @@ pub fn (mut a S3StorageAdapter) delete_records(topic string, partition int, befo
 			})
 			// Fallback: individual deletes
 			for key in segments_to_delete {
-				a.delete_object(key) or {}
+				a.delete_object(key) or {
+					observability.log_with_context('s3', .warn, 'S3Client', 'delete_records: failed to delete segment ${key}',
+						{
+						'key':   key
+						'error': err.msg()
+					})
+				}
 			}
 		}
 	}
