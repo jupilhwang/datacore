@@ -1,5 +1,36 @@
 # Changelog
 
+## [v0.48.0] - 2026-03-06
+
+### Added
+- S3 batch delete API via Multi-Object Delete (`s3_batch_delete.v`)
+- S3 server-side copy infrastructure for future segment format upgrades (`s3_server_side_copy.v`)
+- Index batch manager for deferred index updates (`index_batch_manager.v`)
+- Sync linger buffer for acks=1/-1 request batching (`sync_linger.v`)
+
+### Changed
+- S3 flush now skips partitions below `min_flush_bytes` threshold (default 4KB) to prevent micro-segments
+- Offset commits now use batched binary snapshot path exclusively; per-partition JSON writes removed
+- Compaction deletes now use S3 Multi-Object Delete API for bulk removal
+
+### Fixed
+- `index_batch_size` default changed from 5 to 1 to prevent index loss on broker restart
+- `sync_linger_ms` default set to 0 (disabled) for safe-by-default behavior
+- `sync_linger_worker` now drains pending requests on shutdown
+- XML injection 취약점 수정: S3 키 및 ETag의 XML 특수문자 escape 처리 (H-1, H-2)
+- `use_server_side_copy` 기본값 오류 수정 (항상 fallback이므로 false가 올바른 기본값) (M-3)
+- `flush_pending_index_updates()` 실패 시 데이터 손실 방지 restore 메커니즘 추가 (M-5)
+
+### Refactored
+- `s3_server_side_copy.v` 파일 크기 초과 해결: multipart upload 로직을 `s3_multipart.v`로 분리 (H-3)
+- `sync_linger_worker()` 폴링 간격 최적화: 고정 1ms → 동적 1~5ms (M-2)
+
+### Performance
+- Estimated 60-80% reduction in S3 PUT requests
+- Estimated monthly S3 cost reduction: $770 → $150-300
+
+---
+
 ### v0.47.1 - Iceberg Module Refactoring
 
 - refactor: IcebergConfig 중복 타입 통합 (config/s3 -> s3 단일 타입)

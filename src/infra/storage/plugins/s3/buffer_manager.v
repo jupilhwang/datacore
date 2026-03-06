@@ -2,7 +2,6 @@
 // Buffer management and flush operation handling for S3 storage
 module s3
 
-import json
 import strconv
 import time
 import infra.observability
@@ -20,6 +19,44 @@ mut:
 struct FlushBatch {
 	key     string
 	records []StoredRecord
+}
+
+/// collect_flush_batches extracts flush-ready batches from partition buffers.
+/// Applies min_flush_bytes threshold: skips partitions below the threshold
+/// unless max_flush_skip_count consecutive skips have occurred.
+/// Returns (flush_batches, skipped_count).
+/// Caller must hold buffer_lock.
+fn (mut a S3StorageAdapter) collect_flush_batches() ([]FlushBatch, int) {
+	mut flush_batches := []FlushBatch{}
+	mut skipped := 0
+	min_bytes := a.config.min_flush_bytes
+	max_skips := a.config.max_flush_skip_count
+
+	for key, _ in a.topic_partition_buffers {
+		if mut tp_buffer := a.topic_partition_buffers[key] {
+			if tp_buffer.records.len > 0 {
+				current_skips := a.flush_skip_counts[key] or { 0 }
+
+				// Skip when: threshold enabled, buffer below threshold, and not exceeded max skips
+				if min_bytes > 0 && tp_buffer.current_size_bytes < i64(min_bytes)
+					&& current_skips < max_skips {
+					a.flush_skip_counts[key] = current_skips + 1
+					skipped++
+					continue
+				}
+
+				flush_batches << FlushBatch{
+					key:     key
+					records: tp_buffer.records.clone()
+				}
+				tp_buffer.records.clear()
+				tp_buffer.current_size_bytes = 0
+				a.topic_partition_buffers[key] = tp_buffer
+				a.flush_skip_counts[key] = 0
+			}
+		}
+	}
+	return flush_batches, skipped
 }
 
 /// async_flush_partition performs S3 put and index update for a single partition batch.
@@ -88,41 +125,33 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	}
 }
 
-/// flush_worker periodically flushes message and offset buffers in parallel.
+/// flush_worker periodically flushes message, offset, and pending index buffers.
 /// Runs at batch_timeout_ms intervals and stops when compactor_running becomes false.
 fn (mut a S3StorageAdapter) flush_worker() {
+	mut index_flush_elapsed_ms := 0
 	for a.compactor_running {
 		time.sleep(a.config.batch_timeout_ms * time.millisecond)
+		index_flush_elapsed_ms += a.config.batch_timeout_ms
 
 		// Dispatch messages and offsets in parallel
 		go a.flush_pending_messages()
 		go a.flush_pending_offsets()
+
+		// Check if pending index updates need time-based forced flush
+		if a.config.index_flush_interval_ms > 0
+			&& index_flush_elapsed_ms >= a.config.index_flush_interval_ms {
+			index_flush_elapsed_ms = 0
+			go a.flush_all_pending_indexes()
+		}
 	}
 }
 
 /// flush_pending_messages flushes the message buffer to S3.
-/// Extracted directly from the original flush_worker message flush logic.
+/// Applies min_flush_bytes threshold to skip small buffers and prevent micro-segments.
 fn (mut a S3StorageAdapter) flush_pending_messages() {
-	// Process each partition's buffer while holding the lock
-	// Prevents race condition where append modifies buffer between key collection and flush
+	// Collect flush-ready batches while holding the lock
 	a.buffer_lock.lock()
-
-	// Extract buffer data for all partitions that have data
-	mut flush_batches := []FlushBatch{}
-	for key, _ in a.topic_partition_buffers {
-		if mut tp_buffer := a.topic_partition_buffers[key] {
-			if tp_buffer.records.len > 0 {
-				flush_batches << FlushBatch{
-					key:     key
-					records: tp_buffer.records.clone()
-				}
-				tp_buffer.records.clear()
-				tp_buffer.current_size_bytes = 0
-				a.topic_partition_buffers[key] = tp_buffer
-			}
-		}
-	}
-
+	flush_batches, _ := a.collect_flush_batches()
 	a.buffer_lock.unlock()
 
 	// Flush each batch to S3 (without holding lock)
@@ -263,78 +292,36 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 }
 
 /// update_partition_index_with_segment adds a new segment to the partition index.
-/// Reads the index from S3, appends the segment, and saves it back to S3.
+/// When index_batch_size > 1, accumulates segments in-memory and flushes to S3
+/// only when the batch threshold is reached. When index_batch_size <= 1,
+/// writes immediately (preserving original behavior).
 fn (mut a S3StorageAdapter) update_partition_index_with_segment(topic string, partition int, segment_key string, base_offset i64, end_offset i64, segment_size int) ! {
-	// Fetch current index directly from S3 (bypassing cache)
-	index_key := a.partition_index_key(topic, partition)
-	mut index := PartitionIndex{
-		topic:           topic
-		partition:       partition
-		earliest_offset: 0
-		high_watermark:  0
-		log_segments:    []
+	partition_key := '${topic}:${partition}'
+	new_segment := LogSegment{
+		start_offset: base_offset
+		end_offset:   end_offset
+		key:          segment_key
+		size_bytes:   i64(segment_size)
+		created_at:   time.now()
 	}
 
-	if data, _ := a.get_object(index_key, -1, -1) {
-		if decoded := json.decode(PartitionIndex, data.bytestr()) {
-			index = decoded
-		}
+	if a.config.index_batch_size <= 1 {
+		// Immediate mode: write to S3 directly (original behavior)
+		a.write_index_with_segments(topic, partition, [new_segment])!
+		return
 	}
 
-	// Check for duplicates using a set-based lookup: O(1) vs O(n)
-	mut segment_key_set := map[string]bool{}
-	for seg in index.log_segments {
-		segment_key_set[seg.key] = true
+	// Batch mode: accumulate in pending buffer
+	a.index_flush_lock.lock()
+	a.add_pending_index_segment(partition_key, new_segment)
+	should_flush := a.should_flush_index(partition_key)
+	mut segments_to_flush := []LogSegment{}
+	if should_flush {
+		segments_to_flush = a.drain_pending_index_segments(partition_key)
 	}
+	a.index_flush_lock.unlock()
 
-	if segment_key !in segment_key_set {
-		index.log_segments << LogSegment{
-			start_offset: base_offset
-			end_offset:   end_offset
-			key:          segment_key
-			size_bytes:   i64(segment_size)
-			created_at:   time.now()
-		}
-
-		// Sort segments by start_offset to maintain order
-		index.log_segments.sort(a.start_offset < b.start_offset)
-
-		// Update high_watermark: only need to check new segment vs current value
-		new_candidate := end_offset + 1
-		if new_candidate > index.high_watermark {
-			index.high_watermark = new_candidate
-		}
-
-		// Write updated index to S3
-		a.put_object(index_key, json.encode(index).bytes())!
-
-		// Update local cache
-		a.update_index_cache(topic, partition, index)
-	}
-}
-
-/// update_index_cache updates the local index cache.
-fn (mut a S3StorageAdapter) update_index_cache(topic string, partition int, index PartitionIndex) {
-	cache_key := '${topic}:${partition}'
-	a.topic_lock.@lock()
-	defer {
-		a.topic_lock.unlock()
-	}
-
-	if cached := a.topic_index_cache[cache_key] {
-		// Maintain higher high_watermark between cache and S3
-		mut final_index := index
-		if cached.index.high_watermark > index.high_watermark {
-			final_index.high_watermark = cached.index.high_watermark
-		}
-		a.topic_index_cache[cache_key] = CachedPartitionIndex{
-			index:     final_index
-			cached_at: time.now()
-		}
-	} else {
-		a.topic_index_cache[cache_key] = CachedPartitionIndex{
-			index:     index
-			cached_at: time.now()
-		}
+	if should_flush && segments_to_flush.len > 0 {
+		a.write_index_with_segments(topic, partition, segments_to_flush)!
 	}
 }

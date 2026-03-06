@@ -159,13 +159,39 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 	}
 
 	// 3. Perform compaction
-	// Upload new large segment to S3 after merging segments
-	a.merge_segments(topic, partition, mut index, segments_to_compact) or {
-		// Metric: compaction failure
-		a.metrics_lock.@lock()
-		a.metrics.compaction_error_count++
-		a.metrics_lock.unlock()
-		return err
+	// Try server-side copy first if enabled, fall back to download-reupload
+	if a.config.use_server_side_copy {
+		a.merge_segments_server_side(topic, partition, mut index, segments_to_compact) or {
+			err_msg := err.msg()
+			if err_msg.contains('server_side_copy_unsupported') {
+				observability.log_with_context('s3', .debug, 'Compaction', 'Server-side copy unsupported, using traditional merge',
+					{
+					'topic':     topic
+					'partition': partition.str()
+				})
+			} else {
+				observability.log_with_context('s3', .warn, 'Compaction', 'Server-side copy failed, falling back to traditional merge',
+					{
+					'topic':     topic
+					'partition': partition.str()
+					'error':     err_msg
+				})
+			}
+			// Fallback to traditional download-reupload merge
+			a.merge_segments(topic, partition, mut index, segments_to_compact) or {
+				a.metrics_lock.@lock()
+				a.metrics.compaction_error_count++
+				a.metrics_lock.unlock()
+				return err
+			}
+		}
+	} else {
+		a.merge_segments(topic, partition, mut index, segments_to_compact) or {
+			a.metrics_lock.@lock()
+			a.metrics.compaction_error_count++
+			a.metrics_lock.unlock()
+			return err
+		}
 	}
 
 	// Metric: compaction success
@@ -290,11 +316,26 @@ fn (mut a S3StorageAdapter) update_index_with_merged_segment(topic string, parti
 	a.put_object(index_key, json.encode(index).bytes())!
 }
 
-/// delete_segments_parallel deletes multiple segments in parallel.
+/// delete_segments_parallel deletes multiple segments using S3 Multi-Object Delete API.
+/// Falls back to individual delete_object calls on batch API failure.
 fn (mut a S3StorageAdapter) delete_segments_parallel(segments []LogSegment) {
-	ch := chan bool{cap: segments.len}
+	if segments.len == 0 {
+		return
+	}
+
+	mut keys := []string{cap: segments.len}
 	for seg in segments {
-		spawn fn [mut a, seg, ch] () {
+		keys << seg.key
+	}
+
+	a.delete_objects_batch(keys) or {
+		observability.log_with_context('s3', .warn, 'Compaction', 'Batch delete failed, falling back to individual deletes',
+			{
+			'error':         err.msg()
+			'segment_count': segments.len.str()
+		})
+		// Fallback: individual deletes
+		for seg in segments {
 			a.delete_object(seg.key) or {
 				observability.log_with_context('s3', .error, 'Compaction', 'Failed to delete old segment',
 					{
@@ -302,12 +343,6 @@ fn (mut a S3StorageAdapter) delete_segments_parallel(segments []LogSegment) {
 					'error':       err.msg()
 				})
 			}
-			ch <- true
-		}()
-	}
-
-	// Wait for all deletions to complete
-	for _ in 0 .. segments.len {
-		_ = <-ch
+		}
 	}
 }
