@@ -71,12 +71,15 @@ fn (mut a S3StorageAdapter) flush_all_pending_indexes() {
 		partition := parts[1].int()
 		a.index_update_lock.lock()
 		a.write_index_with_segments(topic, partition, segments) or {
+			a.index_update_lock.unlock()
+			a.restore_pending_index_segments(pk, segments)
 			observability.log_with_context('s3', .error, 'IndexBatchFlush', 'Forced index flush failed',
 				{
 				'partition_key': pk
 				'segment_count': segments.len.str()
 				'error':         err.msg()
 			})
+			continue
 		}
 		a.index_update_lock.unlock()
 	}
@@ -129,6 +132,18 @@ fn (mut a S3StorageAdapter) write_index_with_segments(topic string, partition in
 
 		// Update local cache
 		a.update_index_cache(topic, partition, index)
+	}
+}
+
+/// restore_pending_index_segments re-adds segments to the pending buffer after a flush failure.
+/// Acquires index_flush_lock to safely mutate shared state.
+fn (mut a S3StorageAdapter) restore_pending_index_segments(partition_key string, segments []LogSegment) {
+	a.index_flush_lock.lock()
+	defer {
+		a.index_flush_lock.unlock()
+	}
+	for seg in segments {
+		a.add_pending_index_segment(partition_key, seg)
 	}
 }
 

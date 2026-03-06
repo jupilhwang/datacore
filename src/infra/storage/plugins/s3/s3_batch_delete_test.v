@@ -95,6 +95,19 @@ fn test_parse_delete_objects_errors_no_errors() {
 	assert errors.len == 0
 }
 
+fn test_build_delete_objects_xml_escapes_special_chars() {
+	keys := ['key&value', 'path<tag>', 'file"name', "it's", 'a&b<c>d"e\'f']
+	xml := build_delete_objects_xml(keys)
+
+	assert xml.contains('<Key>key&amp;value</Key>')
+	assert xml.contains('<Key>path&lt;tag&gt;</Key>')
+	assert xml.contains('<Key>file&quot;name</Key>')
+	assert xml.contains('<Key>it&apos;s</Key>')
+	assert xml.contains('<Key>a&amp;b&lt;c&gt;d&quot;e&apos;f</Key>')
+	// Must NOT contain unescaped special chars in key values
+	assert !xml.contains('<Key>key&value</Key>')
+}
+
 fn test_parse_delete_objects_errors_with_errors() {
 	body := '<?xml version="1.0" encoding="UTF-8"?>
 <DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">

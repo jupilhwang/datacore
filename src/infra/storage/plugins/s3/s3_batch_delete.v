@@ -20,7 +20,7 @@ fn build_delete_objects_xml(keys []string) string {
 	sb << '<?xml version="1.0" encoding="UTF-8"?>'
 	sb << '<Delete>'
 	for key in keys {
-		sb << '<Object><Key>${key}</Key></Object>'
+		sb << '<Object><Key>${xml_escape(key)}</Key></Object>'
 	}
 	sb << '</Delete>'
 	return sb.join('')

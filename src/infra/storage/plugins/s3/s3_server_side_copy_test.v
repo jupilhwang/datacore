@@ -27,7 +27,7 @@ fn test_build_complete_multipart_xml_single_part() {
 	xml := build_complete_multipart_xml(parts)
 	assert xml.contains('<CompleteMultipartUpload>')
 	assert xml.contains('<PartNumber>1</PartNumber>')
-	assert xml.contains('<ETag>"etag1"</ETag>')
+	assert xml.contains('<ETag>&quot;etag1&quot;</ETag>')
 	assert xml.contains('</CompleteMultipartUpload>')
 }
 
@@ -47,9 +47,27 @@ fn test_build_complete_multipart_xml_multiple_parts() {
 		},
 	]
 	xml := build_complete_multipart_xml(parts)
-	assert xml.contains('<Part><PartNumber>1</PartNumber><ETag>"etag1"</ETag></Part>')
-	assert xml.contains('<Part><PartNumber>2</PartNumber><ETag>"etag2"</ETag></Part>')
-	assert xml.contains('<Part><PartNumber>3</PartNumber><ETag>"etag3"</ETag></Part>')
+	assert xml.contains('<Part><PartNumber>1</PartNumber><ETag>&quot;etag1&quot;</ETag></Part>')
+	assert xml.contains('<Part><PartNumber>2</PartNumber><ETag>&quot;etag2&quot;</ETag></Part>')
+	assert xml.contains('<Part><PartNumber>3</PartNumber><ETag>&quot;etag3&quot;</ETag></Part>')
+}
+
+fn test_build_complete_multipart_xml_escapes_etag_special_chars() {
+	parts := [
+		MultipartPart{
+			part_number: 1
+			etag:        '"etag&special"'
+		},
+		MultipartPart{
+			part_number: 2
+			etag:        'etag<with>brackets'
+		},
+	]
+	xml := build_complete_multipart_xml(parts)
+	assert xml.contains('<ETag>&quot;etag&amp;special&quot;</ETag>')
+	assert xml.contains('<ETag>etag&lt;with&gt;brackets</ETag>')
+	// Must NOT contain unescaped special chars
+	assert !xml.contains('<ETag>"etag&special"</ETag>')
 }
 
 fn test_build_complete_multipart_xml_empty_parts() {

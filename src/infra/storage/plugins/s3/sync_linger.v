@@ -166,11 +166,19 @@ fn (mut a S3StorageAdapter) flush_sync_linger_buffer(topic string, partition int
 }
 
 /// sync_linger_worker periodically checks for expired linger buffers and flushes them.
-/// Runs at 1ms resolution and stops when compactor_running becomes false.
+/// Poll interval is clamped to max(1, min(5, sync_linger_ms / 2)) for CPU efficiency.
+/// Stops when compactor_running becomes false.
 /// On shutdown, drains all remaining linger buffers to prevent goroutine leaks.
 fn (mut a S3StorageAdapter) sync_linger_worker() {
+	mut poll_ms := a.config.sync_linger_ms / 2
+	if poll_ms < 1 {
+		poll_ms = 1
+	}
+	if poll_ms > 5 {
+		poll_ms = 5
+	}
 	for a.compactor_running {
-		time.sleep(1 * time.millisecond)
+		time.sleep(poll_ms * time.millisecond)
 
 		a.sync_linger_lock.lock()
 		expired_keys := a.get_expired_sync_linger_keys()
