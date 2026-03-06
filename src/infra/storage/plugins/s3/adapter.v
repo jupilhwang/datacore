@@ -72,6 +72,8 @@ pub mut:
 	// Sync linger: batch acks=1/-1 produce requests within a short window
 	// 0 = disabled (immediate per-request write); >0 = linger window in ms
 	sync_linger_ms int
+	// Server-side copy: use S3 Multipart Copy for compaction to avoid data transfer
+	use_server_side_copy bool = true
 }
 
 /// S3StorageAdapter implements the StoragePort for S3 storage.

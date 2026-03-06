@@ -196,6 +196,9 @@ pub mut:
 	// sync linger: batch acks=1/-1 produce requests within a short window (ms)
 	// 0 = disabled (immediate per-request write); default 5ms
 	sync_linger_ms int = 5
+	// Server-side copy: use S3 Multipart Copy for compaction to avoid data transfer
+	// When true, compaction tries server-side copy first, falls back to download-reupload
+	use_server_side_copy bool = true
 	// Iceberg table format configuration (flattened from IcebergConfig for TOML parsing)
 	iceberg_enabled           bool
 	iceberg_format            string   = 'parquet'
@@ -463,6 +466,8 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 		index_flush_interval_ms:      get_int(doc, 'storage.s3.index_flush_interval_ms',
 			500)
 		sync_linger_ms:               get_int(doc, 'storage.s3.sync_linger_ms', 5)
+		use_server_side_copy:         get_bool(doc, 'storage.s3.use_server_side_copy',
+			true)
 		access_key:                   ''
 		secret_key:                   ''
 	}

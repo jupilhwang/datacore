@@ -159,13 +159,39 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 	}
 
 	// 3. Perform compaction
-	// Upload new large segment to S3 after merging segments
-	a.merge_segments(topic, partition, mut index, segments_to_compact) or {
-		// Metric: compaction failure
-		a.metrics_lock.@lock()
-		a.metrics.compaction_error_count++
-		a.metrics_lock.unlock()
-		return err
+	// Try server-side copy first if enabled, fall back to download-reupload
+	if a.config.use_server_side_copy {
+		a.merge_segments_server_side(topic, partition, mut index, segments_to_compact) or {
+			err_msg := err.msg()
+			if err_msg.contains('server_side_copy_unsupported') {
+				observability.log_with_context('s3', .debug, 'Compaction', 'Server-side copy unsupported, using traditional merge',
+					{
+					'topic':     topic
+					'partition': partition.str()
+				})
+			} else {
+				observability.log_with_context('s3', .warn, 'Compaction', 'Server-side copy failed, falling back to traditional merge',
+					{
+					'topic':     topic
+					'partition': partition.str()
+					'error':     err_msg
+				})
+			}
+			// Fallback to traditional download-reupload merge
+			a.merge_segments(topic, partition, mut index, segments_to_compact) or {
+				a.metrics_lock.@lock()
+				a.metrics.compaction_error_count++
+				a.metrics_lock.unlock()
+				return err
+			}
+		}
+	} else {
+		a.merge_segments(topic, partition, mut index, segments_to_compact) or {
+			a.metrics_lock.@lock()
+			a.metrics.compaction_error_count++
+			a.metrics_lock.unlock()
+			return err
+		}
 	}
 
 	// Metric: compaction success
