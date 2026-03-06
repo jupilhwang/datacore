@@ -53,6 +53,9 @@ pub mut:
 	// Batch settings
 	batch_timeout_ms int
 	batch_max_bytes  i64
+	// Flush threshold settings: skip flush when buffer < min_flush_bytes
+	min_flush_bytes      int = 4096
+	max_flush_skip_count int = 40
 	// Compaction settings
 	compaction_interval_ms int
 	target_segment_bytes   i64
@@ -84,6 +87,8 @@ pub mut:
 	buffer_lock             sync.Mutex
 	index_update_lock       sync.Mutex
 	is_flushing             bool
+	// Flush skip counters per partition (for min_flush_bytes threshold)
+	flush_skip_counts map[string]int
 	// Compaction settings
 	min_segment_count_to_compact int = 5
 	compactor_running            bool
@@ -240,6 +245,7 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 		offset_cache:            map[string]map[string]i64{}
 		topic_index_cache:       map[string]CachedPartitionIndex{}
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
+		flush_skip_counts:       map[string]int{}
 		offset_buffers:          map[string]OffsetGroupBuffer{}
 		iceberg_writers:         map[string]&IcebergWriter{}
 	}
@@ -722,9 +728,19 @@ pub fn (mut a S3StorageAdapter) delete_records(topic string, partition int, befo
 		}
 	}
 
-	// Delete segments from S3
-	for key in segments_to_delete {
-		a.delete_object(key) or {}
+	// Delete segments from S3 using batch API
+	if segments_to_delete.len > 0 {
+		a.delete_objects_batch(segments_to_delete) or {
+			observability.log_with_context('s3', .warn, 'S3Client', 'Batch delete failed in delete_records, falling back',
+				{
+				'error': err.msg()
+				'count': segments_to_delete.len.str()
+			})
+			// Fallback: individual deletes
+			for key in segments_to_delete {
+				a.delete_object(key) or {}
+			}
+		}
 	}
 
 	// Update index
@@ -879,36 +895,27 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 	return groups
 }
 
-/// commit_offsets commits offsets.
-/// Optimizes performance through parallel processing.
+/// commit_offsets commits offsets via the batch snapshot path.
+/// Offsets are buffered in memory and flushed to S3 as a single binary snapshot
+/// by flush_pending_offsets (background worker). This eliminates per-partition
+/// JSON S3 PUTs that the old commit_single_offset path produced.
 pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
 	if offsets.len == 0 {
 		return
 	}
 
 	a.record_commit_start_metrics(offsets.len)
-	mut failed := []string{}
-	mut succeeded := []domain.PartitionOffset{}
 
-	ch := a.create_commit_channel(offsets.len)
-	mut active := 0
-
+	// Buffer all offsets into the batch snapshot path
+	a.offset_buffer_lock.lock()
 	for offset in offsets {
-		active = a.wait_for_slot(ch, active, mut succeeded, mut failed, group_id)
-		active++
-		spawn a.commit_single_offset(group_id, offset, ch)
+		a.buffer_offset(group_id, offset)
 	}
+	a.offset_buffer_lock.unlock()
 
-	a.collect_remaining_results(ch, active, mut succeeded, mut failed, group_id)
-	a.update_offset_cache_and_metrics(group_id, succeeded, failed)
-	a.handle_commit_result(offsets.len, failed, group_id) or {
-		// Partial failures are allowed; only log the error
-		observability.log_with_context('s3', .warn, 'OffsetCommit', 'Some offsets failed to commit',
-			{
-			'group_id': group_id
-			'failed':   failed.len.str()
-		})
-	}
+	// Update offset cache for immediate read-after-write consistency
+	a.update_offset_cache(group_id, offsets)
+	a.record_commit_success_metrics(offsets.len)
 }
 
 /// CommitResult holds the result of an offset commit.
@@ -923,44 +930,8 @@ fn (mut a S3StorageAdapter) record_commit_start_metrics(count int) {
 	stdatomic.add_i64(&a.metrics.offset_commit_count, count)
 }
 
-/// create_commit_channel creates a commit result channel.
-fn (a &S3StorageAdapter) create_commit_channel(offset_count int) chan CommitResult {
-	cap_size := if offset_count > max_offset_commit_buffer {
-		max_offset_commit_buffer
-	} else {
-		offset_count
-	}
-	return chan CommitResult{cap: cap_size}
-}
-
-/// wait_for_slot waits for an available slot.
-fn (mut a S3StorageAdapter) wait_for_slot(ch chan CommitResult, active int, mut succeeded []domain.PartitionOffset, mut failed []string, group_id string) int {
-	mut current_active := active
-	for current_active >= max_offset_commit_concurrent {
-		result := <-ch
-		current_active--
-		if result.success {
-			succeeded << result.offset
-		} else {
-			failed << '${result.offset.topic}:${result.offset.partition}'
-			a.log_commit_error(result, group_id)
-		}
-	}
-	return current_active
-}
-
-/// log_commit_error logs a commit error.
-fn (a &S3StorageAdapter) log_commit_error(result CommitResult, group_id string) {
-	observability.log_with_context('s3', .error, 'OffsetCommit', 'Offset commit failed',
-		{
-		'group_id':  group_id
-		'topic':     result.offset.topic
-		'partition': result.offset.partition.str()
-		'error':     result.error
-	})
-}
-
-/// commit_single_offset commits a single offset.
+/// commit_single_offset commits a single offset to S3 as individual JSON.
+/// Retained for legacy migration reads; no longer called by commit_offsets().
 fn (mut a S3StorageAdapter) commit_single_offset(group_id string, offset domain.PartitionOffset, ch chan CommitResult) {
 	key := a.offset_key(group_id, offset.topic, offset.partition)
 	data := json.encode(offset)
@@ -993,31 +964,6 @@ fn (a &S3StorageAdapter) log_single_commit_error(group_id string, offset domain.
 	})
 }
 
-/// collect_remaining_results collects remaining results.
-fn (mut a S3StorageAdapter) collect_remaining_results(ch chan CommitResult, active int, mut succeeded []domain.PartitionOffset, mut failed []string, group_id string) {
-	for _ in 0 .. active {
-		result := <-ch
-		if result.success {
-			succeeded << result.offset
-		} else {
-			failed << '${result.offset.topic}:${result.offset.partition}'
-			a.log_commit_error(result, group_id)
-		}
-	}
-}
-
-/// update_offset_cache_and_metrics updates cache and metrics.
-fn (mut a S3StorageAdapter) update_offset_cache_and_metrics(group_id string, succeeded []domain.PartitionOffset, failed []string) {
-	if succeeded.len > 0 {
-		a.update_offset_cache(group_id, succeeded)
-		a.record_commit_success_metrics(succeeded.len)
-	}
-
-	if failed.len > 0 {
-		a.record_commit_failure_metrics(failed.len)
-	}
-}
-
 /// update_offset_cache updates the offset cache.
 fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []domain.PartitionOffset) {
 	a.offset_lock.@lock()
@@ -1037,15 +983,11 @@ fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []dom
 	})
 }
 
+/// record_commit_success_metrics records successful offset commit metrics.
+/// Note: s3_put_count is NOT incremented here because the batch path defers
+/// the actual S3 PUT to flush_pending_offsets (background worker).
 fn (mut a S3StorageAdapter) record_commit_success_metrics(count int) {
 	stdatomic.add_i64(&a.metrics.offset_commit_success_count, count)
-	stdatomic.add_i64(&a.metrics.s3_put_count, count)
-}
-
-/// record_commit_failure_metrics records failure metrics.
-fn (mut a S3StorageAdapter) record_commit_failure_metrics(count int) {
-	stdatomic.add_i64(&a.metrics.offset_commit_error_count, count)
-	stdatomic.add_i64(&a.metrics.s3_error_count, count)
 }
 
 /// record_cache_hit increments the cache hit counter.
@@ -1084,21 +1026,6 @@ fn (mut a S3StorageAdapter) record_sync_append_index_error() {
 fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
 	stdatomic.add_i64(&a.metrics.sync_append_success_count, 1)
 	stdatomic.add_i64(&a.metrics.sync_append_total_ms, int(elapsed_ms))
-}
-
-/// handle_commit_result handles the commit result.
-fn (a &S3StorageAdapter) handle_commit_result(total_count int, failed []string, group_id string) ! {
-	if failed.len == total_count {
-		return error('All ${total_count} offset commits failed for group ${group_id}')
-	}
-
-	if failed.len > 0 {
-		observability.log_with_context('s3', .warn, 'OffsetCommit', 'Partial offset commit',
-			{
-			'group_id': group_id
-			'failed':   failed.len.str()
-		})
-	}
 }
 
 /// OffsetFetchResult holds the result of a single offset fetch operation.

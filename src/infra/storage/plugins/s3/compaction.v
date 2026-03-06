@@ -290,11 +290,26 @@ fn (mut a S3StorageAdapter) update_index_with_merged_segment(topic string, parti
 	a.put_object(index_key, json.encode(index).bytes())!
 }
 
-/// delete_segments_parallel deletes multiple segments in parallel.
+/// delete_segments_parallel deletes multiple segments using S3 Multi-Object Delete API.
+/// Falls back to individual delete_object calls on batch API failure.
 fn (mut a S3StorageAdapter) delete_segments_parallel(segments []LogSegment) {
-	ch := chan bool{cap: segments.len}
+	if segments.len == 0 {
+		return
+	}
+
+	mut keys := []string{cap: segments.len}
 	for seg in segments {
-		spawn fn [mut a, seg, ch] () {
+		keys << seg.key
+	}
+
+	a.delete_objects_batch(keys) or {
+		observability.log_with_context('s3', .warn, 'Compaction', 'Batch delete failed, falling back to individual deletes',
+			{
+			'error':         err.msg()
+			'segment_count': segments.len.str()
+		})
+		// Fallback: individual deletes
+		for seg in segments {
 			a.delete_object(seg.key) or {
 				observability.log_with_context('s3', .error, 'Compaction', 'Failed to delete old segment',
 					{
@@ -302,12 +317,6 @@ fn (mut a S3StorageAdapter) delete_segments_parallel(segments []LogSegment) {
 					'error':       err.msg()
 				})
 			}
-			ch <- true
-		}()
-	}
-
-	// Wait for all deletions to complete
-	for _ in 0 .. segments.len {
-		_ = <-ch
+		}
 	}
 }
