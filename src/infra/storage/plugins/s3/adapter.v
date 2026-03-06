@@ -54,8 +54,8 @@ pub mut:
 	batch_timeout_ms int
 	batch_max_bytes  i64
 	// Flush threshold settings: skip flush when buffer < min_flush_bytes
-	min_flush_bytes      int = 4096
-	max_flush_skip_count int = 40
+	min_flush_bytes      int = 65536
+	max_flush_skip_count int = 80
 	// Compaction settings
 	compaction_interval_ms int
 	target_segment_bytes   i64
@@ -67,7 +67,7 @@ pub mut:
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
 	// Index batch settings: accumulate N segments before writing index to S3
-	index_batch_size        int = 1
+	index_batch_size        int = 5
 	index_flush_interval_ms int = 500
 	// Sync linger: batch acks=1/-1 produce requests within a short window
 	// 0 = disabled (immediate per-request write); >0 = linger window in ms

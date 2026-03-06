@@ -141,15 +141,16 @@ batch_timeout_ms = 25
 batch_max_bytes = 4096000
 
 # 플러시 최소 바이트 임계값 (바이트). 버퍼가 이 크기 미만이면 플러시를 건너뜀.
-# 마이크로 세그먼트 생성 방지 목적. 0이면 이 기능 비활성화. (4KB)
-min_flush_bytes = 4096
+# 64KB minimum prevents micro-segments while guaranteeing flush within 2s (80 * 25ms)
+min_flush_bytes = 65536
 
 # 플러시 건너뛰기 최대 횟수. 이 횟수만큼 연속 건너뛴 후 강제 플러시.
-# 무한 지연 방지 목적. (40회 = 25ms * 40 = 1초)
-max_flush_skip_count = 40
+# Max 2 seconds delay before forced flush (80 * 25ms batch_timeout_ms)
+max_flush_skip_count = 80
 
 # 컴팩션 워커 주기 (밀리초). 작은 세그먼트를 병합하는 주기.
-compaction_interval_ms = 30000
+# 60 seconds between compaction cycles (reduces S3 LIST/GET calls)
+compaction_interval_ms = 60000
 
 # 컴팩션 후 목표 세그먼트 크기 (바이트). (100MB)
 target_segment_bytes = 104857600
@@ -166,9 +167,9 @@ offset_flush_interval_ms = 100
 offset_flush_threshold_count = 50
 
 # Index batch update settings
-# index_batch_size = 1 means every segment flushes the index immediately (safe default)
-# Set > 1 to enable batching (reduces PUT cost but risks orphan segments on crash)
-index_batch_size = 1
+# Batch 5 segments per S3 index PUT (reduces index writes by ~80%)
+# Set to 1 to disable batching (safe but costly)
+index_batch_size = 5
 index_flush_interval_ms = 500
 
 # Sync linger: batch multiple sync-acks produce requests into one S3 PUT

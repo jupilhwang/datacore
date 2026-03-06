@@ -180,10 +180,10 @@ pub mut:
 	batch_timeout_ms int = 25
 	batch_max_bytes  i64 = 4096000
 	// flush threshold: skip flush when buffer < min_flush_bytes to prevent micro-segments
-	min_flush_bytes      int = 4096
-	max_flush_skip_count int = 40
+	min_flush_bytes      int = 65536
+	max_flush_skip_count int = 80
 	// compaction configuration
-	compaction_interval_ms int = 30000
+	compaction_interval_ms int = 60000
 	target_segment_bytes   i64 = 104857600
 	index_cache_ttl_ms     int = 30000 // partition index cache TTL (default 30 seconds)
 	// offset batch configuration
@@ -191,7 +191,7 @@ pub mut:
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
 	// index batch configuration: accumulate N segments before writing index to S3
-	index_batch_size        int = 1
+	index_batch_size        int = 5
 	index_flush_interval_ms int = 500
 	// sync linger: batch acks=1/-1 produce requests within a short window (ms)
 	// 0 = disabled (immediate per-request write, safe default)
@@ -449,11 +449,11 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 			doc, 'storage.s3.timezone', 'UTC')
 		batch_timeout_ms:             get_int(doc, 'storage.s3.batch_timeout_ms', 25)
 		batch_max_bytes:              get_i64(doc, 'storage.s3.batch_max_bytes', 4096000)
-		min_flush_bytes:              get_int(doc, 'storage.s3.min_flush_bytes', 4096)
+		min_flush_bytes:              get_int(doc, 'storage.s3.min_flush_bytes', 65536)
 		max_flush_skip_count:         get_int(doc, 'storage.s3.max_flush_skip_count',
-			40)
+			80)
 		compaction_interval_ms:       get_int(doc, 'storage.s3.compaction_interval_ms',
-			30000)
+			60000)
 		target_segment_bytes:         get_i64(doc, 'storage.s3.target_segment_bytes',
 			104857600)
 		index_cache_ttl_ms:           get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000)
@@ -463,7 +463,7 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 			100)
 		offset_flush_threshold_count: get_int(doc, 'storage.s3.offset_flush_threshold_count',
 			50)
-		index_batch_size:             get_int(doc, 'storage.s3.index_batch_size', 1)
+		index_batch_size:             get_int(doc, 'storage.s3.index_batch_size', 5)
 		index_flush_interval_ms:      get_int(doc, 'storage.s3.index_flush_interval_ms',
 			500)
 		sync_linger_ms:               get_int(doc, 'storage.s3.sync_linger_ms', 0)
