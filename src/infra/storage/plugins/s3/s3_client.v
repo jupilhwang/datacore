@@ -11,8 +11,9 @@ import sync.stdatomic
 import infra.observability
 
 // S3 HTTP request retry configuration constants
-const max_retries = 3
-const initial_backoff_ms = 100
+// NOTE: max_retries and initial_backoff_ms are now sourced from S3Config fields
+// (S3Config.max_retries and S3Config.retry_delay_ms) to allow runtime configuration.
+// The constants below are only used as fallbacks where adapter config is not accessible.
 const dns_backoff_ms = 1000
 const max_backoff_jitter_ms = 50
 const max_delete_concurrent = 20
@@ -58,8 +59,10 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 		'${endpoint}/${key}'
 	}
 
+	cfg_max_retries := a.config.max_retries
+
 	mut last_err := ''
-	for attempt in 0 .. max_retries {
+	for attempt in 0 .. cfg_max_retries {
 		// Prepare headers
 		mut headers := a.sign_request('GET', key, '', []u8{})
 
@@ -86,11 +89,11 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			err_str := err.msg()
 
 			// Retry on DNS/network errors
-			if is_network_error(err_str) && attempt < max_retries - 1 {
+			if is_network_error(err_str) && attempt < cfg_max_retries - 1 {
 				backoff_ms := dns_backoff_ms * (1 << attempt)
 				observability.log_with_context('s3', .warn, 'S3Client', 'GET retry (network error)',
 					{
-					'attempt':    '${attempt + 1}/${max_retries}'
+					'attempt':    '${attempt + 1}/${cfg_max_retries}'
 					'key':        key
 					'error':      err_str
 					'backoff_ms': backoff_ms.str()
@@ -129,17 +132,18 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 /// put_object writes an object to S3.
 /// Internally calls put_object_with_retry which includes retry logic.
 fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
-	a.put_object_with_retry(key, data, max_retries)!
+	a.put_object_with_retry(key, data, a.config.max_retries)!
 }
 
 /// put_object_with_retry attempts to write an object with exponential backoff retries.
-/// Retries with exponential backoff (100ms, 200ms, 400ms...) on 500 and 503 errors.
+/// Retries with exponential backoff using config.retry_delay_ms on 500 and 503 errors.
 /// Uses longer backoff (1s, 2s, 4s) on DNS/network errors.
 /// Adds jitter to prevent thundering herd on concurrent retries.
 fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries_ int) ! {
 	// Metric: S3 PUT request (counted once, including retries)
 	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
 
+	cfg_retry_delay_ms := a.config.retry_delay_ms
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
 		'${endpoint}/${a.config.bucket_name}/${key}'
@@ -173,7 +177,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 				backoff_ms := if is_network_error(err_str) {
 					dns_backoff_ms * (1 << attempt)
 				} else {
-					initial_backoff_ms * (1 << attempt)
+					cfg_retry_delay_ms * (1 << attempt)
 				}
 
 				observability.log_with_context('s3', .warn, 'S3Client', 'PUT retry', {
@@ -210,7 +214,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 		if resp.status_code in [500, 503] && attempt < max_retries_ - 1 {
 			last_err = 'S3 PUT failed with status ${resp.status_code}'
 			// Exponential backoff with jitter
-			backoff_ms := initial_backoff_ms * (1 << attempt) +
+			backoff_ms := cfg_retry_delay_ms * (1 << attempt) +
 				int(time.now().unix_milli() % max_backoff_jitter_ms)
 
 			observability.log_with_context('s3', .warn, 'S3Client', 'PUT status error, retrying',
@@ -387,17 +391,19 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 	// Metric: S3 LIST request
 	stdatomic.add_i64(&a.metrics.s3_list_count, 1)
 
+	cfg_max_retries := a.config.max_retries
+	cfg_retry_delay_ms := a.config.retry_delay_ms
 	endpoint := a.get_endpoint()
 	query := 'prefix=${prefix}&list-type=2'
 	url := '${endpoint}/${a.config.bucket_name}?${query}'
 
 	mut last_err := ''
 
-	for attempt in 0 .. max_retries {
+	for attempt in 0 .. cfg_max_retries {
 		if attempt > 0 {
 			observability.log_with_context('s3', .debug, 'S3Client', 'LIST retry', {
 				'attempt': (attempt + 1).str()
-				'max':     max_retries.str()
+				'max':     cfg_max_retries.str()
 				'prefix':  prefix
 			})
 		}
@@ -427,16 +433,16 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 				'bucket':   a.config.bucket_name
 			})
 
-			if attempt < max_retries - 1 {
+			if attempt < cfg_max_retries - 1 {
 				// Apply longer backoff for DNS/network errors (1s, 2s, 4s)
 				backoff_ms := if is_network_error(err_str) {
 					dns_backoff_ms * (1 << attempt)
 				} else {
-					initial_backoff_ms * (1 << attempt)
+					cfg_retry_delay_ms * (1 << attempt)
 				}
 				observability.log_with_context('s3', .warn, 'S3Client', 'LIST retry',
 					{
-					'attempt':    '${attempt + 1}/${max_retries}'
+					'attempt':    '${attempt + 1}/${cfg_max_retries}'
 					'backoff_ms': backoff_ms.str()
 				})
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)
@@ -453,7 +459,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		}
 
 		// Retry on 503 (Service Unavailable) and 500 (Server Error)
-		if resp.status_code in [500, 503] && attempt < max_retries - 1 {
+		if resp.status_code in [500, 503] && attempt < cfg_max_retries - 1 {
 			last_err = 'S3 LIST failed with status ${resp.status_code}'
 			observability.log_with_context('s3', .warn, 'S3Client', 'LIST status error, retrying',
 				{
@@ -461,7 +467,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 			})
 
 			// Exponential backoff with jitter
-			backoff_ms := initial_backoff_ms * (1 << attempt) +
+			backoff_ms := cfg_retry_delay_ms * (1 << attempt) +
 				int(time.now().unix_milli() % max_backoff_jitter_ms)
 			time.sleep(time.Duration(backoff_ms) * time.millisecond)
 			continue
