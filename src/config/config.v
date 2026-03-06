@@ -193,6 +193,9 @@ pub mut:
 	// index batch configuration: accumulate N segments before writing index to S3
 	index_batch_size        int = 5
 	index_flush_interval_ms int = 500
+	// sync linger: batch acks=1/-1 produce requests within a short window (ms)
+	// 0 = disabled (immediate per-request write); default 5ms
+	sync_linger_ms int = 5
 	// Iceberg table format configuration (flattened from IcebergConfig for TOML parsing)
 	iceberg_enabled           bool
 	iceberg_format            string   = 'parquet'
@@ -459,6 +462,7 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 		index_batch_size:             get_int(doc, 'storage.s3.index_batch_size', 5)
 		index_flush_interval_ms:      get_int(doc, 'storage.s3.index_flush_interval_ms',
 			500)
+		sync_linger_ms:               get_int(doc, 'storage.s3.sync_linger_ms', 5)
 		access_key:                   ''
 		secret_key:                   ''
 	}

@@ -72,6 +72,7 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 		index_cache_ttl_ms:      conf.storage.s3.index_cache_ttl_ms
 		index_batch_size:        conf.storage.s3.index_batch_size
 		index_flush_interval_ms: conf.storage.s3.index_flush_interval_ms
+		sync_linger_ms:          conf.storage.s3.sync_linger_ms
 	}
 
 	masked_key := if s_config.access_key.len > 4 {

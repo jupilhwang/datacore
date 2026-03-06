@@ -69,6 +69,9 @@ pub mut:
 	// Index batch settings: accumulate N segments before writing index to S3
 	index_batch_size        int = 5
 	index_flush_interval_ms int = 500
+	// Sync linger: batch acks=1/-1 produce requests within a short window
+	// 0 = disabled (immediate per-request write); >0 = linger window in ms
+	sync_linger_ms int
 }
 
 /// S3StorageAdapter implements the StoragePort for S3 storage.
@@ -111,6 +114,9 @@ pub mut:
 	iceberg_lock    sync.RwMutex
 	// Iceberg 런타임 설정 (config 패키지와의 연결)
 	iceberg_config IcebergConfig
+	// Sync linger buffers for acks=1/-1 batching
+	sync_linger_buffers map[string]SyncLingerBuffer
+	sync_linger_lock    sync.Mutex
 }
 
 /// CachedTopic holds cached topic information.
@@ -258,6 +264,7 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 		pending_index_updates:   map[string][]LogSegment{}
 		index_flush_counter:     map[string]int{}
 		iceberg_writers:         map[string]&IcebergWriter{}
+		sync_linger_buffers:     map[string]SyncLingerBuffer{}
 	}
 }
 
@@ -558,33 +565,31 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 		a.buffer_lock.unlock()
 	} else {
 		// === acks=1/-1: sync path (durability guarantee) ===
-		// Skip in-memory buffer and write directly to S3
-		start_time := time.now()
-		base_offset_val := stored_records[0].offset
-		end_offset := stored_records[stored_records.len - 1].offset
-		segment_data := encode_stored_records(stored_records)
-		segment_key := a.log_segment_key(topic, partition, base_offset_val, end_offset)
+		if a.config.sync_linger_ms > 0 {
+			// Linger path: batch multiple sync requests within the linger window
+			ch := chan LingerResult{cap: 1}
+			a.sync_linger_lock.lock()
+			should_flush := a.add_to_sync_linger_buffer(partition_key, stored_records,
+				ch)
+			mut flush_buf := SyncLingerBuffer{}
+			if should_flush {
+				flush_buf = a.drain_sync_linger_buffer(partition_key)
+			}
+			a.sync_linger_lock.unlock()
 
-		// S3 PUT (synchronous wait)
-		a.put_object(segment_key, segment_data) or {
-			a.record_sync_append_error()
-			return error('durable append failed (acks=${required_acks}): S3 PUT error: ${err}')
+			if should_flush && flush_buf.records.len > 0 {
+				a.flush_sync_linger_buffer(topic, partition, flush_buf)
+			}
+
+			// Wait for result from linger flush
+			result := <-ch
+			if err_val := result.err {
+				return error('durable append failed (acks=${required_acks}): ${err_val}')
+			}
+		} else {
+			// Immediate path: write directly to S3 (original behavior)
+			a.sync_append_immediate(topic, partition, stored_records, required_acks)!
 		}
-
-		a.record_sync_append_put()
-
-		// Index update (synchronous wait)
-		a.index_update_lock.lock()
-		a.update_partition_index_with_segment(topic, partition, segment_key, base_offset_val,
-			end_offset, segment_data.len) or {
-			a.index_update_lock.unlock()
-			a.record_sync_append_index_error()
-			return error('durable append failed (acks=${required_acks}): index update error: ${err}')
-		}
-		a.index_update_lock.unlock()
-
-		elapsed_ms := time.since(start_time).milliseconds()
-		a.record_sync_append_success(elapsed_ms)
 	}
 
 	// Append records to Iceberg table (when Iceberg is enabled)
@@ -1192,7 +1197,7 @@ fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int
 
 // Note: async_flush_partition, flush_worker, flush_buffer_to_s3 have been moved to buffer_manager.v.
 
-/// start_workers starts flush and compaction workers.
+/// start_workers starts flush, compaction, and sync linger workers.
 pub fn (mut a S3StorageAdapter) start_workers() {
 	if a.compactor_running {
 		return
@@ -1200,6 +1205,9 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 	a.compactor_running = true
 	go a.flush_worker()
 	go a.compaction_worker()
+	if a.config.sync_linger_ms > 0 {
+		go a.sync_linger_worker()
+	}
 }
 
 /// get_metrics returns the current metrics snapshot.
