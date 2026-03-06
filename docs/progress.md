@@ -213,3 +213,28 @@ cd src && v -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ld
 - `test_hadoop_table_path_*` — namespace 기반 경로 도출 3가지 케이스
 - `test_export_table_upsert_*` — upsert 분기 로직(기존 location 사용 vs warehouse 폴백) 검증
 
+---
+
+## 2026-03-06 — S3 PUT 비용 최적화 완료
+
+**브랜치:** feature/s3-put-cost-optimization-v1
+**커밋:** 6f46772 ~ 45f89fa (7개 커밋)
+
+### 완료 항목
+- [x] Task 1: batch_max_bytes flush 임계값 구현
+- [x] Task 2: 오프셋 이중 저장 경로 통합
+- [x] Task 3: S3 DeleteObjects 배치 API 구현
+- [x] Task 4: 인덱스 배치 업데이트 구현
+- [x] Task 5: sync 경로 linger 도입
+- [x] Task 6: 컴팩션 서버사이드 복사 인프라 구축
+- [x] ACT: Critical 이슈 수정 (index_batch_size, graceful shutdown)
+
+### 결과
+- 예상 PUT 감소: 60-80%
+- 예상 비용 절감: 월 $770 → $150-300
+- 신규 테스트: 50개+ 모두 통과
+- Task 6 서버사이드 복사: 세그먼트 포맷 제약으로 fallback 모드 (향후 포맷 변경 시 자동 활성화)
+
+### 보고서
+docs/reports/2026-03-06-s3-put-cost-optimization.md
+
