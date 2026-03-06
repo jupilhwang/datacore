@@ -22,6 +22,44 @@ struct FlushBatch {
 	records []StoredRecord
 }
 
+/// collect_flush_batches extracts flush-ready batches from partition buffers.
+/// Applies min_flush_bytes threshold: skips partitions below the threshold
+/// unless max_flush_skip_count consecutive skips have occurred.
+/// Returns (flush_batches, skipped_count).
+/// Caller must hold buffer_lock.
+fn (mut a S3StorageAdapter) collect_flush_batches() ([]FlushBatch, int) {
+	mut flush_batches := []FlushBatch{}
+	mut skipped := 0
+	min_bytes := a.config.min_flush_bytes
+	max_skips := a.config.max_flush_skip_count
+
+	for key, _ in a.topic_partition_buffers {
+		if mut tp_buffer := a.topic_partition_buffers[key] {
+			if tp_buffer.records.len > 0 {
+				current_skips := a.flush_skip_counts[key] or { 0 }
+
+				// Skip when: threshold enabled, buffer below threshold, and not exceeded max skips
+				if min_bytes > 0 && tp_buffer.current_size_bytes < i64(min_bytes)
+					&& current_skips < max_skips {
+					a.flush_skip_counts[key] = current_skips + 1
+					skipped++
+					continue
+				}
+
+				flush_batches << FlushBatch{
+					key:     key
+					records: tp_buffer.records.clone()
+				}
+				tp_buffer.records.clear()
+				tp_buffer.current_size_bytes = 0
+				a.topic_partition_buffers[key] = tp_buffer
+				a.flush_skip_counts[key] = 0
+			}
+		}
+	}
+	return flush_batches, skipped
+}
+
 /// async_flush_partition performs S3 put and index update for a single partition batch.
 /// This function is called asynchronously and saves buffered records as an S3 segment.
 /// Note: Currently only called from flush_worker; direct calls are disabled.
@@ -101,28 +139,11 @@ fn (mut a S3StorageAdapter) flush_worker() {
 }
 
 /// flush_pending_messages flushes the message buffer to S3.
-/// Extracted directly from the original flush_worker message flush logic.
+/// Applies min_flush_bytes threshold to skip small buffers and prevent micro-segments.
 fn (mut a S3StorageAdapter) flush_pending_messages() {
-	// Process each partition's buffer while holding the lock
-	// Prevents race condition where append modifies buffer between key collection and flush
+	// Collect flush-ready batches while holding the lock
 	a.buffer_lock.lock()
-
-	// Extract buffer data for all partitions that have data
-	mut flush_batches := []FlushBatch{}
-	for key, _ in a.topic_partition_buffers {
-		if mut tp_buffer := a.topic_partition_buffers[key] {
-			if tp_buffer.records.len > 0 {
-				flush_batches << FlushBatch{
-					key:     key
-					records: tp_buffer.records.clone()
-				}
-				tp_buffer.records.clear()
-				tp_buffer.current_size_bytes = 0
-				a.topic_partition_buffers[key] = tp_buffer
-			}
-		}
-	}
-
+	flush_batches, _ := a.collect_flush_batches()
 	a.buffer_lock.unlock()
 
 	// Flush each batch to S3 (without holding lock)

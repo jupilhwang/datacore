@@ -179,6 +179,9 @@ pub mut:
 	// batch configuration
 	batch_timeout_ms int = 25
 	batch_max_bytes  i64 = 4096000
+	// flush threshold: skip flush when buffer < min_flush_bytes to prevent micro-segments
+	min_flush_bytes      int = 4096
+	max_flush_skip_count int = 40
 	// compaction configuration
 	compaction_interval_ms int = 30000
 	target_segment_bytes   i64 = 104857600
@@ -436,6 +439,9 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 			doc, 'storage.s3.timezone', 'UTC')
 		batch_timeout_ms:             get_int(doc, 'storage.s3.batch_timeout_ms', 25)
 		batch_max_bytes:              get_i64(doc, 'storage.s3.batch_max_bytes', 4096000)
+		min_flush_bytes:              get_int(doc, 'storage.s3.min_flush_bytes', 4096)
+		max_flush_skip_count:         get_int(doc, 'storage.s3.max_flush_skip_count',
+			40)
 		compaction_interval_ms:       get_int(doc, 'storage.s3.compaction_interval_ms',
 			30000)
 		target_segment_bytes:         get_i64(doc, 'storage.s3.target_segment_bytes',

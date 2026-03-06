@@ -65,6 +65,8 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 		broker_id:              i32(conf.broker.broker_id)
 		batch_timeout_ms:       conf.storage.s3.batch_timeout_ms
 		batch_max_bytes:        conf.storage.s3.batch_max_bytes
+		min_flush_bytes:        conf.storage.s3.min_flush_bytes
+		max_flush_skip_count:   conf.storage.s3.max_flush_skip_count
 		compaction_interval_ms: conf.storage.s3.compaction_interval_ms
 		target_segment_bytes:   conf.storage.s3.target_segment_bytes
 		index_cache_ttl_ms:     conf.storage.s3.index_cache_ttl_ms

@@ -140,6 +140,14 @@ batch_timeout_ms = 25
 # 레코드 버퍼링 최대 크기 (바이트). 이 크기 초과 시 즉시 플러시 트리거됨. (4MB)
 batch_max_bytes = 4096000
 
+# 플러시 최소 바이트 임계값 (바이트). 버퍼가 이 크기 미만이면 플러시를 건너뜀.
+# 마이크로 세그먼트 생성 방지 목적. 0이면 이 기능 비활성화. (4KB)
+min_flush_bytes = 4096
+
+# 플러시 건너뛰기 최대 횟수. 이 횟수만큼 연속 건너뛴 후 강제 플러시.
+# 무한 지연 방지 목적. (40회 = 25ms * 40 = 1초)
+max_flush_skip_count = 40
+
 # 컴팩션 워커 주기 (밀리초). 작은 세그먼트를 병합하는 주기.
 compaction_interval_ms = 30000
 
@@ -380,7 +388,7 @@ enabled = true
 
 # 로그 레벨
 # 지원값: "trace", "debug", "info", "warn", "error"
-level = "debug"
+level = "error"
 
 # 로그 출력 형식
 # 지원값: "json" (OTel 호환 구조화), "text" (콘솔 가독성)
