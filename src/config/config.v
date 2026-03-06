@@ -190,6 +190,9 @@ pub mut:
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
+	// index batch configuration: accumulate N segments before writing index to S3
+	index_batch_size        int = 5
+	index_flush_interval_ms int = 500
 	// Iceberg table format configuration (flattened from IcebergConfig for TOML parsing)
 	iceberg_enabled           bool
 	iceberg_format            string   = 'parquet'
@@ -453,6 +456,9 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 			100)
 		offset_flush_threshold_count: get_int(doc, 'storage.s3.offset_flush_threshold_count',
 			50)
+		index_batch_size:             get_int(doc, 'storage.s3.index_batch_size', 5)
+		index_flush_interval_ms:      get_int(doc, 'storage.s3.index_flush_interval_ms',
+			500)
 		access_key:                   ''
 		secret_key:                   ''
 	}

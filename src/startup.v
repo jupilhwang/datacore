@@ -54,22 +54,24 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 	os.setenv('TZ', conf.storage.s3.timezone, true)
 
 	s_config := s3.S3Config{
-		bucket_name:            conf.storage.s3.bucket
-		region:                 conf.storage.s3.region
-		endpoint:               conf.storage.s3.endpoint
-		access_key:             conf.storage.s3.access_key
-		secret_key:             conf.storage.s3.secret_key
-		prefix:                 conf.storage.s3.prefix
-		use_path_style:         true
-		timezone:               conf.storage.s3.timezone
-		broker_id:              i32(conf.broker.broker_id)
-		batch_timeout_ms:       conf.storage.s3.batch_timeout_ms
-		batch_max_bytes:        conf.storage.s3.batch_max_bytes
-		min_flush_bytes:        conf.storage.s3.min_flush_bytes
-		max_flush_skip_count:   conf.storage.s3.max_flush_skip_count
-		compaction_interval_ms: conf.storage.s3.compaction_interval_ms
-		target_segment_bytes:   conf.storage.s3.target_segment_bytes
-		index_cache_ttl_ms:     conf.storage.s3.index_cache_ttl_ms
+		bucket_name:             conf.storage.s3.bucket
+		region:                  conf.storage.s3.region
+		endpoint:                conf.storage.s3.endpoint
+		access_key:              conf.storage.s3.access_key
+		secret_key:              conf.storage.s3.secret_key
+		prefix:                  conf.storage.s3.prefix
+		use_path_style:          true
+		timezone:                conf.storage.s3.timezone
+		broker_id:               i32(conf.broker.broker_id)
+		batch_timeout_ms:        conf.storage.s3.batch_timeout_ms
+		batch_max_bytes:         conf.storage.s3.batch_max_bytes
+		min_flush_bytes:         conf.storage.s3.min_flush_bytes
+		max_flush_skip_count:    conf.storage.s3.max_flush_skip_count
+		compaction_interval_ms:  conf.storage.s3.compaction_interval_ms
+		target_segment_bytes:    conf.storage.s3.target_segment_bytes
+		index_cache_ttl_ms:      conf.storage.s3.index_cache_ttl_ms
+		index_batch_size:        conf.storage.s3.index_batch_size
+		index_flush_interval_ms: conf.storage.s3.index_flush_interval_ms
 	}
 
 	masked_key := if s_config.access_key.len > 4 {

@@ -66,6 +66,9 @@ pub mut:
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
 	offset_flush_threshold_count int  = 50
+	// Index batch settings: accumulate N segments before writing index to S3
+	index_batch_size        int = 5
+	index_flush_interval_ms int = 500
 }
 
 /// S3StorageAdapter implements the StoragePort for S3 storage.
@@ -98,6 +101,11 @@ pub mut:
 	// Offset batch buffers
 	offset_buffers     map[string]OffsetGroupBuffer
 	offset_buffer_lock sync.Mutex
+	// Pending index batch updates: accumulate segments before writing index to S3
+	pending_index_updates map[string][]LogSegment
+	index_flush_counter   map[string]int
+	index_flush_lock      sync.Mutex
+	last_index_flush_at   i64
 	// Iceberg table writers (when Iceberg is enabled)
 	iceberg_writers map[string]&IcebergWriter
 	iceberg_lock    sync.RwMutex
@@ -247,6 +255,8 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
 		flush_skip_counts:       map[string]int{}
 		offset_buffers:          map[string]OffsetGroupBuffer{}
+		pending_index_updates:   map[string][]LogSegment{}
+		index_flush_counter:     map[string]int{}
 		iceberg_writers:         map[string]&IcebergWriter{}
 	}
 }
