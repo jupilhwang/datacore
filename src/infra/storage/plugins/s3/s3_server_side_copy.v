@@ -8,10 +8,14 @@ import time
 import sync.stdatomic
 import infra.observability
 
-/// segments_support_server_side_copy checks whether the segment binary format
-/// supports server-side copy via simple concatenation.
-/// The decoder reads multiple (count, records...) tuples until EOF,
-/// so concatenated segments are decoded correctly.
+/// segments_support_server_side_copy returns true because DataCore's binary segment
+/// format supports multi-segment concatenation. The decoder in s3_record_codec.v
+/// reads (count, records...) tuples in a loop until EOF, so concatenated segments
+/// are decoded correctly as a single logical stream.
+///
+/// IMPORTANT: If the segment format changes to include a file-level header or
+/// other non-repeatable prefix, this function MUST be updated to return false
+/// (or implement actual format detection) to prevent data corruption.
 fn segments_support_server_side_copy() bool {
 	return true
 }
