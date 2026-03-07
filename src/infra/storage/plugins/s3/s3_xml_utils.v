@@ -5,7 +5,7 @@ module s3
 /// xml_escape replaces XML special characters with their entity references.
 /// Ampersand (&) must be replaced first to avoid double-escaping.
 fn xml_escape(s string) string {
-	if s.len == 0 {
+	if s == '' {
 		return s
 	}
 	// & must be first to prevent double-escaping of subsequent replacements

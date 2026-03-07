@@ -28,12 +28,18 @@ fn unzigzag64(n u64) i64 {
 }
 
 // read_varint32 reads a varint from the buffer.
+// Returns an error if more than 5 bytes are consumed (varint32 max).
 pub fn (mut r ThriftReader) read_varint32() !u32 {
 	mut result := u32(0)
 	mut shift := 0
+	mut bytes_read := 0
 	for r.pos < r.buf.len {
+		if bytes_read >= 5 {
+			return error('varint32 exceeds maximum of 5 bytes')
+		}
 		b := r.buf[r.pos]
 		r.pos++
+		bytes_read++
 		result |= u32(b & 0x7F) << shift
 		if b & 0x80 == 0 {
 			return result
@@ -44,12 +50,18 @@ pub fn (mut r ThriftReader) read_varint32() !u32 {
 }
 
 // read_varint64 reads a varint from the buffer.
+// Returns an error if more than 10 bytes are consumed (varint64 max).
 pub fn (mut r ThriftReader) read_varint64() !u64 {
 	mut result := u64(0)
 	mut shift := 0
+	mut bytes_read := 0
 	for r.pos < r.buf.len {
+		if bytes_read >= 10 {
+			return error('varint64 exceeds maximum of 10 bytes')
+		}
 		b := r.buf[r.pos]
 		r.pos++
+		bytes_read++
 		result |= u64(b & 0x7F) << shift
 		if b & 0x80 == 0 {
 			return result
@@ -57,6 +69,15 @@ pub fn (mut r ThriftReader) read_varint64() !u64 {
 		shift += 7
 	}
 	return error('unexpected EOF while reading varint64')
+}
+
+// skip_raw_bytes advances the position by n bytes without decoding.
+// Returns an error if there are not enough bytes remaining.
+pub fn (mut r ThriftReader) skip_raw_bytes(n int) ! {
+	if r.pos + n > r.buf.len {
+		return error('skip_raw_bytes: not enough data (need ${n}, have ${r.buf.len - r.pos})')
+	}
+	r.pos += n
 }
 
 // read_struct_begin starts reading a struct (saves field context).

@@ -80,6 +80,11 @@ pub fn (mut p ParquetMetadataParser) parse(data []u8) !ParsedMetadata {
 		return error('invalid parquet magic at end')
 	}
 	footer_len := read_le_u32(data, data.len - 8)
+	// footer_len must fit within the file (excluding 8-byte trailer and 4-byte start magic).
+	max_footer_len := u32(data.len - 12)
+	if footer_len > max_footer_len {
+		return error('invalid footer length: ${footer_len} exceeds file size')
+	}
 	footer_start := data.len - 8 - int(footer_len)
 	if footer_start < 4 {
 		return error('invalid footer: footer extends before start magic')

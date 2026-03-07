@@ -99,29 +99,39 @@ pub fn (mut w IcebergWriter) write_metadata_file() !string {
 	return metadata_path
 }
 
-/// create_snapshot creates a new snapshot.
+/// create_snapshot creates a new snapshot with proper Iceberg v2 manifest-list structure.
+/// Step 1: Write manifest file (data file entries).
+/// Step 2: Write manifest-list file (references the manifest).
+/// Step 3: Register snapshot pointing to the manifest-list.
 pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic string) !IcebergSnapshot {
 	snapshot_id := generate_snapshot_id()
 	now := time.now()
 
-	// Create manifest file
+	// Step 1: Write manifest file
 	manifest_path := w.generate_manifest_path(snapshot_id)
 	manifest_content := w.encode_manifest(data_files)!
 	w.adapter.put_object('${w.table_metadata.location}/${manifest_path}', manifest_content)!
 
-	// Snapshot summary information
+	// Count added files and rows for summary
 	mut added_files := 0
 	mut added_records := i64(0)
+	mut total_size := i64(0)
 	for file in data_files {
 		added_files++
 		added_records += file.record_count
-	}
-
-	// Calculate total file size
-	mut total_size := i64(0)
-	for file in data_files {
 		total_size += file.file_size_in_bytes
 	}
+
+	// Step 2: Build manifest metadata and write manifest-list file
+	manifest := IcebergManifest{
+		manifest_path: '${w.table_metadata.location}/${manifest_path}'
+		snapshot_id:   snapshot_id
+		added_files:   added_files
+		added_rows:    added_records
+	}
+	manifest_list_path := w.generate_manifest_list_path(snapshot_id)
+	manifest_list_content := w.encode_manifest_list(manifest)!
+	w.adapter.put_object('${w.table_metadata.location}/${manifest_list_path}', manifest_list_content)!
 
 	summary := {
 		'operation':               'append'
@@ -132,15 +142,15 @@ pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic
 		'topic':                   topic
 	}
 
+	// Step 3: Create snapshot pointing to the manifest-list
 	snapshot := IcebergSnapshot{
 		snapshot_id:   snapshot_id
 		timestamp_ms:  now.unix_milli()
-		manifest_list: manifest_path
+		manifest_list: manifest_list_path
 		schema_id:     w.table_metadata.current_schema_id
 		summary:       summary
 	}
 
-	// Update table metadata
 	w.table_metadata.snapshots << snapshot
 	w.table_metadata.current_snapshot_id = snapshot_id
 	w.table_metadata.last_updated_ms = now.unix_milli()
@@ -155,14 +165,11 @@ fn (w &IcebergWriter) generate_manifest_path(snapshot_id i64) string {
 		'-')}.avro'
 }
 
-/// get_table_metadata returns the current table metadata.
-pub fn (w &IcebergWriter) get_table_metadata() IcebergMetadata {
-	return w.table_metadata
-}
-
-/// get_current_snapshot_id returns the current snapshot ID.
-pub fn (w &IcebergWriter) get_current_snapshot_id() i64 {
-	return w.table_metadata.current_snapshot_id
+/// generate_manifest_list_path generates a manifest-list file path.
+fn (w &IcebergWriter) generate_manifest_list_path(snapshot_id i64) string {
+	now := time.now()
+	return 'metadata/snap-${snapshot_id}-${now.format_ss().replace(' ', '-').replace(':',
+		'-')}-manifest-list.avro'
 }
 
 /// time_travel time-travels to a specific snapshot.

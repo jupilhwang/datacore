@@ -384,17 +384,42 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 	}
 }
 
-/// list_objects retrieves a list of S3 objects with the specified prefix.
-/// Uses the ListObjectsV2 API to fetch the object list.
+/// list_objects retrieves a complete list of S3 objects with the specified prefix.
+/// Uses the ListObjectsV2 API with automatic pagination via IsTruncated and
+/// NextContinuationToken to handle result sets larger than MaxKeys=1000.
 /// Includes retry logic to handle network issues such as OpenSSL errors.
 fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
+	mut all_objects := []S3Object{}
+	mut continuation_token := ''
+
+	for {
+		page := a.list_objects_page(prefix, continuation_token)!
+		all_objects << page.objects
+
+		if !page.is_truncated {
+			break
+		}
+		continuation_token = page.next_continuation_token
+	}
+
+	return all_objects
+}
+
+/// list_objects_page fetches a single page of S3 objects with the specified prefix.
+/// Uses continuation_token for pagination; pass empty string for the first page.
+/// Includes retry logic for transient network and server errors.
+fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token string) !ListObjectsPage {
 	// Metric: S3 LIST request
 	stdatomic.add_i64(&a.metrics.s3_list_count, 1)
 
 	cfg_max_retries := a.config.max_retries
 	cfg_retry_delay_ms := a.config.retry_delay_ms
 	endpoint := a.get_endpoint()
-	query := 'prefix=${prefix}&list-type=2'
+
+	mut query := 'list-type=2&prefix=${prefix}'
+	if continuation_token.len > 0 {
+		query += '&continuation-token=${continuation_token}'
+	}
 	url := '${endpoint}/${a.config.bucket_name}?${query}'
 
 	mut last_err := ''
@@ -454,8 +479,8 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 		}
 
 		if resp.status_code == 200 {
-			// Success - parse XML response
-			return parse_list_objects_response(resp.body)
+			// Success - parse XML response with pagination info
+			return parse_list_objects_page(resp.body)
 		}
 
 		// Retry on 503 (Service Unavailable) and 500 (Server Error)
@@ -709,6 +734,37 @@ fn url_encode_for_sigv4(s string) string {
 		}
 	}
 	return result.bytestr()
+}
+
+/// ListObjectsPage holds a single page of S3 ListObjectsV2 results
+/// including pagination state for iterating beyond MaxKeys=1000.
+struct ListObjectsPage {
+	objects                 []S3Object
+	is_truncated            bool
+	next_continuation_token string
+}
+
+/// parse_list_objects_page parses an S3 ListObjectsV2 XML response into a
+/// ListObjectsPage, extracting IsTruncated and NextContinuationToken for
+/// pagination support.
+fn parse_list_objects_page(body string) ListObjectsPage {
+	objects := parse_list_objects_response(body)
+
+	is_truncated := body.contains('<IsTruncated>true</IsTruncated>')
+
+	mut token := ''
+	if token_start := body.index('<NextContinuationToken>') {
+		token_end := body.index('</NextContinuationToken>') or { body.len }
+		if token_end > token_start + 23 {
+			token = body[token_start + 23..token_end]
+		}
+	}
+
+	return ListObjectsPage{
+		objects:                 objects
+		is_truncated:            is_truncated
+		next_continuation_token: token
+	}
 }
 
 /// parse_list_objects_response parses an S3 ListObjectsV2 XML response.

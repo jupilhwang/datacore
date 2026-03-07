@@ -920,8 +920,7 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 
 /// commit_offsets commits offsets via the batch snapshot path.
 /// Offsets are buffered in memory and flushed to S3 as a single binary snapshot
-/// by flush_pending_offsets (background worker). This eliminates per-partition
-/// JSON S3 PUTs that the old commit_single_offset path produced.
+/// by flush_pending_offsets (background worker).
 pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
 	if offsets.len == 0 {
 		return
@@ -941,50 +940,9 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 	a.record_commit_success_metrics(offsets.len)
 }
 
-/// CommitResult holds the result of an offset commit.
-struct CommitResult {
-	offset  domain.PartitionOffset
-	success bool
-	error   string
-}
-
 /// record_commit_start_metrics records commit start metrics.
 fn (mut a S3StorageAdapter) record_commit_start_metrics(count int) {
 	stdatomic.add_i64(&a.metrics.offset_commit_count, count)
-}
-
-/// commit_single_offset commits a single offset to S3 as individual JSON.
-/// Retained for legacy migration reads; no longer called by commit_offsets().
-fn (mut a S3StorageAdapter) commit_single_offset(group_id string, offset domain.PartitionOffset, ch chan CommitResult) {
-	key := a.offset_key(group_id, offset.topic, offset.partition)
-	data := json.encode(offset)
-
-	a.put_object(key, data.bytes()) or {
-		error_msg := 'S3 put failed for offset ${offset.topic}:${offset.partition}: ${err}'
-		a.log_single_commit_error(group_id, offset, error_msg)
-		ch <- CommitResult{
-			offset:  offset
-			success: false
-			error:   error_msg
-		}
-		return
-	}
-
-	ch <- CommitResult{
-		offset:  offset
-		success: true
-		error:   ''
-	}
-}
-
-/// log_single_commit_error logs a single commit error.
-fn (a &S3StorageAdapter) log_single_commit_error(group_id string, offset domain.PartitionOffset, error_msg string) {
-	observability.log_with_context('s3', .error, 'OffsetCommit', error_msg, {
-		'group_id':  group_id
-		'topic':     offset.topic
-		'partition': offset.partition.str()
-		'offset':    offset.offset.str()
-	})
 }
 
 /// update_offset_cache updates the offset cache.

@@ -504,11 +504,7 @@ pub:
 pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy) {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
-
-	unsafe {
-		mut config := a.config
-		config.strategy = strategy
-	}
+	a.config.strategy = strategy
 	a.logger.info('Assignment strategy changed', observability.field_string('strategy',
 		assignment_strategy_to_string(strategy)))
 }
@@ -517,11 +513,7 @@ pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy
 pub fn (mut a PartitionAssigner) set_sticky_assign(enabled bool) {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
-
-	unsafe {
-		mut config := a.config
-		config.sticky_assign = enabled
-	}
+	a.config.sticky_assign = enabled
 	a.logger.info('Sticky assignment mode changed', observability.field_bool('enabled',
 		enabled))
 }
