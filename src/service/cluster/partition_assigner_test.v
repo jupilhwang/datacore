@@ -372,9 +372,8 @@ fn test_set_strategy() {
 	// When
 	assigner.set_strategy(.sticky)
 
-	// Then - config may not change due to unsafe block (V language limitation)
-	// This test only passes if config change is possible
-	// assert assigner.config.strategy == .sticky
+	// Then - strategy must actually change
+	assert assigner.config.strategy == .sticky, 'strategy should be sticky after set_strategy'
 }
 
 fn test_set_sticky_assign() {
@@ -388,9 +387,8 @@ fn test_set_sticky_assign() {
 	// When
 	assigner.set_sticky_assign(true)
 
-	// Then - config may not change due to unsafe block (V language limitation)
-	// This test only passes if config change is possible
-	// assert assigner.config.sticky_assign == true
+	// Then - sticky_assign must actually change
+	assert assigner.config.sticky_assign == true, 'sticky_assign should be true after set_sticky_assign'
 }
 
 // Strategy String Conversion Tests

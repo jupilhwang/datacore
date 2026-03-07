@@ -250,6 +250,106 @@ pub fn avro_write_int_bytes_map(mut buf []u8, m map[int][]u8) {
 	buf << u8(0)
 }
 
+/// encode_manifest_list encodes a manifest-list Avro file per the Iceberg v2 spec.
+/// A manifest-list is an Avro container file where each entry is a manifest_file record
+/// that references one manifest file.
+fn (w &IcebergWriter) encode_manifest_list(manifest IcebergManifest) ![]u8 {
+	manifest_list_schema := '{"type":"record","name":"manifest_file","fields":[' +
+		'{"name":"manifest_path","type":"string"},' + '{"name":"manifest_length","type":"long"},' +
+		'{"name":"partition_spec_id","type":"int"},' + '{"name":"content","type":"int"},' +
+		'{"name":"sequence_number","type":"long"},' +
+		'{"name":"min_sequence_number","type":"long"},' +
+		'{"name":"added_snapshot_id","type":"long"},' +
+		'{"name":"added_files_count","type":["null","int"],"default":null},' +
+		'{"name":"existing_files_count","type":["null","int"],"default":null},' +
+		'{"name":"deleted_files_count","type":["null","int"],"default":null},' +
+		'{"name":"added_rows_count","type":["null","long"],"default":null},' +
+		'{"name":"existing_rows_count","type":["null","long"],"default":null},' +
+		'{"name":"deleted_rows_count","type":["null","long"],"default":null}' + ']}'
+
+	sync_source := '${w.table_metadata.table_uuid}-manifest-list-${manifest.snapshot_id}'
+	sync_marker := avro_generate_sync_marker(sync_source)
+
+	mut meta_map := map[string]string{}
+	meta_map['avro.schema'] = manifest_list_schema
+	meta_map['avro.codec'] = 'null'
+
+	mut buf := []u8{}
+
+	// Magic bytes: Obj\x01
+	buf << u8(`O`)
+	buf << u8(`b`)
+	buf << u8(`j`)
+	buf << u8(0x01)
+
+	avro_write_meta_map(mut buf, meta_map)
+	buf << sync_marker
+
+	// Encode manifest entry
+	mut records_buf := []u8{}
+	avro_write_manifest_file_entry(mut records_buf, manifest)
+
+	// Block: [count=1][byte_count][data][sync_marker]
+	avro_write_varint(mut buf, 1)
+	avro_write_varint(mut buf, i64(records_buf.len))
+	buf << records_buf
+	buf << sync_marker
+
+	// End-of-file block: count=0
+	buf << u8(0)
+
+	return buf
+}
+
+/// avro_write_manifest_file_entry writes a single manifest_file Avro record.
+fn avro_write_manifest_file_entry(mut buf []u8, manifest IcebergManifest) {
+	// manifest_path: string
+	avro_write_string(mut buf, manifest.manifest_path)
+
+	// manifest_length: long (use 0 as placeholder — actual size not tracked)
+	avro_write_varint(mut buf, i64(0))
+
+	// partition_spec_id: int
+	avro_write_varint(mut buf, i64(0))
+
+	// content: 0 = DATA
+	avro_write_varint(mut buf, i64(0))
+
+	// sequence_number: long
+	avro_write_varint(mut buf, i64(0))
+
+	// min_sequence_number: long
+	avro_write_varint(mut buf, i64(0))
+
+	// added_snapshot_id: long
+	avro_write_varint(mut buf, manifest.snapshot_id)
+
+	// added_files_count: union [null, int]
+	avro_write_nullable_int(mut buf, manifest.added_files)
+
+	// existing_files_count: union [null, int]
+	buf << u8(0) // null
+
+	// deleted_files_count: union [null, int]
+	buf << u8(0) // null
+
+	// added_rows_count: union [null, long]
+	avro_write_nullable_long(mut buf, manifest.added_rows)
+
+	// existing_rows_count: union [null, long]
+	buf << u8(0) // null
+
+	// deleted_rows_count: union [null, long]
+	buf << u8(0) // null
+}
+
+/// avro_write_nullable_int writes an Avro union [null, int] with non-null value.
+fn avro_write_nullable_int(mut buf []u8, value int) {
+	// Union index 1 = int
+	avro_write_varint(mut buf, 1)
+	avro_write_varint(mut buf, i64(value))
+}
+
 /// iceberg_serialize_long serializes an int64 value to Iceberg binary format (little-endian 8 bytes).
 pub fn iceberg_serialize_long(v i64) []u8 {
 	uv := u64(v)

@@ -107,15 +107,18 @@ fn decode_bit_packed_values(data []u8, bit_width int, num_values int) []i32 {
 
 // read_varint reads a variable-length encoded integer from data at pos.
 // Returns the decoded value and the number of bytes consumed.
+// Consumes at most 10 bytes to prevent unbounded reads on malformed data.
 fn read_varint(data []u8, pos int) (u64, int) {
 	mut value := u64(0)
 	mut shift := u32(0)
 	mut i := pos
+	mut bytes_read := 0
 
-	for i < data.len {
+	for i < data.len && bytes_read < 10 {
 		b := data[i]
 		value |= u64(b & 0x7F) << shift
 		i++
+		bytes_read++
 		if b & 0x80 == 0 {
 			break
 		}

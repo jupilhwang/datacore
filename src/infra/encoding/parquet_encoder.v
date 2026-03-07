@@ -416,187 +416,115 @@ fn i32_max_bytes(values []i32) []u8 {
 	return result
 }
 
-// encode_file_metadata encodes the Parquet FileMetaData as Thrift Compact Protocol bytes.
-// Schema (parquet.thrift):
-//
-//	FileMetaData {
-//	  1: version (i32)
-//	  2: schema (list<SchemaElement>)
-//	  3: num_rows (i64)
-//	  4: row_groups (list<RowGroup>)
-//	  5: key_value_metadata (optional list<KeyValue>)
-//	  6: created_by (optional string)
-//	}
-//
-// SchemaElement {
-//	  1: type (optional Type enum)
-//	  2: type_length (optional i32)
-//	  3: repetition_type (optional FieldRepetitionType enum)
-//	  4: name (required string)
-//	  5: num_children (optional i32) -- for group nodes
-//	  6: converted_type (optional ConvertedType)
-//	}
-//
-// RowGroup {
-//	  1: columns (list<ColumnChunk>)
-//	  2: total_byte_size (i64)
-//	  3: num_rows (i64)
-//	}
-//
-// ColumnChunk {
-//	  1: file_path (optional string)
-//	  2: file_offset (i64)
-//	  3: meta_data (optional ColumnMetaData)
-//	}
-//
-// ColumnMetaData {
-//	  1: type (Type enum)
-//	  2: encodings (list<Encoding>)
-//	  3: path_in_schema (list<string>)
-//	  4: codec (CompressionCodec enum)
-//	  5: num_values (i64)
-//	  6: total_uncompressed_size (i64)
-//	  7: total_compressed_size (i64)
-//	  8: key_value_metadata (optional)
-//	  9: data_page_offset (i64)
-//	 10: index_page_offset (optional i64)
-//	 11: dictionary_page_offset (optional i64)
-//	 12: statistics (optional Statistics)
-//	}
-//
-// Statistics {
-//	  1: max (optional binary)
-//	  2: min (optional binary)
-//	  3: null_count (optional i64)
-//	  4: distinct_count (optional i64)
-//	  5: max_value (optional binary)
-//	  6: min_value (optional binary)
-//	}
-fn encode_file_metadata(schema ParquetSchema, num_rows i64, col_chunks_meta []ColChunkMeta, codec i32, created_by string) []u8 {
-	mut w := new_thrift_writer()
-	w.write_struct_begin()
-
-	// Field 1: version = 2 (Parquet format version 2)
-	w.write_i32(1, 2)
-
-	// Field 2: schema (list<SchemaElement>)
-	// Total elements = 1 root element + N column elements
+// encode_schema_elements writes the root message node and all leaf column nodes.
+// Thrift field 2 of FileMetaData: list<SchemaElement>
+fn encode_schema_elements(mut w ThriftWriter, schema ParquetSchema) {
 	total_schema_elems := 1 + schema.columns.len
 	w.write_list_begin(2, thrift_type_struct, total_schema_elems)
 
-	// Root schema element (message node, no type, has num_children)
+	// Root message node (no type, has num_children)
 	w.write_raw_struct_begin()
-	// field 4: name
 	w.write_string(4, 'schema')
-	// field 5: num_children
 	w.write_i32(5, i32(schema.columns.len))
 	w.write_raw_struct_end()
 
-	// Column schema elements (leaf nodes)
+	// Leaf column nodes
 	for col in schema.columns {
 		w.write_raw_struct_begin()
-		// field 1: type (physical type)
 		w.write_i32(1, col.typ.to_physical_type())
-		// field 3: repetition_type
 		rep := if col.required { parquet_required } else { parquet_optional }
 		w.write_i32(3, rep)
-		// field 4: name
 		w.write_string(4, col.name)
-		// field 6: converted_type (if applicable)
 		if col.typ.has_converted_type() {
 			w.write_i32(6, col.typ.converted_type())
 		}
 		w.write_raw_struct_end()
 	}
+}
 
-	// Field 3: num_rows
-	w.write_i64(3, num_rows)
-
-	// Field 4: row_groups (list<RowGroup>) -- one row group for all records
-	w.write_list_begin(4, thrift_type_struct, 1)
-
-	// RowGroup
+// encode_column_statistics writes Statistics struct (field 12 of ColumnMetaData).
+// Writes both deprecated (1/2) and new-style (5/6) min/max fields for compatibility.
+fn encode_column_statistics(mut w ThriftWriter, cm ColChunkMeta) {
+	if cm.min_val.len == 0 && cm.max_val.len == 0 {
+		return
+	}
+	w.write_field_header(thrift_type_struct, 12)
 	w.write_raw_struct_begin()
+	if cm.max_val.len > 0 {
+		w.write_binary(1, cm.max_val) // max (deprecated)
+	}
+	if cm.min_val.len > 0 {
+		w.write_binary(2, cm.min_val) // min (deprecated)
+	}
+	w.write_i64(3, cm.null_count)
+	if cm.max_val.len > 0 {
+		w.write_binary(5, cm.max_val) // max_value (new-style)
+	}
+	if cm.min_val.len > 0 {
+		w.write_binary(6, cm.min_val) // min_value (new-style)
+	}
+	w.write_raw_struct_end()
+}
 
-	// field 1: columns (list<ColumnChunk>)
+// encode_column_chunk_list writes the list<ColumnChunk> for a single RowGroup.
+// Thrift field 1 of RowGroup.
+fn encode_column_chunk_list(mut w ThriftWriter, col_chunks_meta []ColChunkMeta, codec i32) {
 	w.write_list_begin(1, thrift_type_struct, col_chunks_meta.len)
 	for cm in col_chunks_meta {
 		w.write_raw_struct_begin()
-		// field 2: file_offset (start of column chunk data)
-		w.write_i64(2, cm.file_offset)
-		// field 3: meta_data (ColumnMetaData)
+		w.write_i64(2, cm.file_offset) // file_offset
+
+		// ColumnMetaData (field 3, inline struct)
 		w.write_field_header(thrift_type_struct, 3)
-		// Write ColumnMetaData inline
 		w.write_raw_struct_begin()
-		// field 1: type
 		w.write_i32(1, cm.physical_type)
-		// field 2: encodings (list<Encoding>) = [PLAIN, RLE, BIT_PACKED]
-		w.write_list_begin(2, thrift_type_i32, 2)
+		w.write_list_begin(2, thrift_type_i32, 2) // encodings: [PLAIN, RLE]
 		w.write_raw_i32(i32(parquet_encoding_plain))
 		w.write_raw_i32(i32(parquet_encoding_rle))
-		// field 3: path_in_schema (list<string>)
-		w.write_list_begin(3, thrift_type_binary, 1)
+		w.write_list_begin(3, thrift_type_binary, 1) // path_in_schema
 		w.write_raw_string(cm.col_name)
-		// field 4: codec
 		w.write_i32(4, codec)
-		// field 5: num_values
 		w.write_i64(5, cm.num_values)
-		// field 6: total_uncompressed_size
-		w.write_i64(6, cm.total_size)
-		// field 7: total_compressed_size
-		w.write_i64(7, cm.total_size)
-		// field 9: data_page_offset
+		w.write_i64(6, cm.total_size) // total_uncompressed_size
+		w.write_i64(7, cm.total_size) // total_compressed_size
 		w.write_i64(9, cm.data_page_offset)
-		// field 12: statistics
-		if cm.min_val.len > 0 || cm.max_val.len > 0 {
-			w.write_field_header(thrift_type_struct, 12)
-			w.write_raw_struct_begin()
-			// field 1: max (deprecated, keep for compatibility)
-			if cm.max_val.len > 0 {
-				w.write_binary(1, cm.max_val)
-			}
-			// field 2: min (deprecated)
-			if cm.min_val.len > 0 {
-				w.write_binary(2, cm.min_val)
-			}
-			// field 3: null_count
-			w.write_i64(3, cm.null_count)
-			// field 5: max_value (new-style)
-			if cm.max_val.len > 0 {
-				w.write_binary(5, cm.max_val)
-			}
-			// field 6: min_value (new-style)
-			if cm.min_val.len > 0 {
-				w.write_binary(6, cm.min_val)
-			}
-			w.write_raw_struct_end()
-		}
-		w.write_raw_struct_end()
-		// end ColumnMetaData
-		w.write_raw_struct_end()
-		// end ColumnChunk
-	}
+		encode_column_statistics(mut w, cm)
+		w.write_raw_struct_end() // end ColumnMetaData
 
-	// field 2: total_byte_size (sum of all column chunk sizes)
+		w.write_raw_struct_end() // end ColumnChunk
+	}
+}
+
+// encode_file_metadata encodes the Parquet FileMetaData as Thrift Compact Protocol bytes.
+// Spec: https://parquet.apache.org/docs/file-format/metadata/
+fn encode_file_metadata(schema ParquetSchema, num_rows i64, col_chunks_meta []ColChunkMeta, codec i32, created_by string) []u8 {
+	mut w := new_thrift_writer()
+	w.write_struct_begin()
+	w.write_i32(1, 2) // version = 2
+
+	encode_schema_elements(mut w, schema)
+
+	w.write_i64(3, num_rows)
+
+	// Single RowGroup containing all records
+	w.write_list_begin(4, thrift_type_struct, 1)
+	w.write_raw_struct_begin()
+
+	encode_column_chunk_list(mut w, col_chunks_meta, codec)
+
 	mut total_bytes := i64(0)
 	for cm in col_chunks_meta {
 		total_bytes += cm.total_size
 	}
 	w.write_i64(2, total_bytes)
-
-	// field 3: num_rows
 	w.write_i64(3, num_rows)
 
-	w.write_raw_struct_end()
-	// end RowGroup
+	w.write_raw_struct_end() // end RowGroup
 
-	// Field 6: created_by
 	if created_by != '' {
 		w.write_string(6, created_by)
 	}
-
-	w.write_struct_end()
-	// end FileMetaData
+	w.write_struct_end() // end FileMetaData
 
 	return w.bytes()
 }
@@ -614,38 +542,51 @@ struct ColChunkMeta {
 	max_val          []u8
 }
 
-/// encode encodes all records in the current buffer to real Parquet format.
-/// Returns: (Parquet file bytes, metadata)
-pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
-	if e.records.len == 0 {
-		return error('no records to encode')
+// RecordRange holds the min/max offset and timestamp across all records.
+struct RecordRange {
+	min_offset    i64
+	max_offset    i64
+	min_timestamp i64
+	max_timestamp i64
+}
+
+// compute_record_range scans all records to find min/max offset and timestamp.
+fn compute_record_range(records []ParquetRecord) RecordRange {
+	mut min_off := records[0].offset
+	mut max_off := records[0].offset
+	mut min_ts := records[0].timestamp
+	mut max_ts := records[0].timestamp
+	for rec in records {
+		if rec.offset < min_off {
+			min_off = rec.offset
+		}
+		if rec.offset > max_off {
+			max_off = rec.offset
+		}
+		if rec.timestamp < min_ts {
+			min_ts = rec.timestamp
+		}
+		if rec.timestamp > max_ts {
+			max_ts = rec.timestamp
+		}
 	}
+	return RecordRange{
+		min_offset:    min_off
+		max_offset:    max_off
+		min_timestamp: min_ts
+		max_timestamp: max_ts
+	}
+}
 
-	schema := default_parquet_schema()
-	codec := e.compression.to_thrift_codec()
-	num_rows := i64(e.records.len)
-
-	// Collect column values
-	cols := collect_column_data(e.records, schema)
-
-	// Estimate initial file buffer capacity: magic(4) + ~100 bytes overhead per record + magic(4)
-	estimated_size := 8 + int(e.current_size) + 4096
-	mut file_bytes := []u8{cap: estimated_size}
-
-	// 1. Write magic number at start
-	file_bytes << parquet_magic[..]
-
-	// 2. Encode each column chunk and append to file
+// build_column_chunks encodes each column and appends raw bytes to file_bytes.
+// Returns the collected ColChunkMeta for footer encoding.
+fn build_column_chunks(cols []ColumnData, codec i32, mut file_bytes []u8) []ColChunkMeta {
 	mut col_metas := []ColChunkMeta{cap: cols.len}
 
 	for col in cols {
 		chunk_start := i64(file_bytes.len)
 		page_bytes, val_count := encode_column_chunk(col, codec)
 
-		// The data page starts immediately within the chunk (no dictionary page)
-		data_page_off := chunk_start
-
-		// Compute statistics
 		mut min_b := []u8{}
 		mut max_b := []u8{}
 		if col.dtype == .int64 || col.dtype == .timestamp_millis || col.dtype == .timestamp_micros {
@@ -662,7 +603,7 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 			col_name:         col.name
 			physical_type:    col.dtype.to_physical_type()
 			file_offset:      chunk_start
-			data_page_offset: data_page_off
+			data_page_offset: chunk_start
 			total_size:       i64(page_bytes.len)
 			num_values:       val_count
 			null_count:       col.null_count
@@ -671,41 +612,15 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 		}
 	}
 
-	// 3. Encode and write FileMetaData (footer)
-	footer_bytes := encode_file_metadata(schema, num_rows, col_metas, codec, 'DataCore v0.46')
-	file_bytes << footer_bytes
+	return col_metas
+}
 
-	// 4. Write 4-byte footer length (little-endian)
-	write_le_u32(mut file_bytes, u32(footer_bytes.len))
-
-	// 5. Write magic number at end
-	file_bytes << parquet_magic[..]
-
-	// Build ParquetMetadata return value (for callers that inspect metadata)
-	mut min_offset := e.records[0].offset
-	mut max_offset := e.records[0].offset
-	mut min_timestamp := e.records[0].timestamp
-	mut max_timestamp := e.records[0].timestamp
-	for rec in e.records {
-		if rec.offset < min_offset {
-			min_offset = rec.offset
-		}
-		if rec.offset > max_offset {
-			max_offset = rec.offset
-		}
-		if rec.timestamp < min_timestamp {
-			min_timestamp = rec.timestamp
-		}
-		if rec.timestamp > max_timestamp {
-			max_timestamp = rec.timestamp
-		}
-	}
-
+// build_row_group_metadata creates a ParquetRowGroup from column chunk metadata.
+fn build_row_group_metadata(col_metas []ColChunkMeta, record_count int, range_ RecordRange, compression ParquetCompression) ParquetRowGroup {
 	mut row_group := ParquetRowGroup{
-		row_count: e.records.len
+		row_count: record_count
 		columns:   []ParquetColumnChunk{cap: col_metas.len}
 	}
-
 	for cm in col_metas {
 		row_group.columns << ParquetColumnChunk{
 			column_name: cm.col_name
@@ -713,13 +628,43 @@ pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 			data_size:   cm.total_size
 			value_count: cm.num_values
 			null_count:  cm.null_count
-			min_value:   min_offset.str()
-			max_value:   max_offset.str()
+			min_value:   range_.min_offset.str()
+			max_value:   range_.max_offset.str()
 			min_bytes:   cm.min_val.clone()
 			max_bytes:   cm.max_val.clone()
-			compression: e.compression
+			compression: compression
 		}
 	}
+	return row_group
+}
+
+/// encode encodes all records in the current buffer to real Parquet format.
+/// Returns: (Parquet file bytes, metadata)
+pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
+	if e.records.len == 0 {
+		return error('no records to encode')
+	}
+
+	schema := default_parquet_schema()
+	codec := e.compression.to_thrift_codec()
+	num_rows := i64(e.records.len)
+
+	cols := collect_column_data(e.records, schema)
+
+	// Pre-allocate: magic(4) + record data + footer overhead + magic(4)
+	estimated_size := 8 + int(e.current_size) + 4096
+	mut file_bytes := []u8{cap: estimated_size}
+	file_bytes << parquet_magic[..]
+
+	col_metas := build_column_chunks(cols, codec, mut file_bytes)
+
+	footer_bytes := encode_file_metadata(schema, num_rows, col_metas, codec, 'DataCore v0.46')
+	file_bytes << footer_bytes
+	write_le_u32(mut file_bytes, u32(footer_bytes.len))
+	file_bytes << parquet_magic[..]
+
+	range_ := compute_record_range(e.records)
+	row_group := build_row_group_metadata(col_metas, e.records.len, range_, e.compression)
 
 	metadata := ParquetMetadata{
 		schema:      schema
@@ -869,41 +814,4 @@ pub fn decode_plain_byte_array_page(data []u8) ![][]u8 {
 	}
 
 	return values
-}
-
-/// extract_parquet_info extracts basic information from a Parquet file.
-/// Validates magic bytes and reads footer length.
-pub fn extract_parquet_info(data []u8, file_path string) ParquetFileInfo {
-	if data.len < 12 {
-		return ParquetFileInfo{
-			file_path:   file_path
-			file_size:   i64(data.len)
-			compression: 'UNKNOWN'
-		}
-	}
-
-	// Validate magic bytes at start and end
-	has_magic_start := data[0] == u8(`P`) && data[1] == u8(`A`) && data[2] == u8(`R`)
-		&& data[3] == u8(`1`)
-	has_magic_end := data[data.len - 4] == u8(`P`) && data[data.len - 3] == u8(`A`)
-		&& data[data.len - 2] == u8(`R`) && data[data.len - 1] == u8(`1`)
-
-	if !has_magic_start || !has_magic_end {
-		return ParquetFileInfo{
-			file_path:   file_path
-			file_size:   i64(data.len)
-			compression: 'INVALID'
-		}
-	}
-
-	// Read footer length from bytes [len-8..len-4] (little-endian i32)
-	// Validated to ensure the file length is consistent
-	_ = read_le_u32(data, data.len - 8)
-
-	return ParquetFileInfo{
-		file_path:    file_path
-		record_count: 0
-		file_size:    i64(data.len)
-		compression:  'UNCOMPRESSED'
-	}
 }

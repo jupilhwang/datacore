@@ -1,5 +1,30 @@
 # Progress Log
 
+## 2026-03-07: Clean Code 리팩터링 2nd pass (feature/iceberg-duckdb-integration-v1)
+
+### Task 1: v vet notice 해결
+- `s3_xml_utils.v:8`: `s.len == 0` → `s == ''` 변경 (v vet notice 해결)
+
+### Task 2: encode_file_metadata 함수 분할 (133줄 → 헬퍼 함수 3개로 분리)
+- `encode_schema_elements(mut w, schema)` 추출: 루트 메시지 노드 + 리프 컬럼 노드 인코딩 (23줄)
+- `encode_column_statistics(mut w, cm)` 추출: Statistics 구조체 인코딩 (21줄)
+- `encode_column_chunk_list(mut w, col_chunks_meta, codec)` 추출: list<ColumnChunk> 인코딩 (26줄)
+- `encode_file_metadata` 자체: 31줄로 축소
+
+### Task 3: encode 함수 분할 (117줄 → 헬퍼 함수 3개로 분리)
+- `compute_record_range(records)` 추출: 레코드 min/max 오프셋·타임스탬프 계산 (26줄)
+- `build_column_chunks(cols, codec, mut file_bytes)` 추출: 컬럼 청크 인코딩 및 통계 수집 (34줄)
+- `build_row_group_metadata(col_metas, count, range_, compression)` 추출: 로우 그룹 메타데이터 생성 (21줄)
+- `encode()` 자체: 37줄로 축소
+
+### Task 4: iceberg_writer.v 버그 수정 (기회 발생)
+- `flush_all_partitions`: `ParquetCompression.none_compression` (존재하지 않는 enum 값) → `ParquetCompression.uncompressed` 로 수정
+
+### 검증
+- `v vet src/infra/storage/plugins/s3/s3_xml_utils.v`: notice 없음
+- `make build`: 빌드 성공
+- `make test`: 50/50 모든 테스트 통과
+
 ## 2026-03-04: escape_json_string wrapper 제거, extract_json_object 통합, TODO 포맷 정리 (feature/cleanup-duplicates-todos-v1)
 
 ### Task 1: escape_json_string wrapper 제거

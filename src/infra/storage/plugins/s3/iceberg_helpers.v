@@ -118,37 +118,3 @@ pub fn (mut a S3StorageAdapter) time_travel_iceberg(topic string, partition int,
 	}
 	return false
 }
-
-/// flush_all_iceberg_writers flushes all Iceberg Writers.
-pub fn (mut a S3StorageAdapter) flush_all_iceberg_writers() ! {
-	mut total_files := 0
-	mut total_snapshots := 0
-
-	a.iceberg_lock.@lock()
-	topics_partitions := a.iceberg_writers.keys()
-	a.iceberg_lock.unlock()
-
-	for tp_key in topics_partitions {
-		parts := tp_key.split(':')
-		if parts.len == 2 {
-			topic := parts[0]
-			partition := parts[1].int()
-
-			if mut writer := a.get_iceberg_writer(topic, partition) {
-				data_files := writer.flush_all_partitions(topic, partition) or { continue }
-				if data_files.len > 0 {
-					writer.create_snapshot(data_files, topic) or { continue }
-					writer.write_metadata_file() or { continue }
-					total_files += data_files.len
-					total_snapshots++
-				}
-			}
-		}
-	}
-
-	observability.log_with_context('s3', .info, 'IcebergFlushAll', 'Flushed all Iceberg writers',
-		{
-		'total_files':     total_files.str()
-		'total_snapshots': total_snapshots.str()
-	})
-}

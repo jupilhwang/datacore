@@ -19,22 +19,20 @@ pub mut:
 	current_schema    IcebergSchema
 	partition_spec    IcebergPartitionSpec
 	file_counter      int
+	// catalog integration (optional)
+	table_identifier IcebergTableIdentifier
 }
 
-/// new_iceberg_writer creates a new Iceberg Writer.
-pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table_location string) !&IcebergWriter {
-	// Create default schema
+/// create_writer_metadata builds the initial IcebergMetadata, schema, and partition spec
+/// for a new writer. Extracted to avoid duplication between new_iceberg_writer variants.
+fn create_writer_metadata(config IcebergConfig, table_location string) (IcebergMetadata, IcebergSchema, IcebergPartitionSpec) {
 	schema := create_default_schema()
 	partition_spec := if config.partition_by.len > 0 {
 		create_partition_spec_from_config(config.partition_by)
 	} else {
 		create_default_partition_spec()
 	}
-
-	// config.format_version이 설정된 경우 사용, 미설정(0)이면 안정 스펙 2 사용
 	format_version := if config.format_version > 0 { config.format_version } else { 2 }
-
-	// Initialize table metadata
 	metadata := IcebergMetadata{
 		format_version:      format_version
 		table_uuid:          generate_table_uuid(table_location)
@@ -53,7 +51,12 @@ pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table
 			'commit.retry.num-retries':          '5'
 		}
 	}
+	return metadata, schema, partition_spec
+}
 
+/// new_iceberg_writer creates a new Iceberg Writer.
+pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table_location string) !&IcebergWriter {
+	metadata, schema, partition_spec := create_writer_metadata(config, table_location)
 	return &IcebergWriter{
 		adapter:           adapter
 		config:            config
@@ -63,6 +66,41 @@ pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table
 		partition_spec:    partition_spec
 		file_counter:      0
 	}
+}
+
+/// new_iceberg_writer_with_catalog creates a new Iceberg Writer and registers the table in a catalog.
+/// If the table already exists in the catalog, it skips registration without error.
+pub fn new_iceberg_writer_with_catalog(adapter &S3StorageAdapter, config IcebergConfig, table_location string, mut catalog IcebergCatalog, identifier IcebergTableIdentifier) !&IcebergWriter {
+	metadata, schema, partition_spec := create_writer_metadata(config, table_location)
+	mut writer := &IcebergWriter{
+		adapter:           adapter
+		config:            config
+		table_metadata:    metadata
+		partition_buffers: map[string][]parquet.ParquetRecord{}
+		current_schema:    schema
+		partition_spec:    partition_spec
+		file_counter:      0
+		table_identifier:  identifier
+	}
+	// Try to register the table in the catalog; skip if already exists.
+	catalog.create_table(identifier, schema, partition_spec, table_location) or {
+		// Table already exists - silently skip.
+	}
+	return writer
+}
+
+/// normalize_s3_location strips the s3://bucket/ prefix from a location string,
+/// returning a relative S3 key suitable for use with the adapter.
+pub fn normalize_s3_location(location string) string {
+	if !location.starts_with('s3://') {
+		return location
+	}
+	// Remove 's3://'
+	after_scheme := location[5..]
+	// Find the first '/' after the bucket name
+	slash_idx := after_scheme.index('/') or { return '' }
+	relative := after_scheme[slash_idx + 1..]
+	return relative.trim_right('/')
 }
 
 /// append_records buffers records per partition.
@@ -103,7 +141,8 @@ pub fn (mut w IcebergWriter) append_records(topic string, partition int, records
 
 		// Append to per-partition buffer
 		if partition_key !in w.partition_buffers {
-			w.partition_buffers[partition_key] = []
+			// Pre-allocate with expected capacity to avoid repeated reallocations
+			w.partition_buffers[partition_key] = []parquet.ParquetRecord{cap: w.config.max_rows_per_file}
 		}
 		w.partition_buffers[partition_key] << prec
 	}
@@ -189,9 +228,11 @@ pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) !
 			continue
 		}
 
-		// Encode as Parquet file
-		mut encoder := parquet.new_parquet_encoder(w.config.compression, w.config.max_file_size_mb)!
-		data, metadata := parquet.encode_batch(records, encoder.compression)!
+		// Encode as Parquet file - derive compression type directly without allocating encoder
+		compression := parquet.parquet_compression_from_string(w.config.compression) or {
+			parquet.ParquetCompression.uncompressed
+		}
+		data, metadata := parquet.encode_batch(records, compression)!
 
 		// Generate file path
 		file_path := w.generate_data_file_path(topic, partition, partition_key)
@@ -221,8 +262,8 @@ pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) !
 
 		data_files << data_file
 
-		// Clear buffer
-		w.partition_buffers[partition_key] = []
+		// Clear buffer while preserving allocated capacity for reuse
+		w.partition_buffers[partition_key] = []parquet.ParquetRecord{cap: w.config.max_rows_per_file}
 	}
 
 	return data_files
