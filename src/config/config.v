@@ -197,7 +197,7 @@ pub mut:
 	// compaction configuration
 	compaction_interval_ms int = 30000
 	target_segment_bytes   i64 = 104857600
-	index_cache_ttl_ms     int = 30000 // partition index cache TTL (default 30 seconds)
+	index_cache_ttl_ms     int = 60000 // partition index cache TTL (default 1 minute)
 	// offset batch configuration
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
@@ -443,7 +443,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 			30000)
 		target_segment_bytes:         get_i64(doc, 'storage.s3.target_segment_bytes',
 			104857600)
-		index_cache_ttl_ms:           get_int(doc, 'storage.s3.index_cache_ttl_ms', 30000)
+		index_cache_ttl_ms:           get_int(doc, 'storage.s3.index_cache_ttl_ms', 60000)
 		offset_batch_enabled:         get_bool(doc, 'storage.s3.offset_batch_enabled',
 			true)
 		offset_flush_interval_ms:     get_int(doc, 'storage.s3.offset_flush_interval_ms',
