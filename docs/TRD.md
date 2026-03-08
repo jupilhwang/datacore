@@ -504,10 +504,10 @@ s3.put_object(key, data, if_match: etag) or {
 
 | 캐시 대상 | TTL | 용도 |
 |----------|-----|------|
-| TopicMetadata | 30초 | 토픽 목록, 설정 조회 |
-| PartitionIndex | 10초 | 오프셋, 세그먼트 정보 |
-| ConsumerGroup | 5초 | 그룹 상태 조회 |
-| Iceberg Metadata | 30초 | Iceberg 테이블 조회 |
+| TopicMetadata | 3분 | 토픽 목록, 설정 조회 |
+| PartitionIndex | 1분 | 오프셋, 세그먼트 정보 |
+| ConsumerGroup | 30초 | 그룹 상태 조회 |
+| Iceberg Metadata | 5분 | Iceberg 테이블 조회 |
 
 #### 4.6.5 안정성 및 성능 최적화 (v0.35.0+)
 

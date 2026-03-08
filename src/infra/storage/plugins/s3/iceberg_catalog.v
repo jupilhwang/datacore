@@ -5,6 +5,11 @@ module s3
 import time
 import json
 import strings
+import net.http
+import crypto.hmac
+import crypto.sha256
+import encoding.base64
+import sync
 
 /// IcebergCatalog defines the Iceberg table catalog interface.
 pub interface IcebergCatalog {
@@ -19,12 +24,41 @@ mut:
 	create_namespace(namespace []string) !
 }
 
+/// CachedIcebergMetadata holds cached Iceberg table metadata.
+struct CachedIcebergMetadata {
+	metadata  IcebergMetadata
+	cached_at time.Time
+}
+
 /// HadoopCatalog is an S3-based Hadoop catalog implementation.
 pub struct HadoopCatalog {
 pub mut:
 	adapter    &S3StorageAdapter
 	warehouse  string
 	properties map[string]string
+	// Iceberg metadata cache
+	metadata_cache map[string]CachedIcebergMetadata
+	metadata_lock  sync.RwMutex
+}
+
+/// cache_put stores metadata in cache with eviction logic.
+fn (mut c HadoopCatalog) cache_put(cache_key string, metadata IcebergMetadata) {
+	c.metadata_lock.@lock()
+	defer { c.metadata_lock.unlock() }
+
+	// Evict expired entries if cache is getting large
+	if c.metadata_cache.len > iceberg_cache_max_entries {
+		for key, entry in c.metadata_cache {
+			if time.since(entry.cached_at) >= iceberg_cache_ttl {
+				c.metadata_cache.delete(key)
+			}
+		}
+	}
+
+	c.metadata_cache[cache_key] = CachedIcebergMetadata{
+		metadata:  metadata
+		cached_at: time.now()
+	}
 }
 
 /// new_hadoop_catalog creates a new Hadoop catalog.
@@ -84,6 +118,17 @@ pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, sch
 
 /// load_table loads an existing Iceberg table.
 pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !IcebergMetadata {
+	// Check cache first
+	cache_key := c.table_path(identifier)
+	c.metadata_lock.rlock()
+	if cached := c.metadata_cache[cache_key] {
+		if time.since(cached.cached_at) < iceberg_cache_ttl {
+			c.metadata_lock.runlock()
+			return cached.metadata
+		}
+	}
+	c.metadata_lock.runlock()
+
 	table_path := c.table_path(identifier)
 
 	// Fetch version hint file (existence check; actual value unused — latest file is found by listing)
@@ -120,7 +165,12 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 
 	// Load and parse metadata file
 	metadata_data, _ := c.adapter.get_object(latest_metadata_path, -1, -1)!
-	return c.decode_metadata(metadata_data.bytestr())!
+	metadata := c.decode_metadata(metadata_data.bytestr())!
+
+	// Cache the loaded metadata
+	c.cache_put(cache_key, metadata)
+
+	return metadata
 }
 
 /// update_table updates the table metadata.
@@ -138,6 +188,11 @@ pub fn (mut c HadoopCatalog) update_table(identifier IcebergTableIdentifier, met
 	// Update version hint
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
+
+	// Invalidate cache
+	c.metadata_lock.@lock()
+	c.metadata_cache.delete(c.table_path(identifier))
+	c.metadata_lock.unlock()
 }
 
 /// drop_table drops the table.
@@ -152,6 +207,11 @@ pub fn (mut c HadoopCatalog) drop_table(identifier IcebergTableIdentifier) ! {
 	// Delete all objects in the table
 	prefix := '${table_path}/'
 	c.adapter.delete_objects_with_prefix(prefix)!
+
+	// Invalidate cache
+	c.metadata_lock.@lock()
+	c.metadata_cache.delete(table_path)
+	c.metadata_lock.unlock()
 }
 
 /// list_tables lists all tables in the namespace.
@@ -214,10 +274,25 @@ pub fn (mut c HadoopCatalog) create_namespace(namespace []string) ! {
 
 /// load_metadata_at loads Iceberg metadata from a specific metadata file path.
 pub fn (mut c HadoopCatalog) load_metadata_at(metadata_location string) !IcebergMetadata {
+	// Check cache first
+	c.metadata_lock.rlock()
+	if cached := c.metadata_cache[metadata_location] {
+		if time.since(cached.cached_at) < iceberg_cache_ttl {
+			c.metadata_lock.runlock()
+			return cached.metadata
+		}
+	}
+	c.metadata_lock.runlock()
+
 	data, _ := c.adapter.get_object(metadata_location, -1, -1) or {
 		return error('Failed to read metadata at ${metadata_location}: ${err}')
 	}
-	return c.decode_metadata(data.bytestr())
+	metadata := c.decode_metadata(data.bytestr())!
+
+	// Cache the loaded metadata
+	c.cache_put(metadata_location, metadata)
+
+	return metadata
 }
 
 /// commit_metadata writes the given metadata as a new versioned metadata JSON file to S3
@@ -234,6 +309,11 @@ pub fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, 
 
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
+
+	// Invalidate cache
+	c.metadata_lock.@lock()
+	c.metadata_cache.delete(c.table_path(identifier))
+	c.metadata_lock.unlock()
 }
 
 fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {

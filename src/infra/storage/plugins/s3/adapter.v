@@ -18,8 +18,10 @@ import infra.observability
 
 const max_topic_name_length = 255
 const max_partition_count = 10000
-const topic_cache_ttl = 5 * time.minute
+const topic_cache_ttl = 3 * time.minute
 const group_cache_ttl = 30 * time.second
+const iceberg_cache_ttl = 5 * time.minute
+const iceberg_cache_max_entries = 100
 const record_overhead_bytes = 30
 const fetch_size_multiplier = 2
 const fetch_offset_estimate_divisor = 100
