@@ -454,7 +454,97 @@ fn test_handler_delete_topics_not_found() {
 	assert error_code == i16(ErrorCode.unknown_topic_or_partition)
 }
 
-// Test creating multiple topics in a single request
+// Test DeleteTopicsResponse encodes error_message for v5+
+fn test_delete_topics_response_v5_error_message() {
+	error_msg := "Topic 'missing-topic' not found"
+	resp := DeleteTopicsResponse{
+		throttle_time_ms: 0
+		topics:           [
+			DeleteTopicsResponseTopic{
+				name:          'missing-topic'
+				error_code:    i16(ErrorCode.unknown_topic_or_partition)
+				error_message: error_msg
+			},
+		]
+	}
+
+	encoded := resp.encode(5)
+	assert encoded.len > 0
+
+	mut reader := new_reader(encoded)
+
+	// v2+: throttle_time_ms
+	throttle := reader.read_i32() or {
+		assert false, 'failed to read throttle_time_ms: ${err}'
+		return
+	}
+	assert throttle == 0
+
+	// v5 is flexible (version >= 4), so compact array
+	count := reader.read_compact_array_len() or {
+		assert false, 'failed to read array len: ${err}'
+		return
+	}
+	assert count == 1
+
+	// topic name (compact string)
+	name := reader.read_compact_string() or {
+		assert false, 'failed to read topic name: ${err}'
+		return
+	}
+	assert name == 'missing-topic'
+
+	// error_code
+	ec := reader.read_i16() or {
+		assert false, 'failed to read error_code: ${err}'
+		return
+	}
+	assert ec == i16(ErrorCode.unknown_topic_or_partition)
+
+	// v5+: error_message (compact nullable string)
+	decoded_msg := reader.read_compact_nullable_string() or {
+		assert false, 'failed to read error_message: ${err}'
+		return
+	}
+	assert decoded_msg == error_msg
+}
+
+// Test DeleteTopicsResponse encodes none for error_message on success
+fn test_delete_topics_response_v5_success_no_error_message() {
+	resp := DeleteTopicsResponse{
+		throttle_time_ms: 0
+		topics:           [
+			DeleteTopicsResponseTopic{
+				name:          'ok-topic'
+				error_code:    0
+				error_message: none
+			},
+		]
+	}
+
+	encoded := resp.encode(5)
+	assert encoded.len > 0
+
+	mut reader := new_reader(encoded)
+
+	// throttle_time_ms
+	_ = reader.read_i32() or { return }
+	// compact array len
+	_ = reader.read_compact_array_len() or { return }
+	// topic name
+	_ = reader.read_compact_string() or { return }
+	// error_code
+	ec := reader.read_i16() or { return }
+	assert ec == 0
+
+	// error_message should be null (compact nullable string with length 0)
+	decoded_msg := reader.read_compact_nullable_string() or {
+		assert false, 'failed to read error_message: ${err}'
+		return
+	}
+	assert decoded_msg == ''
+}
+
 fn test_handler_create_multiple_topics() {
 	mut storage := new_mock_storage()
 	compression_service := get_test_compression_service()

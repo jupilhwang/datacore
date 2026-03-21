@@ -329,20 +329,83 @@ fn build_list_offsets_request(topic string, partition int, timestamp i64) []u8 {
 	return body
 }
 
-// parse_list_offsets_response parses the offset from a ListOffsets response.
+// parse_list_offsets_response parses the offset from a ListOffsets v7 (flexible) response.
+// Response layout after size prefix: correlation_id(4) + tag_buffer(varuint)
+// + throttle_time_ms(4) + topics_compact_array + partitions...
 fn parse_list_offsets_response(response []u8) !i64 {
-	if response.len < 30 {
-		return error('Invalid ListOffsets response')
+	if response.len < 20 {
+		return error('Invalid ListOffsets response: too short (${response.len} bytes)')
 	}
 
-	// Simplified parsing - full protocol parsing required in production
-	// Response: correlation_id(4) + tagged_fields(1) + throttle_time(4) + topics array
+	mut pos := 0
 
-	// Find offset in response (offset is 8 bytes)
-	// This is an approximate heuristic - skip to expected offset position
+	// Response header v1 (flexible): correlation_id(4) + tagged_fields(varuint)
+	pos += 4
 
-	// TODO(jira#XXX): implement proper offset handling
-	return 0
+	_, tag_n := read_uvarint_at(response, pos)
+	if tag_n == 0 {
+		return error('Invalid ListOffsets response: cannot read header tag buffer')
+	}
+	pos += tag_n
+
+	// throttle_time_ms(4)
+	if pos + 4 > response.len {
+		return error('Invalid ListOffsets response: cannot read throttle time')
+	}
+	pos += 4
+
+	// Topics compact array: varuint(N + 1), so value 2 means 1 topic
+	topics_raw, topics_n := read_uvarint_at(response, pos)
+	if topics_n == 0 {
+		return error('Invalid ListOffsets response: cannot read topics array length')
+	}
+	pos += topics_n
+
+	if topics_raw < 2 {
+		return error('No topics in ListOffsets response')
+	}
+
+	// Topic name (compact string: varuint(len + 1) + bytes)
+	name_raw, name_n := read_uvarint_at(response, pos)
+	if name_n == 0 || name_raw < 1 {
+		return error('Invalid ListOffsets response: cannot read topic name')
+	}
+	pos += name_n
+	topic_name_len := int(name_raw) - 1
+	if pos + topic_name_len > response.len {
+		return error('Invalid ListOffsets response: topic name truncated')
+	}
+	pos += topic_name_len
+
+	// Partitions compact array: varuint(N + 1)
+	parts_raw, parts_n := read_uvarint_at(response, pos)
+	if parts_n == 0 {
+		return error('Invalid ListOffsets response: cannot read partitions array length')
+	}
+	pos += parts_n
+
+	if parts_raw < 2 {
+		return error('No partitions in ListOffsets response')
+	}
+
+	// First partition: partition_index(4) + error_code(2) + timestamp(8) + offset(8) + leader_epoch(4)
+	if pos + 26 > response.len {
+		return error('Invalid ListOffsets response: partition data truncated')
+	}
+
+	pos += 4 // partition_index
+
+	error_code := read_i16_be(response, pos)
+	pos += 2
+
+	if error_code != 0 {
+		return error('ListOffsets error code: ${error_code}')
+	}
+
+	pos += 8 // timestamp
+
+	offset := read_i64_be(response, pos)
+	return offset
 }
 
 // Byte writing helpers for build_fetch_request
@@ -375,6 +438,41 @@ fn write_zeroes(mut body []u8, count int) {
 	for _ in 0 .. count {
 		body << u8(0)
 	}
+}
+
+// read_i64_be reads a big-endian i64 from data at position
+fn read_i64_be(data []u8, pos int) i64 {
+	return i64(u64(data[pos]) << 56 | u64(data[pos + 1]) << 48 | u64(data[pos + 2]) << 40 | u64(data[
+		pos + 3]) << 32 | u64(data[pos + 4]) << 24 | u64(data[pos + 5]) << 16 | u64(data[pos + 6]) << 8 | u64(data[
+		pos + 7]))
+}
+
+// read_uvarint_at reads an unsigned varint from data at pos.
+// Returns (value, bytes_consumed). bytes_consumed == 0 indicates failure.
+fn read_uvarint_at(data []u8, pos int) (u64, int) {
+	mut result := u64(0)
+	mut shift := u32(0)
+	mut i := pos
+	for i < data.len && shift < 64 {
+		b := data[i]
+		result |= u64(b & 0x7f) << shift
+		i++
+		if b & 0x80 == 0 {
+			return result, i - pos
+		}
+		shift += 7
+	}
+	return 0, 0
+}
+
+// read_varint_at reads a signed zigzag varint from data at pos.
+// Returns (value, bytes_consumed). bytes_consumed == 0 indicates failure.
+fn read_varint_at(data []u8, pos int) (i64, int) {
+	uval, n := read_uvarint_at(data, pos)
+	if n == 0 {
+		return 0, 0
+	}
+	return i64((uval >> 1) ^ (-(uval & 1))), n
 }
 
 fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, timeout_ms int) []u8 {
@@ -480,7 +578,11 @@ fn parse_fetch_response(response []u8) []ConsumedRecord {
 	return records
 }
 
-// try_parse_record_batch attempts to parse a record batch.
+// try_parse_record_batch attempts to parse records from a RecordBatch v2.
+// RecordBatch header (61 bytes): base_offset(8) + batch_length(4) +
+// partition_leader_epoch(4) + magic(1) + crc(4) + attributes(2) +
+// last_offset_delta(4) + first_timestamp(8) + max_timestamp(8) +
+// producer_id(8) + producer_epoch(2) + base_sequence(4) + records_count(4)
 fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 	mut records := []ConsumedRecord{}
 
@@ -488,29 +590,98 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 		return records
 	}
 
-	pos := start
+	base_offset := read_i64_be(data, start)
+	first_timestamp := read_i64_be(data, start + 27)
+	records_count := read_i32_be(data, start + 57)
 
-	// Base offset (8 bytes)
-	base_offset := i64(u64(data[pos]) << 56 | u64(data[pos + 1]) << 48 | u64(data[pos + 2]) << 40 | u64(data[
-		pos + 3]) << 32 | u64(data[pos + 4]) << 24 | u64(data[pos + 5]) << 16 | u64(data[pos + 6]) << 8 | u64(data[
-		pos + 7]))
-
-	// Skip: batch_length(4) + partition_leader_epoch(4) + magic(1) + crc(4) + attributes(2)
-	// + last_offset_delta(4) + first_timestamp(8) + max_timestamp(8)
-	// + producer_id(8) + producer_epoch(2) + base_sequence(4) + records_count(4)
-
-	// This is a simplified version - full implementation should parse each field properly
-	record_start := start + 57
-
-	if record_start < data.len {
-		// Attempt to extract at least one record
-		// Records are length-prefixed with varints
-
-		// TODO(jira#XXX): implement real offset tracking
-		// Full implementation must decode varints and record format
+	if records_count <= 0 || records_count > 10000 {
+		return records
 	}
 
-	_ = base_offset
+	mut pos := start + 61
+
+	mut i := 0
+	for i < int(records_count) {
+		if pos >= data.len {
+			break
+		}
+
+		// Record: length(varint) followed by record body
+		record_len, len_n := read_varint_at(data, pos)
+		if len_n == 0 || record_len <= 0 {
+			break
+		}
+		pos += len_n
+		record_end := pos + int(record_len)
+		if record_end > data.len {
+			break
+		}
+
+		// attributes(1)
+		if pos >= record_end {
+			break
+		}
+		pos += 1
+
+		// timestamp_delta(varint)
+		ts_delta, ts_n := read_varint_at(data, pos)
+		if ts_n == 0 {
+			break
+		}
+		pos += ts_n
+
+		// offset_delta(varint)
+		off_delta, off_n := read_varint_at(data, pos)
+		if off_n == 0 {
+			break
+		}
+		pos += off_n
+
+		// key_length(varint), -1 means null key
+		key_length, kl_n := read_varint_at(data, pos)
+		if kl_n == 0 {
+			break
+		}
+		pos += kl_n
+
+		mut key := []u8{}
+		if key_length > 0 {
+			key_end := pos + int(key_length)
+			if key_end > data.len {
+				break
+			}
+			key = data[pos..key_end].clone()
+			pos = key_end
+		}
+
+		// value_length(varint), -1 means null value
+		val_length, vl_n := read_varint_at(data, pos)
+		if vl_n == 0 {
+			break
+		}
+		pos += vl_n
+
+		mut value := []u8{}
+		if val_length > 0 {
+			val_end := pos + int(val_length)
+			if val_end > data.len {
+				break
+			}
+			value = data[pos..val_end].clone()
+			pos = val_end
+		}
+
+		// Skip remaining record data (headers) by jumping to record_end
+		pos = record_end
+
+		records << ConsumedRecord{
+			offset:    base_offset + i64(off_delta)
+			key:       key
+			value:     value
+			timestamp: first_timestamp + ts_delta
+		}
+		i++
+	}
 
 	return records
 }

@@ -201,9 +201,10 @@ pub:
 /// DeleteTopicsResponseTopic holds the per-topic data for a DeleteTopics response.
 pub struct DeleteTopicsResponseTopic {
 pub:
-	name       string
-	topic_id   []u8 // v6+: UUID (16 bytes)
-	error_code i16
+	name          string
+	topic_id      []u8 // v6+: UUID (16 bytes)
+	error_code    i16
+	error_message ?string
 }
 
 /// encode serializes the response to bytes.
@@ -232,12 +233,11 @@ pub fn (r DeleteTopicsResponse) encode(version i16) []u8 {
 			writer.write_uuid(t.topic_id)
 		}
 		writer.write_i16(t.error_code)
-		// TODO(jira#XXX): implement error_message handling for v5+
 		if version >= 5 {
 			if is_flexible {
-				writer.write_compact_nullable_string(none)
+				writer.write_compact_nullable_string(t.error_message)
 			} else {
-				writer.write_nullable_string(none)
+				writer.write_nullable_string(t.error_message)
 			}
 		}
 		if is_flexible {
@@ -369,9 +369,10 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 				h.logger.warn('Delete topic failed: topic not found by ID')
 				error_count += 1
 				topics << DeleteTopicsResponseTopic{
-					name:       ''
-					topic_id:   t.topic_id
-					error_code: i16(ErrorCode.unknown_topic_or_partition)
+					name:          ''
+					topic_id:      t.topic_id
+					error_code:    i16(ErrorCode.unknown_topic_or_partition)
+					error_message: 'Topic not found by ID'
 				}
 				continue
 			}
@@ -394,9 +395,10 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 			error_count += 1
 
 			topics << DeleteTopicsResponseTopic{
-				name:       topic_name
-				topic_id:   topic_id
-				error_code: error_code
+				name:          topic_name
+				topic_id:      topic_id
+				error_code:    error_code
+				error_message: err.str()
 			}
 			continue
 		}
@@ -406,9 +408,10 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 
 		// Success
 		topics << DeleteTopicsResponseTopic{
-			name:       topic_name
-			topic_id:   topic_id
-			error_code: 0
+			name:          topic_name
+			topic_id:      topic_id
+			error_code:    0
+			error_message: none
 		}
 	}
 
@@ -522,9 +525,10 @@ fn (mut h Handler) process_delete_topics(req DeleteTopicsRequest, version i16) !
 				topic_id = topic_meta.topic_id.clone()
 			} else {
 				topics << DeleteTopicsResponseTopic{
-					name:       ''
-					topic_id:   t.topic_id
-					error_code: i16(ErrorCode.unknown_topic_or_partition)
+					name:          ''
+					topic_id:      t.topic_id
+					error_code:    i16(ErrorCode.unknown_topic_or_partition)
+					error_message: 'Topic not found by ID'
 				}
 				continue
 			}
@@ -540,17 +544,19 @@ fn (mut h Handler) process_delete_topics(req DeleteTopicsRequest, version i16) !
 			}
 
 			topics << DeleteTopicsResponseTopic{
-				name:       topic_name
-				topic_id:   topic_id
-				error_code: error_code
+				name:          topic_name
+				topic_id:      topic_id
+				error_code:    error_code
+				error_message: err.str()
 			}
 			continue
 		}
 
 		topics << DeleteTopicsResponseTopic{
-			name:       topic_name
-			topic_id:   topic_id
-			error_code: 0
+			name:          topic_name
+			topic_id:      topic_id
+			error_code:    0
+			error_message: none
 		}
 	}
 
