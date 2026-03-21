@@ -4,6 +4,7 @@ module s3
 
 import strconv
 import time
+import sync.stdatomic
 import infra.observability
 
 /// TopicPartitionBuffer holds records for a specific partition before flushing to S3.
@@ -126,10 +127,13 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 }
 
 /// flush_worker periodically flushes message, offset, and pending index buffers.
-/// Runs at batch_timeout_ms intervals and stops when compactor_running becomes false.
+/// Runs at batch_timeout_ms intervals and stops when is_running_flag becomes 0.
 fn (mut a S3StorageAdapter) flush_worker() {
+	defer {
+		a.worker_wg.done()
+	}
 	mut index_flush_elapsed_ms := 0
-	for a.compactor_running {
+	for stdatomic.load_i64(&a.is_running_flag) == 1 {
 		time.sleep(a.config.batch_timeout_ms * time.millisecond)
 		index_flush_elapsed_ms += a.config.batch_timeout_ms
 

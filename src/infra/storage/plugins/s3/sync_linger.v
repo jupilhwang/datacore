@@ -5,6 +5,7 @@ module s3
 
 import strconv
 import time
+import sync.stdatomic
 
 /// LingerResult holds the outcome of a linger flush, delivered to all waiters.
 struct LingerResult {
@@ -167,9 +168,12 @@ fn (mut a S3StorageAdapter) flush_sync_linger_buffer(topic string, partition int
 
 /// sync_linger_worker periodically checks for expired linger buffers and flushes them.
 /// Poll interval is clamped to max(1, min(5, sync_linger_ms / 2)) for CPU efficiency.
-/// Stops when compactor_running becomes false.
+/// Stops when is_running_flag becomes 0.
 /// On shutdown, drains all remaining linger buffers to prevent goroutine leaks.
 fn (mut a S3StorageAdapter) sync_linger_worker() {
+	defer {
+		a.worker_wg.done()
+	}
 	mut poll_ms := a.config.sync_linger_ms / 2
 	if poll_ms < 1 {
 		poll_ms = 1
@@ -177,7 +181,7 @@ fn (mut a S3StorageAdapter) sync_linger_worker() {
 	if poll_ms > 5 {
 		poll_ms = 5
 	}
-	for a.compactor_running {
+	for stdatomic.load_i64(&a.is_running_flag) == 1 {
 		time.sleep(poll_ms * time.millisecond)
 
 		a.sync_linger_lock.lock()

@@ -4,6 +4,7 @@ module s3
 
 import json
 import time
+import sync.stdatomic
 import infra.observability
 
 // Compaction worker configuration constants
@@ -13,11 +14,22 @@ const compaction_sequential_threshold = 3
 const max_compaction_concurrent = 10
 const compaction_size_threshold_divisor = 2
 
+/// SegmentDownloadResult holds one segment's downloaded data along with its
+/// original index so that parallel downloads can be reassembled in order.
+struct SegmentDownloadResult {
+	index     int
+	data      []u8
+	error_msg string
+}
+
 /// compaction_worker periodically checks for segments to merge and performs compaction.
 fn (mut a S3StorageAdapter) compaction_worker() {
+	defer {
+		a.worker_wg.done()
+	}
 	mut consecutive_failures := 0
 
-	for a.compactor_running {
+	for stdatomic.load_i64(&a.is_running_flag) == 1 {
 		time.sleep(a.config.compaction_interval_ms * time.millisecond)
 
 		observability.log_with_context('s3', .debug, 'Compaction', 'Starting compaction cycle',
@@ -224,39 +236,58 @@ fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut inde
 }
 
 /// download_segments_parallel downloads multiple segments in parallel.
+/// Uses indexed results to preserve original segment order regardless of
+/// goroutine completion order.
 fn (mut a S3StorageAdapter) download_segments_parallel(segments []LogSegment) ![]u8 {
-	ch := chan []u8{cap: segments.len}
-	mut download_errors := []string{}
+	ch := chan SegmentDownloadResult{cap: segments.len}
 
-	for seg in segments {
-		spawn fn [mut a, seg, ch] () {
+	for i, seg in segments {
+		spawn fn [mut a, seg, ch, i] () {
 			data, _ := a.get_object(seg.key, -1, -1) or {
 				observability.log_with_context('s3', .error, 'Compaction', 'Failed to download segment',
 					{
 					'segment_key': seg.key
 					'error':       err.msg()
 				})
-				ch <- []u8{}
+				ch <- SegmentDownloadResult{
+					index:     i
+					data:      []u8{}
+					error_msg: err.msg()
+				}
 				return
 			}
-			ch <- data
+			ch <- SegmentDownloadResult{
+				index: i
+				data:  data
+			}
 		}()
 	}
 
-	// Collect and merge download results
-	mut merged_data := []u8{}
+	// Collect all download results
+	mut results := []SegmentDownloadResult{cap: segments.len}
+	mut download_errors := []string{}
+
 	for _ in 0 .. segments.len {
-		data := <-ch
-		if data.len == 0 {
-			download_errors << 'segment download failed'
+		result := <-ch
+		if result.error_msg.len > 0 {
+			download_errors << result.error_msg
 		} else {
-			merged_data << data
+			results << result
 		}
 	}
 
 	// Return error on download failure
 	if download_errors.len > 0 {
 		return error('Failed to download ${download_errors.len} segments')
+	}
+
+	// Sort by original segment index to preserve order
+	results.sort(a.index < b.index)
+
+	// Concatenate data in correct segment order
+	mut merged_data := []u8{}
+	for result in results {
+		merged_data << result.data
 	}
 
 	return merged_data

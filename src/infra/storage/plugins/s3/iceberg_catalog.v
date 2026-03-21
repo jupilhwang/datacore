@@ -5,10 +5,6 @@ module s3
 import time
 import json
 import strings
-import net.http
-import crypto.hmac
-import crypto.sha256
-import encoding.base64
 import sync
 
 /// IcebergCatalog defines the Iceberg table catalog interface.

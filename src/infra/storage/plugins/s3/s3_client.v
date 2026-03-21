@@ -21,6 +21,16 @@ const hmac_block_size = 64
 const s3_read_timeout_ms = 15000
 const s3_write_timeout_ms = 15000
 
+/// CachedSigningKey holds a cached SigV4 signing key for a specific UTC day.
+/// AWS SigV4 signing keys depend on (secret_key, date, region, service) and
+/// remain valid for an entire UTC day, eliminating 4 redundant HMAC-SHA256
+/// computations per request.
+struct CachedSigningKey {
+mut:
+	key      []u8
+	date_day string
+}
+
 /// is_network_error detects network errors such as DNS resolution failures, connection refused, and timeouts.
 /// Identifies transient errors that may occur when connecting to S3 endpoints in Docker container environments.
 fn is_network_error(err_str string) bool {
@@ -559,12 +569,8 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 
 	string_to_sign := '${algorithm}\n${date_str}\n${credential_scope}\n${canonical_request_hash}'
 
-	// Signing Key
-	k_date := hmac.new(('AWS4' + a.config.secret_key).bytes(), date_day.bytes(), sha256.sum,
-		hmac_block_size)
-	k_region := hmac.new(k_date, a.config.region.bytes(), sha256.sum, hmac_block_size)
-	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, hmac_block_size)
-	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, hmac_block_size)
+	// Signing Key (cached per UTC day to avoid 4 redundant HMAC-SHA256 ops per request)
+	k_signing := a.get_cached_signing_key(date_day)
 
 	// Signature
 	signature := hmac.new(k_signing, string_to_sign.bytes(), sha256.sum, hmac_block_size).hex()
@@ -573,6 +579,43 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 	h.add_custom('Authorization', auth_header) or {}
 
 	return h
+}
+
+/// get_cached_signing_key returns a cached SigV4 signing key for the given UTC day,
+/// or computes and caches a new one when the date changes.
+/// Uses interior mutability (unsafe) to update the cache from an immutable receiver,
+/// preserving backward compatibility with callers that hold immutable references.
+/// Thread-safe: protected by signing_key_lock mutex.
+fn (a &S3StorageAdapter) get_cached_signing_key(date_day string) []u8 {
+	// Check cache (lock scope: read only)
+	unsafe {
+		mut self := a
+		self.signing_key_lock.@lock()
+		if self.signing_key_cache.date_day == date_day && self.signing_key_cache.key.len > 0 {
+			cached := self.signing_key_cache.key.clone()
+			self.signing_key_lock.unlock()
+			return cached
+		}
+		self.signing_key_lock.unlock()
+	}
+	// Cache miss: compute new signing key (4-step HMAC-SHA256 chain)
+	k_date := hmac.new(('AWS4' + a.config.secret_key).bytes(), date_day.bytes(), sha256.sum,
+		hmac_block_size)
+	k_region := hmac.new(k_date, a.config.region.bytes(), sha256.sum, hmac_block_size)
+	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, hmac_block_size)
+	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, hmac_block_size)
+
+	// Update cache (lock scope: write only)
+	unsafe {
+		mut self := a
+		self.signing_key_lock.@lock()
+		self.signing_key_cache = CachedSigningKey{
+			key:      k_signing.clone()
+			date_day: date_day
+		}
+		self.signing_key_lock.unlock()
+	}
+	return k_signing
 }
 
 /// get_endpoint returns the S3 endpoint URL.
