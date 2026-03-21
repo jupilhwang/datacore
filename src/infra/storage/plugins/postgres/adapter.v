@@ -100,13 +100,14 @@ mut:
 /// PostgresConfig holds the PostgreSQL storage configuration.
 pub struct PostgresConfig {
 pub:
-	host      string = 'localhost'
-	port      int    = 5432
-	user      string = 'datacore'
-	password  string
-	database  string = 'datacore'
-	pool_size int    = 10
-	sslmode   string = 'disable'
+	host       string = 'localhost'
+	port       int    = 5432
+	user       string = 'datacore'
+	password   string
+	database   string = 'datacore'
+	pool_size  int    = 10
+	sslmode    string = 'disable'
+	cluster_id string = 'datacore-cluster'
 }
 
 /// postgres_capability defines the storage capabilities of the PostgreSQL adapter.
@@ -153,8 +154,7 @@ pub fn new_postgres_adapter(config PostgresConfig) !&PostgresStorageAdapter {
 	adapter.load_topic_cache()!
 
 	// Initialize cluster metadata port for multi-broker support
-	cluster_id := 'datacore-cluster' // TODO(jira#XXX): make cluster_id configurable
-	adapter.cluster_metadata = new_cluster_metadata_port(adapter.pool, cluster_id)!
+	adapter.cluster_metadata = new_cluster_metadata_port(adapter.pool, config.cluster_id)!
 
 	adapter.initialized = true
 

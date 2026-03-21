@@ -314,8 +314,9 @@ struct ClusterMetricsInfo {
 	err         string
 }
 
-fn get_cluster_metrics(metrics_port int) ClusterMetricsInfo {
-	url := 'http://localhost:${metrics_port}/metrics'
+fn get_cluster_metrics(metrics_host string, metrics_port int) ClusterMetricsInfo {
+	host := if metrics_host == '0.0.0.0' { 'localhost' } else { metrics_host }
+	url := 'http://${host}:${metrics_port}/metrics'
 	resp := http.get(url) or {
 		return ClusterMetricsInfo{
 			err: 'cannot connect to metrics endpoint on port ${metrics_port}'

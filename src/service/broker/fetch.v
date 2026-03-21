@@ -3,6 +3,7 @@
 module broker
 
 import domain
+import infra.observability
 import service.port
 import time
 
@@ -120,7 +121,12 @@ fn (u &FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
 			timeout_ms * time.millisecond {
 				// Timeout reached - stop waiting for more responses
 				timed_out = true
-				eprintln('[Fetch] Parallel fetch timeout after ${timeout_ms}ms, received ${received}/${req.partitions.len} responses')
+				observability.log_with_context('fetch', .warn, 'ParallelFetch', 'Parallel fetch timeout',
+					{
+					'timeout_ms':       timeout_ms.str()
+					'received':         received.str()
+					'total_partitions': req.partitions.len.str()
+				})
 			}
 		}
 	}

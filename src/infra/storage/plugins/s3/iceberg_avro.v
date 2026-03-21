@@ -306,8 +306,8 @@ fn avro_write_manifest_file_entry(mut buf []u8, manifest IcebergManifest) {
 	// manifest_path: string
 	avro_write_string(mut buf, manifest.manifest_path)
 
-	// manifest_length: long (use 0 as placeholder — actual size not tracked)
-	avro_write_varint(mut buf, i64(0))
+	// manifest_length: long
+	avro_write_varint(mut buf, manifest.manifest_length)
 
 	// partition_spec_id: int
 	avro_write_varint(mut buf, i64(0))

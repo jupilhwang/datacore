@@ -189,7 +189,7 @@ pub fn (mut a S3ClusterMetadataAdapter) get_cluster_metadata() !domain.ClusterMe
 	data, _ := a.adapter.get_object(key, 0, -1) or {
 		// Return default metadata if not found
 		return domain.ClusterMetadata{
-			cluster_id:       'datacore-cluster'
+			cluster_id:       a.adapter.config.cluster_id
 			controller_id:    -1
 			brokers:          []domain.BrokerInfo{}
 			metadata_version: 0

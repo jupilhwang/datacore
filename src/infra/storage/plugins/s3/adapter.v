@@ -63,7 +63,8 @@ pub mut:
 	target_segment_bytes   i64
 	index_cache_ttl_ms     int
 	// Broker settings
-	broker_id i32
+	broker_id  i32
+	cluster_id string = 'datacore-cluster'
 	// Offset batch settings
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
@@ -339,11 +340,12 @@ fn from_storage_config(cfg app_config.S3StorageConfig) S3Config {
 
 /// new_s3_adapter_from_storage_config creates a new S3 storage adapter
 /// from the application-level S3StorageConfig. Uses from_storage_config
-/// to centralize the field mapping. broker_id is passed separately because
-/// it originates from BrokerConfig, not S3StorageConfig.
-pub fn new_s3_adapter_from_storage_config(s3_cfg app_config.S3StorageConfig, broker_id i32) !&S3StorageAdapter {
+/// to centralize the field mapping. broker_id and cluster_id are passed
+/// separately because they originate from BrokerConfig, not S3StorageConfig.
+pub fn new_s3_adapter_from_storage_config(s3_cfg app_config.S3StorageConfig, broker_id i32, cluster_id string) !&S3StorageAdapter {
 	mut s3_config := from_storage_config(s3_cfg)
 	s3_config.broker_id = broker_id
+	s3_config.cluster_id = cluster_id
 	return new_s3_adapter(s3_config)
 }
 
@@ -395,6 +397,11 @@ fn (a &S3StorageAdapter) group_key(group_id string) string {
 /// offset_key returns the S3 key for an offset.
 fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int) string {
 	return '${a.config.prefix}offsets/${group_id}/${topic}:${partition}.json'
+}
+
+/// share_partition_key returns the S3 key for a share partition state.
+fn (a &S3StorageAdapter) share_partition_key(group_id string, topic string, partition int) string {
+	return '${a.config.prefix}share-partitions/${group_id}/${topic}:${partition}.json'
 }
 
 // Moved to s3_client.v.
@@ -507,25 +514,4 @@ fn (mut a S3StorageAdapter) record_sync_append_index_error() {
 fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
 	stdatomic.add_i64(&a.metrics_collector.data.sync_append_success_count, 1)
 	stdatomic.add_i64(&a.metrics_collector.data.sync_append_total_ms, int(elapsed_ms))
-}
-
-// TODO(jira#XXX): Implement S3 shared partition state persistence
-/// save_share_partition_state saves a SharePartition state (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) save_share_partition_state(state domain.SharePartitionState) ! {
-	return error('share partition state persistence not yet implemented for S3')
-}
-
-/// load_share_partition_state loads a SharePartition state (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
-	return none
-}
-
-/// delete_share_partition_state deletes a SharePartition state (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {
-	return error('share partition state persistence not yet implemented for S3')
-}
-
-/// load_all_share_partition_states loads all SharePartition states for a group (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
-	return []
 }

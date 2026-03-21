@@ -70,17 +70,19 @@ pub mut:
 
 /// IcebergManifest represents a manifest containing a list of data files.
 /// ManifestPath: manifest file path
+/// ManifestLength: byte size of the manifest file
 /// SnapshotId: owning snapshot ID
 /// AddedFiles: number of added files
 /// DeletedFiles: number of deleted files
 pub struct IcebergManifest {
 pub mut:
-	manifest_path string
-	snapshot_id   i64
-	added_files   int
-	deleted_files int
-	added_rows    i64
-	deleted_rows  i64
+	manifest_path   string
+	manifest_length i64
+	snapshot_id     i64
+	added_files     int
+	deleted_files   int
+	added_rows      i64
+	deleted_rows    i64
 }
 
 /// IcebergDataFile represents an actual data file.

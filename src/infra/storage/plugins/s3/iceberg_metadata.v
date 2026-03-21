@@ -50,10 +50,11 @@ pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic
 
 	// Step 2: Build manifest metadata and write manifest-list file
 	manifest := IcebergManifest{
-		manifest_path: '${w.table_metadata.location}/${manifest_path}'
-		snapshot_id:   snapshot_id
-		added_files:   added_files
-		added_rows:    added_records
+		manifest_path:   '${w.table_metadata.location}/${manifest_path}'
+		manifest_length: i64(manifest_content.len)
+		snapshot_id:     snapshot_id
+		added_files:     added_files
+		added_rows:      added_records
 	}
 	manifest_list_path := w.generate_manifest_list_path(snapshot_id)
 	manifest_list_content := w.encode_manifest_list(manifest)!

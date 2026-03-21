@@ -2,6 +2,7 @@
 // v0.28.0: Leader election implementation for multi-broker clusters
 module cluster
 
+import infra.observability
 import service.port
 import sync
 import time
@@ -90,7 +91,10 @@ pub fn (mut e ControllerElector) try_become_controller() !bool {
 				spawn callback()
 			}
 
-			println('[Controller] Broker ${e.broker_id} became controller')
+			observability.log_with_context('cluster', .info, 'ControllerElection', 'Broker became controller',
+				{
+				'broker_id': e.broker_id.str()
+			})
 			return true
 		} else {
 			// Another broker is the controller - try to identify who
@@ -148,7 +152,10 @@ pub fn (mut e ControllerElector) resign_controller() ! {
 	}
 
 	e.lose_controller_internal()
-	println('[Controller] Broker ${e.broker_id} resigned as controller')
+	observability.log_with_context('cluster', .info, 'ControllerElection', 'Broker resigned as controller',
+		{
+		'broker_id': e.broker_id.str()
+	})
 }
 
 /// lose_controller_internal handles loss of controller state (must be called while holding lock)
@@ -211,7 +218,12 @@ pub fn (mut e ControllerElector) stop() {
 
 fn (mut e ControllerElector) election_loop() {
 	// Initial election attempt
-	e.try_become_controller() or { eprintln('[Controller] Initial election failed: ${err}') }
+	e.try_become_controller() or {
+		observability.log_with_context('cluster', .error, 'ControllerElection', 'Initial election failed',
+			{
+			'error': err.str()
+		})
+	}
 
 	interval := time.Duration(controller_refresh_interval_ms * time.millisecond)
 
@@ -225,7 +237,10 @@ fn (mut e ControllerElector) election_loop() {
 		if e.lock_acquired {
 			// Refresh lock
 			e.refresh_controller_lock() or {
-				eprintln('[Controller] Lock refresh failed: ${err}')
+				observability.log_with_context('cluster', .error, 'ControllerElection',
+					'Lock refresh failed', {
+					'error': err.str()
+				})
 				// Attempt to reacquire
 				e.try_become_controller() or {}
 			}
@@ -307,7 +322,13 @@ fn (mut r ControllerTaskRunner) run_task(task ControllerTask) {
 	for r.running {
 		if r.elector.is_controller() {
 			if task_fn := task.task {
-				task_fn() or { eprintln('[ControllerTask] ${task.name} failed: ${err}') }
+				task_fn() or {
+					observability.log_with_context('cluster', .error, 'ControllerTask',
+						'Task execution failed', {
+						'task_name': task.name
+						'error':     err.str()
+					})
+				}
 			}
 		}
 		time.sleep(task.interval)

@@ -62,7 +62,9 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 		observability.field_string('region', conf.storage.s3.region), observability.field_string('endpoint',
 		conf.storage.s3.endpoint), observability.field_string('access_key', masked_key))
 
-	if mut s3_adapter := s3.new_s3_adapter_from_storage_config(conf.storage.s3, i32(conf.broker.broker_id)) {
+	if mut s3_adapter := s3.new_s3_adapter_from_storage_config(conf.storage.s3, i32(conf.broker.broker_id),
+		conf.broker.cluster_id)
+	{
 		// config 패키지의 iceberg_ 필드들을 s3 어댑터의 IcebergConfig에 주입 (런타임 연결)
 		s3_adapter.set_iceberg_config(s3.IcebergConfig{
 			enabled:           conf.storage.s3.iceberg_enabled
