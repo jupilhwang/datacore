@@ -462,6 +462,7 @@ pub fn parse_cli_args(args []string) map[string]string {
 			value := args[i + 1]
 			if !value.starts_with('--') {
 				result[key] = value
+				i++
 			}
 		}
 	}

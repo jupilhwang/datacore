@@ -86,7 +86,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 		// === acks=0: async path (existing behavior) ===
 		// Append to in-memory buffer and return immediately.
 		// flush_worker drains the buffer every batch_timeout_ms automatically.
-		a.buffer_lock.lock()
+		a.buffer_lock.@lock()
 		mut tp_buffer := a.topic_partition_buffers[partition_key] or {
 			TopicPartitionBuffer{
 				records:            []
@@ -216,7 +216,7 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 	// 2. Also read from in-memory buffer (data not yet flushed to S3)
 	// Important for data not yet persisted
 	if bytes_read < max_bytes {
-		a.buffer_lock.lock()
+		a.buffer_lock.rlock()
 		if tp_buffer := a.topic_partition_buffers[partition_key] {
 			for rec in tp_buffer.records {
 				// Read records at or above requested offset not already read from S3 segments
@@ -235,7 +235,7 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 				}
 			}
 		}
-		a.buffer_lock.unlock()
+		a.buffer_lock.runlock()
 	}
 
 	// Offset of the first record actually returned

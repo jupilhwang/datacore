@@ -2,6 +2,57 @@
 // All struct types used across the config module.
 module config
 
+// Default configuration constants.
+// Extracted from struct defaults to eliminate magic numbers.
+// -- Size limits (bytes) --
+const default_max_request_size = 104857600 // 100 MB
+
+const default_max_partition_size = 1073741824 // 1 GB
+
+const default_grpc_max_message_size = 4194304 // 4 MB
+
+const default_ws_max_message_size = 1048576 // 1 MB
+
+const default_s3_batch_max_bytes = i64(4096000) // ~4 MB
+
+const default_min_flush_bytes = 65536 // 64 KB
+
+const default_target_segment_bytes = i64(104857600) // 100 MB
+
+// -- Memory --
+const default_max_memory_mb = 20480 // 20 GB
+
+// -- Connection limits --
+const default_max_connections = 10000
+const default_rest_max_connections = 1000
+
+// -- Timeouts and intervals (milliseconds) --
+const default_request_timeout_ms = 30000 // 30 seconds
+
+const default_idle_timeout_ms = 600000 // 10 minutes
+
+const default_sse_heartbeat_interval_ms = 15000 // 15 seconds
+
+const default_sse_connection_timeout_ms = 3600000 // 1 hour
+
+const default_ws_ping_interval_ms = 30000 // 30 seconds
+
+const default_compaction_interval_ms = 60000 // 1 minute
+
+const default_index_cache_ttl_ms = 60000 // 1 minute
+
+const default_tracing_batch_timeout_ms = 5000 // 5 seconds
+
+const default_telemetry_export_timeout = 30000 // 30 seconds
+
+// -- Iceberg --
+const default_iceberg_max_rows_per_file = 1000000 // 1 million rows
+
+// -- Tracing limits --
+const default_tracing_max_batch_size = 512
+const default_tracing_max_queue_size = 2048
+const default_tracing_max_per_span = 128 // max attributes, events, and links per span
+
 /// Config represents the entire configuration for DataCore.
 /// broker: broker configuration
 /// rest: REST API configuration
@@ -47,7 +98,7 @@ pub:
 	// Export interval in seconds
 	interval int = 10
 	// Export timeout in milliseconds
-	export_timeout int = 30000
+	export_timeout int = default_telemetry_export_timeout
 }
 
 /// TelemetryTracesConfig holds tracing settings.
@@ -73,10 +124,10 @@ pub:
 	port               int    = 9092
 	broker_id          int    = 1
 	cluster_id         string = 'datacore-cluster'
-	max_connections    int    = 10000
-	max_request_size   int    = 104857600
-	request_timeout_ms int    = 30000
-	idle_timeout_ms    int    = 600000
+	max_connections    int    = default_max_connections
+	max_request_size   int    = default_max_request_size
+	request_timeout_ms int    = default_request_timeout_ms
+	idle_timeout_ms    int    = default_idle_timeout_ms
 	advertised_host    string = '127.0.0.1'
 }
 
@@ -91,8 +142,8 @@ pub:
 	enabled          bool
 	host             string = '0.0.0.0'
 	port             int    = 9094
-	max_connections  int    = 10000
-	max_message_size int    = 4194304
+	max_connections  int    = default_max_connections
+	max_message_size int    = default_grpc_max_message_size
 }
 
 /// RestConfig represents the REST API server configuration.
@@ -110,12 +161,12 @@ pub:
 	enabled                   bool   = true
 	host                      string = '0.0.0.0'
 	port                      int    = 8080
-	max_connections           int    = 1000
+	max_connections           int    = default_rest_max_connections
 	static_dir                string = 'tests/web'
-	sse_heartbeat_interval_ms int    = 15000
-	sse_connection_timeout_ms int    = 3600000
-	ws_max_message_size       int    = 1048576
-	ws_ping_interval_ms       int    = 30000
+	sse_heartbeat_interval_ms int    = default_sse_heartbeat_interval_ms
+	sse_connection_timeout_ms int    = default_sse_connection_timeout_ms
+	ws_max_message_size       int    = default_ws_max_message_size
+	ws_ping_interval_ms       int    = default_ws_ping_interval_ms
 }
 
 /// StorageConfig represents the storage engine configuration.
@@ -138,8 +189,8 @@ pub:
 /// segment_size_bytes: segment size (bytes)
 pub struct MemoryStorageConfig {
 pub:
-	max_memory_mb      int = 20240
-	segment_size_bytes int = 1073741824
+	max_memory_mb      int = default_max_memory_mb
+	segment_size_bytes int = default_max_partition_size
 }
 
 /// S3StorageConfig represents the S3 storage configuration.
@@ -174,14 +225,14 @@ pub mut:
 	timezone   string = 'UTC'
 	// batch configuration
 	batch_timeout_ms int = 25
-	batch_max_bytes  i64 = 4096000
+	batch_max_bytes  i64 = default_s3_batch_max_bytes
 	// flush threshold: skip flush when buffer < min_flush_bytes to prevent micro-segments
-	min_flush_bytes      int = 65536
+	min_flush_bytes      int = default_min_flush_bytes
 	max_flush_skip_count int = 80
 	// compaction configuration
-	compaction_interval_ms int = 60000
-	target_segment_bytes   i64 = 104857600
-	index_cache_ttl_ms     int = 60000 // partition index cache TTL (default 1 minute)
+	compaction_interval_ms int = default_compaction_interval_ms
+	target_segment_bytes   i64 = default_target_segment_bytes
+	index_cache_ttl_ms     int = default_index_cache_ttl_ms // partition index cache TTL (default 1 minute)
 	// offset batch configuration
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
@@ -202,7 +253,7 @@ pub mut:
 	iceberg_compression       string   = 'zstd'
 	iceberg_write_mode        string   = 'append'
 	iceberg_partition_by      []string = ['timestamp', 'topic']
-	iceberg_max_rows_per_file int      = 1000000
+	iceberg_max_rows_per_file int      = default_iceberg_max_rows_per_file
 	iceberg_max_file_size_mb  int      = 128
 	iceberg_schema_evolution  bool     = true
 	iceberg_format_version    int      = 2
@@ -327,10 +378,10 @@ pub:
 	otlp_endpoint           string
 	sampler                 string = 'trace_id_ratio'
 	sample_rate             f64    = 1.0
-	batch_timeout_ms        int    = 5000
-	max_batch_size          int    = 512
-	max_queue_size          int    = 2048
-	max_attributes_per_span int    = 128
-	max_events_per_span     int    = 128
-	max_links_per_span      int    = 128
+	batch_timeout_ms        int    = default_tracing_batch_timeout_ms
+	max_batch_size          int    = default_tracing_max_batch_size
+	max_queue_size          int    = default_tracing_max_queue_size
+	max_attributes_per_span int    = default_tracing_max_per_span
+	max_events_per_span     int    = default_tracing_max_per_span
+	max_links_per_span      int    = default_tracing_max_per_span
 }

@@ -49,7 +49,7 @@ fn load_s3_credentials_from_file() (string, string) {
 
 		// parse key-value pairs for the target profile
 		if cur_prof == target_prof {
-			p := l.split('=')
+			p := l.split_nth('=', 2)
 			if p.len == 2 {
 				k := p[0].trim_space().to_lower()
 				v := p[1].trim_space()

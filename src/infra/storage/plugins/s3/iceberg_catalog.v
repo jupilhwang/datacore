@@ -57,6 +57,13 @@ fn (mut c HadoopCatalog) cache_put(cache_key string, metadata IcebergMetadata) {
 	}
 }
 
+/// invalidate_cache removes a single entry from the metadata cache.
+fn (mut c HadoopCatalog) invalidate_cache(key string) {
+	c.metadata_lock.@lock()
+	c.metadata_cache.delete(key)
+	c.metadata_lock.unlock()
+}
+
 /// new_hadoop_catalog creates a new Hadoop catalog.
 pub fn new_hadoop_catalog(adapter &S3StorageAdapter, warehouse string) &HadoopCatalog {
 	return &HadoopCatalog{
@@ -145,6 +152,9 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 	for obj in objects {
 		filename := obj.key.split('/').last()
 		if filename.ends_with('.metadata.json') {
+			if filename.len < 5 {
+				continue
+			}
 			// Extract version from filename (e.g., 00001-uuid.metadata.json -> 1)
 			version_str := filename[0..5]
 			file_version := version_str.int()
@@ -185,10 +195,7 @@ pub fn (mut c HadoopCatalog) update_table(identifier IcebergTableIdentifier, met
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
 
-	// Invalidate cache
-	c.metadata_lock.@lock()
-	c.metadata_cache.delete(c.table_path(identifier))
-	c.metadata_lock.unlock()
+	c.invalidate_cache(table_path)
 }
 
 /// drop_table drops the table.
@@ -204,10 +211,7 @@ pub fn (mut c HadoopCatalog) drop_table(identifier IcebergTableIdentifier) ! {
 	prefix := '${table_path}/'
 	c.adapter.delete_objects_with_prefix(prefix)!
 
-	// Invalidate cache
-	c.metadata_lock.@lock()
-	c.metadata_cache.delete(table_path)
-	c.metadata_lock.unlock()
+	c.invalidate_cache(table_path)
 }
 
 /// list_tables lists all tables in the namespace.
@@ -306,10 +310,7 @@ pub fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, 
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
 
-	// Invalidate cache
-	c.metadata_lock.@lock()
-	c.metadata_cache.delete(c.table_path(identifier))
-	c.metadata_lock.unlock()
+	c.invalidate_cache(table_path)
 }
 
 fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {

@@ -75,7 +75,7 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 	partition := int(partition_i64)
 
 	// 1. Acquire lock, copy buffer, clear in-memory buffer
-	a.buffer_lock.lock()
+	a.buffer_lock.@lock()
 
 	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
 		a.buffer_lock.unlock()
@@ -154,7 +154,7 @@ fn (mut a S3StorageAdapter) flush_worker() {
 /// Applies min_flush_bytes threshold to skip small buffers and prevent micro-segments.
 fn (mut a S3StorageAdapter) flush_pending_messages() {
 	// Collect flush-ready batches while holding the lock
-	a.buffer_lock.lock()
+	a.buffer_lock.@lock()
 	flush_batches, _ := a.collect_flush_batches()
 	a.buffer_lock.unlock()
 
@@ -183,7 +183,7 @@ fn (mut a S3StorageAdapter) flush_pending_messages() {
 /// restore_failed_message_buffer restores the message buffer on flush failure.
 /// Prepends failed records to existing buffer to preserve order.
 fn (mut a S3StorageAdapter) restore_failed_message_buffer(key string, buffer_data []StoredRecord) {
-	a.buffer_lock.lock()
+	a.buffer_lock.@lock()
 	defer { a.buffer_lock.unlock() }
 
 	if mut tp_buffer := a.topic_partition_buffers[key] {

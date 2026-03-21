@@ -93,7 +93,7 @@ pub mut:
 	offset_lock sync.RwMutex
 	// Flush buffers for batched S3 writes
 	topic_partition_buffers map[string]TopicPartitionBuffer
-	buffer_lock             sync.Mutex
+	buffer_lock             sync.RwMutex
 	index_update_lock       sync.Mutex
 	is_flushing_flag        i64
 	// Flush skip counters per partition (for min_flush_bytes threshold)
