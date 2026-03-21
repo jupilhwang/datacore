@@ -67,6 +67,47 @@ fn encode_stored_records(records []StoredRecord) []u8 {
 	return buf
 }
 
+/// encode_stored_records_with_index encodes records to binary and builds
+/// a RecordIndex mapping each record offset to its byte position.
+/// The binary format is identical to encode_stored_records.
+fn encode_stored_records_with_index(records []StoredRecord) ([]u8, []RecordIndex) {
+	mut estimated_size := 4
+	for rec in records {
+		estimated_size += 29 + rec.key.len + rec.value.len
+		for h_key, h_val in rec.headers {
+			estimated_size += 4 + h_key.len + h_val.len
+		}
+	}
+
+	mut buf := []u8{cap: estimated_size}
+	mut index := []RecordIndex{cap: records.len}
+
+	core.write_i32_be(mut buf, i32(records.len))
+
+	for rec in records {
+		index << RecordIndex{
+			offset:        rec.offset
+			byte_position: i64(buf.len)
+		}
+		core.write_i64_be(mut buf, rec.offset)
+		core.write_i64_be(mut buf, rec.timestamp.unix_milli())
+		core.write_i32_be(mut buf, i32(rec.key.len))
+		buf << rec.key
+		core.write_i32_be(mut buf, i32(rec.value.len))
+		buf << rec.value
+		core.write_i32_be(mut buf, i32(rec.headers.len))
+		for h_key, h_val in rec.headers {
+			core.write_i16_be(mut buf, i16(h_key.len))
+			buf << h_key.bytes()
+			core.write_i16_be(mut buf, i16(h_val.len))
+			buf << h_val
+		}
+		buf << rec.compression_type
+	}
+
+	return buf, index
+}
+
 /// decode_stored_records decodes binary data into a list of StoredRecords.
 /// Supports concatenated segments: loops until EOF reading each
 /// (count, records...) tuple produced by encode_stored_records.

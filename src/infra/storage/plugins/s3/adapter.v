@@ -78,58 +78,79 @@ pub mut:
 	use_server_side_copy bool = true
 }
 
-/// S3StorageAdapter implements the StoragePort for S3 storage.
-pub struct S3StorageAdapter {
-pub mut:
-	config S3Config
-	// Local cache with TTL
+/// S3CacheManager groups local cache maps and their associated locks.
+struct S3CacheManager {
+mut:
 	topic_cache            map[string]CachedTopic
 	topic_id_cache         map[string]string
 	topic_id_reverse_cache map[string]string
 	group_cache            map[string]CachedGroup
 	offset_cache           map[string]map[string]i64
 	topic_index_cache      map[string]CachedPartitionIndex
-	// Locks for thread safety
-	topic_lock  sync.RwMutex
-	group_lock  sync.RwMutex
-	offset_lock sync.RwMutex
-	// Flush buffers for batched S3 writes
+	topic_lock             sync.RwMutex
+	group_lock             sync.RwMutex
+	offset_lock            sync.RwMutex
+}
+
+/// S3MetricsCollector groups metrics data and its protective mutex.
+struct S3MetricsCollector {
+mut:
+	data S3Metrics
+	mu   sync.Mutex
+}
+
+/// S3OffsetBatcher groups offset batch buffers and their lock.
+struct S3OffsetBatcher {
+mut:
+	buffers     map[string]OffsetGroupBuffer
+	buffer_lock sync.Mutex
+}
+
+/// S3IcebergManager groups Iceberg writers, lock, and runtime config.
+struct S3IcebergManager {
+mut:
+	writers map[string]&IcebergWriter
+	mu      sync.RwMutex
+	config  IcebergConfig
+}
+
+/// S3SyncLinger groups sync linger buffers and their lock.
+struct S3SyncLinger {
+mut:
+	buffers map[string]SyncLingerBuffer
+	mu      sync.Mutex
+}
+
+/// S3StorageAdapter implements the StoragePort for S3 storage.
+pub struct S3StorageAdapter {
+pub mut:
+	config S3Config
+mut:
+	// Composed sub-structs
+	cache             S3CacheManager
+	metrics_collector S3MetricsCollector
+	offset_batcher    S3OffsetBatcher
+	iceberg           S3IcebergManager
+	sync_linger       S3SyncLinger
+	// Write buffering
 	topic_partition_buffers map[string]TopicPartitionBuffer
 	buffer_lock             sync.RwMutex
 	index_update_lock       sync.Mutex
 	is_flushing_flag        i64
-	// Flush skip counters per partition (for min_flush_bytes threshold)
-	flush_skip_counts map[string]int
-	// Compaction settings
-	min_segment_count_to_compact int = 5
-	is_running_flag              i64
-	// WaitGroup for graceful worker shutdown
-	worker_wg sync.WaitGroup
-	// Metrics
-	metrics      S3Metrics
-	metrics_lock sync.Mutex
-	// Offset batch buffers
-	offset_buffers     map[string]OffsetGroupBuffer
-	offset_buffer_lock sync.Mutex
-	// Pending index batch updates: accumulate segments before writing index to S3
+	flush_skip_counts       map[string]int
+	// Index batching
 	pending_index_updates map[string][]LogSegment
 	index_flush_counter   map[string]int
 	index_flush_lock      sync.Mutex
 	last_index_flush_at   i64
-	// Iceberg table writers (when Iceberg is enabled)
-	iceberg_writers map[string]&IcebergWriter
-	iceberg_lock    sync.RwMutex
-	// Iceberg 런타임 설정 (config 패키지와의 연결)
-	iceberg_config IcebergConfig
-	// Sync linger buffers for acks=1/-1 batching
-	sync_linger_buffers map[string]SyncLingerBuffer
-	sync_linger_lock    sync.Mutex
-	// Per-partition append locks for offset reservation atomicity.
-	// Prevents concurrent appends to the same partition from reading
-	// the same high_watermark and creating overlapping offsets.
+	// Worker lifecycle
+	is_running_flag              i64
+	worker_wg                    sync.WaitGroup
+	min_segment_count_to_compact int = 5
+	// Partition append
 	partition_append_locks map[string]&sync.Mutex
 	partition_append_mu    sync.Mutex
-	// SigV4 signing key cache (valid per UTC day, avoids 4 HMAC-SHA256 ops per request)
+	// SigV4 signing
 	signing_key_cache CachedSigningKey
 	signing_key_lock  sync.Mutex
 }
@@ -263,18 +284,26 @@ fn (m &S3Metrics) get_summary() string {
 pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 	return &S3StorageAdapter{
 		config:                  config
-		topic_cache:             map[string]CachedTopic{}
-		topic_id_reverse_cache:  map[string]string{}
-		group_cache:             map[string]CachedGroup{}
-		offset_cache:            map[string]map[string]i64{}
-		topic_index_cache:       map[string]CachedPartitionIndex{}
+		cache:                   S3CacheManager{
+			topic_cache:            map[string]CachedTopic{}
+			topic_id_reverse_cache: map[string]string{}
+			group_cache:            map[string]CachedGroup{}
+			offset_cache:           map[string]map[string]i64{}
+			topic_index_cache:      map[string]CachedPartitionIndex{}
+		}
+		offset_batcher:          S3OffsetBatcher{
+			buffers: map[string]OffsetGroupBuffer{}
+		}
+		iceberg:                 S3IcebergManager{
+			writers: map[string]&IcebergWriter{}
+		}
+		sync_linger:             S3SyncLinger{
+			buffers: map[string]SyncLingerBuffer{}
+		}
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
 		flush_skip_counts:       map[string]int{}
-		offset_buffers:          map[string]OffsetGroupBuffer{}
 		pending_index_updates:   map[string][]LogSegment{}
 		index_flush_counter:     map[string]int{}
-		iceberg_writers:         map[string]&IcebergWriter{}
-		sync_linger_buffers:     map[string]SyncLingerBuffer{}
 	}
 }
 
@@ -316,6 +345,12 @@ pub fn new_s3_adapter_from_storage_config(s3_cfg app_config.S3StorageConfig, bro
 	mut s3_config := from_storage_config(s3_cfg)
 	s3_config.broker_id = broker_id
 	return new_s3_adapter(s3_config)
+}
+
+/// set_iceberg_config sets the Iceberg runtime configuration.
+/// Called from startup to inject config-package fields into the adapter.
+pub fn (mut a S3StorageAdapter) set_iceberg_config(config IcebergConfig) {
+	a.iceberg.config = config
 }
 
 /// health_check checks the storage health status.
@@ -401,29 +436,29 @@ pub fn (mut a S3StorageAdapter) stop_workers() {
 
 /// get_metrics returns the current metrics snapshot.
 pub fn (mut a S3StorageAdapter) get_metrics() S3Metrics {
-	a.metrics_lock.@lock()
+	a.metrics_collector.mu.@lock()
 	defer {
-		a.metrics_lock.unlock()
+		a.metrics_collector.mu.unlock()
 	}
-	return a.metrics
+	return a.metrics_collector.data
 }
 
 /// get_metrics_summary returns the metrics summary string.
 pub fn (mut a S3StorageAdapter) get_metrics_summary() string {
-	a.metrics_lock.@lock()
+	a.metrics_collector.mu.@lock()
 	defer {
-		a.metrics_lock.unlock()
+		a.metrics_collector.mu.unlock()
 	}
-	return a.metrics.get_summary()
+	return a.metrics_collector.data.get_summary()
 }
 
 /// reset_metrics resets all metrics to zero.
 pub fn (mut a S3StorageAdapter) reset_metrics() {
-	a.metrics_lock.@lock()
+	a.metrics_collector.mu.@lock()
 	defer {
-		a.metrics_lock.unlock()
+		a.metrics_collector.mu.unlock()
 	}
-	a.metrics.reset()
+	a.metrics_collector.data.reset()
 }
 
 // Note: compaction_worker, compact_all_partitions, compact_partition, merge_segments have been moved to compaction.v.
@@ -438,30 +473,30 @@ fn generate_topic_id(name string) []u8 {
 
 /// record_cache_hit increments the cache hit counter.
 fn (mut a S3StorageAdapter) record_cache_hit() {
-	stdatomic.add_i64(&a.metrics.cache_hit_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.cache_hit_count, 1)
 }
 
 /// record_cache_miss increments the cache miss and S3 GET counters.
 fn (mut a S3StorageAdapter) record_cache_miss() {
-	stdatomic.add_i64(&a.metrics.cache_miss_count, 1)
-	stdatomic.add_i64(&a.metrics.s3_get_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.cache_miss_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_get_count, 1)
 }
 
 /// record_sync_append_error increments the sync append error and S3 error counters.
 fn (mut a S3StorageAdapter) record_sync_append_error() {
-	stdatomic.add_i64(&a.metrics.sync_append_error_count, 1)
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 }
 
 /// record_sync_append_put increments the S3 PUT and sync append counters.
 fn (mut a S3StorageAdapter) record_sync_append_put() {
-	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
-	stdatomic.add_i64(&a.metrics.sync_append_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_count, 1)
 }
 
 /// record_sync_append_index_error increments only the sync append error counter.
 fn (mut a S3StorageAdapter) record_sync_append_index_error() {
-	stdatomic.add_i64(&a.metrics.sync_append_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_error_count, 1)
 }
 
 /// record_sync_append_success increments the success counter and accumulates elapsed time.
@@ -470,8 +505,8 @@ fn (mut a S3StorageAdapter) record_sync_append_index_error() {
 // so truncation of a single sample is acceptable. The i64 accumulator field
 // (sync_append_total_ms) handles the cumulative sum without overflow.
 fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
-	stdatomic.add_i64(&a.metrics.sync_append_success_count, 1)
-	stdatomic.add_i64(&a.metrics.sync_append_total_ms, int(elapsed_ms))
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_success_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_total_ms, int(elapsed_ms))
 }
 
 // TODO(jira#XXX): Implement S3 shared partition state persistence

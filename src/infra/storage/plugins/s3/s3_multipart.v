@@ -54,7 +54,7 @@ fn parse_copy_part_etag_from_xml(body string) !string {
 /// create_multipart_upload initiates a multipart upload and returns the UploadId.
 /// S3 API: POST /{key}?uploads
 fn (mut a S3StorageAdapter) create_multipart_upload(key string) !string {
-	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
 
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -70,19 +70,19 @@ fn (mut a S3StorageAdapter) create_multipart_upload(key string) !string {
 		method: .post
 		header: headers
 	}) or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CreateMultipartUpload prepare failed: ${err}')
 	}
 	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
 	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 	resp := req.do() or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CreateMultipartUpload failed: ${err}')
 	}
 
 	if resp.status_code != 200 {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CreateMultipartUpload failed with status ${resp.status_code}')
 	}
 
@@ -95,7 +95,7 @@ fn (mut a S3StorageAdapter) create_multipart_upload(key string) !string {
 ///   Header: x-amz-copy-source: /bucket/source-key
 ///   Header: x-amz-copy-source-range: bytes=start-end (optional)
 fn (mut a S3StorageAdapter) upload_part_copy(dest_key string, upload_id string, part_number int, source_key string, byte_range string) !string {
-	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
 
 	endpoint := a.get_endpoint()
 	query := 'partNumber=${part_number}&uploadId=${upload_id}'
@@ -118,19 +118,19 @@ fn (mut a S3StorageAdapter) upload_part_copy(dest_key string, upload_id string, 
 		method: .put
 		header: headers
 	}) or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 UploadPartCopy prepare failed: ${err}')
 	}
 	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
 	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 	resp := req.do() or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 UploadPartCopy failed: ${err}')
 	}
 
 	if resp.status_code != 200 {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 UploadPartCopy failed with status ${resp.status_code}')
 	}
 
@@ -160,19 +160,19 @@ fn (mut a S3StorageAdapter) complete_multipart_upload(key string, upload_id stri
 		header: headers
 		data:   body
 	}) or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CompleteMultipartUpload prepare failed: ${err}')
 	}
 	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
 	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 	resp := req.do() or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CompleteMultipartUpload failed: ${err}')
 	}
 
 	if resp.status_code != 200 {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CompleteMultipartUpload failed with status ${resp.status_code}')
 	}
 }
@@ -195,19 +195,19 @@ fn (mut a S3StorageAdapter) abort_multipart_upload(key string, upload_id string)
 		method: .delete
 		header: headers
 	}) or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 AbortMultipartUpload prepare failed: ${err}')
 	}
 	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
 	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 	resp := req.do() or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 AbortMultipartUpload failed: ${err}')
 	}
 
 	if resp.status_code !in [200, 204] {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 AbortMultipartUpload failed with status ${resp.status_code}')
 	}
 }

@@ -87,7 +87,7 @@ pub:
 /// Retries with exponential backoff on DNS/network errors.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
 	// Metric: S3 GET request
-	stdatomic.add_i64(&a.metrics.s3_get_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_get_count, 1)
 
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -115,7 +115,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			header: headers
 		}) or {
 			last_err = 'S3 GET prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -141,19 +141,19 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 
 			// Non-network error or last retry: fail immediately
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 
 		if resp.status_code == 404 {
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error('Object not found: ${key}')
 		}
 		// 206 Partial Content is also a success for Range requests
 		if resp.status_code != 200 && resp.status_code != 206 {
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error('S3 GET failed with status ${resp.status_code}')
 		}
 
@@ -162,7 +162,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 	}
 
 	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 	return error(last_err)
 }
 
@@ -178,7 +178,7 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 /// Adds jitter to prevent thundering herd on concurrent retries.
 fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries_ int) ! {
 	// Metric: S3 PUT request (counted once, including retries)
-	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
 
 	cfg_retry_delay_ms := a.config.retry_delay_ms
 	endpoint := a.get_endpoint()
@@ -199,7 +199,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			data:   data.bytestr()
 		}) or {
 			last_err = 'S3 PUT prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -239,7 +239,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 				'retries':  max_retries_.str()
 			})
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 
@@ -267,11 +267,11 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 		}
 
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 PUT failed with status ${resp.status_code}')
 	}
 	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 	return error(last_err)
 }
 
@@ -345,7 +345,7 @@ fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag stri
 /// Returns 200 or 204 status code on successful deletion.
 fn (mut a S3StorageAdapter) delete_object(key string) ! {
 	// Metric: S3 DELETE request
-	stdatomic.add_i64(&a.metrics.s3_delete_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_delete_count, 1)
 
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -361,7 +361,7 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 		method: .delete
 		header: headers
 	}) or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 DELETE prepare failed: ${err}')
 	}
 	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -369,13 +369,13 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 
 	resp := req.do() or {
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 DELETE failed: ${err}')
 	}
 
 	if resp.status_code !in [200, 204] {
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 DELETE failed with status ${resp.status_code}')
 	}
 }
@@ -447,7 +447,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 /// Includes retry logic for transient network and server errors.
 fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token string) !ListObjectsPage {
 	// Metric: S3 LIST request
-	stdatomic.add_i64(&a.metrics.s3_list_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_list_count, 1)
 
 	cfg_max_retries := a.config.max_retries
 	cfg_retry_delay_ms := a.config.retry_delay_ms
@@ -478,7 +478,7 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 			header: headers
 		}) or {
 			last_err = 'S3 LIST prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -511,7 +511,7 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 				continue
 			}
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 
@@ -536,12 +536,12 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 		}
 
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 LIST failed with status ${resp.status_code}')
 	}
 
 	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 	return error(last_err)
 }
 

@@ -22,7 +22,7 @@ fn test_sync_linger_disabled_when_zero() {
 
 	// With sync_linger_ms=0, the linger buffer should remain empty
 	// after attempting to add records to it
-	assert adapter.sync_linger_buffers.len == 0, 'Linger buffers should be empty when disabled'
+	assert adapter.sync_linger.buffers.len == 0, 'Linger buffers should be empty when disabled'
 
 	// Verify the config is correctly set
 	assert adapter.config.sync_linger_ms == 0
@@ -72,8 +72,8 @@ fn test_sync_linger_batches_within_window() {
 	adapter.add_to_sync_linger_buffer(partition_key, records_2, ch2)
 
 	// Verify both record sets are in the same linger buffer
-	assert partition_key in adapter.sync_linger_buffers, 'Linger buffer should exist for partition'
-	buf := adapter.sync_linger_buffers[partition_key]
+	assert partition_key in adapter.sync_linger.buffers, 'Linger buffer should exist for partition'
+	buf := adapter.sync_linger.buffers[partition_key]
 	assert buf.records.len == 2, 'Expected 2 records in linger buffer, got ${buf.records.len}'
 	assert buf.channels.len == 2, 'Expected 2 waiting channels, got ${buf.channels.len}'
 }
@@ -264,7 +264,7 @@ fn test_sync_linger_expired_buffer_detection() {
 	partition_key := 'test-topic:0'
 
 	// Create a buffer with an old timestamp (10ms ago)
-	adapter.sync_linger_buffers[partition_key] = SyncLingerBuffer{
+	adapter.sync_linger.buffers[partition_key] = SyncLingerBuffer{
 		records:    [
 			StoredRecord{
 				offset:    0
@@ -301,7 +301,7 @@ fn test_sync_linger_not_expired_within_window() {
 	partition_key := 'test-topic:0'
 
 	// Create a buffer with current timestamp
-	adapter.sync_linger_buffers[partition_key] = SyncLingerBuffer{
+	adapter.sync_linger.buffers[partition_key] = SyncLingerBuffer{
 		records:    [
 			StoredRecord{
 				offset:    0
@@ -348,12 +348,12 @@ fn test_sync_linger_drain_clears_buffer() {
 	]
 
 	adapter.add_to_sync_linger_buffer(partition_key, records, ch)
-	assert partition_key in adapter.sync_linger_buffers
+	assert partition_key in adapter.sync_linger.buffers
 
 	buf := adapter.drain_sync_linger_buffer(partition_key)
 	assert buf.records.len == 1
 	assert buf.channels.len == 1
 
 	// Buffer should be removed from map after drain
-	assert partition_key !in adapter.sync_linger_buffers, 'Buffer should be removed after drain'
+	assert partition_key !in adapter.sync_linger.buffers, 'Buffer should be removed after drain'
 }

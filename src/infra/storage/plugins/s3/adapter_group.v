@@ -15,9 +15,9 @@ pub fn (mut a S3StorageAdapter) save_group(group domain.ConsumerGroup) ! {
 	a.put_object(key, data.bytes())!
 
 	// Update cache
-	a.group_lock.@lock()
-	defer { a.group_lock.unlock() }
-	a.group_cache[group.group_id] = CachedGroup{
+	a.cache.group_lock.@lock()
+	defer { a.cache.group_lock.unlock() }
+	a.cache.group_cache[group.group_id] = CachedGroup{
 		group:     group
 		etag:      ''
 		cached_at: time.now()
@@ -28,14 +28,14 @@ pub fn (mut a S3StorageAdapter) save_group(group domain.ConsumerGroup) ! {
 pub fn (mut a S3StorageAdapter) load_group(group_id string) !domain.ConsumerGroup {
 	validate_identifier(group_id, 'group_id')!
 	// Check cache
-	a.group_lock.rlock()
-	if cached := a.group_cache[group_id] {
+	a.cache.group_lock.rlock()
+	if cached := a.cache.group_cache[group_id] {
 		if time.since(cached.cached_at) < group_cache_ttl {
-			a.group_lock.runlock()
+			a.cache.group_lock.runlock()
 			return cached.group
 		}
 	}
-	a.group_lock.runlock()
+	a.cache.group_lock.runlock()
 
 	key := a.group_key(group_id)
 	data, etag := a.get_object(key, -1, -1)!
@@ -43,9 +43,9 @@ pub fn (mut a S3StorageAdapter) load_group(group_id string) !domain.ConsumerGrou
 	group := json.decode(domain.ConsumerGroup, data.bytestr())!
 
 	// Update cache
-	a.group_lock.@lock()
-	defer { a.group_lock.unlock() }
-	a.group_cache[group_id] = CachedGroup{
+	a.cache.group_lock.@lock()
+	defer { a.cache.group_lock.unlock() }
+	a.cache.group_cache[group_id] = CachedGroup{
 		group:     group
 		etag:      etag
 		cached_at: time.now()
@@ -65,9 +65,9 @@ pub fn (mut a S3StorageAdapter) delete_group(group_id string) ! {
 	a.delete_objects_with_prefix(offsets_prefix)!
 
 	// Remove from cache
-	a.group_lock.@lock()
-	defer { a.group_lock.unlock() }
-	a.group_cache.delete(group_id)
+	a.cache.group_lock.@lock()
+	defer { a.cache.group_lock.unlock() }
+	a.cache.group_cache.delete(group_id)
 }
 
 /// list_groups returns all consumer groups.
@@ -159,11 +159,11 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 	a.record_commit_start_metrics(offsets.len)
 
 	// Buffer all offsets into the batch snapshot path
-	a.offset_buffer_lock.lock()
+	a.offset_batcher.buffer_lock.lock()
 	for offset in offsets {
 		a.buffer_offset(group_id, offset)
 	}
-	a.offset_buffer_lock.unlock()
+	a.offset_batcher.buffer_lock.unlock()
 
 	// Update offset cache for immediate read-after-write consistency
 	a.update_offset_cache(group_id, offsets)
@@ -172,19 +172,19 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 
 /// record_commit_start_metrics records commit start metrics.
 fn (mut a S3StorageAdapter) record_commit_start_metrics(count int) {
-	stdatomic.add_i64(&a.metrics.offset_commit_count, count)
+	stdatomic.add_i64(&a.metrics_collector.data.offset_commit_count, count)
 }
 
 /// update_offset_cache updates the offset cache.
 fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []domain.PartitionOffset) {
-	a.offset_lock.@lock()
-	defer { a.offset_lock.unlock() }
-	if group_id !in a.offset_cache {
-		a.offset_cache[group_id] = map[string]i64{}
+	a.cache.offset_lock.@lock()
+	defer { a.cache.offset_lock.unlock() }
+	if group_id !in a.cache.offset_cache {
+		a.cache.offset_cache[group_id] = map[string]i64{}
 	}
 	for offset in succeeded {
 		cache_key := '${offset.topic}:${offset.partition}'
-		a.offset_cache[group_id][cache_key] = offset.offset
+		a.cache.offset_cache[group_id][cache_key] = offset.offset
 	}
 
 	observability.log_with_context('s3', .info, 'OffsetCommit', 'Successfully committed offsets',
@@ -198,7 +198,7 @@ fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []dom
 /// Note: s3_put_count is NOT incremented here because the batch path defers
 /// the actual S3 PUT to flush_pending_offsets (background worker).
 fn (mut a S3StorageAdapter) record_commit_success_metrics(count int) {
-	stdatomic.add_i64(&a.metrics.offset_commit_success_count, count)
+	stdatomic.add_i64(&a.metrics_collector.data.offset_commit_success_count, count)
 }
 
 /// OffsetFetchResult holds the result of a single offset fetch operation.
@@ -260,14 +260,14 @@ pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []doma
 	mut s3_partitions := []domain.TopicPartition{}
 	for part in partitions {
 		// Try cache first
-		a.offset_lock.rlock()
+		a.cache.offset_lock.rlock()
 		cache_key := '${part.topic}:${part.partition}'
-		cached_offset := if group_id in a.offset_cache {
-			a.offset_cache[group_id][cache_key] or { i64(-1) }
+		cached_offset := if group_id in a.cache.offset_cache {
+			a.cache.offset_cache[group_id][cache_key] or { i64(-1) }
 		} else {
 			i64(-1)
 		}
-		a.offset_lock.runlock()
+		a.cache.offset_lock.runlock()
 
 		if cached_offset >= 0 {
 			results << domain.OffsetFetchResult{

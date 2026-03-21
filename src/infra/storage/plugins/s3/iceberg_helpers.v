@@ -23,23 +23,23 @@ pub fn is_iceberg_enabled_with_config(config IcebergConfig) bool {
 /// is_iceberg_enabled checks whether the Iceberg table format is enabled.
 /// 어댑터에 저장된 iceberg_config를 사용하여 활성화 여부를 판단.
 fn (a &S3StorageAdapter) is_iceberg_enabled() bool {
-	return is_iceberg_enabled_with_config(a.iceberg_config)
+	return is_iceberg_enabled_with_config(a.iceberg.config)
 }
 
 /// get_or_create_iceberg_writer gets an existing Iceberg Writer or creates a new one.
 fn (mut a S3StorageAdapter) get_or_create_iceberg_writer(topic string, partition int) !&IcebergWriter {
 	partition_key := '${topic}:${partition}'
 
-	a.iceberg_lock.rlock()
-	if writer := a.iceberg_writers[partition_key] {
-		a.iceberg_lock.runlock()
+	a.iceberg.mu.rlock()
+	if writer := a.iceberg.writers[partition_key] {
+		a.iceberg.mu.runlock()
 		return writer
 	}
-	a.iceberg_lock.runlock()
+	a.iceberg.mu.runlock()
 
 	// 어댑터에 저장된 iceberg_config 사용 (런타임 config와 연결)
 	// format_version 미설정 시 안정 스펙 기본값 2 적용
-	mut config := a.iceberg_config
+	mut config := a.iceberg.config
 	if config.format_version == 0 {
 		config.format_version = 2
 	}
@@ -50,9 +50,9 @@ fn (mut a S3StorageAdapter) get_or_create_iceberg_writer(topic string, partition
 	// Create new Iceberg Writer
 	mut writer := new_iceberg_writer(&a, config, table_location)!
 
-	a.iceberg_lock.@lock()
-	a.iceberg_writers[partition_key] = writer
-	a.iceberg_lock.unlock()
+	a.iceberg.mu.@lock()
+	a.iceberg.writers[partition_key] = writer
+	a.iceberg.mu.unlock()
 
 	return writer
 }
@@ -95,12 +95,12 @@ fn (mut a S3StorageAdapter) append_to_iceberg(topic string, partition int, recor
 pub fn (mut a S3StorageAdapter) get_iceberg_writer(topic string, partition int) ?&IcebergWriter {
 	partition_key := '${topic}:${partition}'
 
-	a.iceberg_lock.rlock()
+	a.iceberg.mu.rlock()
 	defer {
-		a.iceberg_lock.runlock()
+		a.iceberg.mu.runlock()
 	}
 
-	return a.iceberg_writers[partition_key] or { none }
+	return a.iceberg.writers[partition_key] or { none }
 }
 
 /// list_iceberg_snapshots returns the list of Iceberg snapshots for a specific partition.

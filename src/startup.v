@@ -64,7 +64,7 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 
 	if mut s3_adapter := s3.new_s3_adapter_from_storage_config(conf.storage.s3, i32(conf.broker.broker_id)) {
 		// config 패키지의 iceberg_ 필드들을 s3 어댑터의 IcebergConfig에 주입 (런타임 연결)
-		s3_adapter.iceberg_config = s3.IcebergConfig{
+		s3_adapter.set_iceberg_config(s3.IcebergConfig{
 			enabled:           conf.storage.s3.iceberg_enabled
 			format:            conf.storage.s3.iceberg_format
 			compression:       conf.storage.s3.iceberg_compression
@@ -74,7 +74,7 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 			max_file_size_mb:  conf.storage.s3.iceberg_max_file_size_mb
 			schema_evolution:  conf.storage.s3.iceberg_schema_evolution
 			format_version:    conf.storage.s3.iceberg_format_version
-		}
+		})
 		s3_adapter.start_workers()
 		return StorageResult{
 			storage:    port.StoragePort(s3_adapter)

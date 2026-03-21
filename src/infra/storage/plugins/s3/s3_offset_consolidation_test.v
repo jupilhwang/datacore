@@ -35,12 +35,12 @@ fn test_commit_offsets_uses_batch_path() {
 	}
 
 	// After commit_offsets, offsets must be present in offset_buffers (batch path)
-	adapter.offset_buffer_lock.lock()
-	buf_exists := group_id in adapter.offset_buffers
+	adapter.offset_batcher.buffer_lock.lock()
+	buf_exists := group_id in adapter.offset_batcher.buffers
 	mut found_p0 := false
 	mut found_p1 := false
 	if buf_exists {
-		buf := adapter.offset_buffers[group_id]
+		buf := adapter.offset_batcher.buffers[group_id]
 		if _ := buf.offsets['topic-a:0'] {
 			found_p0 = true
 		}
@@ -48,7 +48,7 @@ fn test_commit_offsets_uses_batch_path() {
 			found_p1 = true
 		}
 	}
-	adapter.offset_buffer_lock.unlock()
+	adapter.offset_batcher.buffer_lock.unlock()
 
 	assert buf_exists, 'offset_buffers should contain the group after commit_offsets'
 	assert found_p0, 'offset_buffers should contain topic-a:0'
@@ -124,13 +124,13 @@ fn test_commit_offsets_updates_offset_cache() {
 	}
 
 	// Verify offset cache is updated
-	adapter.offset_lock.rlock()
-	cached_val := if group_id in adapter.offset_cache {
-		adapter.offset_cache[group_id]['events:0'] or { i64(-1) }
+	adapter.cache.offset_lock.rlock()
+	cached_val := if group_id in adapter.cache.offset_cache {
+		adapter.cache.offset_cache[group_id]['events:0'] or { i64(-1) }
 	} else {
 		i64(-1)
 	}
-	adapter.offset_lock.runlock()
+	adapter.cache.offset_lock.runlock()
 
 	assert cached_val == 55, 'Offset cache should contain committed offset 55. Got ${cached_val}'
 }
@@ -165,12 +165,18 @@ fn create_test_adapter() &S3StorageAdapter {
 	}
 	return &S3StorageAdapter{
 		config:                  config
-		topic_cache:             map[string]CachedTopic{}
-		group_cache:             map[string]CachedGroup{}
-		offset_cache:            map[string]map[string]i64{}
-		topic_index_cache:       map[string]CachedPartitionIndex{}
+		cache:                   S3CacheManager{
+			topic_cache:       map[string]CachedTopic{}
+			group_cache:       map[string]CachedGroup{}
+			offset_cache:      map[string]map[string]i64{}
+			topic_index_cache: map[string]CachedPartitionIndex{}
+		}
+		offset_batcher:          S3OffsetBatcher{
+			buffers: map[string]OffsetGroupBuffer{}
+		}
+		iceberg:                 S3IcebergManager{
+			writers: map[string]&IcebergWriter{}
+		}
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
-		offset_buffers:          map[string]OffsetGroupBuffer{}
-		iceberg_writers:         map[string]&IcebergWriter{}
 	}
 }

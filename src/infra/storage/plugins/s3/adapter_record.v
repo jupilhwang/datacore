@@ -25,14 +25,14 @@ fn (mut a S3StorageAdapter) get_partition_append_lock(partition_key string) &syn
 /// and advances it by `count`, returning the old value as the base offset.
 /// This prevents concurrent appends from receiving overlapping offset ranges.
 fn (mut a S3StorageAdapter) reserve_offsets(partition_key string, count int) i64 {
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
+	a.cache.topic_lock.@lock()
+	defer { a.cache.topic_lock.unlock() }
 	mut base := i64(0)
-	if cached := a.topic_index_cache[partition_key] {
+	if cached := a.cache.topic_index_cache[partition_key] {
 		base = cached.index.high_watermark
 		mut updated_index := cached.index
 		updated_index.high_watermark = base + i64(count)
-		a.topic_index_cache[partition_key] = CachedPartitionIndex{
+		a.cache.topic_index_cache[partition_key] = CachedPartitionIndex{
 			index:     updated_index
 			etag:      cached.etag
 			cached_at: cached.cached_at
@@ -243,13 +243,13 @@ fn (mut a S3StorageAdapter) append_sync(topic string, partition int, partition_k
 	if a.config.sync_linger_ms > 0 {
 		// Linger path: batch multiple sync requests within the linger window
 		ch := chan LingerResult{cap: 1}
-		a.sync_linger_lock.lock()
+		a.sync_linger.mu.lock()
 		should_flush := a.add_to_sync_linger_buffer(partition_key, stored_records, ch)
 		mut flush_buf := SyncLingerBuffer{}
 		if should_flush {
 			flush_buf = a.drain_sync_linger_buffer(partition_key)
 		}
-		a.sync_linger_lock.unlock()
+		a.sync_linger.mu.unlock()
 
 		if should_flush && flush_buf.records.len > 0 {
 			a.flush_sync_linger_buffer(topic, partition, flush_buf)
@@ -289,8 +289,14 @@ fn (mut a S3StorageAdapter) fetch_from_segments(segments []LogSegment, fetch_off
 			range_end := if fetch_size > 0 { fetch_size } else { -1 }
 			data, _ = a.get_object(seg.key, 0, range_end) or { continue }
 		} else {
-			// Random access without index: must download full segment
-			data, _ = a.get_object(seg.key, -1, -1) or { continue }
+			// Random access: try record index for precise Range Request
+			byte_start, byte_end := seg.find_byte_range(fetch_offset, max_bytes)
+			if byte_start >= 0 && byte_end >= 0 {
+				data, _ = a.get_object(seg.key, byte_start, byte_end) or { continue }
+			} else {
+				// No index available: must download full segment (fallback)
+				data, _ = a.get_object(seg.key, -1, -1) or { continue }
+			}
 		}
 
 		stored_records := decode_stored_records(data)

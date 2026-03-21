@@ -141,9 +141,9 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 	start_time := time.now()
 
 	// Metric: compaction start
-	a.metrics_lock.@lock()
-	a.metrics.compaction_count++
-	a.metrics_lock.unlock()
+	a.metrics_collector.mu.@lock()
+	a.metrics_collector.data.compaction_count++
+	a.metrics_collector.mu.unlock()
 
 	// 1. Fetch current index
 	mut index := a.get_partition_index(topic, partition)!
@@ -191,28 +191,28 @@ fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
 			}
 			// Fallback to traditional download-reupload merge
 			a.merge_segments(topic, partition, mut index, segments_to_compact) or {
-				a.metrics_lock.@lock()
-				a.metrics.compaction_error_count++
-				a.metrics_lock.unlock()
+				a.metrics_collector.mu.@lock()
+				a.metrics_collector.data.compaction_error_count++
+				a.metrics_collector.mu.unlock()
 				return err
 			}
 		}
 	} else {
 		a.merge_segments(topic, partition, mut index, segments_to_compact) or {
-			a.metrics_lock.@lock()
-			a.metrics.compaction_error_count++
-			a.metrics_lock.unlock()
+			a.metrics_collector.mu.@lock()
+			a.metrics_collector.data.compaction_error_count++
+			a.metrics_collector.mu.unlock()
 			return err
 		}
 	}
 
 	// Metric: compaction success
 	elapsed_ms := time.since(start_time).milliseconds()
-	a.metrics_lock.@lock()
-	a.metrics.compaction_success_count++
-	a.metrics.compaction_total_ms += elapsed_ms
-	a.metrics.compaction_bytes_merged += total_size
-	a.metrics_lock.unlock()
+	a.metrics_collector.mu.@lock()
+	a.metrics_collector.data.compaction_success_count++
+	a.metrics_collector.data.compaction_total_ms += elapsed_ms
+	a.metrics_collector.data.compaction_bytes_merged += total_size
+	a.metrics_collector.mu.unlock()
 }
 
 /// merge_segments merges multiple segments into a single large segment.

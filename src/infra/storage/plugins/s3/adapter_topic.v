@@ -43,15 +43,15 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 	a.initialize_partition_indices(name, partitions)!
 
 	// Store in topic cache
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	a.topic_cache[name] = CachedTopic{
+	a.cache.topic_lock.@lock()
+	defer { a.cache.topic_lock.unlock() }
+	a.cache.topic_cache[name] = CachedTopic{
 		meta:      meta
 		etag:      ''
 		cached_at: time.now()
 	}
-	a.topic_id_cache[meta.topic_id.hex()] = name
-	a.topic_id_reverse_cache[meta.topic_id.hex()] = name
+	a.cache.topic_id_cache[meta.topic_id.hex()] = name
+	a.cache.topic_id_reverse_cache[meta.topic_id.hex()] = name
 
 	return meta
 }
@@ -91,33 +91,33 @@ fn (mut a S3StorageAdapter) initialize_partition_indices(topic_name string, num_
 /// delete_topic deletes a topic from S3.
 pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 	// Phase 1: Acquire exclusive lock, clean all caches, then release.
-	a.topic_lock.@lock()
+	a.cache.topic_lock.@lock()
 
 	// Collect topic_id hex for reverse cache cleanup
 	mut topic_id_hex := ''
-	if cached := a.topic_cache[name] {
+	if cached := a.cache.topic_cache[name] {
 		topic_id_hex = cached.meta.topic_id.hex()
 	}
 
 	// Remove from topic-related caches
-	a.topic_cache.delete(name)
+	a.cache.topic_cache.delete(name)
 	if topic_id_hex.len > 0 {
-		a.topic_id_cache.delete(topic_id_hex)
-		a.topic_id_reverse_cache.delete(topic_id_hex)
+		a.cache.topic_id_cache.delete(topic_id_hex)
+		a.cache.topic_id_reverse_cache.delete(topic_id_hex)
 	}
 
 	// Remove matching entries from topic_index_cache (keyed as "topic:partition")
 	mut index_keys_to_delete := []string{}
-	for key, _ in a.topic_index_cache {
+	for key, _ in a.cache.topic_index_cache {
 		if key.starts_with('${name}:') {
 			index_keys_to_delete << key
 		}
 	}
 	for key in index_keys_to_delete {
-		a.topic_index_cache.delete(key)
+		a.cache.topic_index_cache.delete(key)
 	}
 
-	a.topic_lock.unlock()
+	a.cache.topic_lock.unlock()
 
 	// Remove matching entries from partition buffers (separate lock)
 	a.buffer_lock.@lock()
@@ -147,14 +147,14 @@ pub fn (mut a S3StorageAdapter) list_topics() ![]domain.TopicMetadata {
 	mut seen := map[string]bool{}
 
 	// First add all cached topics
-	a.topic_lock.rlock()
-	for name, cached in a.topic_cache {
+	a.cache.topic_lock.rlock()
+	for name, cached in a.cache.topic_cache {
 		if name !in seen {
 			seen[name] = true
 			topics << cached.meta
 		}
 	}
-	a.topic_lock.runlock()
+	a.cache.topic_lock.runlock()
 
 	// Add topics from S3 that are not in cache
 	for obj in objects {
@@ -179,15 +179,15 @@ pub fn (mut a S3StorageAdapter) list_topics() ![]domain.TopicMetadata {
 /// get_topic retrieves topic metadata from S3.
 pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	// Check cache first
-	a.topic_lock.rlock()
-	if cached := a.topic_cache[name] {
+	a.cache.topic_lock.rlock()
+	if cached := a.cache.topic_cache[name] {
 		if time.since(cached.cached_at) < topic_cache_ttl {
-			a.topic_lock.runlock()
+			a.cache.topic_lock.runlock()
 			a.record_cache_hit()
 			return cached.meta
 		}
 	}
-	a.topic_lock.runlock()
+	a.cache.topic_lock.runlock()
 
 	// Cache miss metric
 	a.record_cache_miss()
@@ -199,9 +199,9 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 	meta := json.decode(domain.TopicMetadata, data.bytestr())!
 
 	// Update cache
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	a.topic_cache[name] = CachedTopic{
+	a.cache.topic_lock.@lock()
+	defer { a.cache.topic_lock.unlock() }
+	a.cache.topic_cache[name] = CachedTopic{
 		meta:      meta
 		etag:      etag
 		cached_at: time.now()
@@ -217,9 +217,9 @@ pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMeta
 	topic_id_hex := topic_id.hex()
 
 	// Check reverse cache first (O(1) lookup)
-	a.topic_lock.rlock()
-	reverse_hit := a.topic_id_reverse_cache[topic_id_hex] or { '' }
-	a.topic_lock.runlock()
+	a.cache.topic_lock.rlock()
+	reverse_hit := a.cache.topic_id_reverse_cache[topic_id_hex] or { '' }
+	a.cache.topic_lock.runlock()
 
 	if reverse_hit.len > 0 {
 		// Reverse cache hit — fetch topic directly (at most 1 S3 call)
@@ -229,13 +229,13 @@ pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMeta
 	// Reverse cache miss — full scan via list_topics, then populate reverse cache
 	topics := a.list_topics()!
 
-	a.topic_lock.@lock()
+	a.cache.topic_lock.@lock()
 	for t in topics {
 		tid_hex := t.topic_id.hex()
-		a.topic_id_cache[tid_hex] = t.name
-		a.topic_id_reverse_cache[tid_hex] = t.name
+		a.cache.topic_id_cache[tid_hex] = t.name
+		a.cache.topic_id_reverse_cache[tid_hex] = t.name
 	}
-	a.topic_lock.unlock()
+	a.cache.topic_lock.unlock()
 
 	// Find matching topic
 	for t in topics {
@@ -276,10 +276,10 @@ pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
 	a.put_object(key, json.encode(updated_meta).bytes())!
 
 	// Update cache directly (instead of invalidating)
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	if cached := a.topic_cache[name] {
-		a.topic_cache[name] = CachedTopic{
+	a.cache.topic_lock.@lock()
+	defer { a.cache.topic_lock.unlock() }
+	if cached := a.cache.topic_cache[name] {
+		a.cache.topic_cache[name] = CachedTopic{
 			meta:      updated_meta
 			etag:      cached.etag
 			cached_at: time.now()

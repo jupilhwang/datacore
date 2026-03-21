@@ -240,9 +240,9 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 	})
 
 	// Collect metrics
-	a.adapter.metrics_lock.@lock()
-	a.adapter.metrics.s3_get_count++
-	a.adapter.metrics_lock.unlock()
+	a.adapter.metrics_collector.mu.@lock()
+	a.adapter.metrics_collector.data.s3_get_count++
+	a.adapter.metrics_collector.mu.unlock()
 
 	data, _ := a.adapter.get_object(key, 0, -1) or {
 		observability.log_with_context('s3', .warn, 'PartitionAssignment', 'Partition assignment not found',
@@ -252,9 +252,9 @@ pub fn (mut a S3ClusterMetadataAdapter) get_partition_assignment(topic_name stri
 			'key':       key
 			'error':     err.str()
 		})
-		a.adapter.metrics_lock.@lock()
-		a.adapter.metrics.s3_error_count++
-		a.adapter.metrics_lock.unlock()
+		a.adapter.metrics_collector.mu.@lock()
+		a.adapter.metrics_collector.data.s3_error_count++
+		a.adapter.metrics_collector.mu.unlock()
 		return error('partition assignment not found: ${topic_name}/${partition}')
 	}
 
@@ -292,9 +292,9 @@ pub fn (mut a S3ClusterMetadataAdapter) list_partition_assignments(topic_name st
 	})
 
 	// Collect metrics
-	a.adapter.metrics_lock.@lock()
-	a.adapter.metrics.s3_list_count++
-	a.adapter.metrics_lock.unlock()
+	a.adapter.metrics_collector.mu.@lock()
+	a.adapter.metrics_collector.data.s3_list_count++
+	a.adapter.metrics_collector.mu.unlock()
 
 	objects := a.adapter.list_objects(prefix)!
 
@@ -307,23 +307,23 @@ pub fn (mut a S3ClusterMetadataAdapter) list_partition_assignments(topic_name st
 		}
 
 		// Collect metrics
-		a.adapter.metrics_lock.@lock()
-		a.adapter.metrics.s3_get_count++
-		a.adapter.metrics_lock.unlock()
+		a.adapter.metrics_collector.mu.@lock()
+		a.adapter.metrics_collector.data.s3_get_count++
+		a.adapter.metrics_collector.mu.unlock()
 
 		data, _ := a.adapter.get_object(obj.key, 0, -1) or {
 			failed_count++
-			a.adapter.metrics_lock.@lock()
-			a.adapter.metrics.s3_error_count++
-			a.adapter.metrics_lock.unlock()
+			a.adapter.metrics_collector.mu.@lock()
+			a.adapter.metrics_collector.data.s3_error_count++
+			a.adapter.metrics_collector.mu.unlock()
 			continue
 		}
 
 		assignment := json.decode(domain.PartitionAssignment, data.bytestr()) or {
 			failed_count++
-			a.adapter.metrics_lock.@lock()
-			a.adapter.metrics.s3_error_count++
-			a.adapter.metrics_lock.unlock()
+			a.adapter.metrics_collector.mu.@lock()
+			a.adapter.metrics_collector.data.s3_error_count++
+			a.adapter.metrics_collector.mu.unlock()
 			continue
 		}
 
@@ -352,9 +352,9 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 	})
 
 	// Collect metrics
-	a.adapter.metrics_lock.@lock()
-	a.adapter.metrics.s3_list_count++
-	a.adapter.metrics_lock.unlock()
+	a.adapter.metrics_collector.mu.@lock()
+	a.adapter.metrics_collector.data.s3_list_count++
+	a.adapter.metrics_collector.mu.unlock()
 
 	objects := a.adapter.list_objects(prefix)!
 
@@ -367,23 +367,23 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 		}
 
 		// Collect metrics
-		a.adapter.metrics_lock.@lock()
-		a.adapter.metrics.s3_get_count++
-		a.adapter.metrics_lock.unlock()
+		a.adapter.metrics_collector.mu.@lock()
+		a.adapter.metrics_collector.data.s3_get_count++
+		a.adapter.metrics_collector.mu.unlock()
 
 		data, _ := a.adapter.get_object(obj.key, 0, -1) or {
 			failed_count++
-			a.adapter.metrics_lock.@lock()
-			a.adapter.metrics.s3_error_count++
-			a.adapter.metrics_lock.unlock()
+			a.adapter.metrics_collector.mu.@lock()
+			a.adapter.metrics_collector.data.s3_error_count++
+			a.adapter.metrics_collector.mu.unlock()
 			continue
 		}
 
 		assignment := json.decode(domain.PartitionAssignment, data.bytestr()) or {
 			failed_count++
-			a.adapter.metrics_lock.@lock()
-			a.adapter.metrics.s3_error_count++
-			a.adapter.metrics_lock.unlock()
+			a.adapter.metrics_collector.mu.@lock()
+			a.adapter.metrics_collector.data.s3_error_count++
+			a.adapter.metrics_collector.mu.unlock()
 			continue
 		}
 
@@ -435,9 +435,9 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 		}
 
 		// Success metric
-		a.adapter.metrics_lock.@lock()
-		a.adapter.metrics.s3_put_count++
-		a.adapter.metrics_lock.unlock()
+		a.adapter.metrics_collector.mu.@lock()
+		a.adapter.metrics_collector.data.s3_put_count++
+		a.adapter.metrics_collector.mu.unlock()
 
 		observability.log_with_context('s3', .info, 'PartitionAssignment', 'Successfully updated partition assignment',
 			{
@@ -449,9 +449,9 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 	}
 
 	// All retries failed
-	a.adapter.metrics_lock.@lock()
-	a.adapter.metrics.s3_error_count++
-	a.adapter.metrics_lock.unlock()
+	a.adapter.metrics_collector.mu.@lock()
+	a.adapter.metrics_collector.data.s3_error_count++
+	a.adapter.metrics_collector.mu.unlock()
 
 	observability.log_with_context('s3', .error, 'PartitionAssignment', 'Failed to update partition assignment after retries',
 		{

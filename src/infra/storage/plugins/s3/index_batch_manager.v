@@ -150,23 +150,23 @@ fn (mut a S3StorageAdapter) restore_pending_index_segments(partition_key string,
 /// update_index_cache updates the local index cache.
 fn (mut a S3StorageAdapter) update_index_cache(topic string, partition int, index PartitionIndex) {
 	cache_key := '${topic}:${partition}'
-	a.topic_lock.@lock()
+	a.cache.topic_lock.@lock()
 	defer {
-		a.topic_lock.unlock()
+		a.cache.topic_lock.unlock()
 	}
 
-	if cached := a.topic_index_cache[cache_key] {
+	if cached := a.cache.topic_index_cache[cache_key] {
 		// Maintain higher high_watermark between cache and S3
 		mut final_index := index
 		if cached.index.high_watermark > index.high_watermark {
 			final_index.high_watermark = cached.index.high_watermark
 		}
-		a.topic_index_cache[cache_key] = CachedPartitionIndex{
+		a.cache.topic_index_cache[cache_key] = CachedPartitionIndex{
 			index:     final_index
 			cached_at: time.now()
 		}
 	} else {
-		a.topic_index_cache[cache_key] = CachedPartitionIndex{
+		a.cache.topic_index_cache[cache_key] = CachedPartitionIndex{
 			index:     index
 			cached_at: time.now()
 		}
