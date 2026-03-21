@@ -5,6 +5,7 @@ module config
 import os
 import strings
 import toml
+import infra.storage.plugins.s3 as s3_plugin
 
 /// load_config loads configuration from a TOML file.
 /// path: path to the configuration file
@@ -30,7 +31,7 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		broker:          parse_broker_config(cli_args, doc)
 		rest:            parse_rest_config(cli_args, doc)
 		grpc:            parse_grpc_config(cli_args, doc)
-		storage:         parse_storage_config(cli_args, doc)
+		storage:         parse_storage_config(cli_args, doc)!
 		schema_registry: parse_schema_registry_config(doc)
 		observability:   parse_observability_config(doc)
 		telemetry:       parse_telemetry_config(doc)
@@ -102,7 +103,7 @@ fn parse_grpc_config(cli_args map[string]string, doc toml.Doc) GrpcGatewayConfig
 	}
 }
 
-fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
+fn parse_s3_config(cli_args map[string]string, doc toml.Doc) !S3StorageConfig {
 	mut s3 := S3StorageConfig{
 		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
 			doc, 'storage.s3.endpoint', '')
@@ -138,6 +139,13 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 			true)
 		access_key:                   ''
 		secret_key:                   ''
+	}
+
+	// validate user-provided endpoint for SSRF before applying default
+	if s3.endpoint != '' {
+		s3_plugin.validate_s3_endpoint(s3.endpoint) or {
+			return error('invalid S3 endpoint: ${err}')
+		}
 	}
 
 	s3.endpoint = if s3.endpoint == '' {
@@ -222,7 +230,7 @@ fn parse_iceberg_sub_config(mut s3 S3StorageConfig, doc toml.Doc) {
 	s3.iceberg_format_version = get_int(doc, 'storage.s3.iceberg.format_version', 2)
 }
 
-fn parse_storage_config(cli_args map[string]string, doc toml.Doc) StorageConfig {
+fn parse_storage_config(cli_args map[string]string, doc toml.Doc) !StorageConfig {
 	return StorageConfig{
 		engine:   get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
 			doc, 'storage.engine', 'memory')
@@ -230,7 +238,7 @@ fn parse_storage_config(cli_args map[string]string, doc toml.Doc) StorageConfig 
 			max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 20240)
 			segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
 		}
-		s3:       parse_s3_config(cli_args, doc)
+		s3:       parse_s3_config(cli_args, doc)!
 		sqlite:   SqliteStorageConfig{
 			path:         get_string(doc, 'storage.sqlite.path', 'datacore.db')
 			journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
@@ -634,7 +642,7 @@ fn load_default_config_with_overrides(cli_args map[string]string) !Config {
 		broker:          parse_broker_config(cli_args, empty_doc)
 		rest:            parse_rest_config(cli_args, empty_doc)
 		grpc:            parse_grpc_config(cli_args, empty_doc)
-		storage:         parse_storage_config(cli_args, empty_doc)
+		storage:         parse_storage_config(cli_args, empty_doc)!
 		schema_registry: parse_schema_registry_config(empty_doc)
 		observability:   parse_observability_config(empty_doc)
 		telemetry:       parse_telemetry_config(empty_doc)
@@ -661,6 +669,12 @@ fn toml_key_to_env_key_lower(toml_key string) string {
 	return env_key
 }
 
+/// EnvMapping represents a section and its configurable keys for environment variable display.
+struct EnvMapping {
+	section string
+	keys    []string
+}
+
 /// print_env_mapping prints the mapping between TOML keys and environment variable names.
 pub fn print_env_mapping() {
 	println('=== TOML Key to Environment Variable Mapping ===')
@@ -671,50 +685,32 @@ pub fn print_env_mapping() {
 	println('  3. DATACORE_ prefix + uppercase (e.g. DATACORE_BROKER_HOST)')
 	println('')
 
-	// Broker
-	println('[broker]')
-	println('  broker.host        -> ' + toml_key_to_env_key_upper('broker.host') + ', ' +
-		toml_key_to_env_key_lower('broker.host') + ', DATACORE_' +
-		toml_key_to_env_key_upper('broker.host'))
-	println('  broker.port        -> ' + toml_key_to_env_key_upper('broker.port') + ', ' +
-		toml_key_to_env_key_lower('broker.port') + ', DATACORE_' +
-		toml_key_to_env_key_upper('broker.port'))
-	println('  broker.cluster_id  -> ' + toml_key_to_env_key_upper('broker.cluster_id') + ', ' +
-		toml_key_to_env_key_lower('broker.cluster_id') + ', DATACORE_' +
-		toml_key_to_env_key_upper('broker.cluster_id'))
-	println('')
+	env_mappings := [
+		EnvMapping{'broker', ['broker.host', 'broker.port', 'broker.cluster_id']},
+		EnvMapping{'storage', ['storage.engine']},
+		EnvMapping{'s3', ['s3.endpoint', 's3.bucket']},
+		EnvMapping{'postgres', ['postgres.host', 'postgres.password']},
+		EnvMapping{'logging', ['logging.level']},
+	]
 
-	// Storage
-	println('[storage]')
-	println('  storage.engine     -> ' + toml_key_to_env_key_upper('storage.engine') + ', ' +
-		toml_key_to_env_key_lower('storage.engine') + ', DATACORE_' +
-		toml_key_to_env_key_upper('storage.engine'))
-	println('')
+	mut max_key_len := 0
+	for mapping in env_mappings {
+		for key in mapping.keys {
+			if key.len > max_key_len {
+				max_key_len = key.len
+			}
+		}
+	}
+	max_key_len += 2
 
-	// S3
-	println('[s3]')
-	println('  s3.endpoint   -> ' + toml_key_to_env_key_upper('s3.endpoint') + ', ' +
-		toml_key_to_env_key_lower('s3.endpoint') + ', DATACORE_' +
-		toml_key_to_env_key_upper('s3.endpoint'))
-	println('  s3.bucket     -> ' + toml_key_to_env_key_upper('s3.bucket') + ', ' +
-		toml_key_to_env_key_lower('s3.bucket') + ', DATACORE_' +
-		toml_key_to_env_key_upper('s3.bucket'))
-	println('')
-
-	// PostgreSQL
-	println('[postgres]')
-	println('  postgres.host     -> ' + toml_key_to_env_key_upper('postgres.host') + ', ' +
-		toml_key_to_env_key_lower('postgres.host') + ', DATACORE_' +
-		toml_key_to_env_key_upper('postgres.host'))
-	println('  postgres.password -> ' + toml_key_to_env_key_upper('postgres.password') + ', ' +
-		toml_key_to_env_key_lower('postgres.password') + ', DATACORE_' +
-		toml_key_to_env_key_upper('postgres.password'))
-	println('')
-
-	// Logging
-	println('[logging]')
-	println('  logging.level     -> ' + toml_key_to_env_key_upper('logging.level') + ', ' +
-		toml_key_to_env_key_lower('logging.level') + ', DATACORE_' +
-		toml_key_to_env_key_upper('logging.level'))
-	println('')
+	for mapping in env_mappings {
+		println('[${mapping.section}]')
+		for key in mapping.keys {
+			padded := key + ' '.repeat(max_key_len - key.len)
+			upper := toml_key_to_env_key_upper(key)
+			lower := toml_key_to_env_key_lower(key)
+			println('  ${padded} -> ${upper}, ${lower}, DATACORE_${upper}')
+		}
+		println('')
+	}
 }

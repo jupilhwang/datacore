@@ -31,9 +31,36 @@ mut:
 	date_day string
 }
 
+/// S3NetworkError represents transient network connectivity errors.
+/// Used for retry decisions instead of fragile string matching.
+struct S3NetworkError {
+	Error
+	detail string
+}
+
+fn (e S3NetworkError) msg() string {
+	return 'S3 network error: ${e.detail}'
+}
+
+/// S3ETagMismatchError indicates a conditional PUT failed due to ETag mismatch.
+/// Returned on HTTP 412 Precondition Failed.
+struct S3ETagMismatchError {
+	Error
+}
+
+fn (e S3ETagMismatchError) msg() string {
+	return 'etag_mismatch'
+}
+
 /// is_network_error detects network errors such as DNS resolution failures, connection refused, and timeouts.
 /// Identifies transient errors that may occur when connecting to S3 endpoints in Docker container environments.
-fn is_network_error(err_str string) bool {
+/// Checks for S3NetworkError type first, then falls back to string matching for V stdlib errors.
+fn is_network_error(err IError) bool {
+	if err is S3NetworkError {
+		return true
+	}
+	// Fallback for errors from V's stdlib (net.http) which are still string-based
+	err_str := err.msg()
 	return err_str.contains('socket error') || err_str.contains('resolve')
 		|| err_str.contains('connection refused') || err_str.contains('timed out')
 		|| err_str.contains('Connection refused') || err_str.contains('ECONNREFUSED')
@@ -99,7 +126,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			err_str := err.msg()
 
 			// Retry on DNS/network errors
-			if is_network_error(err_str) && attempt < cfg_max_retries - 1 {
+			if is_network_error(err) && attempt < cfg_max_retries - 1 {
 				backoff_ms := dns_backoff_ms * (1 << attempt)
 				observability.log_with_context('s3', .warn, 'S3Client', 'GET retry (network error)',
 					{
@@ -184,7 +211,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 
 			if attempt < max_retries_ - 1 {
 				// Apply longer backoff for DNS/network errors (1s, 2s, 4s)
-				backoff_ms := if is_network_error(err_str) {
+				backoff_ms := if is_network_error(err) {
 					dns_backoff_ms * (1 << attempt)
 				} else {
 					cfg_retry_delay_ms * (1 << attempt)
@@ -307,7 +334,7 @@ fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag stri
 	resp := req.do() or { return error('S3 PUT failed: ${err}') }
 
 	if resp.status_code == 412 {
-		return error('etag_mismatch')
+		return S3ETagMismatchError{}
 	}
 	if resp.status_code !in [200, 201, 204] {
 		return error('S3 PUT failed with status ${resp.status_code}')
@@ -470,7 +497,7 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 
 			if attempt < cfg_max_retries - 1 {
 				// Apply longer backoff for DNS/network errors (1s, 2s, 4s)
-				backoff_ms := if is_network_error(err_str) {
+				backoff_ms := if is_network_error(err) {
 					dns_backoff_ms * (1 << attempt)
 				} else {
 					cfg_retry_delay_ms * (1 << attempt)
