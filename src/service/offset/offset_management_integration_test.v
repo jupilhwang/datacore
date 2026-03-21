@@ -15,7 +15,7 @@ fn setup_manager_with_topic(topic string, partitions int) !(&OffsetManager, port
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic(topic, partitions, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.integration.test')
-	return new_offset_manager(storage, logger), storage
+	return new_offset_manager(storage, storage, logger), storage
 }
 
 fn commit_single_offset(mut manager OffsetManager, group_id string, topic string, partition int, offset_val i64) ! {
@@ -120,7 +120,7 @@ fn test_offset_commit_multiple_topics_in_one_request() ! {
 	storage.create_topic('alpha', 2, domain.TopicConfig{})!
 	storage.create_topic('beta', 2, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.multi.test')
-	mut mgr := new_offset_manager(storage, logger)
+	mut mgr := new_offset_manager(storage, storage, logger)
 
 	mgr.commit_offsets(OffsetCommitRequest{
 		group_id: 'grp-multi'
@@ -177,7 +177,7 @@ fn test_offset_fetch_nonexistent_partition_returns_minus_one() ! {
 fn test_offset_fetch_empty_group_id_returns_error_code() ! {
 	logger := observability.get_named_logger('offset.fetch.err.test')
 	storage := memory.new_memory_adapter()
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 
 	resp := manager.fetch_offsets(OffsetFetchRequest{
 		group_id:   ''
@@ -193,7 +193,7 @@ fn test_offset_fetch_empty_group_id_returns_error_code() ! {
 fn test_offset_fetch_empty_partition_list_returns_empty() ! {
 	logger := observability.get_named_logger('offset.empty.test')
 	storage := memory.new_memory_adapter()
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 
 	resp := manager.fetch_offsets(OffsetFetchRequest{
 		group_id:   'grp-empty'
@@ -208,7 +208,7 @@ fn test_offset_fetch_multiple_groups_independent() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('shared', 1, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.multi.grp.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 
 	commit_single_offset(mut manager, 'grp-1', 'shared', 0, 100)!
 	commit_single_offset(mut manager, 'grp-2', 'shared', 0, 200)!
@@ -225,7 +225,7 @@ fn test_consumer_group_rebalance_offset_preserved_after_member_join() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('rebalance-topic', 2, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.rebalance.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 	mut coordinator := group.new_group_coordinator(storage)
 
 	// Member A joins group and commits offsets
@@ -264,7 +264,7 @@ fn test_consumer_group_rebalance_offset_preserved_after_member_leave() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('leave-topic', 1, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.leave.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 	mut coordinator := group.new_group_coordinator(storage)
 
 	coordinator.join_group(group.JoinGroupRequest{
@@ -301,7 +301,7 @@ fn test_consumer_group_all_members_removed_then_rejoin_resumes_offset() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('resume-topic', 1, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.resume.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 	mut coordinator := group.new_group_coordinator(storage)
 
 	// First session: member joins, commits, and leaves
@@ -345,7 +345,7 @@ fn test_offset_reset_earliest() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('earliest-topic', 1, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.earliest.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 
 	// No committed offset yet
 	result := fetch_single_offset(mut manager, 'grp-earliest', 'earliest-topic', 0)!
@@ -363,7 +363,7 @@ fn test_offset_reset_latest() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('latest-topic', 1, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.latest.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 
 	// Append some records to advance the log
 	storage.append('latest-topic', 0, [
@@ -394,7 +394,7 @@ fn test_offset_reset_none_no_committed_offset() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('none-topic', 1, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.none.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 
 	result := fetch_single_offset(mut manager, 'grp-none', 'none-topic', 0)!
 	// -1 signals "no committed offset"; clients applying the 'none' policy
@@ -415,11 +415,11 @@ fn test_offset_persistence_across_adapter_instances() ! {
 	logger := observability.get_named_logger('offset.persist.test')
 
 	// First manager: commit an offset
-	mut manager1 := new_offset_manager(storage, logger)
+	mut manager1 := new_offset_manager(storage, storage, logger)
 	commit_single_offset(mut manager1, 'grp-persist', 'persist-topic', 0, 77)!
 
 	// Second manager wrapping the same storage (simulating post-restart load)
-	mut manager2 := new_offset_manager(storage, logger)
+	mut manager2 := new_offset_manager(storage, storage, logger)
 	result := fetch_single_offset(mut manager2, 'grp-persist', 'persist-topic', 0)!
 	assert result == 77
 }
@@ -429,7 +429,7 @@ fn test_offset_commit_batch_then_fetch_all() ! {
 	mut storage := memory.new_memory_adapter()
 	storage.create_topic('batch-topic', 5, domain.TopicConfig{})!
 	logger := observability.get_named_logger('offset.batch.test')
-	mut manager := new_offset_manager(storage, logger)
+	mut manager := new_offset_manager(storage, storage, logger)
 
 	offsets := [
 		domain.PartitionOffset{

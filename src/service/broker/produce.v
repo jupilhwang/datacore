@@ -8,13 +8,15 @@ import service.port
 /// ProduceUseCase handles produce request business logic.
 /// Responsible for message validation, topic verification, and storage writes.
 pub struct ProduceUseCase {
-	storage port.StoragePort
+	topic_storage  port.TopicStoragePort
+	record_storage port.RecordStoragePort
 }
 
 /// new_produce_usecase creates a new ProduceUseCase.
-pub fn new_produce_usecase(storage port.StoragePort) &ProduceUseCase {
+pub fn new_produce_usecase(topic_storage port.TopicStoragePort, record_storage port.RecordStoragePort) &ProduceUseCase {
 	return &ProduceUseCase{
-		storage: storage
+		topic_storage:  topic_storage
+		record_storage: record_storage
 	}
 }
 
@@ -58,7 +60,7 @@ pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 	}
 
 	// Verify topic exists
-	_ := u.storage.get_topic(req.topic) or {
+	_ := u.topic_storage.get_topic(req.topic) or {
 		return ProduceResponse{
 			topic:      req.topic
 			partition:  req.partition
@@ -67,7 +69,7 @@ pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 	}
 
 	// Store records to storage
-	result := u.storage.append(req.topic, req.partition, req.records, req.acks) or {
+	result := u.record_storage.append(req.topic, req.partition, req.records, req.acks) or {
 		return ProduceResponse{
 			topic:      req.topic
 			partition:  req.partition

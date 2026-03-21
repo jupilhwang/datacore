@@ -15,17 +15,20 @@ pub struct SharePartitionManager {
 mut:
 	// Share partitions keyed by "group_id:topic:partition"
 	partitions map[string]&domain.SharePartition
-	// Storage for persistence
-	storage port.StoragePort
+	// Storage for record operations
+	record_storage port.RecordStoragePort
+	// Storage for share partition state persistence
+	share_storage port.SharePartitionPort
 	// Thread safety
 	lock sync.RwMutex
 }
 
 /// new_share_partition_manager creates a new share partition manager.
-pub fn new_share_partition_manager(storage port.StoragePort) &SharePartitionManager {
+pub fn new_share_partition_manager(record_storage port.RecordStoragePort, share_storage port.SharePartitionPort) &SharePartitionManager {
 	return &SharePartitionManager{
-		partitions: map[string]&domain.SharePartition{}
-		storage:    storage
+		partitions:     map[string]&domain.SharePartition{}
+		record_storage: record_storage
+		share_storage:  share_storage
 	}
 }
 
@@ -298,7 +301,7 @@ fn (mut m SharePartitionManager) get_or_create_partition_internal(group_id strin
 	}
 
 	mut start_offset := i64(0)
-	if info := m.storage.get_partition_info(topic_name, partition) {
+	if info := m.record_storage.get_partition_info(topic_name, partition) {
 		start_offset = info.high_watermark
 	}
 
@@ -332,12 +335,12 @@ fn (mut m SharePartitionManager) advance_spso_internal(mut sp domain.SharePartit
 /// persist_state persists a partition state to storage.
 fn (mut m SharePartitionManager) persist_state(sp &domain.SharePartition) {
 	state := sp.to_state()
-	m.storage.save_share_partition_state(state) or {}
+	m.share_storage.save_share_partition_state(state) or {}
 }
 
 /// load_state loads a partition state from storage.
 fn (mut m SharePartitionManager) load_state(group_id string, topic_name string, partition i32) ?domain.SharePartition {
-	state := m.storage.load_share_partition_state(group_id, topic_name, partition)?
+	state := m.share_storage.load_share_partition_state(group_id, topic_name, partition)?
 	return state.to_partition()
 }
 
@@ -348,7 +351,7 @@ pub fn (mut m SharePartitionManager) persist_all_states() {
 
 	for _, sp in m.partitions {
 		state := sp.to_state()
-		m.storage.save_share_partition_state(state) or {}
+		m.share_storage.save_share_partition_state(state) or {}
 	}
 }
 
@@ -357,7 +360,7 @@ pub fn (mut m SharePartitionManager) load_all_states(group_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
-	states := m.storage.load_all_share_partition_states(group_id)
+	states := m.share_storage.load_all_share_partition_states(group_id)
 	for state in states {
 		key := '${state.group_id}:${state.topic_name}:${state.partition}'
 		sp := state.to_partition()

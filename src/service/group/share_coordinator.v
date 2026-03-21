@@ -17,8 +17,12 @@ mut:
 	// Share groups keyed by group_id
 	groups map[string]&domain.ShareGroup
 	config domain.ShareGroupConfig
-	// Storage for persistence
-	storage port.StoragePort
+	// Storage for topic lookups (used by compute_assignment)
+	storage port.TopicStoragePort
+	// Storage for record operations (delegated to partition manager)
+	record_storage port.RecordStoragePort
+	// Storage for share partition state (delegated to partition manager)
+	share_storage port.SharePartitionPort
 	// Thread safety
 	lock sync.RwMutex
 	// Assignor
@@ -30,13 +34,15 @@ mut:
 }
 
 /// new_share_group_coordinator creates a new share group coordinator.
-pub fn new_share_group_coordinator(storage port.StoragePort, config domain.ShareGroupConfig) &ShareGroupCoordinator {
+pub fn new_share_group_coordinator(storage port.TopicStoragePort, record_storage port.RecordStoragePort, share_storage port.SharePartitionPort, config domain.ShareGroupConfig) &ShareGroupCoordinator {
 	return &ShareGroupCoordinator{
 		groups:            map[string]&domain.ShareGroup{}
 		config:            config
 		storage:           storage
+		record_storage:    record_storage
+		share_storage:     share_storage
 		assignor:          new_simple_assignor()
-		partition_manager: new_share_partition_manager(storage)
+		partition_manager: new_share_partition_manager(record_storage, share_storage)
 		session_manager:   new_share_session_manager()
 	}
 }

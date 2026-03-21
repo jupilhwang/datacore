@@ -9,11 +9,11 @@ import common
 /// TopicManager handles topic management business logic.
 /// Responsible for topic lifecycle management and configuration validation.
 pub struct TopicManager {
-	storage port.StoragePort
+	storage port.TopicStoragePort
 }
 
 /// new_topic_manager creates a new TopicManager.
-pub fn new_topic_manager(storage port.StoragePort) &TopicManager {
+pub fn new_topic_manager(storage port.TopicStoragePort) &TopicManager {
 	return &TopicManager{
 		storage: storage
 	}

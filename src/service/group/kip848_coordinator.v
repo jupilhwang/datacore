@@ -27,7 +27,7 @@ pub struct KIP848GroupCoordinator {
 	assignors        map[string]ServerAssignor
 	default_assignor string
 mut:
-	storage               port.StoragePort
+	storage               port.TopicStoragePort
 	groups                map[string]&KIP848ConsumerGroup
 	heartbeat_interval_ms i32
 	session_timeout_ms    i32
@@ -35,7 +35,7 @@ mut:
 }
 
 /// new_kip848_coordinator creates a new KIP-848 group coordinator.
-pub fn new_kip848_coordinator(storage port.StoragePort) &KIP848GroupCoordinator {
+pub fn new_kip848_coordinator(storage port.TopicStoragePort) &KIP848GroupCoordinator {
 	mut assignors := map[string]ServerAssignor{}
 	assignors['range'] = new_range_assignor()
 	assignors['roundrobin'] = new_round_robin_assignor()

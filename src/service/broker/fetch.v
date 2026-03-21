@@ -9,13 +9,15 @@ import time
 /// FetchUseCase handles fetch request business logic.
 /// Supports single and parallel fetch, including timeout handling.
 pub struct FetchUseCase {
-	storage port.StoragePort
+	topic_storage  port.TopicStoragePort
+	record_storage port.RecordStoragePort
 }
 
 /// new_fetch_usecase creates a new FetchUseCase.
-pub fn new_fetch_usecase(storage port.StoragePort) &FetchUseCase {
+pub fn new_fetch_usecase(topic_storage port.TopicStoragePort, record_storage port.RecordStoragePort) &FetchUseCase {
 	return &FetchUseCase{
-		storage: storage
+		topic_storage:  topic_storage
+		record_storage: record_storage
 	}
 }
 
@@ -159,14 +161,14 @@ fn (u &FetchUseCase) fetch_partition_async(part_req FetchPartitionRequest, ch ch
 
 /// fetch_partition fetches records from a single partition.
 fn (u &FetchUseCase) fetch_partition(part_req FetchPartitionRequest) FetchPartitionResponse {
-	_ := u.storage.get_topic(part_req.topic) or {
+	_ := u.topic_storage.get_topic(part_req.topic) or {
 		return FetchPartitionResponse{
 			topic:      part_req.topic
 			partition:  part_req.partition
 			error_code: i16(domain.ErrorCode.unknown_topic_or_partition)
 		}
 	}
-	result := u.storage.fetch(part_req.topic, part_req.partition, part_req.fetch_offset,
+	result := u.record_storage.fetch(part_req.topic, part_req.partition, part_req.fetch_offset,
 		part_req.max_bytes) or {
 		return FetchPartitionResponse{
 			topic:      part_req.topic

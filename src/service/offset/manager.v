@@ -10,15 +10,17 @@ import infra.observability
 /// Responsible for offset commits, retrieval, and validation.
 pub struct OffsetManager {
 mut:
-	storage port.StoragePort
-	logger  &observability.Logger
+	topic_storage  port.TopicStoragePort
+	offset_storage port.OffsetStoragePort
+	logger         &observability.Logger
 }
 
 /// new_offset_manager creates a new OffsetManager.
-pub fn new_offset_manager(storage port.StoragePort, logger &observability.Logger) &OffsetManager {
+pub fn new_offset_manager(topic_storage port.TopicStoragePort, offset_storage port.OffsetStoragePort, logger &observability.Logger) &OffsetManager {
 	return &OffsetManager{
-		storage: storage
-		logger:  logger
+		topic_storage:  topic_storage
+		offset_storage: offset_storage
+		logger:         logger
 	}
 }
 
@@ -43,7 +45,7 @@ pub fn (mut m OffsetManager) commit_offsets(req OffsetCommitRequest) !OffsetComm
 		observability.field_int('count', req.offsets.len))
 
 	// Commit offsets to storage
-	m.storage.commit_offsets(req.group_id, req.offsets) or {
+	m.offset_storage.commit_offsets(req.group_id, req.offsets) or {
 		m.logger.error('Failed to commit offsets', observability.field_string('group_id',
 			req.group_id), observability.field_string('error', err.str()))
 
@@ -107,7 +109,7 @@ pub fn (mut m OffsetManager) fetch_offsets(req OffsetFetchRequest) !OffsetFetchR
 		observability.field_int('partitions', req.partitions.len))
 
 	// Retrieve offsets from storage
-	fetched := m.storage.fetch_offsets(req.group_id, req.partitions) or {
+	fetched := m.offset_storage.fetch_offsets(req.group_id, req.partitions) or {
 		m.logger.error('Failed to fetch offsets', observability.field_string('group_id',
 			req.group_id), observability.field_string('error', err.str()))
 		return OffsetFetchResponse{
@@ -120,7 +122,7 @@ pub fn (mut m OffsetManager) fetch_offsets(req OffsetFetchRequest) !OffsetFetchR
 	mut results := []OffsetFetchResult{cap: fetched.len}
 	for f in fetched {
 		// Attempt to look up TopicId (for v10 support)
-		topic_meta := m.storage.get_topic(f.topic) or {
+		topic_meta := m.topic_storage.get_topic(f.topic) or {
 			// Return result with error code even if topic is not found
 			results << create_fetch_result_with_error(f, i16(domain.ErrorCode.unknown_topic_or_partition))
 			continue
@@ -148,7 +150,7 @@ pub fn (mut m OffsetManager) fetch_offsets(req OffsetFetchRequest) !OffsetFetchR
 /// Converts TopicId to TopicName before retrieving offsets.
 pub fn (mut m OffsetManager) fetch_offsets_by_topic_id(group_id string, topic_id []u8, partitions []int) !OffsetFetchResponse {
 	// Look up topic by TopicId
-	topic_meta := m.storage.get_topic_by_id(topic_id) or {
+	topic_meta := m.topic_storage.get_topic_by_id(topic_id) or {
 		m.logger.warn('Topic not found by ID', observability.field_string('group_id',
 			group_id))
 		return OffsetFetchResponse{

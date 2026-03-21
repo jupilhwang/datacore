@@ -4,10 +4,9 @@ module offset
 import domain
 import infra.observability
 import infra.storage.plugins.memory
-import service.port
 
 // Helper: Create test storage
-fn create_test_storage() port.StoragePort {
+fn create_test_storage() &memory.MemoryStorageAdapter {
 	return memory.new_memory_adapter()
 }
 
@@ -17,9 +16,9 @@ fn create_test_logger() &observability.Logger {
 }
 
 // Helper: Create test OffsetManager with shared storage
-fn create_test_manager_with_storage(storage port.StoragePort) &OffsetManager {
+fn create_test_manager_with_storage(storage &memory.MemoryStorageAdapter) &OffsetManager {
 	logger := create_test_logger()
-	return new_offset_manager(storage, logger)
+	return new_offset_manager(storage, storage, logger)
 }
 
 // Helper: Create test OffsetManager

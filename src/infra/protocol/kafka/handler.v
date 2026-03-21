@@ -64,11 +64,55 @@ pub:
 	compression_service &compression.CompressionService = unsafe { nil }
 }
 
+// StorageSubPorts wraps a StoragePort in a concrete struct, enabling V to satisfy
+// narrower sub-interfaces (TopicStoragePort, OffsetStoragePort, etc.).
+// V does not support narrowing one interface type to another directly; this struct
+// delegates all sub-interface methods to the underlying StoragePort.
+struct StorageSubPorts {
+mut:
+	s port.StoragePort
+}
+
+fn (mut w StorageSubPorts) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
+	return w.s.create_topic(name, partitions, config)
+}
+
+fn (mut w StorageSubPorts) delete_topic(name string) ! {
+	return w.s.delete_topic(name)
+}
+
+fn (mut w StorageSubPorts) list_topics() ![]domain.TopicMetadata {
+	return w.s.list_topics()
+}
+
+fn (mut w StorageSubPorts) get_topic(name string) !domain.TopicMetadata {
+	return w.s.get_topic(name)
+}
+
+fn (mut w StorageSubPorts) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
+	return w.s.get_topic_by_id(topic_id)
+}
+
+fn (mut w StorageSubPorts) add_partitions(name string, new_count int) ! {
+	return w.s.add_partitions(name, new_count)
+}
+
+fn (mut w StorageSubPorts) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
+	return w.s.commit_offsets(group_id, offsets)
+}
+
+fn (mut w StorageSubPorts) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+	return w.s.fetch_offsets(group_id, partitions)
+}
+
 /// new_handler_from_config creates a Handler from a HandlerConfig.
 /// This is the single initialization path that all constructor helpers delegate to.
 pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 	logger := observability.get_named_logger('kafka.handler')
-	offset_mgr := offset.new_offset_manager(cfg.storage, logger)
+	mut sub := StorageSubPorts{
+		s: cfg.storage
+	}
+	offset_mgr := offset.new_offset_manager(sub, sub, logger)
 	metrics := observability.new_protocol_metrics()
 
 	return Handler{

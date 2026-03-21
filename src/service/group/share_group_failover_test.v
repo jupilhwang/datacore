@@ -244,7 +244,7 @@ fn setup_test_environment(record_count int) (&ShareGroupCoordinator, &Persistent
 		heartbeat_interval_ms:   5000
 		session_timeout_ms:      45000
 	}
-	coordinator := new_share_group_coordinator(storage, config)
+	coordinator := new_share_group_coordinator(storage, storage, storage, config)
 	return coordinator, storage
 }
 
@@ -277,7 +277,7 @@ fn create_coordinator_from_storage(storage &PersistentMockStorage) &ShareGroupCo
 		heartbeat_interval_ms:   5000
 		session_timeout_ms:      45000
 	}
-	return new_share_group_coordinator(storage, config)
+	return new_share_group_coordinator(storage, storage, storage, config)
 }
 
 // -- Scenario 1: Consumer failover - no duplicate delivery --
@@ -627,7 +627,8 @@ fn test_expired_lock_recovery() {
 		heartbeat_interval_ms:   5000
 		session_timeout_ms:      45000
 	}
-	mut fast_coordinator := new_share_group_coordinator(coordinator.storage, config)
+	mut fast_coordinator := new_share_group_coordinator(coordinator.storage, coordinator.record_storage,
+		coordinator.share_storage, config)
 
 	member_a, _ := join_consumer(mut fast_coordinator, group_id, 'test-topic')
 	member_b, _ := join_consumer(mut fast_coordinator, group_id, 'test-topic')
