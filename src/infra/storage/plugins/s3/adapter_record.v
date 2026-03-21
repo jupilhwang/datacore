@@ -67,65 +67,12 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	p_lock.unlock()
 
 	// 3. Create StoredRecords with reserved offsets
-	mut bytes_to_add := i64(0)
-	mut stored_records := []StoredRecord{}
-
-	for i, rec in records {
-		srec := StoredRecord{
-			offset:    base_offset + i64(i)
-			timestamp: if rec.timestamp.unix_milli() == 0 { time.now() } else { rec.timestamp }
-			key:       rec.key
-			value:     rec.value
-			headers:   rec.headers
-		}
-		stored_records << srec
-		bytes_to_add += i64(srec.value.len + srec.key.len + record_overhead_bytes)
-	}
+	stored_records, bytes_to_add := a.create_stored_records(records, base_offset)
 
 	if required_acks == 0 {
-		// === acks=0: async path (existing behavior) ===
-		// Append to in-memory buffer and return immediately.
-		// flush_worker drains the buffer every batch_timeout_ms automatically.
-		a.buffer_lock.@lock()
-		mut tp_buffer := a.topic_partition_buffers[partition_key] or {
-			TopicPartitionBuffer{
-				records:            []
-				current_size_bytes: 0
-			}
-		}
-
-		tp_buffer.records << stored_records
-		tp_buffer.current_size_bytes += bytes_to_add
-
-		a.topic_partition_buffers[partition_key] = tp_buffer
-		a.buffer_lock.unlock()
+		a.append_async(partition_key, stored_records, bytes_to_add)
 	} else {
-		// === acks=1/-1: sync path (durability guarantee) ===
-		if a.config.sync_linger_ms > 0 {
-			// Linger path: batch multiple sync requests within the linger window
-			ch := chan LingerResult{cap: 1}
-			a.sync_linger_lock.lock()
-			should_flush := a.add_to_sync_linger_buffer(partition_key, stored_records,
-				ch)
-			mut flush_buf := SyncLingerBuffer{}
-			if should_flush {
-				flush_buf = a.drain_sync_linger_buffer(partition_key)
-			}
-			a.sync_linger_lock.unlock()
-
-			if should_flush && flush_buf.records.len > 0 {
-				a.flush_sync_linger_buffer(topic, partition, flush_buf)
-			}
-
-			// Wait for result from linger flush
-			result := <-ch
-			if err_val := result.err {
-				return error('durable append failed (acks=${required_acks}): ${err_val}')
-			}
-		} else {
-			// Immediate path: write directly to S3 (original behavior)
-			a.sync_append_immediate(topic, partition, stored_records, required_acks)!
-		}
+		a.append_sync(topic, partition, partition_key, stored_records, required_acks)!
 	}
 
 	// Append records to Iceberg table (when Iceberg is enabled)
@@ -161,81 +108,37 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 		return error('Offset out of range (too old): ${offset} < ${index.earliest_offset}')
 	}
 
-	// Find relevant segments
-	mut all_records := []domain.Record{}
+	// 1. Read from S3 segments
+	segment_records := a.fetch_from_segments(index.log_segments, offset, max_bytes)
+
 	mut bytes_read := 0
 	mut highest_offset_read := offset - 1
-
-	// 1. Try reading from S3 segments first
-	for seg in index.log_segments {
-		if seg.end_offset < offset {
-			continue
+	mut all_records := []domain.Record{}
+	for rec in segment_records {
+		all_records << domain.Record{
+			key:       rec.key
+			value:     rec.value
+			headers:   rec.headers
+			timestamp: rec.timestamp
 		}
-		if seg.start_offset > offset + i64(max_bytes / fetch_offset_estimate_divisor) {
-			break
-		}
-
-		// Fetch segment from S3
-		// Optimization: use Range Request when reading from start of segment
-		mut data := []u8{}
-		if offset == seg.start_offset && max_bytes > 0 {
-			mut fetch_size := i64(max_bytes) * fetch_size_multiplier
-			if fetch_size > seg.size_bytes {
-				fetch_size = -1
-			}
-			range_end := if fetch_size > 0 { fetch_size } else { -1 }
-			data, _ = a.get_object(seg.key, 0, range_end) or { continue }
-		} else {
-			// Random access without index: must download full segment
-			data, _ = a.get_object(seg.key, -1, -1) or { continue }
-		}
-
-		stored_records := decode_stored_records(data)
-
-		for rec in stored_records {
-			if rec.offset >= offset && bytes_read < max_bytes {
-				// Convert StoredRecord to domain.Record
-				all_records << domain.Record{
-					key:       rec.key
-					value:     rec.value
-					headers:   rec.headers
-					timestamp: rec.timestamp
-				}
-				bytes_read += rec.value.len + rec.key.len
-				if rec.offset > highest_offset_read {
-					highest_offset_read = rec.offset
-				}
-			}
-		}
-
-		if bytes_read >= max_bytes {
-			break
+		bytes_read += rec.value.len + rec.key.len
+		if rec.offset > highest_offset_read {
+			highest_offset_read = rec.offset
 		}
 	}
 
-	// 2. Also read from in-memory buffer (data not yet flushed to S3)
-	// Important for data not yet persisted
+	// 2. Read from in-memory buffer (data not yet flushed to S3)
 	if bytes_read < max_bytes {
-		a.buffer_lock.rlock()
-		if tp_buffer := a.topic_partition_buffers[partition_key] {
-			for rec in tp_buffer.records {
-				// Read records at or above requested offset not already read from S3 segments
-				if rec.offset >= offset && rec.offset > highest_offset_read
-					&& bytes_read < max_bytes {
-					all_records << domain.Record{
-						key:       rec.key
-						value:     rec.value
-						headers:   rec.headers
-						timestamp: rec.timestamp
-					}
-					bytes_read += rec.value.len + rec.key.len
-					if rec.offset > highest_offset_read {
-						highest_offset_read = rec.offset
-					}
-				}
+		buffer_records := a.fetch_from_buffer(partition_key, highest_offset_read + 1,
+			max_bytes - bytes_read)
+		for rec in buffer_records {
+			all_records << domain.Record{
+				key:       rec.key
+				value:     rec.value
+				headers:   rec.headers
+				timestamp: rec.timestamp
 			}
 		}
-		a.buffer_lock.runlock()
 	}
 
 	// Offset of the first record actually returned
@@ -293,4 +196,141 @@ pub fn (mut a S3StorageAdapter) delete_records(topic string, partition int, befo
 
 	index_key := a.partition_index_key(topic, partition)
 	a.put_object(index_key, json.encode(index).bytes())!
+}
+
+/// create_stored_records builds StoredRecords from domain records with sequential offsets
+/// starting at base_offset, and returns the total bytes added.
+fn (mut a S3StorageAdapter) create_stored_records(records []domain.Record, base_offset i64) ([]StoredRecord, i64) {
+	mut bytes_to_add := i64(0)
+	mut stored_records := []StoredRecord{}
+
+	for i, rec in records {
+		srec := StoredRecord{
+			offset:    base_offset + i64(i)
+			timestamp: if rec.timestamp.unix_milli() == 0 { time.now() } else { rec.timestamp }
+			key:       rec.key
+			value:     rec.value
+			headers:   rec.headers
+		}
+		stored_records << srec
+		bytes_to_add += i64(srec.value.len + srec.key.len + record_overhead_bytes)
+	}
+
+	return stored_records, bytes_to_add
+}
+
+/// append_async appends stored records to the in-memory buffer for the async (acks=0) path.
+/// flush_worker drains the buffer every batch_timeout_ms automatically.
+fn (mut a S3StorageAdapter) append_async(partition_key string, stored_records []StoredRecord, bytes_to_add i64) {
+	a.buffer_lock.@lock()
+	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
+		TopicPartitionBuffer{
+			records:            []
+			current_size_bytes: 0
+		}
+	}
+
+	tp_buffer.records << stored_records
+	tp_buffer.current_size_bytes += bytes_to_add
+
+	a.topic_partition_buffers[partition_key] = tp_buffer
+	a.buffer_lock.unlock()
+}
+
+/// append_sync handles the durable (acks=1/-1) append path.
+/// Uses sync_linger_ms batching when configured, otherwise writes directly to S3.
+fn (mut a S3StorageAdapter) append_sync(topic string, partition int, partition_key string, stored_records []StoredRecord, required_acks i16) ! {
+	if a.config.sync_linger_ms > 0 {
+		// Linger path: batch multiple sync requests within the linger window
+		ch := chan LingerResult{cap: 1}
+		a.sync_linger_lock.lock()
+		should_flush := a.add_to_sync_linger_buffer(partition_key, stored_records, ch)
+		mut flush_buf := SyncLingerBuffer{}
+		if should_flush {
+			flush_buf = a.drain_sync_linger_buffer(partition_key)
+		}
+		a.sync_linger_lock.unlock()
+
+		if should_flush && flush_buf.records.len > 0 {
+			a.flush_sync_linger_buffer(topic, partition, flush_buf)
+		}
+
+		// Wait for result from linger flush
+		result := <-ch
+		if err_val := result.err {
+			return error('durable append failed (acks=${required_acks}): ${err_val}')
+		}
+	} else {
+		// Immediate path: write directly to S3
+		a.sync_append_immediate(topic, partition, stored_records, required_acks)!
+	}
+}
+
+/// fetch_from_segments reads records from S3 segments within the given offset and byte limits.
+fn (mut a S3StorageAdapter) fetch_from_segments(segments []LogSegment, fetch_offset i64, max_bytes int) []StoredRecord {
+	mut result := []StoredRecord{}
+	mut bytes_read := 0
+
+	for seg in segments {
+		if seg.end_offset < fetch_offset {
+			continue
+		}
+		if seg.start_offset > fetch_offset + i64(max_bytes / fetch_offset_estimate_divisor) {
+			break
+		}
+
+		// Optimization: use Range Request when reading from start of segment
+		mut data := []u8{}
+		if fetch_offset == seg.start_offset && max_bytes > 0 {
+			mut fetch_size := i64(max_bytes) * fetch_size_multiplier
+			if fetch_size > seg.size_bytes {
+				fetch_size = -1
+			}
+			range_end := if fetch_size > 0 { fetch_size } else { -1 }
+			data, _ = a.get_object(seg.key, 0, range_end) or { continue }
+		} else {
+			// Random access without index: must download full segment
+			data, _ = a.get_object(seg.key, -1, -1) or { continue }
+		}
+
+		stored_records := decode_stored_records(data)
+
+		for rec in stored_records {
+			if rec.offset >= fetch_offset && bytes_read < max_bytes {
+				result << rec
+				bytes_read += rec.value.len + rec.key.len
+			}
+		}
+
+		if bytes_read >= max_bytes {
+			break
+		}
+	}
+
+	return result
+}
+
+/// fetch_from_buffer reads records from the in-memory buffer starting at fetch_offset
+/// up to remaining_bytes, skipping records already read from S3 segments.
+fn (mut a S3StorageAdapter) fetch_from_buffer(partition_key string, fetch_offset i64, remaining_bytes int) []StoredRecord {
+	mut result := []StoredRecord{}
+	mut bytes_read := 0
+	mut highest_offset := fetch_offset - 1
+
+	a.buffer_lock.rlock()
+	if tp_buffer := a.topic_partition_buffers[partition_key] {
+		for rec in tp_buffer.records {
+			if rec.offset >= fetch_offset && rec.offset > highest_offset
+				&& bytes_read < remaining_bytes {
+				result << rec
+				bytes_read += rec.value.len + rec.key.len
+				if rec.offset > highest_offset {
+					highest_offset = rec.offset
+				}
+			}
+		}
+	}
+	a.buffer_lock.runlock()
+
+	return result
 }

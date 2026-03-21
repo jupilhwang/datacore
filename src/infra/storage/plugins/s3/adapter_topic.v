@@ -78,26 +78,59 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 	}
 	// Also cache topic_id -> name mapping for O(1) lookup
 	a.topic_id_cache[meta.topic_id.hex()] = name
+	a.topic_id_reverse_cache[meta.topic_id.hex()] = name
 
 	return meta
 }
 
 /// delete_topic deletes a topic from S3.
 pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
+	// Phase 1: Acquire exclusive lock, clean all caches, then release.
 	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
 
-	// Look up topic metadata to remove from id cache
+	// Collect topic_id hex for reverse cache cleanup
+	mut topic_id_hex := ''
 	if cached := a.topic_cache[name] {
-		a.topic_id_cache.delete(cached.meta.topic_id.hex())
+		topic_id_hex = cached.meta.topic_id.hex()
 	}
 
-	// Delete all objects starting with topic prefix (S3 operation, no lock needed)
-	prefix := '${a.config.prefix}topics/${name}/'
-	a.delete_objects_with_prefix(prefix)!
-
-	// Remove from cache
+	// Remove from topic-related caches
 	a.topic_cache.delete(name)
+	if topic_id_hex.len > 0 {
+		a.topic_id_cache.delete(topic_id_hex)
+		a.topic_id_reverse_cache.delete(topic_id_hex)
+	}
+
+	// Remove matching entries from topic_index_cache (keyed as "topic:partition")
+	mut index_keys_to_delete := []string{}
+	for key, _ in a.topic_index_cache {
+		if key.starts_with('${name}:') {
+			index_keys_to_delete << key
+		}
+	}
+	for key in index_keys_to_delete {
+		a.topic_index_cache.delete(key)
+	}
+
+	a.topic_lock.unlock()
+
+	// Remove matching entries from partition buffers (separate lock)
+	a.buffer_lock.@lock()
+	mut buffer_keys_to_delete := []string{}
+	for key, _ in a.topic_partition_buffers {
+		if key.starts_with('${name}:') {
+			buffer_keys_to_delete << key
+		}
+	}
+	for key in buffer_keys_to_delete {
+		a.topic_partition_buffers.delete(key)
+	}
+	a.buffer_lock.unlock()
+
+	// Phase 2: S3 I/O outside all locks.
+	// On failure, caches are already cleared — accept eventual consistency.
+	prefix := '${a.config.prefix}topics/${name}/'
+	a.delete_objects_with_prefix(prefix) or { return }
 }
 
 /// list_topics retrieves all topics from S3.
@@ -173,31 +206,31 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 }
 
 /// get_topic_by_id retrieves a topic by topic_id.
-/// Uses O(1) cache lookup.
+/// Uses O(1) reverse cache lookup; falls back to list_topics on miss.
 pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
 	// Convert topic_id to hex string for map lookup
 	topic_id_hex := topic_id.hex()
 
-	// Check cache first (O(1) lookup)
+	// Check reverse cache first (O(1) lookup)
 	a.topic_lock.rlock()
-	if topic_name := a.topic_id_cache[topic_id_hex] {
-		if cached := a.topic_cache[topic_name] {
-			a.topic_lock.runlock()
-			return cached.meta
-		}
-	}
+	reverse_hit := a.topic_id_reverse_cache[topic_id_hex] or { '' }
 	a.topic_lock.runlock()
 
-	// Cache miss - fetch from S3 and populate cache
+	if reverse_hit.len > 0 {
+		// Reverse cache hit — fetch topic directly (at most 1 S3 call)
+		return a.get_topic(reverse_hit)
+	}
+
+	// Reverse cache miss — full scan via list_topics, then populate reverse cache
 	topics := a.list_topics()!
 
-	// Acquire lock once for all cache updates
 	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
 	for t in topics {
-		// Populate topic_id_cache for future lookups
-		a.topic_id_cache[t.topic_id.hex()] = t.name
+		tid_hex := t.topic_id.hex()
+		a.topic_id_cache[tid_hex] = t.name
+		a.topic_id_reverse_cache[tid_hex] = t.name
 	}
+	a.topic_lock.unlock()
 
 	// Find matching topic
 	for t in topics {

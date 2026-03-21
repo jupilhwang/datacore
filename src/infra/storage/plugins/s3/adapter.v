@@ -82,11 +82,12 @@ pub struct S3StorageAdapter {
 pub mut:
 	config S3Config
 	// Local cache with TTL
-	topic_cache       map[string]CachedTopic
-	topic_id_cache    map[string]string
-	group_cache       map[string]CachedGroup
-	offset_cache      map[string]map[string]i64
-	topic_index_cache map[string]CachedPartitionIndex
+	topic_cache            map[string]CachedTopic
+	topic_id_cache         map[string]string
+	topic_id_reverse_cache map[string]string
+	group_cache            map[string]CachedGroup
+	offset_cache           map[string]map[string]i64
+	topic_index_cache      map[string]CachedPartitionIndex
 	// Locks for thread safety
 	topic_lock  sync.RwMutex
 	group_lock  sync.RwMutex
@@ -262,6 +263,7 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 	return &S3StorageAdapter{
 		config:                  config
 		topic_cache:             map[string]CachedTopic{}
+		topic_id_reverse_cache:  map[string]string{}
 		group_cache:             map[string]CachedGroup{}
 		offset_cache:            map[string]map[string]i64{}
 		topic_index_cache:       map[string]CachedPartitionIndex{}

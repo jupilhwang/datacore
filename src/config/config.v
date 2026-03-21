@@ -146,7 +146,15 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 		s3.endpoint
 	}
 
-	// S3 credentials priority: CLI args > env vars > ~/.aws/credentials > config.toml
+	resolve_s3_credentials(mut s3, cli_args, doc)
+	parse_iceberg_sub_config(mut s3, doc)
+
+	return s3
+}
+
+/// resolve_s3_credentials resolves S3 access/secret keys using 4-tier priority.
+/// Priority: CLI args > env vars > ~/.aws/credentials > config.toml
+fn resolve_s3_credentials(mut s3 S3StorageConfig, cli_args map[string]string, doc toml.Doc) {
 	// priority 1: CLI arguments
 	if cli_access_key := cli_args['s3-access-key'] {
 		s3.access_key = cli_access_key
@@ -181,36 +189,37 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) S3StorageConfig {
 	if s3.secret_key == '' {
 		s3.secret_key = get_string(doc, 'storage.s3.secret_key', '')
 	}
+}
 
-	// parse Iceberg configuration from [storage.s3.iceberg] section
+/// parse_iceberg_sub_config parses [storage.s3.iceberg] section into S3StorageConfig fields.
+fn parse_iceberg_sub_config(mut s3 S3StorageConfig, doc toml.Doc) {
 	iceberg_enabled := get_bool(doc, 'storage.s3.iceberg.enabled', false)
-	if iceberg_enabled {
-		mut partition_by := []string{}
-		if partition_by_val := doc.value_opt('storage.s3.iceberg.partition_by') {
-			partition_by_array := partition_by_val.array()
-			for item in partition_by_array {
-				partition_by << item.string()
-			}
-		} else {
-			partition_by = ['timestamp', 'topic']
-		}
-
-		s3.iceberg_enabled = iceberg_enabled
-		s3.iceberg_format = get_string(doc, 'storage.s3.iceberg.format', 'parquet')
-		s3.iceberg_compression = get_string(doc, 'storage.s3.iceberg.compression', 'zstd')
-		s3.iceberg_write_mode = get_string(doc, 'storage.s3.iceberg.write_mode', 'append')
-		s3.iceberg_partition_by = partition_by
-		s3.iceberg_max_rows_per_file = get_int(doc, 'storage.s3.iceberg.max_rows_per_file',
-			1000000)
-		s3.iceberg_max_file_size_mb = get_int(doc, 'storage.s3.iceberg.max_file_size_mb',
-			128)
-		s3.iceberg_schema_evolution = get_bool(doc, 'storage.s3.iceberg.schema_evolution',
-			true)
-		s3.iceberg_format_version = get_int(doc, 'storage.s3.iceberg.format_version',
-			2)
+	if !iceberg_enabled {
+		return
 	}
 
-	return s3
+	mut partition_by := []string{}
+	if partition_by_val := doc.value_opt('storage.s3.iceberg.partition_by') {
+		partition_by_array := partition_by_val.array()
+		for item in partition_by_array {
+			partition_by << item.string()
+		}
+	} else {
+		partition_by = ['timestamp', 'topic']
+	}
+
+	s3.iceberg_enabled = iceberg_enabled
+	s3.iceberg_format = get_string(doc, 'storage.s3.iceberg.format', 'parquet')
+	s3.iceberg_compression = get_string(doc, 'storage.s3.iceberg.compression', 'zstd')
+	s3.iceberg_write_mode = get_string(doc, 'storage.s3.iceberg.write_mode', 'append')
+	s3.iceberg_partition_by = partition_by
+	s3.iceberg_max_rows_per_file = get_int(doc, 'storage.s3.iceberg.max_rows_per_file',
+		1000000)
+	s3.iceberg_max_file_size_mb = get_int(doc, 'storage.s3.iceberg.max_file_size_mb',
+		128)
+	s3.iceberg_schema_evolution = get_bool(doc, 'storage.s3.iceberg.schema_evolution',
+		true)
+	s3.iceberg_format_version = get_int(doc, 'storage.s3.iceberg.format_version', 2)
 }
 
 fn parse_storage_config(cli_args map[string]string, doc toml.Doc) StorageConfig {
@@ -267,18 +276,7 @@ fn parse_observability_config(doc toml.Doc) ObservabilityConfig {
 			resource_attributes: get_string(doc, 'observability.otel.resource_attributes',
 				'')
 		}
-		metrics: MetricsConfig{
-			enabled:             get_bool(doc, 'observability.metrics.enabled', true)
-			exporter:            get_string(doc, 'observability.metrics.exporter', 'prometheus')
-			prometheus_endpoint: get_string(doc, 'observability.metrics.prometheus_endpoint',
-				'/metrics')
-			prometheus_port:     get_int(doc, 'observability.metrics.prometheus_port',
-				9093)
-			otlp_endpoint:       get_string(doc, 'observability.metrics.otlp_endpoint',
-				'')
-			collection_interval: get_int(doc, 'observability.metrics.collection_interval',
-				15)
-		}
+		metrics: parse_metrics_config(doc)
 		logging: LoggingConfig{
 			enabled:              get_bool(doc, 'observability.logging.enabled', true)
 			level:                get_string(doc, 'observability.logging.level', 'debug')
@@ -292,27 +290,44 @@ fn parse_observability_config(doc toml.Doc) ObservabilityConfig {
 			inject_trace_context: get_bool(doc, 'observability.logging.inject_trace_context',
 				true)
 		}
-		tracing: TracingConfig{
-			enabled:                 get_bool(doc, 'observability.tracing.enabled', false)
-			otlp_endpoint:           get_string(doc, 'observability.tracing.otlp_endpoint',
-				'')
-			sampler:                 get_string(doc, 'observability.tracing.sampler',
-				'trace_id_ratio')
-			sample_rate:             get_f64(doc, 'observability.tracing.sample_rate',
-				1.0)
-			batch_timeout_ms:        get_int(doc, 'observability.tracing.batch_timeout_ms',
-				5000)
-			max_batch_size:          get_int(doc, 'observability.tracing.max_batch_size',
-				512)
-			max_queue_size:          get_int(doc, 'observability.tracing.max_queue_size',
-				2048)
-			max_attributes_per_span: get_int(doc, 'observability.tracing.max_attributes_per_span',
-				128)
-			max_events_per_span:     get_int(doc, 'observability.tracing.max_events_per_span',
-				128)
-			max_links_per_span:      get_int(doc, 'observability.tracing.max_links_per_span',
-				128)
-		}
+		tracing: parse_tracing_config(doc)
+	}
+}
+
+/// parse_metrics_config parses [observability.metrics] section.
+fn parse_metrics_config(doc toml.Doc) MetricsConfig {
+	return MetricsConfig{
+		enabled:             get_bool(doc, 'observability.metrics.enabled', true)
+		exporter:            get_string(doc, 'observability.metrics.exporter', 'prometheus')
+		prometheus_endpoint: get_string(doc, 'observability.metrics.prometheus_endpoint',
+			'/metrics')
+		prometheus_port:     get_int(doc, 'observability.metrics.prometheus_port', 9093)
+		otlp_endpoint:       get_string(doc, 'observability.metrics.otlp_endpoint', '')
+		collection_interval: get_int(doc, 'observability.metrics.collection_interval',
+			15)
+	}
+}
+
+/// parse_tracing_config parses [observability.tracing] section.
+fn parse_tracing_config(doc toml.Doc) TracingConfig {
+	return TracingConfig{
+		enabled:                 get_bool(doc, 'observability.tracing.enabled', false)
+		otlp_endpoint:           get_string(doc, 'observability.tracing.otlp_endpoint',
+			'')
+		sampler:                 get_string(doc, 'observability.tracing.sampler', 'trace_id_ratio')
+		sample_rate:             get_f64(doc, 'observability.tracing.sample_rate', 1.0)
+		batch_timeout_ms:        get_int(doc, 'observability.tracing.batch_timeout_ms',
+			5000)
+		max_batch_size:          get_int(doc, 'observability.tracing.max_batch_size',
+			512)
+		max_queue_size:          get_int(doc, 'observability.tracing.max_queue_size',
+			2048)
+		max_attributes_per_span: get_int(doc, 'observability.tracing.max_attributes_per_span',
+			128)
+		max_events_per_span:     get_int(doc, 'observability.tracing.max_events_per_span',
+			128)
+		max_links_per_span:      get_int(doc, 'observability.tracing.max_links_per_span',
+			128)
 	}
 }
 
@@ -608,13 +623,14 @@ pub fn (c Config) is_tracing_enabled() bool {
 
 /// load_default_config_with_overrides creates a configuration without a config file, using CLI/env overrides.
 /// cli_args: CLI argument map
-/// returns: Config with defaults applied and CLI/env overrides
-fn load_default_config_with_overrides(cli_args map[string]string) Config {
+/// returns: Config with defaults applied and CLI/env overrides, validated
+fn load_default_config_with_overrides(cli_args map[string]string) !Config {
 	// toml.Doc{} has a nil ast pointer that causes segfault on value_opt calls.
 	// toml.parse_text('') produces a properly initialized empty document.
-	// If even that fails, return a zero-value Config to avoid a nil ast segfault.
-	empty_doc := toml.parse_text('') or { return Config{} }
-	return Config{
+	empty_doc := toml.parse_text('') or {
+		return error('Failed to initialize empty config document: ${err}')
+	}
+	mut cfg := Config{
 		broker:          parse_broker_config(cli_args, empty_doc)
 		rest:            parse_rest_config(cli_args, empty_doc)
 		grpc:            parse_grpc_config(cli_args, empty_doc)
@@ -623,6 +639,8 @@ fn load_default_config_with_overrides(cli_args map[string]string) Config {
 		observability:   parse_observability_config(empty_doc)
 		telemetry:       parse_telemetry_config(empty_doc)
 	}
+	cfg.validate()!
+	return cfg
 }
 
 /// === Environment variable utility functions (supports both upper and lower case) ===
