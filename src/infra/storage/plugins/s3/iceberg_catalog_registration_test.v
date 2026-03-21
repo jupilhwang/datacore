@@ -110,7 +110,8 @@ fn test_new_iceberg_writer_with_catalog_skips_existing_table() {
 
 	// 사전에 테이블 등록
 	mock.tables['testdb:existing_table'] = IcebergMetadata{
-		location: table_location
+		format_version: 2
+		location:       table_location
 	}
 
 	// 이미 존재하는 경우 에러 없이 writer가 생성되어야 함

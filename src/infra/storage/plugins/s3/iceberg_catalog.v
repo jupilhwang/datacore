@@ -4,7 +4,6 @@ module s3
 
 import time
 import json
-import strings
 import sync
 
 /// IcebergCatalog defines the Iceberg table catalog interface.
@@ -344,149 +343,34 @@ fn (mut c HadoopCatalog) namespace_path(namespace []string) string {
 	return '${c.warehouse}/${namespace.join('/')}'
 }
 
-/// encode_metadata encodes metadata as a JSON string.
+/// encode_metadata encodes metadata as a JSON string using standard json.encode.
+/// Output uses kebab-case keys per the Iceberg specification.
 fn encode_metadata(metadata IcebergMetadata) string {
-	estimated_size := 512 + metadata.schemas.len * 256 + metadata.partition_specs.len * 128 +
-		metadata.snapshots.len * 512
-	mut sb := strings.new_builder(estimated_size)
-
-	sb.write_string('{')
-	sb.write_string('"formatVersion":${metadata.format_version},')
-	sb.write_string('"tableUuid":"${metadata.table_uuid}",')
-	sb.write_string('"location":"${metadata.location}",')
-	sb.write_string('"lastUpdatedMs":${metadata.last_updated_ms},')
-	sb.write_string('"currentSchemaId":${metadata.current_schema_id},')
-	sb.write_string('"defaultSpecId":${metadata.default_spec_id},')
-	sb.write_string('"currentSnapshotId":${metadata.current_snapshot_id},')
-	sb.write_string('"properties":${json.encode(metadata.properties)},')
-	sb.write_string(encode_schemas(metadata.schemas))
-	sb.write_string(',')
-	sb.write_string(encode_partition_specs(metadata.partition_specs))
-	sb.write_string(',')
-	sb.write_string(encode_snapshots(metadata.snapshots))
-	sb.write_string('}')
-
-	return sb.str()
-}
-
-/// encode_schemas encodes schemas as a JSON array fragment.
-fn encode_schemas(schemas []IcebergSchema) string {
-	mut sb := strings.new_builder(schemas.len * 256)
-	sb.write_string('"schemas":[')
-	for i, schema in schemas {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"schemaId":${schema.schema_id},"fields":[')
-		for j, field in schema.fields {
-			if j > 0 {
-				sb.write_string(',')
-			}
-			sb.write_string('{"id":${field.id},')
-			sb.write_string('"name":"${field.name}",')
-			sb.write_string('"type":"${field.typ}",')
-			sb.write_string('"required":${field.required}}')
-		}
-		sb.write_string(']}')
-	}
-	sb.write_string(']')
-	return sb.str()
-}
-
-/// encode_partition_specs encodes partition specs as a JSON array fragment.
-fn encode_partition_specs(specs []IcebergPartitionSpec) string {
-	mut sb := strings.new_builder(specs.len * 128)
-	sb.write_string('"partitionSpecs":[')
-	for i, spec in specs {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"specId":${spec.spec_id},"fields":[')
-		for j, field in spec.fields {
-			if j > 0 {
-				sb.write_string(',')
-			}
-			sb.write_string('{"sourceId":${field.source_id},')
-			sb.write_string('"fieldId":${field.field_id},')
-			sb.write_string('"name":"${field.name}",')
-			sb.write_string('"transform":"${field.transform}"}')
-		}
-		sb.write_string(']}')
-	}
-	sb.write_string(']')
-	return sb.str()
-}
-
-/// encode_snapshots encodes snapshots as a JSON array fragment.
-fn encode_snapshots(snapshots []IcebergSnapshot) string {
-	mut sb := strings.new_builder(snapshots.len * 512)
-	sb.write_string('"snapshots":[')
-	for i, snapshot in snapshots {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"snapshotId":${snapshot.snapshot_id},')
-		sb.write_string('"timestampMs":${snapshot.timestamp_ms},')
-		sb.write_string('"manifestList":"${snapshot.manifest_list}",')
-		sb.write_string('"schemaId":${snapshot.schema_id},')
-		sb.write_string('"summary":${json.encode(snapshot.summary)}}')
-	}
-	sb.write_string(']')
-	return sb.str()
+	return json.encode(metadata)
 }
 
 /// decode_metadata decodes a JSON string into IcebergMetadata.
-/// Parses all fields: format_version, table_uuid, location, schemas, partition_specs, snapshots.
+/// Handles both kebab-case (Iceberg standard) and camelCase (legacy) keys
+/// by normalizing camelCase to kebab-case before decoding.
 fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 	if json_str == '' {
 		return error('Empty metadata JSON')
 	}
 
-	mut metadata := decode_metadata_scalars(json_str)
-	decode_metadata_collections(json_str, mut metadata)
+	normalized := normalize_metadata_json_keys(json_str)
+	mut metadata := json.decode(IcebergMetadata, normalized) or {
+		return error('Failed to decode metadata JSON: ${err}')
+	}
+
+	// Apply defaults for fields missing from the JSON (zero-value means absent)
+	if metadata.format_version == 0 {
+		metadata.format_version = 2
+	}
+	if metadata.table_uuid == '' {
+		metadata.table_uuid = generate_table_uuid(json_str)
+	}
+	if metadata.last_updated_ms == 0 {
+		metadata.last_updated_ms = time.now().unix_milli()
+	}
 	return metadata
-}
-
-/// decode_metadata_scalars extracts scalar fields from a metadata JSON string.
-fn decode_metadata_scalars(json_str string) IcebergMetadata {
-	mut metadata := IcebergMetadata{}
-
-	metadata.format_version = json_extract_int_dual(json_str, 'format-version', 'formatVersion') or {
-		2
-	}
-	metadata.table_uuid = json_extract_string_dual(json_str, 'table-uuid', 'tableUuid') or {
-		generate_table_uuid(json_str)
-	}
-	if v := json_extract_string(json_str, 'location') {
-		metadata.location = v
-	}
-	metadata.last_updated_ms = json_extract_i64_dual(json_str, 'last-updated-ms', 'lastUpdatedMs') or {
-		time.now().unix_milli()
-	}
-	metadata.current_schema_id = json_extract_int_dual(json_str, 'current-schema-id',
-		'currentSchemaId') or { 0 }
-	metadata.default_spec_id = json_extract_int_dual(json_str, 'default-spec-id', 'defaultSpecId') or {
-		0
-	}
-	metadata.current_snapshot_id = json_extract_i64_dual(json_str, 'current-snapshot-id',
-		'currentSnapshotId') or { i64(0) }
-
-	return metadata
-}
-
-/// decode_metadata_collections extracts collection fields (properties, schemas,
-/// partition specs, snapshots) from a metadata JSON string into the given metadata.
-fn decode_metadata_collections(json_str string, mut metadata IcebergMetadata) {
-	if props_str := json_extract_object(json_str, 'properties') {
-		metadata.properties = json_parse_string_map(props_str)
-	}
-	if schemas_str := json_extract_array(json_str, 'schemas') {
-		metadata.schemas = json_parse_schemas(schemas_str)
-	}
-	if specs_str := json_extract_array_dual(json_str, 'partition-specs', 'partitionSpecs') {
-		metadata.partition_specs = json_parse_partition_specs(specs_str)
-	}
-	if snaps_str := json_extract_array(json_str, 'snapshots') {
-		metadata.snapshots = json_parse_snapshots(snaps_str)
-	}
 }

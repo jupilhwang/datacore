@@ -5,6 +5,7 @@ module s3
 
 import crypto.sha256
 import crypto.hmac
+import encoding.xml
 import net.http
 import time
 import sync.stdatomic
@@ -843,45 +844,79 @@ struct ListObjectsPage {
 /// ListObjectsPage, extracting IsTruncated and NextContinuationToken for
 /// pagination support.
 fn parse_list_objects_page(body string) ListObjectsPage {
-	objects := parse_list_objects_response(body)
+	doc := xml.XMLDocument.from_string(body) or { return ListObjectsPage{} }
 
-	is_truncated := body.contains('<IsTruncated>true</IsTruncated>')
+	is_truncated_nodes := doc.root.get_elements_by_tag('IsTruncated')
+	is_truncated := if is_truncated_nodes.len > 0 {
+		xml_node_text(is_truncated_nodes[0]) == 'true'
+	} else {
+		false
+	}
 
-	mut token := ''
-	if token_start := body.index('<NextContinuationToken>') {
-		token_end := body.index('</NextContinuationToken>') or { body.len }
-		if token_end > token_start + 23 {
-			token = body[token_start + 23..token_end]
-		}
+	token_nodes := doc.root.get_elements_by_tag('NextContinuationToken')
+	token := if token_nodes.len > 0 {
+		xml_node_text(token_nodes[0])
+	} else {
+		''
 	}
 
 	return ListObjectsPage{
-		objects:                 objects
+		objects:                 parse_contents_to_objects(doc.root.get_elements_by_tag('Contents'))
 		is_truncated:            is_truncated
 		next_continuation_token: token
 	}
 }
 
-/// parse_list_objects_response parses an S3 ListObjectsV2 XML response.
-/// Simplified XML parsing that extracts only <Key> tags.
-/// A proper XML parser is recommended for production use.
+/// parse_list_objects_response parses an S3 ListObjectsV2 XML response,
+/// extracting Key, Size, LastModified, and ETag from each Contents element.
 fn parse_list_objects_response(body string) []S3Object {
-	// Simplified XML parsing - use a proper XML parser in production
-	mut objects := []S3Object{}
+	doc := xml.XMLDocument.from_string(body) or { return [] }
+	return parse_contents_to_objects(doc.root.get_elements_by_tag('Contents'))
+}
 
-	mut remaining := body
-	for {
-		key_start := remaining.index('<Key>') or { break }
-		key_end := remaining.index('</Key>') or { break }
-
-		key := remaining[key_start + 5..key_end]
-		objects << S3Object{
-			key:  key
-			size: 0
+/// xml_node_text extracts the text content from an XML node's children.
+fn xml_node_text(node xml.XMLNode) string {
+	for child in node.children {
+		if child is string {
+			return child
 		}
-
-		remaining = remaining[key_end + 6..]
 	}
+	return ''
+}
 
+/// parse_contents_to_objects converts a list of XML Contents nodes into S3Objects.
+fn parse_contents_to_objects(contents_nodes []xml.XMLNode) []S3Object {
+	mut objects := []S3Object{cap: contents_nodes.len}
+	for node in contents_nodes {
+		mut key := ''
+		mut size := i64(0)
+		mut etag := ''
+		mut last_modified := time.Time{}
+		for child in node.children {
+			if child is xml.XMLNode {
+				match child.name {
+					'Key' {
+						key = xml_node_text(child)
+					}
+					'Size' {
+						size = xml_node_text(child).i64()
+					}
+					'ETag' {
+						etag = xml_node_text(child).trim('"')
+					}
+					'LastModified' {
+						last_modified = time.parse_iso8601(xml_node_text(child)) or { time.Time{} }
+					}
+					else {}
+				}
+			}
+		}
+		objects << S3Object{
+			key:           key
+			size:          size
+			last_modified: last_modified
+			etag:          etag
+		}
+	}
 	return objects
 }

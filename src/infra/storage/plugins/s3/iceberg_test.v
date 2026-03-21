@@ -2,7 +2,7 @@
 // and REST API operations.
 module s3
 
-// --- JSON helper tests ---
+// --- JSON helper tests (kept functions for Glue response parsing) ---
 
 fn test_json_extract_string() {
 	json_str := '{"tableUuid":"abc-123","location":"s3://bucket/path","formatVersion":2}'
@@ -10,19 +10,6 @@ fn test_json_extract_string() {
 	assert json_extract_string(json_str, 'location') or { '' } == 's3://bucket/path'
 	// Non-existent key
 	assert json_extract_string(json_str, 'missing') == none
-}
-
-fn test_json_extract_int() {
-	json_str := '{"formatVersion":2,"currentSchemaId":0,"defaultSpecId":1}'
-	assert json_extract_int(json_str, 'formatVersion') or { 0 } == 2
-	assert json_extract_int(json_str, 'defaultSpecId') or { 0 } == 1
-	assert json_extract_int(json_str, 'missing') == none
-}
-
-fn test_json_extract_i64() {
-	json_str := '{"lastUpdatedMs":1700000000000,"currentSnapshotId":9876543210}'
-	assert json_extract_i64(json_str, 'lastUpdatedMs') or { i64(0) } == 1700000000000
-	assert json_extract_i64(json_str, 'currentSnapshotId') or { i64(0) } == 9876543210
 }
 
 fn test_json_find_matching_brace_object() {
@@ -37,14 +24,6 @@ fn test_json_find_matching_brace_array() {
 	assert result == '[1,[2,3],4]'
 }
 
-fn test_json_parse_string_map() {
-	obj := '{"key1":"value1","key2":"value2"}'
-	result := json_parse_string_map(obj)
-	assert result['key1'] == 'value1'
-	assert result['key2'] == 'value2'
-	assert result.len == 2
-}
-
 fn test_json_split_array_items_objects() {
 	arr := '[{"id":1},{"id":2},{"id":3}]'
 	items := json_split_array_items(arr)
@@ -54,78 +33,159 @@ fn test_json_split_array_items_objects() {
 	assert items[2] == '{"id":3}'
 }
 
-fn test_json_parse_schemas() {
-	arr := '[{"schemaId":0,"fields":[{"id":1,"name":"offset","type":"long","required":true}]}]'
-	schemas := json_parse_schemas(arr)
-	assert schemas.len == 1
-	assert schemas[0].schema_id == 0
-	assert schemas[0].fields.len == 1
-	assert schemas[0].fields[0].name == 'offset'
-	assert schemas[0].fields[0].typ == 'long'
-	assert schemas[0].fields[0].required == true
+// --- normalize_metadata_json_keys tests ---
+
+fn test_normalize_metadata_json_keys_camel_to_kebab() {
+	input := '{"formatVersion":2,"tableUuid":"abc","lastUpdatedMs":1000}'
+	result := normalize_metadata_json_keys(input)
+	assert result.contains('"format-version":')
+	assert result.contains('"table-uuid":')
+	assert result.contains('"last-updated-ms":')
+	assert !result.contains('"formatVersion":')
 }
 
-fn test_json_parse_partition_specs() {
-	arr := '[{"specId":0,"fields":[{"sourceId":2,"fieldId":1000,"name":"ts_day","transform":"day"}]}]'
-	specs := json_parse_partition_specs(arr)
-	assert specs.len == 1
-	assert specs[0].spec_id == 0
-	assert specs[0].fields.len == 1
-	assert specs[0].fields[0].name == 'ts_day'
-	assert specs[0].fields[0].transform == 'day'
-	assert specs[0].fields[0].source_id == 2
+fn test_normalize_metadata_json_keys_already_kebab() {
+	input := '{"format-version":2,"table-uuid":"abc","last-updated-ms":1000}'
+	result := normalize_metadata_json_keys(input)
+	// Should be unchanged
+	assert result == input
 }
 
-fn test_json_parse_snapshots() {
-	arr := '[{"snapshotId":12345,"timestampMs":1700000000000,"manifestList":"metadata/snap-12345.avro","schemaId":0,"summary":{"operation":"append"}}]'
-	snaps := json_parse_snapshots(arr)
-	assert snaps.len == 1
-	assert snaps[0].snapshot_id == 12345
-	assert snaps[0].timestamp_ms == 1700000000000
-	assert snaps[0].manifest_list == 'metadata/snap-12345.avro'
-	assert snaps[0].summary['operation'] == 'append'
+fn test_normalize_metadata_json_keys_nested() {
+	input := '{"schemaId":0,"specId":1,"sourceId":2,"fieldId":100}'
+	result := normalize_metadata_json_keys(input)
+	assert result.contains('"schema-id":')
+	assert result.contains('"spec-id":')
+	assert result.contains('"source-id":')
+	assert result.contains('"field-id":')
 }
 
-// --- Metadata decode test via encode/decode roundtrip ---
+// --- Metadata encode/decode roundtrip via json.encode/json.decode ---
 
 fn test_decode_metadata_roundtrip() {
 	schema := create_default_schema()
 	spec := create_default_partition_spec()
 
-	// Use encode_metadata directly via a catalog-like helper
-	// Build the JSON manually matching HadoopCatalog.encode_metadata output
-	// and decode it back using json_parse helpers
-	import_json := '{"formatVersion":2,"tableUuid":"11111111-2222-3333-4444-555555555555",' +
-		'"location":"s3://test-bucket/warehouse/mydb/mytable",' +
+	original := IcebergMetadata{
+		format_version:      2
+		table_uuid:          '11111111-2222-3333-4444-555555555555'
+		location:            's3://test-bucket/warehouse/mydb/mytable'
+		last_updated_ms:     1700000000000
+		current_schema_id:   0
+		default_spec_id:     0
+		current_snapshot_id: 0
+		schemas:             [
+			IcebergSchema{
+				schema_id: 0
+				fields:    [
+					IcebergField{
+						id:       1
+						name:     'offset'
+						typ:      'long'
+						required: true
+					},
+				]
+			},
+		]
+		partition_specs:     [
+			IcebergPartitionSpec{
+				spec_id: 0
+				fields:  [
+					IcebergPartitionField{
+						source_id: 2
+						field_id:  1000
+						name:      'ts_day'
+						transform: 'day'
+					},
+				]
+			},
+		]
+		properties:          {
+			'owner': 'datacore'
+		}
+	}
+
+	// Encode using json.encode (kebab-case output)
+	encoded := encode_metadata(original)
+	assert encoded.len > 0
+	assert encoded.contains('"format-version":')
+	assert encoded.contains('"table-uuid":')
+
+	// Decode round-trip
+	mut catalog := HadoopCatalog{
+		adapter:    &S3StorageAdapter{}
+		warehouse:  's3://test-bucket/warehouse'
+		properties: {}
+	}
+	decoded := catalog.decode_metadata(encoded) or { panic('decode failed: ${err}') }
+
+	assert decoded.table_uuid == original.table_uuid
+	assert decoded.location == original.location
+	assert decoded.format_version == original.format_version
+	assert decoded.last_updated_ms == original.last_updated_ms
+	assert decoded.schemas.len == 1
+	assert decoded.schemas[0].fields[0].name == 'offset'
+	assert decoded.schemas[0].fields[0].typ == 'long'
+	assert decoded.schemas[0].fields[0].required == true
+	assert decoded.partition_specs.len == 1
+	assert decoded.partition_specs[0].fields[0].name == 'ts_day'
+	assert decoded.partition_specs[0].fields[0].transform == 'day'
+	assert decoded.partition_specs[0].fields[0].source_id == 2
+	assert decoded.properties['owner'] == 'datacore'
+}
+
+fn test_decode_metadata_camelcase_input() {
+	// Legacy camelCase format (as produced by older versions)
+	import_json := '{"formatVersion":2,"tableUuid":"aaaa-bbbb","location":"s3://bucket/table",' +
 		'"lastUpdatedMs":1700000000000,"currentSchemaId":0,"defaultSpecId":0,' +
-		'"currentSnapshotId":0,' + '"properties":{"owner":"datacore"},' +
+		'"currentSnapshotId":0,"properties":{"owner":"test"},' +
 		'"schemas":[{"schemaId":0,"fields":[{"id":1,"name":"offset","type":"long","required":true}]}],' +
-		'"partitionSpecs":[{"specId":0,"fields":[{"sourceId":2,"fieldId":1000,"name":"ts_day","transform":"day"}]}],' +
+		'"partitionSpecs":[{"specId":0,"fields":[{"sourceId":2,"fieldId":1000,"name":"ts","transform":"day"}]}],' +
 		'"snapshots":[]}'
 
-	// Test json_extract_string on the metadata JSON
-	uuid := json_extract_string(import_json, 'tableUuid') or { '' }
-	assert uuid == '11111111-2222-3333-4444-555555555555'
+	mut catalog := HadoopCatalog{
+		adapter:    &S3StorageAdapter{}
+		warehouse:  'test'
+		properties: {}
+	}
+	metadata := catalog.decode_metadata(import_json) or { panic('decode failed: ${err}') }
 
-	location := json_extract_string(import_json, 'location') or { '' }
-	assert location == 's3://test-bucket/warehouse/mydb/mytable'
+	assert metadata.format_version == 2
+	assert metadata.table_uuid == 'aaaa-bbbb'
+	assert metadata.location == 's3://bucket/table'
+	assert metadata.schemas.len == 1
+	assert metadata.schemas[0].schema_id == 0
+	assert metadata.schemas[0].fields[0].name == 'offset'
+	assert metadata.partition_specs.len == 1
+	assert metadata.partition_specs[0].spec_id == 0
+	assert metadata.partition_specs[0].fields[0].source_id == 2
+	assert metadata.properties['owner'] == 'test'
+}
 
-	format_version := json_extract_int(import_json, 'formatVersion') or { 0 }
-	assert format_version == 2
+fn test_decode_metadata_kebabcase_input() {
+	// Standard kebab-case format (Iceberg spec)
+	import_json := '{"format-version":3,"table-uuid":"cccc-dddd","location":"s3://bucket/v3",' +
+		'"last-updated-ms":1710000000000,"current-schema-id":1,"default-spec-id":0,' +
+		'"current-snapshot-id":42,"properties":{},' +
+		'"schemas":[{"schema-id":1,"fields":[{"id":1,"name":"id","type":"long","required":true}]}],' +
+		'"partition-specs":[{"spec-id":0,"fields":[]}],' +
+		'"snapshots":[{"snapshot-id":42,"timestamp-ms":1710000000000,"manifest-list":"snap.avro","schema-id":1,"summary":{"operation":"append"}}]}'
 
-	schemas_str := json_extract_array(import_json, 'schemas') or { '[]' }
-	schemas := json_parse_schemas(schemas_str)
-	assert schemas.len == 1
-	assert schemas[0].fields[0].name == 'offset'
+	mut catalog := HadoopCatalog{
+		adapter:    &S3StorageAdapter{}
+		warehouse:  'test'
+		properties: {}
+	}
+	metadata := catalog.decode_metadata(import_json) or { panic('decode failed: ${err}') }
 
-	specs_str := json_extract_array(import_json, 'partitionSpecs') or { '[]' }
-	specs := json_parse_partition_specs(specs_str)
-	assert specs.len == 1
-	assert specs[0].fields[0].transform == 'day'
-
-	props_str := json_extract_object(import_json, 'properties') or { '{}' }
-	props := json_parse_string_map(props_str)
-	assert props['owner'] == 'datacore'
+	assert metadata.format_version == 3
+	assert metadata.table_uuid == 'cccc-dddd'
+	assert metadata.current_schema_id == 1
+	assert metadata.current_snapshot_id == 42
+	assert metadata.snapshots.len == 1
+	assert metadata.snapshots[0].snapshot_id == 42
+	assert metadata.snapshots[0].manifest_list == 'snap.avro'
+	assert metadata.snapshots[0].summary['operation'] == 'append'
 }
 
 // --- Avro varint encoding tests ---
@@ -310,9 +370,8 @@ fn build_test_writer(metadata IcebergMetadata, schema IcebergSchema, spec Iceber
 
 // --- Column stats tests ---
 
-// test_datafile_stats_populated: DataFile 생성 시 컬럼 통계가 채워져야 함
+// test_datafile_stats_populated: DataFile column statistics must be populated
 fn test_datafile_stats_populated() {
-	// value_counts, null_value_counts 가 비어있지 않아야 함
 	mut file := IcebergDataFile{
 		file_path:          's3://bucket/data/test.parquet'
 		file_format:        'PARQUET'
@@ -323,15 +382,14 @@ fn test_datafile_stats_populated() {
 	file.value_counts[1] = i64(3)
 	file.null_value_counts[1] = i64(0)
 
-	assert file.value_counts.len > 0, '컬럼 value_counts 가 비어있음'
-	assert file.null_value_counts.len > 0, '컬럼 null_value_counts 가 비어있음'
+	assert file.value_counts.len > 0
+	assert file.null_value_counts.len > 0
 	assert file.value_counts[1] == i64(3)
 	assert file.null_value_counts[1] == i64(0)
 }
 
-// test_iceberg_serialize_long: int64 값의 Iceberg 바이너리 직렬화 확인
+// test_iceberg_serialize_long: int64 Iceberg binary serialization
 fn test_iceberg_serialize_long() {
-	// 값 1L -> little-endian 8 bytes
 	result := iceberg_serialize_long(i64(1))
 	assert result.len == 8
 	assert result[0] == u8(1)
@@ -339,14 +397,13 @@ fn test_iceberg_serialize_long() {
 		assert result[i] == u8(0)
 	}
 
-	// 값 256L -> [0, 1, 0, 0, 0, 0, 0, 0]
 	r256 := iceberg_serialize_long(i64(256))
 	assert r256.len == 8
 	assert r256[0] == u8(0)
 	assert r256[1] == u8(1)
 }
 
-// test_iceberg_serialize_int: int32 값의 Iceberg 바이너리 직렬화 확인
+// test_iceberg_serialize_int: int32 Iceberg binary serialization
 fn test_iceberg_serialize_int() {
 	result := iceberg_serialize_int(i32(42))
 	assert result.len == 4
@@ -356,7 +413,7 @@ fn test_iceberg_serialize_int() {
 	assert result[3] == u8(0)
 }
 
-// test_iceberg_serialize_string: 문자열의 Iceberg 바이너리 직렬화 확인 (UTF-8 bytes)
+// test_iceberg_serialize_string: string Iceberg binary serialization (UTF-8 bytes)
 fn test_iceberg_serialize_string() {
 	result := iceberg_serialize_string('hi')
 	assert result.len == 2
@@ -364,7 +421,7 @@ fn test_iceberg_serialize_string() {
 	assert result[1] == u8(`i`)
 }
 
-// test_avro_write_int_map: Avro map<int,long> 인코딩 확인
+// test_avro_write_int_map: Avro map<int,long> encoding
 fn test_avro_write_int_long_map() {
 	mut buf := []u8{}
 	m := {
@@ -372,13 +429,11 @@ fn test_avro_write_int_long_map() {
 		2: i64(200)
 	}
 	avro_write_int_long_map(mut buf, m)
-	// 빈 버퍼가 아니어야 함
 	assert buf.len > 0
-	// 마지막 바이트는 map 종료를 의미하는 0
 	assert buf[buf.len - 1] == u8(0)
 }
 
-// test_avro_write_int_bytes_map: Avro map<int,bytes> 인코딩 확인
+// test_avro_write_int_bytes_map: Avro map<int,bytes> encoding
 fn test_avro_write_int_bytes_map() {
 	mut buf := []u8{}
 	m := {
@@ -390,17 +445,14 @@ fn test_avro_write_int_bytes_map() {
 	assert buf[buf.len - 1] == u8(0)
 }
 
-// test_manifest_entry_has_column_stats: manifest entry 인코딩에 컬럼 통계 포함 확인
+// test_manifest_entry_has_column_stats: manifest entry contains column statistics
 fn test_manifest_entry_has_column_stats() {
-	// value_counts 가 non-null로 기록된 manifest entry는 null indicator(0)가 아닌
-	// union index 1(non-null)을 포함해야 함
 	mut file := IcebergDataFile{
 		file_path:          's3://bucket/data/file1.parquet'
 		file_format:        'PARQUET'
 		record_count:       i64(100)
 		file_size_in_bytes: i64(2048)
 	}
-	// field_id 1,2,3,4 에 통계 설정
 	file.value_counts[1] = i64(100)
 	file.value_counts[2] = i64(100)
 	file.null_value_counts[1] = i64(0)
@@ -411,19 +463,11 @@ fn test_manifest_entry_has_column_stats() {
 	mut buf := []u8{}
 	avro_write_manifest_entry(mut buf, file, i64(42))
 
-	// value_counts union index: 통계가 있으면 union index 1(non-null)이어야 함
-	// avro_write_nullable_long(mut buf, 1) -> varint(1)=2, varint(1)=2 이 연속으로 옴
-	// union index 1 = varint(1) = 0x02 (zigzag)
-	// 버퍼에 0x02가 union index로 들어가야 함 (null이면 0x00)
-	// column_sizes 위치: status(1 byte) + snapshot_id(2 bytes) + seq_num(2 bytes) + file_seq_num(2 bytes)
-	//                   + content(1 byte) + file_path + file_format + partition(empty) + record_count + file_size
-	// 통계 맵 위치는 가변적이므로 전체 버퍼에 union index 1 (0x02)이 포함되어 있는지만 확인
-	// null이면 buf에 0x00만 연속으로 있을 것
 	has_non_null_union := buf.filter(it == u8(0x02)).len > 0
-	assert has_non_null_union, 'manifest entry에 non-null 통계 union index가 없음'
+	assert has_non_null_union, 'manifest entry must contain non-null statistics union index'
 }
 
-// test_manifest_with_stats_encodes_non_null: encode_manifest가 통계 포함 시 non-null Avro 인코딩
+// test_manifest_with_stats_encodes_non_null: encode_manifest with stats is larger than without
 fn test_manifest_with_stats_encodes_non_null() {
 	schema := create_default_schema()
 	spec := create_default_partition_spec()
@@ -449,15 +493,11 @@ fn test_manifest_with_stats_encodes_non_null() {
 
 	manifest_bytes := writer.encode_manifest([file]) or { panic('encode failed: ${err}') }
 
-	// Avro magic 확인
 	assert manifest_bytes[0] == u8(`O`)
 	assert manifest_bytes[1] == u8(`b`)
 	assert manifest_bytes[2] == u8(`j`)
 	assert manifest_bytes[3] == u8(0x01)
 
-	// null-only 통계(모든 통계 바이트가 0x00인 경우)가 아닌지 확인
-	// 통계 데이터가 있으면 파일이 더 커야 함
-	// 통계 없는 경우(null)와 비교를 위해 stats 없는 파일 인코딩
 	mut file_no_stats := IcebergDataFile{
 		file_path:          's3://bucket/data/no_stats.parquet'
 		file_format:        'PARQUET'
@@ -468,6 +508,5 @@ fn test_manifest_with_stats_encodes_non_null() {
 		panic('encode failed: ${err}')
 	}
 
-	// 통계 포함 manifest가 통계 없는 것보다 더 커야 함
-	assert manifest_bytes.len > manifest_no_stats.len, '통계 포함 manifest 크기(${manifest_bytes.len})가 통계 없는 것(${manifest_no_stats.len})보다 작거나 같음'
+	assert manifest_bytes.len > manifest_no_stats.len, 'manifest with stats (${manifest_bytes.len}) must be larger than without (${manifest_no_stats.len})'
 }

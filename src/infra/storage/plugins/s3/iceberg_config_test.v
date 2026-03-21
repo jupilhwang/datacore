@@ -74,10 +74,20 @@ fn test_is_iceberg_enabled_env_var_numeric_one() {
 
 // --- IcebergMetadata 기본 format_version 테스트 ---
 
-// IcebergMetadata의 format_version 기본값이 2인지 검증
-fn test_iceberg_metadata_default_format_version_is_2() {
-	metadata := IcebergMetadata{}
-	assert metadata.format_version == 2, 'IcebergMetadata.format_version 기본값은 2여야 함 (v3 기능 미구현)'
+// format_version 미지정 시 0이 되므로, create_writer_metadata에서 2로 보정되는지 검증
+fn test_iceberg_metadata_default_format_version_via_writer() {
+	config := IcebergConfig{
+		enabled:           true
+		format:            'parquet'
+		compression:       'zstd'
+		write_mode:        'append'
+		max_rows_per_file: 1000000
+		max_file_size_mb:  128
+	}
+	writer := new_iceberg_writer(&S3StorageAdapter{}, config, 's3://test/table') or {
+		panic('writer creation failed: ${err}')
+	}
+	assert writer.table_metadata.format_version == 2, 'format_version must be 2 when not explicitly set'
 }
 
 // --- new_iceberg_writer format_version 테스트 ---
