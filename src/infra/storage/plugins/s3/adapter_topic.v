@@ -14,7 +14,6 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 	if name.len > max_topic_name_length {
 		return error('Topic name too long: ${name.len} > ${max_topic_name_length}')
 	}
-	// Check for disallowed characters in topic name
 	for ch in name {
 		if !ch.is_alnum() && ch != `_` && ch != `-` && ch != `.` {
 			return error('Invalid character in topic name: ${ch.ascii_str()}')
@@ -34,39 +33,14 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 	}
 
 	topic_id := generate_topic_id(name)
-
-	// Convert TopicConfig to map[string]string
-	mut config_map := map[string]string{}
-	config_map['retention.ms'] = config.retention_ms.str()
-	config_map['retention.bytes'] = config.retention_bytes.str()
-	config_map['segment.bytes'] = config.segment_bytes.str()
-	config_map['cleanup.policy'] = config.cleanup_policy
-
-	meta := domain.TopicMetadata{
-		name:            name
-		topic_id:        topic_id
-		partition_count: partitions
-		config:          config_map
-		is_internal:     name.starts_with('_')
-	}
+	meta := build_topic_metadata(name, topic_id, partitions, config)
 
 	// Save metadata to S3 with conditional write (If-None-Match: *)
 	key := a.topic_metadata_key(name)
 	data := json.encode(meta)
 	a.put_object_if_not_exists(key, data.bytes())!
 
-	// Initialize partition indexes
-	for p in 0 .. partitions {
-		index_key := a.partition_index_key(name, p)
-		index := PartitionIndex{
-			topic:           name
-			partition:       p
-			earliest_offset: 0
-			high_watermark:  0
-			log_segments:    []
-		}
-		a.put_object(index_key, json.encode(index).bytes())!
-	}
+	a.initialize_partition_indices(name, partitions)!
 
 	// Store in topic cache
 	a.topic_lock.@lock()
@@ -76,11 +50,42 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 		etag:      ''
 		cached_at: time.now()
 	}
-	// Also cache topic_id -> name mapping for O(1) lookup
 	a.topic_id_cache[meta.topic_id.hex()] = name
 	a.topic_id_reverse_cache[meta.topic_id.hex()] = name
 
 	return meta
+}
+
+/// build_topic_metadata constructs topic metadata from name, id, partitions, and config.
+fn build_topic_metadata(name string, topic_id []u8, partitions int, config domain.TopicConfig) domain.TopicMetadata {
+	mut config_map := map[string]string{}
+	config_map['retention.ms'] = config.retention_ms.str()
+	config_map['retention.bytes'] = config.retention_bytes.str()
+	config_map['segment.bytes'] = config.segment_bytes.str()
+	config_map['cleanup.policy'] = config.cleanup_policy
+
+	return domain.TopicMetadata{
+		name:            name
+		topic_id:        topic_id
+		partition_count: partitions
+		config:          config_map
+		is_internal:     name.starts_with('_')
+	}
+}
+
+/// initialize_partition_indices creates partition index files on S3.
+fn (mut a S3StorageAdapter) initialize_partition_indices(topic_name string, num_partitions int) ! {
+	for p in 0 .. num_partitions {
+		index_key := a.partition_index_key(topic_name, p)
+		index := PartitionIndex{
+			topic:           topic_name
+			partition:       p
+			earliest_offset: 0
+			high_watermark:  0
+			log_segments:    []
+		}
+		a.put_object(index_key, json.encode(index).bytes())!
+	}
 }
 
 /// delete_topic deletes a topic from S3.

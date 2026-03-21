@@ -544,6 +544,11 @@ fn (a &S3StorageAdapter) sign_request(method string, key string, query string, b
 	}
 
 	if a.config.access_key.len == 0 || a.config.secret_key.len == 0 {
+		observability.log_with_context('s3', .warn, 'S3Client', 'S3 request signing skipped: credentials not configured. Request will be sent unsigned.',
+			{
+			'method': method
+			'key':    key
+		})
 		return h
 	}
 
@@ -691,25 +696,45 @@ fn (a &S3StorageAdapter) canonicalize_query(query string) string {
 	return result.join('&')
 }
 
-/// url_decode decodes a percent-encoded string.
+/// url_decode decodes a percent-encoded string in a single pass using a byte
+/// accumulator, achieving O(n) time complexity.
 /// Example: %20 -> space, %2F -> /
 fn url_decode(s string) string {
-	mut result := s
+	mut buf := []u8{cap: s.len}
 	mut i := 0
-	for i < result.len {
-		if result[i] == u8(`%`) && i + 2 < result.len {
-			hex_str := result[i + 1..i + 3]
-			if is_hex_char(hex_str[0]) && is_hex_char(hex_str[1]) {
-				c := hex_to_u8(hex_str)
-				result = result[0..i] + c.ascii_str() + result[i + 3..]
-			} else {
+	for i < s.len {
+		if s[i] == u8(`%`) && i + 2 < s.len {
+			hi := hex_digit_value(s[i + 1]) or {
+				buf << s[i]
 				i++
+				continue
 			}
+			lo := hex_digit_value(s[i + 2]) or {
+				buf << s[i]
+				i++
+				continue
+			}
+			buf << (hi << 4) | lo
+			i += 3
 		} else {
+			buf << s[i]
 			i++
 		}
 	}
-	return result
+	return buf.bytestr()
+}
+
+/// hex_digit_value returns the numeric value (0-15) of a hexadecimal ASCII digit.
+/// Returns none for non-hex characters.
+fn hex_digit_value(c u8) ?u8 {
+	if c >= `0` && c <= `9` {
+		return u8(c - `0`)
+	} else if c >= `A` && c <= `F` {
+		return u8(c - `A` + 10)
+	} else if c >= `a` && c <= `f` {
+		return u8(c - `a` + 10)
+	}
+	return none
 }
 
 /// is_hex_char checks whether a character is a valid hexadecimal digit.

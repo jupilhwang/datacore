@@ -75,26 +75,9 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 	prefix := '${a.config.prefix}groups/'
 	objects := a.list_objects(prefix)!
 
+	group_ids := extract_group_ids_from_objects(objects)
 	mut groups := []domain.GroupInfo{}
-	mut group_ids := []string{}
-	mut seen := map[string]bool{}
 
-	// First pass: collect unique group IDs
-	for obj in objects {
-		if obj.key.ends_with('/state.json') {
-			parts := obj.key.split('/')
-			if parts.len >= 2 {
-				group_id := parts[parts.len - 2]
-				if group_id !in seen {
-					seen[group_id] = true
-					group_ids << group_id
-				}
-			}
-		}
-	}
-
-	// Batch load groups (parallel lookup for better performance)
-	// Lower threshold to 1 to enable parallel processing in almost all cases
 	if group_ids.len == 0 {
 		return groups
 	} else if group_ids.len == 1 {
@@ -108,8 +91,7 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 			}
 		}
 	} else {
-		// Large batch: parallel load using channels
-		// Channels don't support optional types, so use domain.GroupInfo directly
+		// Multiple groups: parallel load using channels
 		ch := chan domain.GroupInfo{cap: group_ids.len}
 
 		for group_id in group_ids {
@@ -121,7 +103,6 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 						state:         group.state.str()
 					}
 				} else {
-					// Send empty GroupInfo for failed loads (filtered out)
 					ch <- domain.GroupInfo{
 						group_id: ''
 					}
@@ -139,6 +120,27 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 	}
 
 	return groups
+}
+
+/// extract_group_ids_from_objects extracts unique group IDs from S3 object keys.
+fn extract_group_ids_from_objects(objects []S3Object) []string {
+	mut group_ids := []string{}
+	mut seen := map[string]bool{}
+
+	for obj in objects {
+		if obj.key.ends_with('/state.json') {
+			parts := obj.key.split('/')
+			if parts.len >= 2 {
+				group_id := parts[parts.len - 2]
+				if group_id !in seen {
+					seen[group_id] = true
+					group_ids << group_id
+				}
+			}
+		}
+	}
+
+	return group_ids
 }
 
 /// commit_offsets commits offsets via the batch snapshot path.

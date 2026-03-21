@@ -26,10 +26,19 @@ struct CachedIcebergMetadata {
 	cached_at time.Time
 }
 
+/// ObjectStore provides basic object storage operations for catalog backends.
+interface ObjectStore {
+mut:
+	put_object(key string, data []u8) !
+	get_object(key string, range_start i64, range_end i64) !([]u8, string)
+	list_objects(prefix string) ![]S3Object
+	delete_objects_with_prefix(prefix string) !
+}
+
 /// HadoopCatalog is an S3-based Hadoop catalog implementation.
 pub struct HadoopCatalog {
 pub mut:
-	adapter    &S3StorageAdapter
+	adapter    ObjectStore
 	warehouse  string
 	properties map[string]string
 	// Iceberg metadata cache
@@ -65,7 +74,7 @@ fn (mut c HadoopCatalog) invalidate_cache(key string) {
 }
 
 /// new_hadoop_catalog creates a new Hadoop catalog.
-pub fn new_hadoop_catalog(adapter &S3StorageAdapter, warehouse string) &HadoopCatalog {
+pub fn new_hadoop_catalog(adapter ObjectStore, warehouse string) &HadoopCatalog {
 	return &HadoopCatalog{
 		adapter:    adapter
 		warehouse:  normalize_s3_location(warehouse)
@@ -337,7 +346,6 @@ fn (mut c HadoopCatalog) namespace_path(namespace []string) string {
 
 /// encode_metadata encodes metadata as a JSON string.
 fn encode_metadata(metadata IcebergMetadata) string {
-	// Estimate initial capacity: base fields + per-schema/snapshot overhead
 	estimated_size := 512 + metadata.schemas.len * 256 + metadata.partition_specs.len * 128 +
 		metadata.snapshots.len * 512
 	mut sb := strings.new_builder(estimated_size)
@@ -350,13 +358,22 @@ fn encode_metadata(metadata IcebergMetadata) string {
 	sb.write_string('"currentSchemaId":${metadata.current_schema_id},')
 	sb.write_string('"defaultSpecId":${metadata.default_spec_id},')
 	sb.write_string('"currentSnapshotId":${metadata.current_snapshot_id},')
-
-	// properties
 	sb.write_string('"properties":${json.encode(metadata.properties)},')
+	sb.write_string(encode_schemas(metadata.schemas))
+	sb.write_string(',')
+	sb.write_string(encode_partition_specs(metadata.partition_specs))
+	sb.write_string(',')
+	sb.write_string(encode_snapshots(metadata.snapshots))
+	sb.write_string('}')
 
-	// schemas
+	return sb.str()
+}
+
+/// encode_schemas encodes schemas as a JSON array fragment.
+fn encode_schemas(schemas []IcebergSchema) string {
+	mut sb := strings.new_builder(schemas.len * 256)
 	sb.write_string('"schemas":[')
-	for i, schema in metadata.schemas {
+	for i, schema in schemas {
 		if i > 0 {
 			sb.write_string(',')
 		}
@@ -372,11 +389,15 @@ fn encode_metadata(metadata IcebergMetadata) string {
 		}
 		sb.write_string(']}')
 	}
-	sb.write_string('],')
+	sb.write_string(']')
+	return sb.str()
+}
 
-	// partitionSpecs
+/// encode_partition_specs encodes partition specs as a JSON array fragment.
+fn encode_partition_specs(specs []IcebergPartitionSpec) string {
+	mut sb := strings.new_builder(specs.len * 128)
 	sb.write_string('"partitionSpecs":[')
-	for i, spec in metadata.partition_specs {
+	for i, spec in specs {
 		if i > 0 {
 			sb.write_string(',')
 		}
@@ -392,11 +413,15 @@ fn encode_metadata(metadata IcebergMetadata) string {
 		}
 		sb.write_string(']}')
 	}
-	sb.write_string('],')
+	sb.write_string(']')
+	return sb.str()
+}
 
-	// snapshots
+/// encode_snapshots encodes snapshots as a JSON array fragment.
+fn encode_snapshots(snapshots []IcebergSnapshot) string {
+	mut sb := strings.new_builder(snapshots.len * 512)
 	sb.write_string('"snapshots":[')
-	for i, snapshot in metadata.snapshots {
+	for i, snapshot in snapshots {
 		if i > 0 {
 			sb.write_string(',')
 		}
@@ -407,9 +432,6 @@ fn encode_metadata(metadata IcebergMetadata) string {
 		sb.write_string('"summary":${json.encode(snapshot.summary)}}')
 	}
 	sb.write_string(']')
-
-	sb.write_string('}')
-
 	return sb.str()
 }
 
@@ -420,60 +442,51 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 		return error('Empty metadata JSON')
 	}
 
+	mut metadata := decode_metadata_scalars(json_str)
+	decode_metadata_collections(json_str, mut metadata)
+	return metadata
+}
+
+/// decode_metadata_scalars extracts scalar fields from a metadata JSON string.
+fn decode_metadata_scalars(json_str string) IcebergMetadata {
 	mut metadata := IcebergMetadata{}
 
-	// format-version / formatVersion
 	metadata.format_version = json_extract_int_dual(json_str, 'format-version', 'formatVersion') or {
 		2
 	}
-
-	// table-uuid / tableUuid
 	metadata.table_uuid = json_extract_string_dual(json_str, 'table-uuid', 'tableUuid') or {
 		generate_table_uuid(json_str)
 	}
-
-	// location
 	if v := json_extract_string(json_str, 'location') {
 		metadata.location = v
 	}
-
-	// last-updated-ms / lastUpdatedMs
 	metadata.last_updated_ms = json_extract_i64_dual(json_str, 'last-updated-ms', 'lastUpdatedMs') or {
 		time.now().unix_milli()
 	}
-
-	// current-schema-id / currentSchemaId
 	metadata.current_schema_id = json_extract_int_dual(json_str, 'current-schema-id',
 		'currentSchemaId') or { 0 }
-
-	// default-spec-id / defaultSpecId
 	metadata.default_spec_id = json_extract_int_dual(json_str, 'default-spec-id', 'defaultSpecId') or {
 		0
 	}
-
-	// current-snapshot-id / currentSnapshotId
 	metadata.current_snapshot_id = json_extract_i64_dual(json_str, 'current-snapshot-id',
 		'currentSnapshotId') or { i64(0) }
 
-	// properties
+	return metadata
+}
+
+/// decode_metadata_collections extracts collection fields (properties, schemas,
+/// partition specs, snapshots) from a metadata JSON string into the given metadata.
+fn decode_metadata_collections(json_str string, mut metadata IcebergMetadata) {
 	if props_str := json_extract_object(json_str, 'properties') {
 		metadata.properties = json_parse_string_map(props_str)
 	}
-
-	// schemas
 	if schemas_str := json_extract_array(json_str, 'schemas') {
 		metadata.schemas = json_parse_schemas(schemas_str)
 	}
-
-	// partition-specs / partitionSpecs
 	if specs_str := json_extract_array_dual(json_str, 'partition-specs', 'partitionSpecs') {
 		metadata.partition_specs = json_parse_partition_specs(specs_str)
 	}
-
-	// snapshots
 	if snaps_str := json_extract_array(json_str, 'snapshots') {
 		metadata.snapshots = json_parse_snapshots(snaps_str)
 	}
-
-	return metadata
 }
