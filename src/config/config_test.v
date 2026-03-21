@@ -87,6 +87,78 @@ fn test_escape_toml_string_escapes_special_characters() {
 	assert escape_toml_string('normal_value') == 'normal_value'
 }
 
+fn test_validate_rejects_invalid_storage_engine() {
+	cfg := Config{
+		broker:  BrokerConfig{
+			broker_id: 1
+		}
+		storage: StorageConfig{
+			engine: 'nonexistent'
+		}
+	}
+	cfg.validate() or {
+		assert err.msg().contains('Unknown storage engine')
+		return
+	}
+	assert false, 'validate() should return error for invalid engine'
+}
+
+fn test_validate_accepts_valid_storage_engine() {
+	cfg := Config{
+		broker:  BrokerConfig{
+			broker_id: 1
+		}
+		storage: StorageConfig{
+			engine: 's3'
+			s3:     S3StorageConfig{
+				bucket:     'test-bucket'
+				region:     'us-east-1'
+				endpoint:   'https://test-bucket.s3.us-east-1.amazonaws.com'
+				access_key: 'AKIAIOSFODNN7EXAMPLE'
+				secret_key: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+			}
+		}
+	}
+	cfg.validate() or {
+		assert false, 'validate() should succeed for valid s3 config: ${err}'
+		return
+	}
+}
+
+fn test_load_default_config_has_valid_defaults() {
+	cfg := load_config_with_args('/non/existent/path', map[string]string{}) or {
+		assert false, 'load_config_with_args should not fail: ${err}'
+		return
+	}
+	assert cfg.broker.port == 9092
+	assert cfg.broker.host == '0.0.0.0'
+	assert cfg.storage.engine == 'memory'
+	assert cfg.storage.memory.max_memory_mb == 20480
+}
+
+fn test_parse_cli_args_key_value_format() {
+	result := parse_cli_args(['--broker-port', '9999'])
+	assert result['broker-port'] == '9999'
+}
+
+fn test_parse_cli_args_equals_format() {
+	result := parse_cli_args(['--broker-port=9999'])
+	assert result['broker-port'] == '9999'
+}
+
+fn test_parse_cli_args_mixed_formats() {
+	result := parse_cli_args(['--broker-port=9999', '--broker-host', 'localhost'])
+	assert result['broker-port'] == '9999'
+	assert result['broker-host'] == 'localhost'
+}
+
+fn test_generate_deterministic_broker_id_consistency() {
+	id1 := generate_deterministic_broker_id()
+	id2 := generate_deterministic_broker_id()
+	assert id1 == id2
+	assert id1 >= 1
+}
+
 fn test_save_escapes_special_characters() {
 	// config with TOML injection payload in string fields
 	mut cfg := Config{

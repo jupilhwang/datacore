@@ -5,7 +5,13 @@ module config
 import os
 import strings
 import toml
-import infra.storage.plugins.s3 as s3_plugin
+
+/// ConfigSource bundles shared data sources for configuration lookups.
+/// Created once per parse function to avoid passing cli_args and doc repeatedly.
+struct ConfigSource {
+	cli_args map[string]string
+	doc      toml.Doc
+}
 
 /// load_config loads configuration from a TOML file.
 /// path: path to the configuration file
@@ -42,46 +48,54 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 }
 
 fn parse_broker_config(cli_args map[string]string, doc toml.Doc) BrokerConfig {
-	broker_host := get_config_string(cli_args, 'broker-host', 'DATACORE_BROKER_HOST',
-		doc, 'broker.host', '0.0.0.0')
+	src := ConfigSource{
+		cli_args: cli_args
+		doc:      doc
+	}
+	broker_host := src.get_string('broker-host', 'DATACORE_BROKER_HOST', 'broker.host',
+		'0.0.0.0')
 	// broker_id: if not set via config/env, generate deterministically from server identity (0 used as sentinel)
-	mut broker_id := get_config_int(cli_args, 'broker-id', 'DATACORE_BROKER_ID', doc,
-		'broker.broker_id', 0)
+	mut broker_id := src.get_int('broker-id', 'DATACORE_BROKER_ID', 'broker.broker_id',
+		0)
 	if broker_id == 0 {
 		broker_id = generate_deterministic_broker_id()
 	}
 	return BrokerConfig{
 		host:               broker_host
-		port:               get_config_int(cli_args, 'broker-port', 'DATACORE_BROKER_PORT',
-			doc, 'broker.port', 9092)
+		port:               src.get_int('broker-port', 'DATACORE_BROKER_PORT', 'broker.port',
+			9092)
 		broker_id:          broker_id
-		cluster_id:         get_config_string(cli_args, 'cluster-id', 'DATACORE_CLUSTER_ID',
-			doc, 'broker.cluster_id', 'datacore-cluster')
-		max_connections:    get_config_int(cli_args, 'max-connections', 'DATACORE_MAX_CONNECTIONS',
-			doc, 'broker.max_connections', 10000)
-		max_request_size:   get_config_int(cli_args, 'max-request-size', 'DATACORE_MAX_REQUEST_SIZE',
-			doc, 'broker.max_request_size', 104857600)
-		request_timeout_ms: get_config_int(cli_args, 'request-timeout-ms', 'DATACORE_REQUEST_TIMEOUT_MS',
-			doc, 'broker.request_timeout_ms', 30000)
-		idle_timeout_ms:    get_config_int(cli_args, 'idle-timeout-ms', 'DATACORE_IDLE_TIMEOUT_MS',
-			doc, 'broker.idle_timeout_ms', 600000)
-		advertised_host:    get_config_string(cli_args, 'advertised-host', 'DATACORE_ADVERTISED_HOST',
-			doc, 'broker.advertised_host', broker_host)
+		cluster_id:         src.get_string('cluster-id', 'DATACORE_CLUSTER_ID', 'broker.cluster_id',
+			'datacore-cluster')
+		max_connections:    src.get_int('max-connections', 'DATACORE_MAX_CONNECTIONS',
+			'broker.max_connections', 10000)
+		max_request_size:   src.get_int('max-request-size', 'DATACORE_MAX_REQUEST_SIZE',
+			'broker.max_request_size', 104857600)
+		request_timeout_ms: src.get_int('request-timeout-ms', 'DATACORE_REQUEST_TIMEOUT_MS',
+			'broker.request_timeout_ms', 30000)
+		idle_timeout_ms:    src.get_int('idle-timeout-ms', 'DATACORE_IDLE_TIMEOUT_MS',
+			'broker.idle_timeout_ms', 600000)
+		advertised_host:    src.get_string('advertised-host', 'DATACORE_ADVERTISED_HOST',
+			'broker.advertised_host', broker_host)
 	}
 }
 
 fn parse_rest_config(cli_args map[string]string, doc toml.Doc) RestConfig {
+	src := ConfigSource{
+		cli_args: cli_args
+		doc:      doc
+	}
 	return RestConfig{
-		enabled:                   get_config_bool(cli_args, 'rest-enabled', 'DATACORE_REST_ENABLED',
-			doc, 'rest.enabled', true)
-		host:                      get_config_string(cli_args, 'rest-host', 'DATACORE_REST_HOST',
-			doc, 'rest.host', '0.0.0.0')
-		port:                      get_config_int(cli_args, 'rest-port', 'DATACORE_REST_PORT',
-			doc, 'rest.port', 8080)
-		max_connections:           get_config_int(cli_args, 'rest-max-connections', 'DATACORE_REST_MAX_CONNECTIONS',
-			doc, 'rest.max_connections', 1000)
-		static_dir:                get_config_string(cli_args, 'rest-static-dir', 'DATACORE_REST_STATIC_DIR',
-			doc, 'rest.static_dir', 'tests/web')
+		enabled:                   src.get_bool('rest-enabled', 'DATACORE_REST_ENABLED',
+			'rest.enabled', true)
+		host:                      src.get_string('rest-host', 'DATACORE_REST_HOST', 'rest.host',
+			'0.0.0.0')
+		port:                      src.get_int('rest-port', 'DATACORE_REST_PORT', 'rest.port',
+			8080)
+		max_connections:           src.get_int('rest-max-connections', 'DATACORE_REST_MAX_CONNECTIONS',
+			'rest.max_connections', 1000)
+		static_dir:                src.get_string('rest-static-dir', 'DATACORE_REST_STATIC_DIR',
+			'rest.static_dir', 'tests/web')
 		sse_heartbeat_interval_ms: get_int(doc, 'rest.sse_heartbeat_interval_ms', 15000)
 		sse_connection_timeout_ms: get_int(doc, 'rest.sse_connection_timeout_ms', 3600000)
 		ws_max_message_size:       get_int(doc, 'rest.ws_max_message_size', 1048576)
@@ -90,31 +104,39 @@ fn parse_rest_config(cli_args map[string]string, doc toml.Doc) RestConfig {
 }
 
 fn parse_grpc_config(cli_args map[string]string, doc toml.Doc) GrpcGatewayConfig {
+	src := ConfigSource{
+		cli_args: cli_args
+		doc:      doc
+	}
 	return GrpcGatewayConfig{
-		enabled:          get_config_bool(cli_args, 'grpc-enabled', 'DATACORE_GRPC_ENABLED',
-			doc, 'grpc.enabled', false)
-		host:             get_config_string(cli_args, 'grpc-host', 'DATACORE_GRPC_HOST',
-			doc, 'grpc.host', '0.0.0.0')
-		port:             get_config_int(cli_args, 'grpc-port', 'DATACORE_GRPC_PORT',
-			doc, 'grpc.port', 9094)
-		max_connections:  get_config_int(cli_args, 'grpc-max-connections', 'DATACORE_GRPC_MAX_CONNECTIONS',
-			doc, 'grpc.max_connections', 10000)
+		enabled:          src.get_bool('grpc-enabled', 'DATACORE_GRPC_ENABLED', 'grpc.enabled',
+			false)
+		host:             src.get_string('grpc-host', 'DATACORE_GRPC_HOST', 'grpc.host',
+			'0.0.0.0')
+		port:             src.get_int('grpc-port', 'DATACORE_GRPC_PORT', 'grpc.port',
+			9094)
+		max_connections:  src.get_int('grpc-max-connections', 'DATACORE_GRPC_MAX_CONNECTIONS',
+			'grpc.max_connections', 10000)
 		max_message_size: get_int(doc, 'grpc.max_message_size', 4194304)
 	}
 }
 
 fn parse_s3_config(cli_args map[string]string, doc toml.Doc) !S3StorageConfig {
+	src := ConfigSource{
+		cli_args: cli_args
+		doc:      doc
+	}
 	mut s3 := S3StorageConfig{
-		endpoint:                     get_config_string(cli_args, 's3-endpoint', 'DATACORE_S3_ENDPOINT',
-			doc, 'storage.s3.endpoint', '')
-		bucket:                       get_config_string(cli_args, 's3-bucket', 'DATACORE_S3_BUCKET',
-			doc, 'storage.s3.bucket', '')
-		region:                       get_config_string(cli_args, 's3-region', 'DATACORE_S3_REGION',
-			doc, 'storage.s3.region', 'us-east-1')
-		prefix:                       get_config_string(cli_args, 's3-prefix', 'DATACORE_S3_PREFIX',
-			doc, 'storage.s3.prefix', 'datacore/')
-		timezone:                     get_config_string(cli_args, 's3-timezone', 'DATACORE_S3_TIMEZONE',
-			doc, 'storage.s3.timezone', 'UTC')
+		endpoint:                     src.get_string('s3-endpoint', 'DATACORE_S3_ENDPOINT',
+			'storage.s3.endpoint', '')
+		bucket:                       src.get_string('s3-bucket', 'DATACORE_S3_BUCKET',
+			'storage.s3.bucket', '')
+		region:                       src.get_string('s3-region', 'DATACORE_S3_REGION',
+			'storage.s3.region', 'us-east-1')
+		prefix:                       src.get_string('s3-prefix', 'DATACORE_S3_PREFIX',
+			'storage.s3.prefix', 'datacore/')
+		timezone:                     src.get_string('s3-timezone', 'DATACORE_S3_TIMEZONE',
+			'storage.s3.timezone', 'UTC')
 		batch_timeout_ms:             get_int(doc, 'storage.s3.batch_timeout_ms', 25)
 		batch_max_bytes:              get_i64(doc, 'storage.s3.batch_max_bytes', 4096000)
 		min_flush_bytes:              get_int(doc, 'storage.s3.min_flush_bytes', 65536)
@@ -143,9 +165,7 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) !S3StorageConfig {
 
 	// validate user-provided endpoint for SSRF before applying default
 	if s3.endpoint != '' {
-		s3_plugin.validate_s3_endpoint(s3.endpoint) or {
-			return error('invalid S3 endpoint: ${err}')
-		}
+		validate_s3_endpoint(s3.endpoint) or { return error('invalid S3 endpoint: ${err}') }
 	}
 
 	s3.endpoint = if s3.endpoint == '' {
@@ -231,11 +251,15 @@ fn parse_iceberg_sub_config(mut s3 S3StorageConfig, doc toml.Doc) {
 }
 
 fn parse_storage_config(cli_args map[string]string, doc toml.Doc) !StorageConfig {
+	src := ConfigSource{
+		cli_args: cli_args
+		doc:      doc
+	}
 	return StorageConfig{
-		engine:   get_config_string(cli_args, 'storage-engine', 'DATACORE_STORAGE_ENGINE',
-			doc, 'storage.engine', 'memory')
+		engine:   src.get_string('storage-engine', 'DATACORE_STORAGE_ENGINE', 'storage.engine',
+			'memory')
 		memory:   MemoryStorageConfig{
-			max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', 20240)
+			max_memory_mb:      get_int(doc, 'storage.memory.max_memory_mb', default_max_memory_mb)
 			segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
 		}
 		s3:       parse_s3_config(cli_args, doc)!
@@ -244,20 +268,20 @@ fn parse_storage_config(cli_args map[string]string, doc toml.Doc) !StorageConfig
 			journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
 		}
 		postgres: PostgresStorageConfig{
-			host:      get_config_string(cli_args, 'postgres-host', 'DATACORE_POSTGRES_HOST',
-				doc, 'storage.postgres.host', 'localhost')
-			port:      get_config_int(cli_args, 'postgres-port', 'DATACORE_POSTGRES_PORT',
-				doc, 'storage.postgres.port', 5432)
-			database:  get_config_string(cli_args, 'postgres-database', 'DATACORE_POSTGRES_DATABASE',
-				doc, 'storage.postgres.database', 'datacore')
-			user:      get_config_string(cli_args, 'postgres-user', 'DATACORE_POSTGRES_USER',
-				doc, 'storage.postgres.user', '')
-			password:  get_config_string(cli_args, 'postgres-password', 'DATACORE_POSTGRES_PASSWORD',
-				doc, 'storage.postgres.password', '')
-			pool_size: get_config_int(cli_args, 'postgres-pool-size', 'DATACORE_POSTGRES_POOL_SIZE',
-				doc, 'storage.postgres.pool_size', 10)
-			sslmode:   get_config_string(cli_args, 'postgres-sslmode', 'DATACORE_POSTGRES_SSLMODE',
-				doc, 'storage.postgres.sslmode', 'disable')
+			host:      src.get_string('postgres-host', 'DATACORE_POSTGRES_HOST', 'storage.postgres.host',
+				'localhost')
+			port:      src.get_int('postgres-port', 'DATACORE_POSTGRES_PORT', 'storage.postgres.port',
+				5432)
+			database:  src.get_string('postgres-database', 'DATACORE_POSTGRES_DATABASE',
+				'storage.postgres.database', 'datacore')
+			user:      src.get_string('postgres-user', 'DATACORE_POSTGRES_USER', 'storage.postgres.user',
+				'')
+			password:  src.get_string('postgres-password', 'DATACORE_POSTGRES_PASSWORD',
+				'storage.postgres.password', '')
+			pool_size: src.get_int('postgres-pool-size', 'DATACORE_POSTGRES_POOL_SIZE',
+				'storage.postgres.pool_size', 10)
+			sslmode:   src.get_string('postgres-sslmode', 'DATACORE_POSTGRES_SSLMODE',
+				'storage.postgres.sslmode', 'disable')
 		}
 	}
 }
@@ -390,17 +414,17 @@ fn get_bool(doc toml.Doc, key string, default_val bool) bool {
 	return val.bool()
 }
 
-// Priority cascade helper functions
+// Priority cascade helper functions (methods on ConfigSource)
 // Configuration value priority: CLI args > env vars > TOML > defaults
 
-/// get_config_string retrieves a string configuration value according to priority.
+/// get_string retrieves a string configuration value according to priority.
 /// 1. CLI argument (cli_key)
 /// 2. environment variable (env_key)
 /// 3. TOML file (toml_key)
 /// 4. default value (default_val)
-fn get_config_string(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val string) string {
+fn (s &ConfigSource) get_string(cli_key string, env_key string, toml_key string, default_val string) string {
 	// priority 1: CLI arguments
-	if cli_val := cli_args[cli_key] {
+	if cli_val := s.cli_args[cli_key] {
 		return cli_val
 	}
 
@@ -411,7 +435,7 @@ fn get_config_string(cli_args map[string]string, cli_key string, env_key string,
 
 	// priority 3: TOML file (skip empty keys)
 	if toml_key != '' {
-		if toml_val := doc.value_opt(toml_key) {
+		if toml_val := s.doc.value_opt(toml_key) {
 			return toml_val.string()
 		}
 	}
@@ -420,10 +444,10 @@ fn get_config_string(cli_args map[string]string, cli_key string, env_key string,
 	return default_val
 }
 
-/// get_config_int retrieves an integer configuration value according to priority.
-fn get_config_int(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val int) int {
+/// get_int retrieves an integer configuration value according to priority.
+fn (s &ConfigSource) get_int(cli_key string, env_key string, toml_key string, default_val int) int {
 	// priority 1: CLI arguments
-	if cli_val := cli_args[cli_key] {
+	if cli_val := s.cli_args[cli_key] {
 		return cli_val.int()
 	}
 
@@ -434,7 +458,7 @@ fn get_config_int(cli_args map[string]string, cli_key string, env_key string, do
 
 	// priority 3: TOML file (skip empty keys)
 	if toml_key != '' {
-		if toml_val := doc.value_opt(toml_key) {
+		if toml_val := s.doc.value_opt(toml_key) {
 			return toml_val.int()
 		}
 	}
@@ -443,10 +467,10 @@ fn get_config_int(cli_args map[string]string, cli_key string, env_key string, do
 	return default_val
 }
 
-/// get_config_bool retrieves a boolean configuration value according to priority.
-fn get_config_bool(cli_args map[string]string, cli_key string, env_key string, doc toml.Doc, toml_key string, default_val bool) bool {
+/// get_bool retrieves a boolean configuration value according to priority.
+fn (s &ConfigSource) get_bool(cli_key string, env_key string, toml_key string, default_val bool) bool {
 	// priority 1: CLI arguments
-	if cli_val := cli_args[cli_key] {
+	if cli_val := s.cli_args[cli_key] {
 		return cli_val == 'true' || cli_val == '1' || cli_val == 'yes'
 	}
 
@@ -457,7 +481,7 @@ fn get_config_bool(cli_args map[string]string, cli_key string, env_key string, d
 
 	// priority 3: TOML file (skip empty keys)
 	if toml_key != '' {
-		if toml_val := doc.value_opt(toml_key) {
+		if toml_val := s.doc.value_opt(toml_key) {
 			return toml_val.bool()
 		}
 	}

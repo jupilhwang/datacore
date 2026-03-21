@@ -53,39 +53,16 @@ pub fn init_storage(conf cfg.Config, mut logger observability.Logger) !StorageRe
 fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageResult {
 	os.setenv('TZ', conf.storage.s3.timezone, true)
 
-	s_config := s3.S3Config{
-		bucket_name:             conf.storage.s3.bucket
-		region:                  conf.storage.s3.region
-		endpoint:                conf.storage.s3.endpoint
-		access_key:              conf.storage.s3.access_key
-		secret_key:              conf.storage.s3.secret_key
-		prefix:                  conf.storage.s3.prefix
-		use_path_style:          true
-		timezone:                conf.storage.s3.timezone
-		broker_id:               i32(conf.broker.broker_id)
-		batch_timeout_ms:        conf.storage.s3.batch_timeout_ms
-		batch_max_bytes:         conf.storage.s3.batch_max_bytes
-		min_flush_bytes:         conf.storage.s3.min_flush_bytes
-		max_flush_skip_count:    conf.storage.s3.max_flush_skip_count
-		compaction_interval_ms:  conf.storage.s3.compaction_interval_ms
-		target_segment_bytes:    conf.storage.s3.target_segment_bytes
-		index_cache_ttl_ms:      conf.storage.s3.index_cache_ttl_ms
-		index_batch_size:        conf.storage.s3.index_batch_size
-		index_flush_interval_ms: conf.storage.s3.index_flush_interval_ms
-		sync_linger_ms:          conf.storage.s3.sync_linger_ms
-		use_server_side_copy:    conf.storage.s3.use_server_side_copy
-	}
-
-	masked_key := if s_config.access_key.len > 4 {
-		s_config.access_key[0..4] + '****'
+	masked_key := if conf.storage.s3.access_key.len > 4 {
+		conf.storage.s3.access_key[0..4] + '****'
 	} else {
 		'****'
 	}
-	logger.info('Initializing S3 storage', observability.field_string('bucket', s_config.bucket_name),
-		observability.field_string('region', s_config.region), observability.field_string('endpoint',
-		s_config.endpoint), observability.field_string('access_key', masked_key))
+	logger.info('Initializing S3 storage', observability.field_string('bucket', conf.storage.s3.bucket),
+		observability.field_string('region', conf.storage.s3.region), observability.field_string('endpoint',
+		conf.storage.s3.endpoint), observability.field_string('access_key', masked_key))
 
-	if mut s3_adapter := s3.new_s3_adapter(s_config) {
+	if mut s3_adapter := s3.new_s3_adapter_from_storage_config(conf.storage.s3, i32(conf.broker.broker_id)) {
 		// config 패키지의 iceberg_ 필드들을 s3 어댑터의 IcebergConfig에 주입 (런타임 연결)
 		s3_adapter.iceberg_config = s3.IcebergConfig{
 			enabled:           conf.storage.s3.iceberg_enabled

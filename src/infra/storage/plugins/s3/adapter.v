@@ -2,6 +2,7 @@
 module s3
 
 import domain
+import config as app_config
 import service.port
 import time
 import crypto.md5
@@ -275,6 +276,46 @@ pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 		iceberg_writers:         map[string]&IcebergWriter{}
 		sync_linger_buffers:     map[string]SyncLingerBuffer{}
 	}
+}
+
+/// from_storage_config creates an S3Config from the application-level S3StorageConfig.
+/// Centralizes the mapping to reduce drift risk between the two config structs.
+/// Fields not present in S3StorageConfig (max_retries, retry_delay_ms, use_path_style,
+/// broker_id) retain their S3Config defaults and must be set separately if needed.
+fn from_storage_config(cfg app_config.S3StorageConfig) S3Config {
+	return S3Config{
+		bucket_name:                  cfg.bucket
+		region:                       cfg.region
+		endpoint:                     cfg.endpoint
+		access_key:                   cfg.access_key
+		secret_key:                   cfg.secret_key
+		prefix:                       cfg.prefix
+		timezone:                     cfg.timezone
+		batch_timeout_ms:             cfg.batch_timeout_ms
+		batch_max_bytes:              cfg.batch_max_bytes
+		min_flush_bytes:              cfg.min_flush_bytes
+		max_flush_skip_count:         cfg.max_flush_skip_count
+		compaction_interval_ms:       cfg.compaction_interval_ms
+		target_segment_bytes:         cfg.target_segment_bytes
+		index_cache_ttl_ms:           cfg.index_cache_ttl_ms
+		offset_batch_enabled:         cfg.offset_batch_enabled
+		offset_flush_interval_ms:     cfg.offset_flush_interval_ms
+		offset_flush_threshold_count: cfg.offset_flush_threshold_count
+		index_batch_size:             cfg.index_batch_size
+		index_flush_interval_ms:      cfg.index_flush_interval_ms
+		sync_linger_ms:               cfg.sync_linger_ms
+		use_server_side_copy:         cfg.use_server_side_copy
+	}
+}
+
+/// new_s3_adapter_from_storage_config creates a new S3 storage adapter
+/// from the application-level S3StorageConfig. Uses from_storage_config
+/// to centralize the field mapping. broker_id is passed separately because
+/// it originates from BrokerConfig, not S3StorageConfig.
+pub fn new_s3_adapter_from_storage_config(s3_cfg app_config.S3StorageConfig, broker_id i32) !&S3StorageAdapter {
+	mut s3_config := from_storage_config(s3_cfg)
+	s3_config.broker_id = broker_id
+	return new_s3_adapter(s3_config)
 }
 
 /// health_check checks the storage health status.
