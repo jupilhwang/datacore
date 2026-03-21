@@ -232,24 +232,31 @@ fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 	return none
 }
 
-/// encode_record_with_schema encodes a record according to a schema.
-/// Currently only validates schema configuration and logs.
-// TODO(jira#XXX): implement actual schema encoding after encoder module update
+/// encode_record_with_schema encodes a record value using the given schema,
+/// then wraps the result in Confluent wire format.
 fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema_obj &domain.Schema) ![]u8 {
-	h.logger.debug('Schema encoding configured', observability.field_string('schema_type',
+	h.logger.debug('Schema encoding record', observability.field_string('schema_type',
 		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
-	return record.value
+	encoded_payload := encode_with_schema(record.value, schema_obj.schema_str, schema_obj.schema_type) or {
+		return error('schema encode failed (type=${schema_obj.schema_type.str()}, id=${schema_obj.id}): ${err}')
+	}
+	return wrap_confluent_wire_format(encoded_payload, schema_obj.id)
 }
 
-/// decode_record_with_schema decodes a record according to a schema.
-/// Currently only validates schema configuration and logs.
-// TODO(jira#XXX): implement actual schema decoding after encoder module update
+/// decode_record_with_schema validates Confluent wire format, strips the header,
+/// and decodes the payload using the given schema.
 fn (mut h Handler) decode_record_with_schema(record_data []u8, schema_obj &domain.Schema) ![]u8 {
-	h.logger.debug('Schema decoding configured', observability.field_string('schema_type',
+	h.logger.debug('Schema decoding record', observability.field_string('schema_type',
 		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
 
-	return record_data
+	wire_schema_id, payload := unwrap_confluent_wire_format(record_data)!
+	h.logger.debug('Wire format parsed', observability.field_int('wire_schema_id', wire_schema_id),
+		observability.field_int('expected_schema_id', schema_obj.id))
+
+	return decode_with_schema(payload, schema_obj.schema_str, schema_obj.schema_type) or {
+		return error('schema decode failed (type=${schema_obj.schema_type.str()}, id=${schema_obj.id}): ${err}')
+	}
 }
 
 /// set_partition_assigner sets the partition assignment service on the handler.
