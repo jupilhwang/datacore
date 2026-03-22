@@ -24,7 +24,7 @@ struct FdCacheEntry {
 /// to avoid repeated open/close syscalls in io_uring I/O paths.
 struct FdCache {
 mut:
-	entries  map[string]FdCacheEntry // path -> fd
+	entries  map[string]FdCacheEntry // "path:flags" -> fd
 	mu       sync.Mutex
 	max_size int = 64 // max cached FDs
 }
@@ -48,13 +48,14 @@ pub fn (e LinuxPerformanceEngine) name() string {
 /// get_or_open returns a cached fd or opens a new one.
 /// Uses LRU eviction when the cache reaches max_size.
 fn (mut c FdCache) get_or_open(path string, flags int, mode int) !int {
+	cache_key := '${path}:${flags}'
 	c.mu.lock()
 	defer {
 		c.mu.unlock()
 	}
 
-	if entry := c.entries[path] {
-		c.entries[path] = FdCacheEntry{
+	if entry := c.entries[cache_key] {
+		c.entries[cache_key] = FdCacheEntry{
 			fd:        entry.fd
 			last_used: time.now().unix_milli()
 		}
@@ -71,7 +72,7 @@ fn (mut c FdCache) get_or_open(path string, flags int, mode int) !int {
 			c.evict_oldest()
 		}
 
-		c.entries[path] = FdCacheEntry{
+		c.entries[cache_key] = FdCacheEntry{
 			fd:        fd
 			last_used: time.now().unix_milli()
 		}

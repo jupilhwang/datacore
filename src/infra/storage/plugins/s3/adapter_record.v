@@ -63,8 +63,8 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	// and producing overlapping offset ranges.
 	mut p_lock := a.get_partition_append_lock(partition_key)
 	p_lock.lock()
-	defer { p_lock.unlock() }
 	base_offset := a.reserve_offsets(partition_key, records.len)
+	p_lock.unlock()
 
 	// 3. Create StoredRecords with reserved offsets
 	stored_records, bytes_to_add := a.create_stored_records(records, base_offset)
