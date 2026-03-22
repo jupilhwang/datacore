@@ -372,3 +372,10 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - QA: 28 modules, 122/122 test files, 1,682 functions - all PASS
 - Architecture: 0 domain->infra imports, 0 service->infra.observability imports
 
+## v0.50.6 - Performance & ISP Optimization (2026-03-22)
+- Fixed: close_all() TCP I/O under lock -> collect+close pattern
+- Fixed: binary_helpers write_i16/i32/i64 temp buffer alloc -> zero-alloc bit-shift
+- Fixed: rate_limiter dual mutex per request -> single combined call
+- Refactored: ClusterMetadataPort 15-method ISP violation -> 5 sub-interfaces
+- QA: 123/123 test files pass, build SUCCESS, lint CLEAN
+

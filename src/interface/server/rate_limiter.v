@@ -140,6 +140,36 @@ pub fn (mut rl RateLimiter) allow_request(client_ip string) bool {
 	return true
 }
 
+/// allow_request_with_bytes checks both request and byte limits under a single lock.
+/// Combines allow_request and allow_bytes to avoid two separate lock round-trips.
+/// Returns true only if both request and byte limits are within bounds.
+pub fn (mut rl RateLimiter) allow_request_with_bytes(client_ip string, bytes i64) bool {
+	rl.mtx.@lock()
+	defer { rl.mtx.unlock() }
+
+	rl.stats.total_requests += 1
+
+	// Check global request limit
+	if !rl.global_bucket.try_consume(1.0) {
+		rl.stats.throttled_requests += 1
+		return false
+	}
+
+	// Check per-IP request limit
+	if !rl.consume_per_ip(client_ip) {
+		rl.stats.throttled_requests += 1
+		return false
+	}
+
+	// Check global byte limit
+	if !rl.global_bytes_bucket.try_consume(f64(bytes)) {
+		rl.stats.throttled_bytes += 1
+		return false
+	}
+
+	return true
+}
+
 /// consume_per_ip checks and consumes a token from the per-IP bucket.
 /// Creates a new bucket for unseen IPs.
 /// Must be called while holding the mutex.

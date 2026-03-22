@@ -420,7 +420,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 			// Rate limit check (if rate limiter is configured)
 			if mut rl := s.rate_limiter {
 				client_ip := extract_ip(client_addr)
-				if !rl.allow_request(client_ip) || !rl.allow_bytes(client_ip, i64(request_size)) {
+				if !rl.allow_request_with_bytes(client_ip, i64(request_size)) {
 					throttle_resp := build_throttle_response(correlation_id)
 					conn.write(throttle_resp) or {}
 					continue
