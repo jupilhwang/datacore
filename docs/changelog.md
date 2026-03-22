@@ -1,0 +1,62 @@
+# DataCore Changelog
+
+## v0.49.0 (2026-03-22)
+
+### Breaking Changes
+- StoragePort interface split into 6 sub-interfaces (TopicStoragePort, RecordStoragePort, GroupStoragePort, OffsetStoragePort, SharePartitionPort, StorageHealthPort). Composite StoragePort preserved for backward compatibility.
+
+### New Features
+- Confluent wire format schema encode/decode (Avro, JSON, Protobuf)
+- LinuxPerformanceEngine with io_uring integration and fd caching
+- S3 segment record index for Range request optimization
+- S3 share partition state persistence (was stub)
+- WebSocket continuation frame handling
+- CLI consume: ListOffsets v7 parsing and RecordBatch v2 decoding
+- DescribeConfigs: broker config entries returned
+- SSRF endpoint validation with IPv4/IPv6 coverage
+- S3 path traversal prevention via identifier validation
+
+### Bug Fixes
+- CRITICAL: append() offset race condition (per-partition exclusive lock)
+- CRITICAL: compaction merge order (indexed results array)
+- CRITICAL: S3 key path traversal via unvalidated group_id/topic
+- Data races: compactor_running/is_flushing converted to stdatomic
+- Config validation bypassed when file missing
+- TOML injection in config.save() via unescaped strings
+- AWS credentials with '=' silently dropped (split_nth fix)
+- CLI parse_cli_args value skip after consuming args[i+1]
+- Iceberg metadata filename bounds check
+- delete_topic lock scope reduced (S3 I/O outside lock)
+- create_topic TOCTOU removed (atomic conditional PUT)
+
+### Performance
+- S3 SigV4 signing key cached per UTC day
+- buffer_lock changed from Mutex to RwMutex (concurrent fetch)
+- url_decode rewritten from O(n*k) to O(n)
+- Encoder instances cached globally
+- io_uring FdCache with LRU eviction
+- topic_id reverse cache for O(1) lookups
+
+### Refactoring
+- config.v split into config_types.v, config_identity.v, endpoint_validation.v
+- adapter.v split into adapter_topic.v, adapter_record.v, adapter_group.v, adapter_share_partition.v
+- s3_client.v split into s3_signing.v (922->658 lines)
+- S3StorageAdapter decomposed into 5 sub-structs
+- Custom JSON parser replaced with V stdlib json.decode + @[json:] attributes
+- XML parser replaced with encoding.xml
+- Config save() expanded to serialize all fields
+- Dead code removed (CachedSignature, get_env_value, get_config_i64, unused imports)
+- Magic numbers replaced with 23 named constants
+- Shell commands replaced with file reads (config_identity.v)
+- HadoopCatalog DIP fix (ObjectStore interface)
+- Typed errors (S3NetworkError, S3ETagMismatchError)
+- print_env_mapping rewritten data-driven
+- ConfigSource struct reduces parameter count
+- S3Config from_storage_config factory
+
+### Architecture
+- StoragePort ISP split (6 sub-interfaces + composite)
+- StorageSubPorts delegation wrapper for V interface narrowing limitation
+- CoordMockStorage simplified (23->4 methods)
+- AlterConfigs logs changes instead of silent drop
+- S3 auth downgrade warning log added
