@@ -238,7 +238,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 
 			response := SaslAuthenticateResponse{
 				error_code:          i16(ErrorCode.sasl_authentication_failed)
-				error_message:       'Authentication failed: ${err.msg()}'
+				error_message:       'Authentication failed'
 				auth_bytes:          []u8{}
 				session_lifetime_ms: 0
 			}
@@ -290,7 +290,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 
 			response := SaslAuthenticateResponse{
 				error_code:          i16(result.error_code)
-				error_message:       result.error_message
+				error_message:       'Authentication failed'
 				auth_bytes:          []u8{}
 				session_lifetime_ms: 0
 			}

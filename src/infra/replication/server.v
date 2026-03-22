@@ -3,6 +3,7 @@ module replication
 import net
 import domain
 import sync
+import sync.stdatomic
 import time
 import log
 
@@ -14,7 +15,7 @@ mut:
 	listener        net.TcpListener
 	binary_protocol BinaryProtocol
 	handler         MessageHandler = unsafe { nil }
-	running         bool
+	running_flag    i64
 	read_timeout_ms i64
 	mtx             sync.Mutex
 	logger          log.Logger
@@ -31,7 +32,7 @@ pub fn Server.new(port int, handler MessageHandler) &Server {
 		port:            port
 		binary_protocol: BinaryProtocol.new()
 		handler:         handler
-		running:         false
+		running_flag:    0
 		read_timeout_ms: 30000
 		logger:          log.Log{}
 	}
@@ -41,11 +42,11 @@ pub fn Server.new(port int, handler MessageHandler) &Server {
 /// start begins listening on the configured port.
 pub fn (mut s Server) start() ! {
 	s.mtx.@lock()
-	if s.running {
+	if stdatomic.load_i64(&s.running_flag) == 1 {
 		s.mtx.unlock()
 		return error('server already running')
 	}
-	s.running = true
+	stdatomic.store_i64(&s.running_flag, 1)
 	s.mtx.unlock()
 
 	// Create TCP listener
@@ -60,11 +61,11 @@ pub fn (mut s Server) start() ! {
 /// stop shuts down the server.
 pub fn (mut s Server) stop() ! {
 	s.mtx.@lock()
-	if !s.running {
+	if stdatomic.load_i64(&s.running_flag) != 1 {
 		s.mtx.unlock()
 		return
 	}
-	s.running = false
+	stdatomic.store_i64(&s.running_flag, 0)
 	s.mtx.unlock()
 
 	s.listener.close()!
@@ -74,16 +75,13 @@ pub fn (mut s Server) stop() ! {
 // accept_loop accepts incoming connections
 fn (mut s Server) accept_loop() {
 	for {
-		s.mtx.@lock()
-		if !s.running {
-			s.mtx.unlock()
+		if stdatomic.load_i64(&s.running_flag) != 1 {
 			break
 		}
-		s.mtx.unlock()
 
 		// Accept connection (with timeout)
 		mut conn := s.listener.accept() or {
-			if s.running {
+			if stdatomic.load_i64(&s.running_flag) == 1 {
 				s.logger.error('Failed to accept connection: ${err}')
 			}
 			continue
@@ -150,5 +148,5 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 // is_running checks if server is running
 /// is_running returns whether the server is running.
 pub fn (s Server) is_running() bool {
-	return s.running
+	return stdatomic.load_i64(&s.running_flag) == 1
 }

@@ -15,7 +15,7 @@ fn test_server_new() {
 	server := Server.new(19200, handler)
 
 	assert server.port == 19200
-	assert server.running == false
+	assert server.is_running() == false
 }
 
 // test_server_is_running_initial: 초기 상태에서 is_running()이 false 반환

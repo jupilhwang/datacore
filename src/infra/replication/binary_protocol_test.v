@@ -1,6 +1,7 @@
 module replication
 
 import domain
+import encoding.binary
 import time
 
 // --- BinaryProtocol encode/decode roundtrip tests ---
@@ -40,7 +41,10 @@ fn test_binary_roundtrip_replicate() {
 	bp := BinaryProtocol.new()
 	msg := create_binary_test_message(.replicate)
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -54,7 +58,10 @@ fn test_binary_roundtrip_replicate_ack() {
 	bp := BinaryProtocol.new()
 	msg := create_binary_test_message(.replicate_ack)
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -68,7 +75,10 @@ fn test_binary_roundtrip_flush_ack() {
 	bp := BinaryProtocol.new()
 	msg := create_binary_test_message(.flush_ack)
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -93,7 +103,10 @@ fn test_binary_roundtrip_heartbeat() {
 		error_msg:      ''
 	}
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -107,7 +120,10 @@ fn test_binary_roundtrip_recover() {
 	bp := BinaryProtocol.new()
 	msg := create_binary_test_message(.recover)
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -132,7 +148,10 @@ fn test_binary_roundtrip_empty_fields() {
 		error_msg:      ''
 	}
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -159,7 +178,10 @@ fn test_binary_roundtrip_large_records() {
 		error_msg:      ''
 	}
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -185,7 +207,10 @@ fn test_binary_roundtrip_unicode_strings() {
 		error_msg:      'connection-timeout-error-message'
 	}
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -247,7 +272,10 @@ fn test_binary_vs_json_size() {
 		error_msg:      ''
 	}
 
-	binary_encoded := bp.encode(msg)
+	binary_encoded := bp.encode(msg) or {
+		assert false, 'binary encode failed: ${err}'
+		return
+	}
 	json_encoded := jp.encode(msg) or {
 		assert false, 'json encode failed: ${err}'
 		return
@@ -272,7 +300,10 @@ fn test_binary_all_fields_preserved() {
 		error_msg:      'exact error message'
 	}
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -306,7 +337,10 @@ fn test_binary_boundary_values() {
 		error_msg:      ''
 	}
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -356,7 +390,10 @@ fn test_binary_success_flag_false() {
 		error_msg:      'replication failed: timeout'
 	}
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 	decoded := bp.decode(encoded) or {
 		assert false, 'decode failed: ${err}'
 		return
@@ -371,9 +408,109 @@ fn test_binary_protocol_version_header() {
 	bp := BinaryProtocol.new()
 	msg := create_binary_test_message(.replicate)
 
-	encoded := bp.encode(msg)
+	encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
 
 	// After 4-byte length prefix, byte at index 4 should be protocol version 1
 	assert encoded.len > 5
 	assert encoded[4] == 1, 'protocol version byte should be 1, got ${encoded[4]}'
+}
+
+// test_binary_decode_negative_string_length: crafted buffer with negative i16 string length
+fn test_binary_decode_negative_string_length() {
+	bp := BinaryProtocol.new()
+
+	// Build a minimal valid header, then inject a negative string length.
+	// Layout: [4 total_len][1 version][1 msg_type][2 corr_id_len (negative)]...
+	mut buf := []u8{len: 0, cap: 32}
+
+	// total_length placeholder (will fill after)
+	buf << [u8(0), 0, 0, 20] // 20 bytes after length prefix
+	// protocol_version = 1
+	buf << u8(1)
+	// msg_type = 0 (replicate)
+	buf << u8(0)
+	// correlation_id length = -1 (0xFFFF as i16)
+	mut neg_i16 := []u8{len: 2}
+	binary.big_endian_put_u16(mut neg_i16, u16(0xFFFF))
+	buf << neg_i16
+	// Pad remaining bytes so total_len is satisfied
+	for buf.len < 24 {
+		buf << u8(0)
+	}
+
+	bp.decode(buf) or {
+		assert err.msg().contains('negative string length')
+		return
+	}
+	assert false, 'negative string length should produce error'
+}
+
+// test_binary_decode_negative_bytes_length: crafted buffer with negative i32 bytes length
+fn test_binary_decode_negative_bytes_length() {
+	bp := BinaryProtocol.new()
+
+	// Build a valid message but tamper the records_data length to be negative.
+	// Encode a valid message first, then overwrite the records_data length field.
+	msg := domain.ReplicationMessage{
+		msg_type:       .replicate
+		correlation_id: ''
+		sender_id:      ''
+		timestamp:      0
+		topic:          ''
+		partition:      0
+		offset:         0
+		records_data:   []
+		success:        false
+		error_msg:      ''
+	}
+
+	mut encoded := bp.encode(msg) or {
+		assert false, 'encode failed: ${err}'
+		return
+	}
+
+	// The records_data length field is the last 4 bytes before the end (since data is empty).
+	// In the wire format, the last field is records_data with 4-byte length prefix.
+	// For an empty message the last 4 bytes encode data_len=0. Overwrite with -1.
+	records_len_offset := encoded.len - 4
+	mut neg_i32 := []u8{len: 4}
+	binary.big_endian_put_u32(mut neg_i32, u32(0xFFFFFFFF))
+	encoded[records_len_offset] = neg_i32[0]
+	encoded[records_len_offset + 1] = neg_i32[1]
+	encoded[records_len_offset + 2] = neg_i32[2]
+	encoded[records_len_offset + 3] = neg_i32[3]
+
+	bp.decode(encoded) or {
+		assert err.msg().contains('negative bytes length')
+		return
+	}
+	assert false, 'negative bytes length should produce error'
+}
+
+// test_binary_encode_string_too_long: string exceeding 32767 bytes is rejected
+fn test_binary_encode_string_too_long() {
+	bp := BinaryProtocol.new()
+	long_topic := []u8{len: 32768, init: u8(0x41)}.bytestr() // 'A' repeated 32768 times
+
+	msg := domain.ReplicationMessage{
+		msg_type:       .replicate
+		correlation_id: ''
+		sender_id:      ''
+		timestamp:      0
+		topic:          long_topic
+		partition:      0
+		offset:         0
+		records_data:   []
+		success:        false
+		error_msg:      ''
+	}
+
+	bp.encode(msg) or {
+		assert err.msg().contains('string too long for binary protocol')
+		return
+	}
+	assert false, 'string exceeding 32767 bytes should produce error'
 }

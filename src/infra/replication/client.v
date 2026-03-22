@@ -95,6 +95,7 @@ fn (mut c Client) send_pooled(broker_address string, msg domain.ReplicationMessa
 
 	c.binary_protocol.write_message(mut pc.conn, msg) or {
 		pc.conn.close() or {}
+		pool.remove_connection(pc)
 		return error('failed to write message: ${err}')
 	}
 
@@ -102,6 +103,7 @@ fn (mut c Client) send_pooled(broker_address string, msg domain.ReplicationMessa
 
 	response := c.binary_protocol.read_message(mut pc.conn, i64(c.timeout_ms)) or {
 		pc.conn.close() or {}
+		pool.remove_connection(pc)
 		return error('failed to read response: ${err}')
 	}
 

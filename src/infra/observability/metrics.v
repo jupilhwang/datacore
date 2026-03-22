@@ -2,6 +2,7 @@
 /// Simple metrics implementation compatible with Prometheus format
 module observability
 
+import strings
 import sync
 import time
 
@@ -220,14 +221,14 @@ pub fn (mut m Metric) observe(v f64) {
 
 /// Export in Prometheus format
 pub fn (r &MetricsRegistry) export_prometheus() string {
-	mut output := ''
+	mut sb := strings.new_builder(4096)
 
 	for name, metric in r.metrics {
 		// Take a thread-safe snapshot of values before formatting
 		snap := metric.snapshot()
 
 		// Help line
-		output += '# HELP ${name} ${metric.help}\n'
+		sb.write_string('# HELP ${name} ${metric.help}\n')
 
 		// Type line
 		type_str := match metric.metric_type {
@@ -235,26 +236,26 @@ pub fn (r &MetricsRegistry) export_prometheus() string {
 			.gauge { 'gauge' }
 			.histogram { 'histogram' }
 		}
-		output += '# TYPE ${name} ${type_str}\n'
+		sb.write_string('# TYPE ${name} ${type_str}\n')
 
 		// Value line
 		match metric.metric_type {
 			.counter, .gauge {
-				output += '${name} ${snap.value}\n'
+				sb.write_string('${name} ${snap.value}\n')
 			}
 			.histogram {
 				for b in snap.buckets {
-					output += '${name}_bucket{le="${b.upper_bound}"} ${b.count}\n'
+					sb.write_string('${name}_bucket{le="${b.upper_bound}"} ${b.count}\n')
 				}
-				output += '${name}_bucket{le="+Inf"} ${snap.count}\n'
-				output += '${name}_sum ${snap.sum}\n'
-				output += '${name}_count ${snap.count}\n'
+				sb.write_string('${name}_bucket{le="+Inf"} ${snap.count}\n')
+				sb.write_string('${name}_sum ${snap.sum}\n')
+				sb.write_string('${name}_count ${snap.count}\n')
 			}
 		}
-		output += '\n'
+		sb.write_string('\n')
 	}
 
-	return output
+	return sb.str()
 }
 
 // Kafka-compatible metrics for DataCore

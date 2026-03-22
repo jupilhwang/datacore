@@ -45,44 +45,11 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	}
 
 	// Fallback for idempotent producers (no transaction coordinator)
-	mut producer_id := req.producer_id
-	mut producer_epoch := req.producer_epoch
-	mut error_code := i16(ErrorCode.none)
-
-	// For new producers (producer_id == -1), generate a new producer ID
-	if producer_id == -1 {
-		// Generate a unique producer ID using random number
-		// In production, this should be coordinated across brokers
-		producer_id = rand.i64()
-		if producer_id < 0 {
-			producer_id = -producer_id
-		}
-		producer_epoch = 0
-	} else {
-		// Existing producer - increment epoch
-		producer_epoch += 1
-	}
-
-	// Note: Transactional ID handling would require additional state management
-	// For now, we support idempotent producers only
-	if transactional_id := req.transactional_id {
-		if transactional_id.len > 0 {
-			// Transactional producers require coordinator support
-			// Return error if coordinator not configured
-			error_code = i16(ErrorCode.coordinator_not_available)
-		}
-	}
-
-	resp := InitProducerIdResponse{
-		throttle_time_ms: default_throttle_time_ms
-		error_code:       error_code
-		producer_id:      producer_id
-		producer_epoch:   producer_epoch
-	}
+	resp := build_fallback_producer_id_response(req)
 
 	elapsed := time.since(start_time)
 	h.logger.debug('Init producer id completed', observability.field_int('producer_id',
-		producer_id), observability.field_int('error_code', error_code), observability.field_duration('latency',
+		resp.producer_id), observability.field_int('error_code', resp.error_code), observability.field_duration('latency',
 		elapsed))
 
 	return resp.encode(version)
@@ -113,47 +80,10 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 
 		txn_coord.add_partitions_to_txn(req.transactional_id, req.producer_id, req.producer_epoch,
 			partitions) or {
-			// Global error (e.g. invalid transaction state)
-			// We need to return error for all partitions
-			mut results := []AddPartitionsToTxnResult{}
-			for t in req.topics {
-				mut p_results := []AddPartitionsToTxnPartitionResult{}
-				for p in t.partitions {
-					p_results << AddPartitionsToTxnPartitionResult{
-						partition_index: p
-						error_code:      i16(ErrorCode.invalid_txn_state)
-					}
-				}
-				results << AddPartitionsToTxnResult{
-					name:       t.name
-					partitions: p_results
-				}
-			}
-			return AddPartitionsToTxnResponse{
-				throttle_time_ms: default_throttle_time_ms
-				results:          results
-			}.encode(version)
+			return build_add_partitions_error_response(req, .invalid_txn_state).encode(version)
 		}
 
-		// Success
-		mut results := []AddPartitionsToTxnResult{}
-		for t in req.topics {
-			mut p_results := []AddPartitionsToTxnPartitionResult{}
-			for p in t.partitions {
-				p_results << AddPartitionsToTxnPartitionResult{
-					partition_index: p
-					error_code:      0
-				}
-			}
-			results << AddPartitionsToTxnResult{
-				name:       t.name
-				partitions: p_results
-			}
-		}
-		return AddPartitionsToTxnResponse{
-			throttle_time_ms: default_throttle_time_ms
-			results:          results
-		}.encode(version)
+		return build_add_partitions_error_response(req, .none).encode(version)
 	}
 
 	elapsed := time.since(start_time)
@@ -161,24 +91,7 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 		req.transactional_id), observability.field_duration('latency', elapsed))
 
 	// Coordinator not available
-	mut results := []AddPartitionsToTxnResult{}
-	for t in req.topics {
-		mut p_results := []AddPartitionsToTxnPartitionResult{}
-		for p in t.partitions {
-			p_results << AddPartitionsToTxnPartitionResult{
-				partition_index: p
-				error_code:      i16(ErrorCode.coordinator_not_available)
-			}
-		}
-		results << AddPartitionsToTxnResult{
-			name:       t.name
-			partitions: p_results
-		}
-	}
-	return AddPartitionsToTxnResponse{
-		throttle_time_ms: default_throttle_time_ms
-		results:          results
-	}.encode(version)
+	return build_add_partitions_error_response(req, .coordinator_not_available).encode(version)
 }
 
 // handle_end_txn - handles EndTxn (API Key 26)
@@ -511,29 +424,32 @@ fn build_txn_offset_commit_success_response(req TxnOffsetCommitRequest, version 
 	}.encode(version)
 }
 
-// InitProducerId request processor (frame-based)
-fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i16) !InitProducerIdResponse {
-	// Use TransactionCoordinator if available
-	if mut txn_coord := h.txn_coordinator {
-		result := txn_coord.init_producer_id(req.transactional_id, req.transaction_timeout_ms,
-			req.producer_id, req.producer_epoch) or {
-			return InitProducerIdResponse{
-				throttle_time_ms: default_throttle_time_ms
-				error_code:       i16(ErrorCode.unknown_server_error)
-				producer_id:      -1
-				producer_epoch:   -1
+// build_add_partitions_error_response builds AddPartitionsToTxn response for all
+// partitions with the given error code. Used for both error and success cases.
+fn build_add_partitions_error_response(req AddPartitionsToTxnRequest, error_code ErrorCode) AddPartitionsToTxnResponse {
+	mut results := []AddPartitionsToTxnResult{}
+	for t in req.topics {
+		mut p_results := []AddPartitionsToTxnPartitionResult{}
+		for p in t.partitions {
+			p_results << AddPartitionsToTxnPartitionResult{
+				partition_index: p
+				error_code:      i16(error_code)
 			}
 		}
-
-		return InitProducerIdResponse{
-			throttle_time_ms: default_throttle_time_ms
-			error_code:       0
-			producer_id:      result.producer_id
-			producer_epoch:   result.producer_epoch
+		results << AddPartitionsToTxnResult{
+			name:       t.name
+			partitions: p_results
 		}
 	}
+	return AddPartitionsToTxnResponse{
+		throttle_time_ms: default_throttle_time_ms
+		results:          results
+	}
+}
 
-	// Fallback for idempotent producers
+// build_fallback_producer_id_response generates a producer ID response for
+// idempotent producers when no transaction coordinator is available.
+fn build_fallback_producer_id_response(req InitProducerIdRequest) InitProducerIdResponse {
 	mut producer_id := req.producer_id
 	mut producer_epoch := req.producer_epoch
 	mut error_code := i16(ErrorCode.none)
@@ -560,4 +476,30 @@ fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i
 		producer_id:      producer_id
 		producer_epoch:   producer_epoch
 	}
+}
+
+// InitProducerId request processor (frame-based)
+fn (mut h Handler) process_init_producer_id(req InitProducerIdRequest, version i16) !InitProducerIdResponse {
+	// Use TransactionCoordinator if available
+	if mut txn_coord := h.txn_coordinator {
+		result := txn_coord.init_producer_id(req.transactional_id, req.transaction_timeout_ms,
+			req.producer_id, req.producer_epoch) or {
+			return InitProducerIdResponse{
+				throttle_time_ms: default_throttle_time_ms
+				error_code:       i16(ErrorCode.unknown_server_error)
+				producer_id:      -1
+				producer_epoch:   -1
+			}
+		}
+
+		return InitProducerIdResponse{
+			throttle_time_ms: default_throttle_time_ms
+			error_code:       0
+			producer_id:      result.producer_id
+			producer_epoch:   result.producer_epoch
+		}
+	}
+
+	// Fallback for idempotent producers
+	return build_fallback_producer_id_response(req)
 }

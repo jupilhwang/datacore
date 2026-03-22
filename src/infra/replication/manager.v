@@ -2,6 +2,7 @@ module replication
 
 import domain
 import sync
+import sync.stdatomic
 import time
 import log
 import rand
@@ -34,10 +35,11 @@ pub mut:
 	// Cluster info (injected from outside)
 	// cluster_broker_refs stores the stable ID and current address of every peer broker.
 	// When broker_id is set, matching uses ID-based logic. When empty, falls back to addr comparison.
-	cluster_broker_refs []domain.BrokerRef
+	cluster_broker_refs      []domain.BrokerRef
+	cluster_broker_refs_lock sync.Mutex
 	// State
-	logger  log.Logger
-	running bool
+	logger       log.Logger
+	running_flag i64
 }
 
 // Manager.new creates a new replication Manager with the given broker ID, config, and cluster broker refs.
@@ -58,7 +60,7 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 		partition_metrics:   map[string]domain.PartitionMetrics{}
 		cluster_broker_refs: cluster_broker_refs
 		logger:              log.Log{}
-		running:             false
+		running_flag:        0
 	}
 
 	// Initialize server and client (heap-allocated to prevent dangling pointers)
@@ -71,10 +73,10 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 // start initializes and starts all replication components
 /// start initializes and starts all replication components.
 pub fn (mut m Manager) start() ! {
-	if m.running {
+	if stdatomic.load_i64(&m.running_flag) == 1 {
 		return error('manager already running')
 	}
-	m.running = true
+	stdatomic.store_i64(&m.running_flag, 1)
 
 	if !m.config.enabled {
 		m.logger.info('Replication disabled')
@@ -92,10 +94,10 @@ pub fn (mut m Manager) start() ! {
 // stop shuts down all components
 /// stop shuts down all components.
 pub fn (mut m Manager) stop() ! {
-	if !m.running {
+	if stdatomic.load_i64(&m.running_flag) != 1 {
 		return
 	}
-	m.running = false
+	stdatomic.store_i64(&m.running_flag, 0)
 
 	m.stop_workers()
 	m.server.stop()!
@@ -318,7 +320,10 @@ pub fn (mut m Manager) send_flush_ack(topic string, partition i32, offset i64) !
 fn (mut m Manager) assign_replicas(topic string, partition i32) ! {
 	// Filter out self using broker_id when available; otherwise fall back to address matching.
 	mut available_refs := []domain.BrokerRef{}
-	for ref in m.cluster_broker_refs.clone() {
+	m.cluster_broker_refs_lock.@lock()
+	refs_snapshot := m.cluster_broker_refs.clone()
+	m.cluster_broker_refs_lock.unlock()
+	for ref in refs_snapshot {
 		is_self := if ref.broker_id != '' {
 			// ID-based: exact match on stable broker_id
 			ref.broker_id == m.broker_id
@@ -604,10 +609,9 @@ pub fn (mut m Manager) update_broker_health(broker_id string, health domain.Repl
 // - refs: updated slice of BrokerRef containing each peer's stable ID and address.
 /// update_cluster_broker_refs replaces the live list of peer brokers.
 pub fn (mut m Manager) update_cluster_broker_refs(refs []domain.BrokerRef) {
-	// No separate lock needed: cluster_broker_refs is only mutated here and read by
-	// workers that clone the slice at the start of each iteration, so a direct assignment
-	// is safe for the read side (workers tolerate a transient stale view for one cycle).
+	m.cluster_broker_refs_lock.@lock()
 	m.cluster_broker_refs = refs
+	m.cluster_broker_refs_lock.unlock()
 	m.logger.info('Cluster broker refs updated (count=${refs.len})')
 }
 
@@ -642,13 +646,15 @@ fn (mut m Manager) stop_workers() {
 fn (mut m Manager) heartbeat_worker() {
 	m.logger.info('Heartbeat worker started (interval=${m.config.heartbeat_interval_ms}ms)')
 
-	for m.running {
+	for stdatomic.load_i64(&m.running_flag) == 1 {
 		time.sleep(time.Duration(m.config.heartbeat_interval_ms * time.millisecond))
-		if !m.running {
+		if stdatomic.load_i64(&m.running_flag) != 1 {
 			break
 		}
 
+		m.cluster_broker_refs_lock.@lock()
 		refs := m.cluster_broker_refs.clone()
+		m.cluster_broker_refs_lock.unlock()
 		for ref in refs {
 			broker_addr := ref.addr
 			// Use stable broker_id as the health map key when available;
@@ -733,9 +739,9 @@ fn (mut m Manager) orphan_cleanup_worker() {
 	}
 	m.logger.info('Orphan cleanup worker started (interval=${m.config.orphan_cleanup_interval_ms}ms, ttl=${ttl_ms}ms)')
 
-	for m.running {
+	for stdatomic.load_i64(&m.running_flag) == 1 {
 		time.sleep(time.Duration(m.config.orphan_cleanup_interval_ms * time.millisecond))
-		if !m.running {
+		if stdatomic.load_i64(&m.running_flag) != 1 {
 			break
 		}
 
@@ -793,16 +799,18 @@ fn (mut m Manager) orphan_cleanup_worker() {
 fn (mut m Manager) reassignment_worker() {
 	m.logger.info('Reassignment worker started (interval=${m.config.reassignment_interval_ms}ms)')
 
-	for m.running {
+	for stdatomic.load_i64(&m.running_flag) == 1 {
 		time.sleep(time.Duration(m.config.reassignment_interval_ms * time.millisecond))
-		if !m.running {
+		if stdatomic.load_i64(&m.running_flag) != 1 {
 			break
 		}
 
 		// Build broker_id -> addr and addr -> broker_id lookup maps from cluster_broker_refs.
 		// These maps allow reconciling broker_health keys (broker_id) with replica_brokers
 		// values (addr) without holding any extra lock.
+		m.cluster_broker_refs_lock.@lock()
 		refs_snapshot := m.cluster_broker_refs.clone()
+		m.cluster_broker_refs_lock.unlock()
 		mut id_to_addr := map[string]string{}
 		mut addr_to_id := map[string]string{}
 		for ref in refs_snapshot {

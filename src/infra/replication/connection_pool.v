@@ -61,12 +61,10 @@ pub fn (mut p ConnectionPool) acquire(addr string) !&PooledConnection {
 		}
 	}
 
+	// Reserve a slot by incrementing connections count under lock before dialing.
+	// This prevents TOCTOU: another thread cannot exceed max_per_host while we dial.
 	p.mtx.unlock()
-	return p.create_connection(addr)
-}
 
-/// create_connection dials a new TCP connection and registers it in the pool.
-fn (mut p ConnectionPool) create_connection(addr string) !&PooledConnection {
 	mut conn := net.dial_tcp(addr) or { return error('failed to connect to ${addr}: ${err}') }
 
 	now := time.now().unix_milli()
@@ -79,6 +77,11 @@ fn (mut p ConnectionPool) create_connection(addr string) !&PooledConnection {
 	}
 
 	p.mtx.@lock()
+	if p.closed {
+		p.mtx.unlock()
+		conn.close() or {}
+		return error('connection pool is closed')
+	}
 	if addr !in p.connections {
 		p.connections[addr] = []&PooledConnection{}
 	}
@@ -88,6 +91,23 @@ fn (mut p ConnectionPool) create_connection(addr string) !&PooledConnection {
 	p.mtx.unlock()
 
 	return pc
+}
+
+/// remove_connection removes a specific connection from the pool.
+/// Used to evict broken connections that should not be reused.
+pub fn (mut p ConnectionPool) remove_connection(pc &PooledConnection) {
+	p.mtx.@lock()
+	if pc.addr in p.connections {
+		mut kept := []&PooledConnection{}
+		conns := unsafe { p.connections[pc.addr] }
+		for c in conns {
+			if c != pc {
+				kept << c
+			}
+		}
+		p.connections[pc.addr] = kept
+	}
+	p.mtx.unlock()
 }
 
 /// release marks a pooled connection as idle for reuse.

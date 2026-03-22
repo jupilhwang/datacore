@@ -8,15 +8,9 @@ import os
 import time
 import net.http
 import config as cfg
-import domain
 import startup
-import interface.server
 import interface.cli
-import interface.rest
-import infra.auth
-import infra.compression
 import infra.observability
-import service.schema
 
 fn run_broker(app &cli.App, args []string) ! {
 	if args.len == 0 {
@@ -65,45 +59,12 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	cli.print_startup_info(conf.broker.host, conf.broker.port, conf.broker.broker_id,
 		conf.broker.cluster_id)
 
-	// Initialize logger with new configuration
-	log_level := observability.log_level_from_string(conf.observability.logging.level)
-	log_format := if conf.observability.logging.format == 'json' {
-		observability.OutputFormat.json
-	} else {
-		observability.OutputFormat.text
-	}
-	log_output := observability.log_output_from_string(conf.observability.logging.output)
-
-	// Initialize global logger
-	observability.init_global_logger(observability.LoggerConfig{
-		name:          'datacore'
-		level:         log_level
-		format:        log_format
-		output:        log_output
-		service:       'datacore-broker'
-		otlp_endpoint: conf.observability.logging.otlp_endpoint
-	})
-
-	mut logger := observability.get_logger()
-
-	// Initialize global writer pool for protocol encoding
-	startup.init_writer_pool(startup.default_writer_pool_config())
-
-	// Log configuration summary
-	logger.info('Broker configuration summary', observability.field_string('host', conf.broker.host),
-		observability.field_int('port', conf.broker.port), observability.field_int('broker_id',
-		conf.broker.broker_id), observability.field_string('cluster_id', conf.broker.cluster_id),
-		observability.field_int('max_conn', conf.broker.max_connections), observability.field_int('max_req_size',
-		conf.broker.max_request_size))
-
-	logger.info('Observability summary', observability.field_bool('metrics_enabled', conf.observability.metrics.enabled),
-		observability.field_int('metrics_port', conf.observability.metrics.prometheus_port),
-		observability.field_bool('tracing_enabled', conf.observability.tracing.enabled),
-		observability.field_string('log_level', conf.observability.logging.level))
+	// Initialize logger and writer pool
+	mut logger := init_broker_logging(conf)
 
 	// === Clean Architecture: Dependency Injection ===
 
-	// 1. Create Infra Layer components
+	// 1. Initialize storage engine
 	cli.print_progress('Initializing storage engine (${conf.storage.engine})')
 	mut storage_result := startup.init_storage(conf, mut logger) or {
 		cli.print_failed('Failed to initialize storage: ${err}')
@@ -113,26 +74,10 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	s3_adapter_ref := storage_result.s3_adapter
 	cli.print_done()
 
-	// 2. Create Compression Service
-	cli.print_progress('Initializing compression service')
-	compression_service := compression.new_default_compression_service() or {
-		cli.print_failed('Failed to initialize compression service: ${err}')
-		exit(1)
-	}
-	cli.print_done()
+	// 2. Initialize protocol handler with compression and audit
+	mut protocol_handler := init_protocol_services(conf, storage, mut logger)
 
-	// 3. Create Protocol Handler with storage and compression injection
-	cli.print_progress('Initializing Kafka protocol handler')
-	mut protocol_handler := startup.init_protocol_handler(conf, storage, compression_service)
-	cli.print_done()
-
-	// 3a. Create and attach audit logger
-	audit_logger := auth.new_audit_logger(true)
-	protocol_handler.set_audit_logger(audit_logger)
-	logger.info('Audit logger initialized', observability.field_int('max_buffer_size',
-		audit_logger.max_buffer_size))
-
-	// 4. Initialize Broker Registry for multi-broker mode (S3 storage)
+	// 3. Initialize cluster registry for multi-broker mode
 	cluster_result := startup.init_cluster_registry(conf, mut storage, s3_adapter_ref, mut
 		protocol_handler, mut logger)
 	mut broker_registry_opt := cluster_result.registry
@@ -142,68 +87,17 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 			conf.schema_registry.topic))
 	}
 
-	// 3. Metrics server is now served by REST API server on port 8080 (/metrics)
-	// Separate metrics server on port 9093 is deprecated
-
 	// 4. Write PID file
 	cli.write_pid(opts.pid_path) or {
 		logger.warn('Failed to write PID file', observability.field_string('path', opts.pid_path))
 	}
 
-	// 5. Start REST API Server (SSE/WebSocket) if enabled
+	// 5. Start REST API server if enabled
 	if conf.rest.enabled {
-		cli.print_progress('Starting REST API server (SSE/WebSocket)')
-		rest_config := rest.RestServerConfig{
-			host:            conf.rest.host
-			port:            conf.rest.port
-			max_connections: conf.rest.max_connections
-			static_dir:      conf.rest.static_dir
-			sse_config:      domain.SSEConfig{
-				heartbeat_interval_ms: conf.rest.sse_heartbeat_interval_ms
-				connection_timeout_ms: conf.rest.sse_connection_timeout_ms
-			}
-			ws_config:       domain.WebSocketConfig{
-				max_message_size: conf.rest.ws_max_message_size
-				ping_interval_ms: conf.rest.ws_ping_interval_ms
-			}
-		}
-		mut rest_server := rest.new_rest_server(rest_config, storage)
-
-		// Initialize and register Schema Registry API if enabled
-		if conf.schema_registry.enabled {
-			cli.print_progress('Initializing schema registry')
-
-			// Create schema registry configuration
-			schema_config := schema.RegistryConfig{
-				default_compatibility: .backward
-				auto_register:         true
-			}
-
-			// Create schema registry with storage adapter
-			mut schema_registry := schema.new_registry(storage, schema_config)
-
-			// Load existing schemas from storage
-			schema_registry.load_from_storage() or {
-				logger.warn('Failed to load schemas from storage', observability.field_string('error',
-					'${err}'))
-			}
-
-			logger.info('Schema registry initialized', observability.field_string('topic',
-				conf.schema_registry.topic))
-
-			// Register schema API with REST server
-			schema_api := rest.new_schema_api(schema_registry)
-			rest_server.set_schema_api(schema_api)
-			logger.info('Schema Registry API registered with REST server')
-		}
-
-		rest_server.start_background()
-		cli.print_done()
-		logger.info('REST API server started', observability.field_string('host', conf.rest.host),
-			observability.field_int('port', conf.rest.port))
+		start_rest_api_server(conf, storage, mut logger)
 	}
 
-	// 6. Start gRPC Gateway if enabled
+	// 6. Start gRPC gateway if enabled
 	if conf.grpc.enabled {
 		cli.print_progress('Starting gRPC gateway')
 		startup.init_grpc_server(conf, storage, mut logger) or {
@@ -212,40 +106,15 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 		cli.print_done()
 	}
 
-	// 7. Start heartbeat worker after all initialization is complete
-	// heartbeat_loop uses r.lock which can contend with set_partition_assigner on main thread
+	// 7. Start heartbeat worker
 	if mut registry := broker_registry_opt {
 		registry.start_heartbeat_worker()
 		logger.info('Heartbeat worker started')
 	}
 
-	// 8. Create and start TCP Server
-	server_config := server.ServerConfig{
-		host:       conf.broker.host
-		port:       conf.broker.port
-		broker_id:  conf.broker.broker_id
-		cluster_id: conf.broker.cluster_id
-	}
+	// 8. Create and start TCP server
+	mut tcp_server := create_tcp_server(conf, protocol_handler, mut logger)
 
-	mut tcp_server := server.new_server(server_config, protocol_handler)
-
-	// Configure rate limiter if enabled
-	if conf.broker.rate_limit.enabled {
-		rl_cfg := conf.broker.rate_limit
-		rate_limiter := server.new_rate_limiter(server.RateLimiterConfig{
-			max_requests_per_second:        rl_cfg.max_requests_per_sec
-			max_bytes_per_second:           rl_cfg.max_bytes_per_sec
-			per_ip_max_requests_per_second: rl_cfg.per_ip_max_requests_per_sec
-			per_ip_max_connections:         rl_cfg.per_ip_max_connections
-			burst_multiplier:               rl_cfg.burst_multiplier
-			window_size_ms:                 i64(rl_cfg.window_ms)
-		})
-		tcp_server.set_rate_limiter(rate_limiter)
-		logger.info('Rate limiter enabled', observability.field_int('max_rps', rl_cfg.max_requests_per_sec),
-			observability.field_int('per_ip_max_rps', rl_cfg.per_ip_max_requests_per_sec))
-	}
-
-	// Log startup
 	logger.info('Broker started', observability.field_int('broker_id', conf.broker.broker_id),
 		observability.field_string('host', conf.broker.host), observability.field_int('port',
 		conf.broker.port))

@@ -96,7 +96,11 @@ fn test_binary_raw_wire_format_verification() {
 	}
 
 	// Encode with BinaryProtocol and send raw bytes via TCP
-	wire_data := bp.encode(msg)
+	wire_data := bp.encode(msg) or {
+		server.stop() or {}
+		assert false, 'encode failed: ${err}'
+		return
+	}
 
 	mut conn := net.dial_tcp('127.0.0.1:19221') or {
 		server.stop() or {}

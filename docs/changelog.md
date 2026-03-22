@@ -1,5 +1,24 @@
 # DataCore Changelog
 
+## v0.50.2 (2026-03-22) - Code Review Fixes
+
+### Bug Fixes
+- fix: binary protocol negative length validation (CRITICAL - C1, C2)
+- fix: connection pool TOCTOU race condition (H1)
+- fix: connection pool leak on send failure (H2)
+- fix: replication server/manager data race with stdatomic (H3, H5)
+- fix: manager cluster_broker_refs data race (H4)
+- fix: binary protocol i16 overflow guard (H6)
+- fix: SASL handler internal error message leak (H10)
+
+### Refactoring
+- refactor: extract broker_startup_helpers.v from broker_startup.v (269 lines, was 400)
+- refactor: extract binary_helpers.v from binary_protocol.v (145 lines, was 311)
+- refactor: DRY extraction in handler_transaction.v (-58 lines)
+
+### Performance
+- perf: replace O(n^2) string concatenation with strings.Builder in metrics export
+
 ## v0.50.1 (2026-03-22)
 
 ### Removed
