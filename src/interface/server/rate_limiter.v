@@ -84,6 +84,14 @@ pub fn (mut tb TokenBucket) try_consume(tokens f64) bool {
 	return false
 }
 
+/// can_consume checks if the given number of tokens are available.
+/// Refills tokens based on elapsed time but does NOT consume them.
+/// Use for pre-checking before committing to a multi-bucket consume.
+pub fn (mut tb TokenBucket) can_consume(amount f64) bool {
+	tb.refill()
+	return tb.tokens >= amount
+}
+
 /// refill adds tokens based on elapsed time since last refill.
 /// Caps tokens at max_tokens to prevent unbounded accumulation.
 fn (mut tb TokenBucket) refill() {
@@ -141,7 +149,9 @@ pub fn (mut rl RateLimiter) allow_request(client_ip string) bool {
 }
 
 /// allow_request_with_bytes checks both request and byte limits under a single lock.
-/// Combines allow_request and allow_bytes to avoid two separate lock round-trips.
+/// Uses a pre-check pattern: all buckets are checked (non-consuming) first,
+/// then consumed only if ALL checks pass. This prevents token leakage
+/// when a later bucket rejects the request.
 /// Returns true only if both request and byte limits are within bounds.
 pub fn (mut rl RateLimiter) allow_request_with_bytes(client_ip string, bytes i64) bool {
 	rl.mtx.@lock()
@@ -149,22 +159,27 @@ pub fn (mut rl RateLimiter) allow_request_with_bytes(client_ip string, bytes i64
 
 	rl.stats.total_requests += 1
 
-	// Check global request limit
-	if !rl.global_bucket.try_consume(1.0) {
+	// Phase 1: Pre-check all buckets (non-consuming)
+	if !rl.global_bucket.can_consume(1.0) {
 		rl.stats.throttled_requests += 1
 		return false
 	}
 
-	// Check per-IP request limit
-	if !rl.consume_per_ip(client_ip) {
+	if !rl.can_consume_per_ip(client_ip) {
 		rl.stats.throttled_requests += 1
 		return false
 	}
 
-	// Check global byte limit
-	if !rl.global_bytes_bucket.try_consume(f64(bytes)) {
+	if bytes > 0 && !rl.global_bytes_bucket.can_consume(f64(bytes)) {
 		rl.stats.throttled_bytes += 1
 		return false
+	}
+
+	// Phase 2: Consume from all buckets (all checks passed)
+	rl.global_bucket.try_consume(1.0)
+	rl.consume_per_ip(client_ip)
+	if bytes > 0 {
+		rl.global_bytes_bucket.try_consume(f64(bytes))
 	}
 
 	return true
@@ -189,6 +204,25 @@ fn (mut rl RateLimiter) consume_per_ip(client_ip string) bool {
 	result := bucket.try_consume(1.0)
 	rl.per_ip_buckets[client_ip] = bucket
 	return result
+}
+
+/// can_consume_per_ip checks if a per-IP token is available without consuming.
+/// Creates a new bucket for unseen IPs so subsequent consume_per_ip works correctly.
+/// Must be called while holding the mutex.
+fn (mut rl RateLimiter) can_consume_per_ip(client_ip string) bool {
+	per_ip_max := f64(rl.config.per_ip_max_requests_per_second) * rl.config.burst_multiplier
+	per_ip_refill := f64(rl.config.per_ip_max_requests_per_second) / f64(rl.config.window_size_ms)
+
+	if client_ip in rl.per_ip_buckets {
+		mut bucket := rl.per_ip_buckets[client_ip]
+		result := bucket.can_consume(1.0)
+		rl.per_ip_buckets[client_ip] = bucket
+		return result
+	}
+
+	// New IP: create bucket (full tokens -> always available)
+	rl.per_ip_buckets[client_ip] = new_token_bucket(per_ip_max, per_ip_refill)
+	return true
 }
 
 /// allow_bytes checks if a byte transfer is within the rate limit.

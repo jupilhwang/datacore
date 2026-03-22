@@ -3,15 +3,15 @@ module cluster
 
 import time
 
-// Mock ClusterMetadataPort for testing
-struct MockClusterMetadataPort {
+// Mock DistributedLockPort for testing
+struct MockDistributedLockPort {
 mut:
 	locks         map[string]string
 	lock_expiry   map[string]i64
 	controller_id i32
 }
 
-fn (mut m MockClusterMetadataPort) try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
+fn (mut m MockDistributedLockPort) try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
 	now := time.now().unix_milli()
 
 	// Check if lock exists and not expired
@@ -29,7 +29,7 @@ fn (mut m MockClusterMetadataPort) try_acquire_lock(lock_name string, holder_id 
 	return true
 }
 
-fn (mut m MockClusterMetadataPort) release_lock(lock_name string, holder_id string) ! {
+fn (mut m MockDistributedLockPort) release_lock(lock_name string, holder_id string) ! {
 	if existing := m.locks[lock_name] {
 		if existing == holder_id {
 			m.locks.delete(lock_name)
@@ -38,7 +38,7 @@ fn (mut m MockClusterMetadataPort) release_lock(lock_name string, holder_id stri
 	}
 }
 
-fn (mut m MockClusterMetadataPort) refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
+fn (mut m MockDistributedLockPort) refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
 	if existing := m.locks[lock_name] {
 		if existing == holder_id {
 			m.lock_expiry[lock_name] = time.now().unix_milli() + ttl_ms
@@ -53,7 +53,7 @@ fn test_controller_elector_single_broker() {
 	config := ControllerElectorConfig{
 		broker_id: 1
 	}
-	mut elector := new_controller_elector(config, none)
+	mut elector := new_controller_elector(config, none, none)
 
 	// In single-broker mode, we are always the controller
 	result := elector.try_become_controller() or {
@@ -67,7 +67,7 @@ fn test_controller_elector_single_broker() {
 
 fn test_controller_elector_first_broker_wins() {
 	// Create shared mock metadata port
-	mut mock := &MockClusterMetadataPort{
+	mut mock := &MockDistributedLockPort{
 		locks:       map[string]string{}
 		lock_expiry: map[string]i64{}
 	}
@@ -96,7 +96,7 @@ fn test_controller_elector_first_broker_wins() {
 }
 
 fn test_controller_elector_resign() {
-	mut mock := &MockClusterMetadataPort{
+	mut mock := &MockDistributedLockPort{
 		locks:       map[string]string{}
 		lock_expiry: map[string]i64{}
 	}
@@ -122,7 +122,7 @@ fn test_controller_elector_resign() {
 }
 
 fn test_controller_elector_lock_refresh() {
-	mut mock := &MockClusterMetadataPort{
+	mut mock := &MockDistributedLockPort{
 		locks:       map[string]string{}
 		lock_expiry: map[string]i64{}
 	}
@@ -152,7 +152,7 @@ fn test_controller_task_runner() {
 	config := ControllerElectorConfig{
 		broker_id: 1
 	}
-	mut elector := new_controller_elector(config, none)
+	mut elector := new_controller_elector(config, none, none)
 
 	// Make this broker controller
 	elector.try_become_controller() or {}

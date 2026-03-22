@@ -16,10 +16,11 @@ pub struct PartitionAssigner {
 	broker_id  i32
 	cluster_id string
 mut:
-	config        domain.PartitionAssignerConfig
-	metadata_port ?port.ClusterMetadataPort
-	lock          sync.RwMutex
-	logger        port.LoggerPort
+	config          domain.PartitionAssignerConfig
+	assignment_port ?port.PartitionAssignmentPort
+	broker_port     ?port.BrokerRegistryPort
+	lock            sync.RwMutex
+	logger          port.LoggerPort
 	// Metrics
 	assignments_total        port.CounterMetric
 	rebalance_total          port.CounterMetric
@@ -39,7 +40,7 @@ pub:
 }
 
 /// new_partition_assigner creates a new partition assignment service.
-pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_port ?port.ClusterMetadataPort) &PartitionAssigner {
+pub fn new_partition_assigner(config PartitionAssignerServiceConfig, assignment_port ?port.PartitionAssignmentPort, broker_port ?port.BrokerRegistryPort) &PartitionAssigner {
 	return &PartitionAssigner{
 		broker_id:                config.broker_id
 		cluster_id:               config.cluster_id
@@ -48,7 +49,8 @@ pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_po
 			rack_aware:    config.rack_aware
 			sticky_assign: config.sticky_assign
 		}
-		metadata_port:            metadata_port
+		assignment_port:          assignment_port
+		broker_port:              broker_port
 		logger:                   port.new_noop_logger()
 		assignments_total:        port.new_noop_counter()
 		rebalance_total:          port.new_noop_counter()
@@ -110,7 +112,7 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 		a.assignments_total.inc()
 
 		// Store to distributed storage
-		if mut mp := a.metadata_port {
+		if mut mp := a.assignment_port {
 			mp.update_partition_assignment(assignment) or {
 				a.logger.warn('Failed to store partition assignment topic=${topic_name} partition=${i} error=${err.str()}')
 			}
@@ -141,7 +143,7 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 
 	// Get current assignments
 	mut current_assignments := []domain.PartitionAssignment{}
-	if mut mp := a.metadata_port {
+	if mut mp := a.assignment_port {
 		current_assignments = mp.list_partition_assignments(topic_name) or {
 			[]domain.PartitionAssignment{}
 		}
@@ -182,7 +184,7 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 		}
 
 		// Store
-		if mut mp := a.metadata_port {
+		if mut mp := a.assignment_port {
 			mp.update_partition_assignment(assignment) or {
 				a.logger.warn('Failed to update partition assignment topic=${topic_name} partition=${assignment.partition} error=${err.str()}')
 			}
@@ -417,7 +419,7 @@ pub fn (mut a PartitionAssigner) get_partition_leader(topic_name string, partiti
 	a.lock.rlock()
 	defer { a.lock.runlock() }
 
-	if mut mp := a.metadata_port {
+	if mut mp := a.assignment_port {
 		assignment := mp.get_partition_assignment(topic_name, partition) or {
 			return error('partition assignment not found: ${topic_name}-${partition}')
 		}
@@ -432,7 +434,7 @@ pub fn (mut a PartitionAssigner) get_partition_assignment(topic_name string, par
 	a.lock.rlock()
 	defer { a.lock.runlock() }
 
-	if mut mp := a.metadata_port {
+	if mut mp := a.assignment_port {
 		return mp.get_partition_assignment(topic_name, partition)
 	}
 
@@ -444,7 +446,7 @@ pub fn (mut a PartitionAssigner) list_partition_assignments(topic_name string) !
 	a.lock.rlock()
 	defer { a.lock.runlock() }
 
-	if mut mp := a.metadata_port {
+	if mut mp := a.assignment_port {
 		return mp.list_partition_assignments(topic_name)
 	}
 

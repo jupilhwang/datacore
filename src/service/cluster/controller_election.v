@@ -23,8 +23,10 @@ const controller_refresh_interval_ms = 10000
 pub struct ControllerElector {
 	broker_id i32
 mut:
-	// Cluster metadata port for distributed locks
-	metadata_port ?port.ClusterMetadataPort
+	// Distributed lock port for controller election
+	lock_port ?port.DistributedLockPort
+	// Cluster state port for controller discovery
+	state_port ?port.ClusterStatePort
 	// Current controller state
 	is_controller bool
 	controller_id i32
@@ -52,10 +54,11 @@ pub:
 }
 
 /// new_controller_elector creates a new controller elector
-pub fn new_controller_elector(config ControllerElectorConfig, metadata_port ?port.ClusterMetadataPort) &ControllerElector {
+pub fn new_controller_elector(config ControllerElectorConfig, lock_port ?port.DistributedLockPort, state_port ?port.ClusterStatePort) &ControllerElector {
 	return &ControllerElector{
 		broker_id:     config.broker_id
-		metadata_port: metadata_port
+		lock_port:     lock_port
+		state_port:    state_port
 		is_controller: false
 		controller_id: -1
 		lock_acquired: false
@@ -78,7 +81,7 @@ pub fn (mut e ControllerElector) try_become_controller() !bool {
 	}
 
 	// Distributed storage required for multi-broker election
-	if mut mp := e.metadata_port {
+	if mut mp := e.lock_port {
 		holder_id := 'broker-${e.broker_id}'
 		acquired := mp.try_acquire_lock(controller_lock_name, holder_id, controller_lock_ttl_ms)!
 
@@ -118,7 +121,7 @@ pub fn (mut e ControllerElector) refresh_controller_lock() !bool {
 		return false
 	}
 
-	if mut mp := e.metadata_port {
+	if mut mp := e.lock_port {
 		holder_id := 'broker-${e.broker_id}'
 		refreshed := mp.refresh_lock(controller_lock_name, holder_id, controller_lock_ttl_ms)!
 
@@ -145,7 +148,7 @@ pub fn (mut e ControllerElector) resign_controller() ! {
 		return
 	}
 
-	if mut mp := e.metadata_port {
+	if mut mp := e.lock_port {
 		holder_id := 'broker-${e.broker_id}'
 		mp.release_lock(controller_lock_name, holder_id)!
 	}
@@ -191,7 +194,7 @@ pub fn (mut e ControllerElector) discover_controller() !i32 {
 	}
 
 	// Try to get from cluster metadata
-	if mut mp := e.metadata_port {
+	if mut mp := e.state_port {
 		metadata := mp.get_cluster_metadata()!
 		return metadata.controller_id
 	}
