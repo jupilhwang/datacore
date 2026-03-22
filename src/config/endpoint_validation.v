@@ -53,11 +53,39 @@ fn extract_host(url string) string {
 }
 
 /// reject_forbidden_host checks the host against blocked address patterns.
+/// Validates IPv4, IPv6, IPv4-mapped IPv6, and special addresses.
 fn reject_forbidden_host(host string) ! {
-	if host == 'localhost' || host == '::1' {
+	if host == 'localhost' {
 		return error('endpoint resolves to loopback address: ${host}')
 	}
 
+	lower := host.to_lower()
+
+	// IPv4-mapped IPv6 (::ffff:x.x.x.x): extract and validate the IPv4 part
+	if lower.starts_with('::ffff:') {
+		ipv4_part := host[7..]
+		octets := parse_ipv4_octets(ipv4_part) or { return }
+		reject_private_ip(octets, host)!
+		return
+	}
+
+	// Normalize IPv6 and check loopback (covers ::1, 0:0:0:0:0:0:0:1, etc.)
+	normalized := normalize_ipv6(lower)
+	if normalized == '::1' {
+		return error('endpoint resolves to loopback address: ${host}')
+	}
+
+	// IPv6 unique local address (fc00::/7)
+	if normalized.starts_with('fc') || normalized.starts_with('fd') {
+		return error('endpoint resolves to private address (IPv6 unique local): ${host}')
+	}
+
+	// IPv6 link-local (fe80::/10)
+	if normalized.starts_with('fe80') {
+		return error('endpoint resolves to link-local address (IPv6 fe80::/10): ${host}')
+	}
+
+	// Standard IPv4 private range validation
 	octets := parse_ipv4_octets(host) or { return }
 	reject_private_ip(octets, host)!
 }
@@ -85,6 +113,95 @@ fn parse_ipv4_octets(host string) ![]int {
 		octets << val
 	}
 	return octets
+}
+
+/// normalize_ipv6 normalizes an IPv6 address string by stripping leading
+/// zeros from each group and collapsing consecutive zero groups to `::`.
+fn normalize_ipv6(host string) string {
+	if !host.contains(':') {
+		return host
+	}
+
+	// Detect IPv4 suffix (e.g., the 127.0.0.1 in ::ffff:127.0.0.1)
+	all_parts := host.split(':')
+	last := all_parts[all_parts.len - 1]
+	mut ipv4_suffix := ''
+	mut hex_part := host
+	if last.contains('.') {
+		ipv4_suffix = ':${last}'
+		hex_part = host[..host.len - last.len - 1]
+	}
+
+	target := if ipv4_suffix != '' { 6 } else { 8 }
+	mut groups := expand_ipv6_groups(hex_part, target)
+
+	for i, g in groups {
+		stripped := g.trim_left('0')
+		groups[i] = if stripped == '' { '0' } else { stripped }
+	}
+
+	return collapse_ipv6_groups(groups, ipv4_suffix)
+}
+
+/// expand_ipv6_groups expands a `::` shorthand in an IPv6 hex part
+/// into the full number of zero groups required by the target count.
+fn expand_ipv6_groups(hex_part string, target int) []string {
+	if !hex_part.contains('::') {
+		return hex_part.split(':')
+	}
+	halves := hex_part.split('::')
+	left := if halves[0] == '' { []string{} } else { halves[0].split(':') }
+	right := if halves.len > 1 && halves[1] != '' {
+		halves[1].split(':')
+	} else {
+		[]string{}
+	}
+	fill := target - left.len - right.len
+	mut result := []string{cap: target}
+	for g in left {
+		result << g
+	}
+	for _ in 0 .. fill {
+		result << '0'
+	}
+	for g in right {
+		result << g
+	}
+	return result
+}
+
+/// collapse_ipv6_groups finds the longest consecutive run of '0' groups
+/// and replaces it with `::` to produce the canonical short form.
+fn collapse_ipv6_groups(groups []string, suffix string) string {
+	mut best_start := -1
+	mut best_len := 0
+	mut cur_start := -1
+	mut cur_len := 0
+	for i, g in groups {
+		if g == '0' {
+			if cur_start < 0 {
+				cur_start = i
+				cur_len = 1
+			} else {
+				cur_len++
+			}
+			if cur_len > best_len {
+				best_start = cur_start
+				best_len = cur_len
+			}
+		} else {
+			cur_start = -1
+			cur_len = 0
+		}
+	}
+
+	if best_len < 2 {
+		return groups.join(':') + suffix
+	}
+
+	left := groups[..best_start].join(':')
+	right := groups[best_start + best_len..].join(':')
+	return '${left}::${right}${suffix}'
 }
 
 /// reject_private_ip checks parsed IPv4 octets against private/reserved CIDR ranges.

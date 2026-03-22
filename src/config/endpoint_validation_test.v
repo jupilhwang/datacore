@@ -126,3 +126,96 @@ fn test_validate_s3_endpoint_rejects_ipv6_loopback() {
 	}
 	assert false, 'should have rejected IPv6 loopback ::1'
 }
+
+fn test_validate_s3_endpoint_rejects_ipv4_mapped_ipv6() {
+	// ::ffff:127.0.0.1 is IPv4-mapped IPv6 for loopback
+	validate_s3_endpoint('http://[::ffff:127.0.0.1]:9000') or {
+		assert err.msg().contains('loopback')
+		return
+	}
+	assert false, 'should have rejected IPv4-mapped IPv6 loopback ::ffff:127.0.0.1'
+}
+
+fn test_validate_s3_endpoint_rejects_ipv4_mapped_ipv6_private() {
+	// ::ffff:10.0.0.1 is IPv4-mapped IPv6 for private range
+	validate_s3_endpoint('http://[::ffff:10.0.0.1]:9000') or {
+		assert err.msg().contains('private')
+		return
+	}
+	assert false, 'should have rejected IPv4-mapped IPv6 private ::ffff:10.0.0.1'
+}
+
+fn test_validate_s3_endpoint_rejects_ipv6_loopback_expanded() {
+	// 0:0:0:0:0:0:0:1 is the expanded form of ::1
+	validate_s3_endpoint('http://[0:0:0:0:0:0:0:1]:9000') or {
+		assert err.msg().contains('loopback')
+		return
+	}
+	assert false, 'should have rejected expanded IPv6 loopback 0:0:0:0:0:0:0:1'
+}
+
+fn test_validate_s3_endpoint_rejects_ipv6_ula() {
+	// fc00::/7 is IPv6 Unique Local Address (private equivalent)
+	validate_s3_endpoint('http://[fc00::1]:9000') or {
+		assert err.msg().contains('private') || err.msg().contains('unique local')
+		return
+	}
+	assert false, 'should have rejected IPv6 ULA fc00::1'
+}
+
+fn test_validate_s3_endpoint_rejects_ipv6_ula_fd() {
+	// fd00::/8 is also ULA
+	validate_s3_endpoint('http://[fd00::1]:9000') or {
+		assert err.msg().contains('private') || err.msg().contains('unique local')
+		return
+	}
+	assert false, 'should have rejected IPv6 ULA fd00::1'
+}
+
+fn test_validate_s3_endpoint_rejects_ipv6_link_local() {
+	// fe80::/10 is IPv6 link-local
+	validate_s3_endpoint('http://[fe80::1]:9000') or {
+		assert err.msg().contains('link-local')
+		return
+	}
+	assert false, 'should have rejected IPv6 link-local fe80::1'
+}
+
+fn test_validate_s3_endpoint_allows_public_ipv6() {
+	// 2001:db8::1 is a documentation prefix but should pass validation
+	// (not private/loopback/link-local)
+	validate_s3_endpoint('http://[2001:db8::1]:9000') or {
+		assert false, 'should accept public IPv6 2001:db8::1: ${err.msg()}'
+	}
+}
+
+fn test_validate_s3_endpoint_rejects_ipv6_loopback_leading_zeros() {
+	// 0000:0000:0000:0000:0000:0000:0000:0001 is ::1 with leading zeros
+	validate_s3_endpoint('http://[0000:0000:0000:0000:0000:0000:0000:0001]:9000') or {
+		assert err.msg().contains('loopback')
+		return
+	}
+	assert false, 'should have rejected IPv6 loopback with leading zeros'
+}
+
+fn test_validate_s3_endpoint_rejects_ipv4_mapped_ipv6_192_168() {
+	// ::ffff:192.168.1.1 is IPv4-mapped IPv6 for private range
+	validate_s3_endpoint('http://[::ffff:192.168.1.1]:9000') or {
+		assert err.msg().contains('private')
+		return
+	}
+	assert false, 'should have rejected IPv4-mapped IPv6 private ::ffff:192.168.1.1'
+}
+
+fn test_normalize_ipv6_collapses_zeros() {
+	assert normalize_ipv6('0:0:0:0:0:0:0:1') == '::1'
+	assert normalize_ipv6('0000:0000:0000:0000:0000:0000:0000:0001') == '::1'
+	assert normalize_ipv6('fe80:0000:0000:0000:0000:0000:0000:0001') == 'fe80::1'
+	assert normalize_ipv6('2001:0db8:0000:0000:0000:0000:0000:0001') == '2001:db8::1'
+}
+
+fn test_normalize_ipv6_already_collapsed() {
+	assert normalize_ipv6('::1') == '::1'
+	assert normalize_ipv6('fe80::1') == 'fe80::1'
+	assert normalize_ipv6('::ffff:127.0.0.1') == '::ffff:127.0.0.1'
+}

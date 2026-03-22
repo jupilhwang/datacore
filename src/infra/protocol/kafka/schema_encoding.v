@@ -37,19 +37,55 @@ fn unwrap_confluent_wire_format(data []u8) !(int, []u8) {
 	return sid, data[confluent_wire_header_size..]
 }
 
+// Module-level cached encoders (lazily initialized via ensure_encoders_cached).
+// All encoder structs are stateless, so sharing cached instances is thread-safe.
+__global cached_avro_encoder = schema.AvroEncoder{}
+__global cached_json_encoder = schema.JsonEncoder{}
+__global cached_protobuf_encoder = schema.ProtobufEncoder{}
+__global encoders_cached = false
+
+/// ensure_encoders_cached initializes all encoder caches on first use.
+fn ensure_encoders_cached() ! {
+	if encoders_cached {
+		return
+	}
+	cached_avro_encoder = schema.new_avro_encoder()!
+	cached_json_encoder = schema.new_json_encoder()!
+	cached_protobuf_encoder = schema.new_protobuf_encoder()!
+	encoders_cached = true
+}
+
+/// get_or_create_avro_encoder returns a cached Avro encoder, creating it on first call.
+fn get_or_create_avro_encoder() !schema.AvroEncoder {
+	ensure_encoders_cached()!
+	return cached_avro_encoder
+}
+
+/// get_or_create_json_encoder returns a cached JSON encoder, creating it on first call.
+fn get_or_create_json_encoder() !schema.JsonEncoder {
+	ensure_encoders_cached()!
+	return cached_json_encoder
+}
+
+/// get_or_create_protobuf_encoder returns a cached Protobuf encoder, creating it on first call.
+fn get_or_create_protobuf_encoder() !schema.ProtobufEncoder {
+	ensure_encoders_cached()!
+	return cached_protobuf_encoder
+}
+
 /// encode_with_schema dispatches encode to the correct concrete encoder.
 fn encode_with_schema(data []u8, schema_str string, schema_type domain.SchemaType) ![]u8 {
 	return match schema_type {
 		.avro {
-			mut enc := schema.new_avro_encoder()!
+			mut enc := get_or_create_avro_encoder()!
 			enc.encode(data, schema_str)!
 		}
 		.json {
-			mut enc := schema.new_json_encoder()!
+			mut enc := get_or_create_json_encoder()!
 			enc.encode(data, schema_str)!
 		}
 		.protobuf {
-			mut enc := schema.new_protobuf_encoder()!
+			mut enc := get_or_create_protobuf_encoder()!
 			enc.encode(data, schema_str)!
 		}
 	}
@@ -59,15 +95,15 @@ fn encode_with_schema(data []u8, schema_str string, schema_type domain.SchemaTyp
 fn decode_with_schema(data []u8, schema_str string, schema_type domain.SchemaType) ![]u8 {
 	return match schema_type {
 		.avro {
-			mut enc := schema.new_avro_encoder()!
+			mut enc := get_or_create_avro_encoder()!
 			enc.decode(data, schema_str)!
 		}
 		.json {
-			mut enc := schema.new_json_encoder()!
+			mut enc := get_or_create_json_encoder()!
 			enc.decode(data, schema_str)!
 		}
 		.protobuf {
-			mut enc := schema.new_protobuf_encoder()!
+			mut enc := get_or_create_protobuf_encoder()!
 			enc.decode(data, schema_str)!
 		}
 	}

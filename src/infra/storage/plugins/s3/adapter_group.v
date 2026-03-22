@@ -160,10 +160,10 @@ pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain
 
 	// Buffer all offsets into the batch snapshot path
 	a.offset_batcher.buffer_lock.lock()
+	defer { a.offset_batcher.buffer_lock.unlock() }
 	for offset in offsets {
 		a.buffer_offset(group_id, offset)
 	}
-	a.offset_batcher.buffer_lock.unlock()
 
 	// Update offset cache for immediate read-after-write consistency
 	a.update_offset_cache(group_id, offsets)

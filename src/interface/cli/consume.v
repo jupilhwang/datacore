@@ -565,6 +565,10 @@ fn parse_fetch_response(response []u8) []ConsumedRecord {
 	for pos < response.len - 50 {
 		// Find magic byte 0x02 (record batch v2)
 		if response[pos] == 0x02 {
+			if pos < 16 {
+				pos += 1
+				continue
+			}
 			// Attempt to parse record batch at this position
 			parsed := try_parse_record_batch(response, pos - 16)
 			if parsed.len > 0 {
@@ -586,11 +590,15 @@ fn parse_fetch_response(response []u8) []ConsumedRecord {
 fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 	mut records := []ConsumedRecord{}
 
-	if start < 0 || start + 61 > data.len {
-		return records
+	if start < 0 || start >= data.len - 61 {
+		return [] // Need at least 61 bytes for batch header
 	}
 
 	base_offset := read_i64_be(data, start)
+	batch_length := i64(read_i32_be(data, start + 8))
+	if batch_length <= 0 || i64(start) + 12 + batch_length > i64(data.len) {
+		return [] // batch_length exceeds available data
+	}
 	first_timestamp := read_i64_be(data, start + 27)
 	records_count := read_i32_be(data, start + 57)
 

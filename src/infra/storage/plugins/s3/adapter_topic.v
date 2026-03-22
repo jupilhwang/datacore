@@ -26,19 +26,19 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 		return error('Partition count too large: ${partitions} > ${max_partition_count}')
 	}
 
-	// Check if topic already exists
-	existing := a.get_topic(name) or { domain.TopicMetadata{} }
-	if existing.name.len > 0 {
-		return error('Topic already exists: ${name}')
-	}
-
 	topic_id := generate_topic_id(name)
 	meta := build_topic_metadata(name, topic_id, partitions, config)
 
 	// Save metadata to S3 with conditional write (If-None-Match: *)
+	// S3 returns 412 Precondition Failed if the object already exists.
 	key := a.topic_metadata_key(name)
 	data := json.encode(meta)
-	a.put_object_if_not_exists(key, data.bytes())!
+	a.put_object_if_not_exists(key, data.bytes()) or {
+		if err.msg().contains('precondition failed') {
+			return error('Topic already exists: ${name}')
+		}
+		return err
+	}
 
 	a.initialize_partition_indices(name, partitions)!
 

@@ -3,9 +3,12 @@
 // key normalization for standard json.decode-based metadata parsing.
 module s3
 
-/// normalize_metadata_json_keys converts camelCase Iceberg metadata keys to
-/// kebab-case so that json.decode with @[json: 'kebab-case'] attributes works
-/// for both legacy camelCase and standard kebab-case input.
+/// normalize_metadata_json_keys converts camelCase Iceberg metadata keys to kebab-case
+/// for compatibility with V's json.decode using @[json: 'kebab-case'] attributes.
+/// WARNING: This uses string replacement which could incorrectly modify JSON values
+/// that happen to contain key-like patterns (e.g., a description containing "formatVersion:").
+/// This is acceptable for Iceberg metadata where such collisions are extremely unlikely.
+/// For a more robust solution, use a key-only matching approach.
 fn normalize_metadata_json_keys(json_str string) string {
 	return json_str
 		.replace('"formatVersion":', '"format-version":')

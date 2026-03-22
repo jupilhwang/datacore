@@ -2,7 +2,9 @@
 /// Uses io_uring for async I/O when available, with graceful fallback to generic engine
 module engines
 
+import sync
 import sync.stdatomic
+import time
 import infra.performance.core
 import infra.observability
 
@@ -10,6 +12,21 @@ $if linux {
 	#include <fcntl.h>
 
 	fn C.open(path &char, flags int, mode int) int
+}
+
+/// FdCacheEntry represents a cached file descriptor with LRU tracking.
+struct FdCacheEntry {
+	fd        int
+	last_used i64 // timestamp in milliseconds
+}
+
+/// FdCache provides thread-safe LRU caching of file descriptors
+/// to avoid repeated open/close syscalls in io_uring I/O paths.
+struct FdCache {
+mut:
+	entries  map[string]FdCacheEntry // path -> fd
+	mu       sync.Mutex
+	max_size int = 64 // max cached FDs
 }
 
 /// LinuxPerformanceEngine provides Linux-specific performance optimizations.
@@ -20,6 +37,7 @@ mut:
 	io_ring_available bool
 	io_ring           IoUring
 	ops_count         i64
+	fd_cache          FdCache
 }
 
 /// name returns the engine name.
@@ -27,11 +45,83 @@ pub fn (e LinuxPerformanceEngine) name() string {
 	return 'Linux (io_uring)'
 }
 
+/// get_or_open returns a cached fd or opens a new one.
+/// Uses LRU eviction when the cache reaches max_size.
+fn (mut c FdCache) get_or_open(path string, flags int, mode int) !int {
+	c.mu.lock()
+	defer {
+		c.mu.unlock()
+	}
+
+	if entry := c.entries[path] {
+		c.entries[path] = FdCacheEntry{
+			fd:        entry.fd
+			last_used: time.now().unix_milli()
+		}
+		return entry.fd
+	}
+
+	$if linux {
+		fd := C.open(path.str, flags, mode)
+		if fd < 0 {
+			return error('Failed to open ${path}')
+		}
+
+		if c.entries.len >= c.max_size {
+			c.evict_oldest()
+		}
+
+		c.entries[path] = FdCacheEntry{
+			fd:        fd
+			last_used: time.now().unix_milli()
+		}
+		return fd
+	}
+	return error('FdCache not available on this platform')
+}
+
+/// evict_oldest removes the least recently used entry from the cache.
+fn (mut c FdCache) evict_oldest() {
+	mut oldest_key := ''
+	mut oldest_time := i64(9223372036854775807)
+	for key, entry in c.entries {
+		if entry.last_used < oldest_time {
+			oldest_time = entry.last_used
+			oldest_key = key
+		}
+	}
+	if oldest_key.len > 0 {
+		$if linux {
+			if entry := c.entries[oldest_key] {
+				C.close(entry.fd)
+			}
+		}
+		c.entries.delete(oldest_key)
+	}
+}
+
+/// close_all closes all cached file descriptors and clears the cache.
+fn (mut c FdCache) close_all() {
+	c.mu.lock()
+	defer {
+		c.mu.unlock()
+	}
+	$if linux {
+		for _, entry in c.entries {
+			C.close(entry.fd)
+		}
+	}
+	c.entries = map[string]FdCacheEntry{}
+}
+
 /// init initializes the engine with configuration.
 /// Initializes generic pools first, then attempts io_uring setup.
 /// io_uring failure is non-fatal; the engine falls back to generic I/O.
 pub fn (mut e LinuxPerformanceEngine) init(config core.PerformanceConfig) ! {
 	e.generic.init(config)!
+	e.fd_cache = FdCache{
+		max_size: 64
+	}
 
 	$if linux {
 		e.io_ring = new_io_uring(IoUringConfig{ queue_depth: 64 }) or {
@@ -130,13 +220,7 @@ pub fn (mut e LinuxPerformanceEngine) get_stats() core.PerformanceStats {
 /// io_uring_read performs a file read via io_uring's submission/completion queue.
 fn (mut e LinuxPerformanceEngine) io_uring_read(path string, offset i64, size int) ![]u8 {
 	$if linux {
-		fd := C.open(path.str, 0, 0)
-		if fd < 0 {
-			return error('io_uring_read: failed to open file: ${path}')
-		}
-		defer {
-			C.close(fd)
-		}
+		fd := e.fd_cache.get_or_open(path, 0, 0)!
 
 		mut buf := []u8{len: size}
 		if !e.io_ring.prep_read(fd, buf, offset, 0) {
@@ -154,13 +238,7 @@ fn (mut e LinuxPerformanceEngine) io_uring_read(path string, offset i64, size in
 /// io_uring_write performs a file write via io_uring's submission/completion queue.
 fn (mut e LinuxPerformanceEngine) io_uring_write(path string, offset i64, data []u8) ! {
 	$if linux {
-		fd := C.open(path.str, 2, 0o644)
-		if fd < 0 {
-			return error('io_uring_write: failed to open file: ${path}')
-		}
-		defer {
-			C.close(fd)
-		}
+		fd := e.fd_cache.get_or_open(path, 2, 0o644)!
 
 		if !e.io_ring.prep_write(fd, data, offset, 0) {
 			return error('io_uring_write: submission queue full')

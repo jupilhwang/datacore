@@ -63,8 +63,8 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	// and producing overlapping offset ranges.
 	mut p_lock := a.get_partition_append_lock(partition_key)
 	p_lock.lock()
+	defer { p_lock.unlock() }
 	base_offset := a.reserve_offsets(partition_key, records.len)
-	p_lock.unlock()
 
 	// 3. Create StoredRecords with reserved offsets
 	stored_records, bytes_to_add := a.create_stored_records(records, base_offset)
@@ -223,6 +223,7 @@ fn (mut a S3StorageAdapter) create_stored_records(records []domain.Record, base_
 /// flush_worker drains the buffer every batch_timeout_ms automatically.
 fn (mut a S3StorageAdapter) append_async(partition_key string, stored_records []StoredRecord, bytes_to_add i64) {
 	a.buffer_lock.@lock()
+	defer { a.buffer_lock.unlock() }
 	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
 		TopicPartitionBuffer{
 			records:            []
@@ -234,7 +235,6 @@ fn (mut a S3StorageAdapter) append_async(partition_key string, stored_records []
 	tp_buffer.current_size_bytes += bytes_to_add
 
 	a.topic_partition_buffers[partition_key] = tp_buffer
-	a.buffer_lock.unlock()
 }
 
 /// append_sync handles the durable (acks=1/-1) append path.
@@ -324,6 +324,7 @@ fn (mut a S3StorageAdapter) fetch_from_buffer(partition_key string, fetch_offset
 	mut highest_offset := fetch_offset - 1
 
 	a.buffer_lock.rlock()
+	defer { a.buffer_lock.runlock() }
 	if tp_buffer := a.topic_partition_buffers[partition_key] {
 		for rec in tp_buffer.records {
 			if rec.offset >= fetch_offset && rec.offset > highest_offset
@@ -336,7 +337,6 @@ fn (mut a S3StorageAdapter) fetch_from_buffer(partition_key string, fetch_offset
 			}
 		}
 	}
-	a.buffer_lock.runlock()
 
 	return result
 }
