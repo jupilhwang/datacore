@@ -1,5 +1,21 @@
 # DataCore Changelog
 
+## v0.50.5 (2026-03-22)
+
+### Bug Fixes
+- Fixed binary protocol DoS vulnerability: added bounds checks to read_i16/i32/i64 in binary_helpers.v and binary_utils.v (prevents crash from truncated replication messages)
+- Fixed config file permissions: saved config now set to 0600 (owner-only) to protect credentials
+
+### Architecture
+- Extracted port.LoggerPort interface: removed all 6 service-layer imports of infra.observability (Clean Architecture compliance)
+- Created port.LogField, port.CounterMetric, port.HistogramMetric abstractions for service layer
+- Added infra/observability/logger_adapter.v for DIP compliance
+
+### Refactoring
+- Split PostgreSQL adapter: 1367 lines -> 7 files (adapter, topic, record, group, offset, share, schema)
+- Split Memory adapter: 1059 lines -> 6 files (adapter, topic, record, group, offset, share)
+- Decomposed process_produce: 505-line function -> 170-line orchestrator + 6 focused helpers in handler_produce_helpers.v
+
 ## v0.50.4 (2026-03-22)
 ### Refactoring
 - config.v God File split: 969 lines -> 5 files (config.v 218, config_parse.v 300, config_save.v 259, config_validate.v 76, config_cli.v 92)

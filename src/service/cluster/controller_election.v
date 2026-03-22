@@ -2,7 +2,6 @@
 // v0.28.0: Leader election implementation for multi-broker clusters
 module cluster
 
-import infra.observability
 import service.port
 import sync
 import time
@@ -36,6 +35,8 @@ mut:
 	lock sync.RwMutex
 	// Background worker control
 	running bool
+	// Logger
+	logger port.LoggerPort
 	// Callback functions
 	on_become_controller  ?fn ()
 	on_lose_controller    ?fn ()
@@ -59,6 +60,7 @@ pub fn new_controller_elector(config ControllerElectorConfig, metadata_port ?por
 		controller_id: -1
 		lock_acquired: false
 		running:       false
+		logger:        port.new_noop_logger()
 	}
 }
 
@@ -91,10 +93,7 @@ pub fn (mut e ControllerElector) try_become_controller() !bool {
 				spawn callback()
 			}
 
-			observability.log_with_context('cluster', .info, 'ControllerElection', 'Broker became controller',
-				{
-				'broker_id': e.broker_id.str()
-			})
+			e.logger.info('ControllerElection: Broker became controller broker_id=${e.broker_id}')
 			return true
 		} else {
 			// Another broker is the controller - try to identify who
@@ -152,10 +151,7 @@ pub fn (mut e ControllerElector) resign_controller() ! {
 	}
 
 	e.lose_controller_internal()
-	observability.log_with_context('cluster', .info, 'ControllerElection', 'Broker resigned as controller',
-		{
-		'broker_id': e.broker_id.str()
-	})
+	e.logger.info('ControllerElection: Broker resigned as controller broker_id=${e.broker_id}')
 }
 
 /// lose_controller_internal handles loss of controller state (must be called while holding lock)
@@ -219,10 +215,7 @@ pub fn (mut e ControllerElector) stop() {
 fn (mut e ControllerElector) election_loop() {
 	// Initial election attempt
 	e.try_become_controller() or {
-		observability.log_with_context('cluster', .error, 'ControllerElection', 'Initial election failed',
-			{
-			'error': err.str()
-		})
+		e.logger.error('ControllerElection: Initial election failed error=${err.str()}')
 	}
 
 	interval := time.Duration(controller_refresh_interval_ms * time.millisecond)
@@ -237,10 +230,7 @@ fn (mut e ControllerElector) election_loop() {
 		if e.lock_acquired {
 			// Refresh lock
 			e.refresh_controller_lock() or {
-				observability.log_with_context('cluster', .error, 'ControllerElection',
-					'Lock refresh failed', {
-					'error': err.str()
-				})
+				e.logger.error('ControllerElection: Lock refresh failed error=${err.str()}')
 				// Attempt to reacquire
 				e.try_become_controller() or {}
 			}
@@ -285,6 +275,7 @@ mut:
 	elector &ControllerElector
 	tasks   []ControllerTask
 	running bool
+	logger  port.LoggerPort
 }
 
 /// new_controller_task_runner creates a new task runner
@@ -293,6 +284,7 @@ pub fn new_controller_task_runner(elector &ControllerElector) &ControllerTaskRun
 		elector: elector
 		tasks:   []ControllerTask{}
 		running: false
+		logger:  port.new_noop_logger()
 	}
 }
 
@@ -323,11 +315,7 @@ fn (mut r ControllerTaskRunner) run_task(task ControllerTask) {
 		if r.elector.is_controller() {
 			if task_fn := task.task {
 				task_fn() or {
-					observability.log_with_context('cluster', .error, 'ControllerTask',
-						'Task execution failed', {
-						'task_name': task.name
-						'error':     err.str()
-					})
+					r.logger.error('ControllerTask: Task execution failed task_name=${task.name} error=${err.str()}')
 				}
 			}
 		}

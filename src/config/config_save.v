@@ -51,6 +51,8 @@ pub fn (c Config) save(path string) ! {
 	c.save_observability_section(mut b)
 	c.save_telemetry_section(mut b)
 	os.write_file(path, b.str())!
+	// Restrict permissions: config may contain credentials (S3 keys, DB password)
+	os.chmod(path, 0o600)!
 }
 
 /// save_broker_section writes the [broker] and [broker.rate_limit] TOML sections.

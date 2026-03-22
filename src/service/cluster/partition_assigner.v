@@ -3,7 +3,6 @@ module cluster
 
 import domain
 import service.port
-import infra.observability
 import sync
 import time
 import rand
@@ -20,12 +19,12 @@ mut:
 	config        domain.PartitionAssignerConfig
 	metadata_port ?port.ClusterMetadataPort
 	lock          sync.RwMutex
-	logger        &observability.Logger
+	logger        port.LoggerPort
 	// Metrics
-	assignments_total        &observability.Metric
-	rebalance_total          &observability.Metric
-	rebalance_duration_ms    &observability.Metric
-	assignment_changes_total &observability.Metric
+	assignments_total        port.CounterMetric
+	rebalance_total          port.CounterMetric
+	rebalance_duration_ms    port.HistogramMetric
+	assignment_changes_total port.CounterMetric
 }
 
 /// PartitionAssignerConfig holds partition assignment service configuration.
@@ -41,9 +40,6 @@ pub:
 
 /// new_partition_assigner creates a new partition assignment service.
 pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_port ?port.ClusterMetadataPort) &PartitionAssigner {
-	logger := observability.get_named_logger('partition_assigner')
-	mut reg := observability.get_registry()
-
 	return &PartitionAssigner{
 		broker_id:                config.broker_id
 		cluster_id:               config.cluster_id
@@ -53,19 +49,28 @@ pub fn new_partition_assigner(config PartitionAssignerServiceConfig, metadata_po
 			sticky_assign: config.sticky_assign
 		}
 		metadata_port:            metadata_port
-		logger:                   logger
-		assignments_total:        reg.register('partition_assigner_assignments_total',
-			'Total partition assignments', .counter)
-		rebalance_total:          reg.register('partition_assigner_rebalance_total', 'Total rebalances performed',
-			.counter)
-		rebalance_duration_ms:    reg.register('partition_assigner_rebalance_duration_ms',
-			'Rebalance duration in milliseconds', .histogram)
-		assignment_changes_total: reg.register('partition_assigner_assignment_changes_total',
-			'Total assignment changes', .counter)
+		logger:                   port.new_noop_logger()
+		assignments_total:        port.new_noop_counter()
+		rebalance_total:          port.new_noop_counter()
+		rebalance_duration_ms:    port.new_noop_histogram()
+		assignment_changes_total: port.new_noop_counter()
 	}
 }
 
 // Initial Assignment
+
+/// set_logger sets the logger for the partition assigner.
+pub fn (mut a PartitionAssigner) set_logger(logger port.LoggerPort) {
+	a.logger = logger
+}
+
+/// set_metrics sets the metrics for the partition assigner.
+pub fn (mut a PartitionAssigner) set_metrics(assignments_total port.CounterMetric, rebalance_total port.CounterMetric, rebalance_duration_ms port.HistogramMetric, assignment_changes_total port.CounterMetric) {
+	a.assignments_total = assignments_total
+	a.rebalance_total = rebalance_total
+	a.rebalance_duration_ms = rebalance_duration_ms
+	a.assignment_changes_total = assignment_changes_total
+}
 
 /// assign_partitions performs initial partition assignment for a new topic to brokers.
 /// topic_name: topic name
@@ -83,9 +88,7 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 		return error('partition count must be positive')
 	}
 
-	a.logger.info('Assigning partitions for topic', observability.field_string('topic',
-		topic_name), observability.field_int('partition_count', i64(partition_count)),
-		observability.field_int('broker_count', i64(brokers.len)))
+	a.logger.info('Assigning partitions for topic topic=${topic_name} partition_count=${partition_count} broker_count=${brokers.len}')
 
 	mut assignments := []domain.PartitionAssignment{}
 
@@ -109,14 +112,12 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 		// Store to distributed storage
 		if mut mp := a.metadata_port {
 			mp.update_partition_assignment(assignment) or {
-				a.logger.warn('Failed to store partition assignment', observability.field_string('topic',
-					topic_name), observability.field_int('partition', i64(i)), observability.field_err_str(err.str()))
+				a.logger.warn('Failed to store partition assignment topic=${topic_name} partition=${i} error=${err.str()}')
 			}
 		}
 	}
 
-	a.logger.info('Partition assignment completed', observability.field_string('topic',
-		topic_name), observability.field_int('assigned_partitions', i64(assignments.len)))
+	a.logger.info('Partition assignment completed topic=${topic_name} assigned_partitions=${assignments.len}')
 
 	return assignments
 }
@@ -134,11 +135,9 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 		return error('no active brokers available for rebalance')
 	}
 
-	mut timer := a.rebalance_duration_ms.start_timer()
-	defer { timer.observe_duration() }
+	rebalance_start := time.now()
 
-	a.logger.info('Starting partition rebalance', observability.field_string('topic',
-		topic_name), observability.field_int('active_brokers', i64(active_brokers.len)))
+	a.logger.info('Starting partition rebalance topic=${topic_name} active_brokers=${active_brokers.len}')
 
 	// Get current assignments
 	mut current_assignments := []domain.PartitionAssignment{}
@@ -149,8 +148,7 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 	}
 
 	if current_assignments.len == 0 {
-		a.logger.warn('No existing assignments found for topic', observability.field_string('topic',
-			topic_name))
+		a.logger.warn('No existing assignments found for topic topic=${topic_name}')
 		return []domain.PartitionAssignment{}
 	}
 
@@ -169,10 +167,7 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 					changes_count++
 					assignment.partition_epoch = current.partition_epoch + 1
 					assignment.reassigned_at = time.now().unix_milli()
-					a.logger.info('Partition reassigned', observability.field_string('topic',
-						topic_name), observability.field_int('partition', i64(assignment.partition)),
-						observability.field_int('old_broker', i64(current.preferred_broker)),
-						observability.field_int('new_broker', i64(assignment.preferred_broker)))
+					a.logger.info('Partition reassigned topic=${topic_name} partition=${assignment.partition} old_broker=${current.preferred_broker} new_broker=${assignment.preferred_broker}')
 				} else {
 					// No change, keep existing epoch
 					assignment.partition_epoch = current.partition_epoch
@@ -189,19 +184,17 @@ pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_
 		// Store
 		if mut mp := a.metadata_port {
 			mp.update_partition_assignment(assignment) or {
-				a.logger.warn('Failed to update partition assignment', observability.field_string('topic',
-					topic_name), observability.field_int('partition', i64(assignment.partition)),
-					observability.field_err_str(err.str()))
+				a.logger.warn('Failed to update partition assignment topic=${topic_name} partition=${assignment.partition} error=${err.str()}')
 			}
 		}
 	}
 
 	a.rebalance_total.inc()
 	a.assignment_changes_total.inc_by(f64(changes_count))
+	elapsed := time.since(rebalance_start)
+	a.rebalance_duration_ms.observe(f64(elapsed) / f64(time.millisecond))
 
-	a.logger.info('Partition rebalance completed', observability.field_string('topic',
-		topic_name), observability.field_int('total_partitions', i64(new_assignments.len)),
-		observability.field_int('changes', i64(changes_count)))
+	a.logger.info('Partition rebalance completed topic=${topic_name} total_partitions=${new_assignments.len} changes=${changes_count}')
 
 	return new_assignments
 }
@@ -483,9 +476,7 @@ pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChange
 	// TODO(jira#XXX): Need method to get topic list
 	// Currently returning empty plan
 
-	a.logger.info('Generated reassignment plan', observability.field_string('plan_id',
-		plan_id), observability.field_string('reason', changes.reason), observability.field_int('added_brokers',
-		i64(changes.added.len)), observability.field_int('removed_brokers', i64(changes.removed.len)))
+	a.logger.info('Generated reassignment plan plan_id=${plan_id} reason=${changes.reason} added_brokers=${changes.added.len} removed_brokers=${changes.removed.len}')
 
 	return plan
 }
@@ -505,8 +496,7 @@ pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy
 	a.lock.@lock()
 	defer { a.lock.unlock() }
 	a.config.strategy = strategy
-	a.logger.info('Assignment strategy changed', observability.field_string('strategy',
-		assignment_strategy_to_string(strategy)))
+	a.logger.info('Assignment strategy changed strategy=${assignment_strategy_to_string(strategy)}')
 }
 
 /// set_sticky_assign sets the sticky assignment mode.
@@ -514,8 +504,7 @@ pub fn (mut a PartitionAssigner) set_sticky_assign(enabled bool) {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
 	a.config.sticky_assign = enabled
-	a.logger.info('Sticky assignment mode changed', observability.field_bool('enabled',
-		enabled))
+	a.logger.info('Sticky assignment mode changed enabled=${enabled}')
 }
 
 /// assignment_strategy_to_string converts AssignmentStrategy to a string.

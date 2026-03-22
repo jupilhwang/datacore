@@ -4,7 +4,6 @@ module offset
 
 import domain
 import service.port
-import infra.observability
 
 /// OffsetManager handles offset management business logic.
 /// Responsible for offset commits, retrieval, and validation.
@@ -12,11 +11,11 @@ pub struct OffsetManager {
 mut:
 	topic_storage  port.TopicStoragePort
 	offset_storage port.OffsetStoragePort
-	logger         &observability.Logger
+	logger         port.LoggerPort
 }
 
 /// new_offset_manager creates a new OffsetManager.
-pub fn new_offset_manager(topic_storage port.TopicStoragePort, offset_storage port.OffsetStoragePort, logger &observability.Logger) &OffsetManager {
+pub fn new_offset_manager(topic_storage port.TopicStoragePort, offset_storage port.OffsetStoragePort, logger port.LoggerPort) &OffsetManager {
 	return &OffsetManager{
 		topic_storage:  topic_storage
 		offset_storage: offset_storage
@@ -35,19 +34,17 @@ pub fn (mut m OffsetManager) commit_offsets(req OffsetCommitRequest) !OffsetComm
 
 	// Validate offset list
 	if req.offsets.len == 0 {
-		m.logger.warn('No offsets to commit', observability.field_string('group_id', req.group_id))
+		m.logger.warn('No offsets to commit group_id=${req.group_id}')
 		return OffsetCommitResponse{
 			results: []
 		}
 	}
 
-	m.logger.debug('Committing offsets', observability.field_string('group_id', req.group_id),
-		observability.field_int('count', req.offsets.len))
+	m.logger.debug('Committing offsets group_id=${req.group_id} count=${req.offsets.len}')
 
 	// Commit offsets to storage
 	m.offset_storage.commit_offsets(req.group_id, req.offsets) or {
-		m.logger.error('Failed to commit offsets', observability.field_string('group_id',
-			req.group_id), observability.field_string('error', err.str()))
+		m.logger.error('Failed to commit offsets group_id=${req.group_id} error=${err.str()}')
 
 		// Create error results for all partitions
 		mut results := []OffsetCommitResult{cap: req.offsets.len}
@@ -75,8 +72,7 @@ pub fn (mut m OffsetManager) commit_offsets(req OffsetCommitRequest) !OffsetComm
 		}
 	}
 
-	m.logger.debug('Offsets committed successfully', observability.field_string('group_id',
-		req.group_id), observability.field_int('count', req.offsets.len))
+	m.logger.debug('Offsets committed successfully group_id=${req.group_id} count=${req.offsets.len}')
 
 	return OffsetCommitResponse{
 		results: results
@@ -97,21 +93,18 @@ pub fn (mut m OffsetManager) fetch_offsets(req OffsetFetchRequest) !OffsetFetchR
 
 	// Return empty result if partition list is empty
 	if req.partitions.len == 0 {
-		m.logger.debug('No partitions to fetch', observability.field_string('group_id',
-			req.group_id))
+		m.logger.debug('No partitions to fetch group_id=${req.group_id}')
 		return OffsetFetchResponse{
 			results:    []
 			error_code: 0
 		}
 	}
 
-	m.logger.debug('Fetching offsets', observability.field_string('group_id', req.group_id),
-		observability.field_int('partitions', req.partitions.len))
+	m.logger.debug('Fetching offsets group_id=${req.group_id} partitions=${req.partitions.len}')
 
 	// Retrieve offsets from storage
 	fetched := m.offset_storage.fetch_offsets(req.group_id, req.partitions) or {
-		m.logger.error('Failed to fetch offsets', observability.field_string('group_id',
-			req.group_id), observability.field_string('error', err.str()))
+		m.logger.error('Failed to fetch offsets group_id=${req.group_id} error=${err.str()}')
 		return OffsetFetchResponse{
 			results:    []
 			error_code: i16(domain.ErrorCode.unknown_server_error)
@@ -137,8 +130,7 @@ pub fn (mut m OffsetManager) fetch_offsets(req OffsetFetchRequest) !OffsetFetchR
 		results << create_fetch_result_with_topic_id(f, topic_id)
 	}
 
-	m.logger.debug('Offsets fetched successfully', observability.field_string('group_id',
-		req.group_id), observability.field_int('count', results.len))
+	m.logger.debug('Offsets fetched successfully group_id=${req.group_id} count=${results.len}')
 
 	return OffsetFetchResponse{
 		results:    results
@@ -151,8 +143,7 @@ pub fn (mut m OffsetManager) fetch_offsets(req OffsetFetchRequest) !OffsetFetchR
 pub fn (mut m OffsetManager) fetch_offsets_by_topic_id(group_id string, topic_id []u8, partitions []int) !OffsetFetchResponse {
 	// Look up topic by TopicId
 	topic_meta := m.topic_storage.get_topic_by_id(topic_id) or {
-		m.logger.warn('Topic not found by ID', observability.field_string('group_id',
-			group_id))
+		m.logger.warn('Topic not found by ID group_id=${group_id}')
 		return OffsetFetchResponse{
 			results:    []
 			error_code: i16(domain.ErrorCode.unknown_topic_id)

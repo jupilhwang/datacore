@@ -361,3 +361,14 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - manager.v: recovery handler now returns buffered data
 - Review score: D (69.6) -> C (74.5), target: B (80+)
 
+## v0.50.5 - Code Review Auto-Fix Sprint (2026-03-22)
+
+### Completed
+- B4: binary_helpers/binary_utils bounds checks (DoS prevention)
+- S1: config save file permissions 0600 (credential protection)
+- Storage adapter splits: postgres 1367->7 files, memory 1059->6 files
+- LoggerPort interface: 6 service->infra.observability imports eliminated
+- process_produce decomposition: 505->170 lines + 6 helpers
+- QA: 28 modules, 122/122 test files, 1,682 functions - all PASS
+- Architecture: 0 domain->infra imports, 0 service->infra.observability imports
+

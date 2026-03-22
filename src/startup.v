@@ -142,6 +142,8 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 	}
 
 	mut broker_registry := cluster.new_broker_registry(registry_config, capability, cluster_port)
+	registry_logger := observability.new_logger_adapter(observability.get_named_logger('broker_registry'))
+	broker_registry.set_logger(registry_logger)
 
 	mut broker_info := domain.BrokerInfo{}
 	mut register_success := false
@@ -183,6 +185,16 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 		cluster_id:    conf.broker.cluster_id
 	}
 	mut partition_assigner := cluster.new_partition_assigner(assigner_config, cluster_port)
+	assigner_logger := observability.new_logger_adapter(observability.get_named_logger('partition_assigner'))
+	partition_assigner.set_logger(assigner_logger)
+
+	// Inject metrics into partition assigner
+	mut reg := observability.get_registry()
+	partition_assigner.set_metrics(reg.register('partition_assigner_assignments_total',
+		'Total partition assignments', .counter), reg.register('partition_assigner_rebalance_total',
+		'Total rebalances performed', .counter), reg.register('partition_assigner_rebalance_duration_ms',
+		'Rebalance duration in milliseconds', .histogram), reg.register('partition_assigner_assignment_changes_total',
+		'Total assignment changes', .counter))
 
 	broker_registry.set_partition_assigner(partition_assigner)
 	protocol_handler.set_partition_assigner(partition_assigner)

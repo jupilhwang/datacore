@@ -4,7 +4,6 @@ module auth
 
 import domain
 import service.port
-import infra.observability
 import sync
 import time
 
@@ -117,6 +116,7 @@ mut:
 	mechanisms     []domain.SaslMechanism
 	authenticators map[string]port.SaslAuthenticator
 	metrics        &AuthMetrics
+	logger         port.LoggerPort
 }
 
 /// new_auth_service creates a new authentication service.
@@ -149,6 +149,7 @@ pub fn new_auth_service(user_store port.UserStore, mechanisms []domain.SaslMecha
 		mechanisms:     mechanisms
 		authenticators: authenticators
 		metrics:        metrics
+		logger:         port.new_noop_logger()
 	}
 }
 
@@ -188,10 +189,7 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 		// Metrics: record failure
 		elapsed_ms := time.since(start_time).milliseconds()
 		s.metrics.record_auth_attempt(mech_str, elapsed_ms, false)
-		observability.log_with_context('auth', .error, 'Auth', 'Unsupported mechanism',
-			{
-			'mechanism': mech_str
-		})
+		s.logger.error('Auth: Unsupported mechanism mechanism=${mech_str}')
 		return err
 	}
 
@@ -199,11 +197,7 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 		// Metrics: record failure
 		elapsed_ms := time.since(start_time).milliseconds()
 		s.metrics.record_auth_attempt(mech_str, elapsed_ms, false)
-		observability.log_with_context('auth', .warn, 'Auth', 'Authentication failed',
-			{
-			'mechanism': mech_str
-			'error':     err.msg()
-		})
+		s.logger.warn('Auth: Authentication failed mechanism=${mech_str} error=${err.msg()}')
 		return err
 	}
 
@@ -211,11 +205,11 @@ pub fn (mut s AuthService) authenticate(mechanism domain.SaslMechanism, auth_byt
 	elapsed_ms := time.since(start_time).milliseconds()
 	s.metrics.record_auth_attempt(mech_str, elapsed_ms, true)
 
-	observability.log_with_context('auth', .info, 'Auth', 'Authentication successful',
-		{
-		'mechanism': mech_str
-		'user':      if principal := result.principal { principal.name } else { 'unknown' }
-	})
+	s.logger.info('Auth: Authentication successful mechanism=${mech_str} user=${if principal := result.principal {
+		principal.name
+	} else {
+		'unknown'
+	}}')
 
 	return result
 }

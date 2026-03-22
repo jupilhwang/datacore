@@ -115,7 +115,7 @@ pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 	mut sub := StorageSubPorts{
 		s: cfg.storage
 	}
-	offset_mgr := offset.new_offset_manager(sub, sub, logger)
+	offset_mgr := offset.new_offset_manager(sub, sub, observability.new_logger_adapter(logger))
 	metrics := observability.new_protocol_metrics()
 
 	return Handler{
