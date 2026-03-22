@@ -32,17 +32,29 @@ pub fn write_i64_be(mut buf []u8, val i64) {
 // Big-endian read helpers
 
 /// read_i16_be reads a 16-bit integer in big-endian order from a buffer.
-pub fn read_i16_be(data []u8) i16 {
+/// Returns error if the buffer has fewer than 2 bytes.
+pub fn read_i16_be(data []u8) !i16 {
+	if data.len < 2 {
+		return error('insufficient data: need 2 bytes, have ${data.len}')
+	}
 	return i16(u16(data[0]) << 8 | u16(data[1]))
 }
 
 /// read_i32_be reads a 32-bit integer in big-endian order from a buffer.
-pub fn read_i32_be(data []u8) i32 {
+/// Returns error if the buffer has fewer than 4 bytes.
+pub fn read_i32_be(data []u8) !i32 {
+	if data.len < 4 {
+		return error('insufficient data: need 4 bytes, have ${data.len}')
+	}
 	return i32(u32(data[0]) << 24 | u32(data[1]) << 16 | u32(data[2]) << 8 | u32(data[3]))
 }
 
 /// read_i64_be reads a 64-bit integer in big-endian order from a buffer.
-pub fn read_i64_be(data []u8) i64 {
+/// Returns error if the buffer has fewer than 8 bytes.
+pub fn read_i64_be(data []u8) !i64 {
+	if data.len < 8 {
+		return error('insufficient data: need 8 bytes, have ${data.len}')
+	}
 	return i64(u64(data[0]) << 56 | u64(data[1]) << 48 | u64(data[2]) << 40 | u64(data[3]) << 32 | u64(data[4]) << 24 | u64(data[5]) << 16 | u64(data[6]) << 8 | u64(data[7]))
 }
 

@@ -84,7 +84,7 @@ pub fn (p BinaryProtocol) decode(data []u8) !domain.ReplicationMessage {
 		return error('invalid binary data: too short (${data.len} bytes, need >= ${binary_min_frame_size})')
 	}
 
-	total_len := read_i32(data, 0)
+	total_len := read_i32(data, 0)!
 	if data.len < 4 + int(total_len) {
 		return error('invalid binary data: expected ${4 + total_len} bytes, got ${data.len}')
 	}

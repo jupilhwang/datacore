@@ -291,6 +291,38 @@ max_requests_per_sec = 9999
 	assert rl.max_requests_per_sec == 9999, 'custom value should still be parsed even when disabled'
 }
 
+fn test_config_save_file_permissions() {
+	// After save(), the config file must have 0600 permissions
+	// because it may contain credentials (S3 keys, DB password).
+	cfg := Config{
+		broker:  BrokerConfig{
+			broker_id: 1
+		}
+		storage: StorageConfig{
+			engine: 'memory'
+		}
+	}
+
+	tmp_path := os.join_path(os.temp_dir(), 'test_config_perms.toml')
+	defer {
+		os.rm(tmp_path) or {}
+	}
+	cfg.save(tmp_path) or {
+		assert false, 'save() should not fail: ${err}'
+		return
+	}
+
+	assert os.exists(tmp_path), 'saved config file must exist'
+
+	stat := os.stat(tmp_path) or {
+		assert false, 'os.stat() should not fail: ${err}'
+		return
+	}
+	// mask to get only permission bits (lower 9 bits)
+	perm := stat.mode & 0o777
+	assert perm == 0o600, 'config file permissions must be 0600 (owner-only), got 0o${perm:o}'
+}
+
 fn test_rate_limit_config_in_full_config_load() {
 	// Verify RateLimitConfig is accessible via Config.broker.rate_limit
 	toml_content := '

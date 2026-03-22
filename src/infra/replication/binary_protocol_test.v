@@ -490,6 +490,104 @@ fn test_binary_decode_negative_bytes_length() {
 	assert false, 'negative bytes length should produce error'
 }
 
+// test_binary_decode_truncated_timestamp: crafted message truncated in the timestamp field.
+// The timestamp field requires 8 bytes but we only supply 4, which should produce
+// an error instead of panicking.
+fn test_binary_decode_truncated_timestamp() {
+	bp := BinaryProtocol.new()
+
+	// Layout: [4:len][1:ver=1][1:type=0][2:corr_len=0][2:sender_len=0][4:partial_ts]
+	// Total: 14 bytes (payload = 10 bytes)
+	mut buf := []u8{}
+	write_i32(mut buf, i32(0)) // placeholder length
+	buf << u8(1) // version
+	buf << u8(0) // msg_type = replicate
+	write_i16(mut buf, i16(0)) // empty correlation_id
+	write_i16(mut buf, i16(0)) // empty sender_id
+	buf << [u8(0), 0, 0, 0] // only 4 of 8 timestamp bytes
+
+	// Fix the length prefix to match actual payload size
+	mut len_bytes := []u8{len: 4}
+	binary.big_endian_put_u32(mut len_bytes, u32(buf.len - 4))
+	buf[0] = len_bytes[0]
+	buf[1] = len_bytes[1]
+	buf[2] = len_bytes[2]
+	buf[3] = len_bytes[3]
+
+	bp.decode(buf) or {
+		assert err.msg().contains('insufficient data')
+		return
+	}
+	assert false, 'truncated timestamp should produce error'
+}
+
+// test_binary_decode_truncated_partition: crafted message truncated in the partition field.
+// The partition field requires 4 bytes but we only supply 2, which should produce
+// an error instead of panicking.
+fn test_binary_decode_truncated_partition() {
+	bp := BinaryProtocol.new()
+
+	// Layout: [4:len][1:ver][1:type][2:corr=0][2:sender=0][8:ts][2:topic=0][2:partial_part]
+	// Total: 22 bytes (payload = 18 bytes)
+	mut buf := []u8{}
+	write_i32(mut buf, i32(0)) // placeholder length
+	buf << u8(1) // version
+	buf << u8(0) // msg_type = replicate
+	write_i16(mut buf, i16(0)) // empty correlation_id
+	write_i16(mut buf, i16(0)) // empty sender_id
+	write_i64(mut buf, i64(1000)) // full timestamp
+	write_i16(mut buf, i16(0)) // empty topic
+	buf << [u8(0), 0] // only 2 of 4 partition bytes
+
+	// Fix the length prefix
+	mut len_bytes := []u8{len: 4}
+	binary.big_endian_put_u32(mut len_bytes, u32(buf.len - 4))
+	buf[0] = len_bytes[0]
+	buf[1] = len_bytes[1]
+	buf[2] = len_bytes[2]
+	buf[3] = len_bytes[3]
+
+	bp.decode(buf) or {
+		assert err.msg().contains('insufficient data')
+		return
+	}
+	assert false, 'truncated partition should produce error'
+}
+
+// test_binary_decode_truncated_offset: crafted message truncated in the offset field.
+// The offset field requires 8 bytes but we only supply 4, which should produce
+// an error instead of panicking.
+fn test_binary_decode_truncated_offset() {
+	bp := BinaryProtocol.new()
+
+	// Layout: [4:len][1:ver][1:type][2:corr=0][2:sender=0][8:ts][2:topic=0][4:part][4:partial_off]
+	// Total: 28 bytes (payload = 24 bytes)
+	mut buf := []u8{}
+	write_i32(mut buf, i32(0)) // placeholder length
+	buf << u8(1) // version
+	buf << u8(0) // msg_type = replicate
+	write_i16(mut buf, i16(0)) // empty correlation_id
+	write_i16(mut buf, i16(0)) // empty sender_id
+	write_i64(mut buf, i64(1000)) // full timestamp
+	write_i16(mut buf, i16(0)) // empty topic
+	write_i32(mut buf, i32(42)) // full partition
+	buf << [u8(0), 0, 0, 0] // only 4 of 8 offset bytes
+
+	// Fix the length prefix
+	mut len_bytes := []u8{len: 4}
+	binary.big_endian_put_u32(mut len_bytes, u32(buf.len - 4))
+	buf[0] = len_bytes[0]
+	buf[1] = len_bytes[1]
+	buf[2] = len_bytes[2]
+	buf[3] = len_bytes[3]
+
+	bp.decode(buf) or {
+		assert err.msg().contains('insufficient data')
+		return
+	}
+	assert false, 'truncated offset should produce error'
+}
+
 // test_binary_encode_string_too_long: string exceeding 32767 bytes is rejected
 fn test_binary_encode_string_too_long() {
 	bp := BinaryProtocol.new()

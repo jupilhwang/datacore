@@ -50,17 +50,29 @@ fn write_bytes(mut buf []u8, data []u8) {
 // --- Read primitives ---
 
 // read_i16 reads a big-endian i16 at the given offset.
-fn read_i16(data []u8, offset int) i16 {
+// Returns error if insufficient data remains.
+fn read_i16(data []u8, offset int) !i16 {
+	if offset + 2 > data.len {
+		return error('insufficient data: need 2 bytes at offset ${offset}, have ${data.len}')
+	}
 	return i16(binary.big_endian_u16(data[offset..offset + 2]))
 }
 
 // read_i32 reads a big-endian i32 at the given offset.
-fn read_i32(data []u8, offset int) i32 {
+// Returns error if insufficient data remains.
+fn read_i32(data []u8, offset int) !i32 {
+	if offset + 4 > data.len {
+		return error('insufficient data: need 4 bytes at offset ${offset}, have ${data.len}')
+	}
 	return i32(binary.big_endian_u32(data[offset..offset + 4]))
 }
 
 // read_i64 reads a big-endian i64 at the given offset.
-fn read_i64(data []u8, offset int) i64 {
+// Returns error if insufficient data remains.
+fn read_i64(data []u8, offset int) !i64 {
+	if offset + 8 > data.len {
+		return error('insufficient data: need 8 bytes at offset ${offset}, have ${data.len}')
+	}
 	return i64(binary.big_endian_u64(data[offset..offset + 8]))
 }
 
@@ -70,7 +82,7 @@ fn read_string(data []u8, offset int) !(string, int) {
 	if offset + 2 > data.len {
 		return error('read_string: not enough data for length at offset ${offset}')
 	}
-	str_len := int(read_i16(data, offset))
+	str_len := int(read_i16(data, offset)!)
 	if str_len < 0 {
 		return error('negative string length: ${str_len}')
 	}
@@ -90,7 +102,7 @@ fn read_bytes(data []u8, offset int) !([]u8, int) {
 	if offset + 4 > data.len {
 		return error('read_bytes: not enough data for length at offset ${offset}')
 	}
-	data_len := int(read_i32(data, offset))
+	data_len := int(read_i32(data, offset)!)
 	if data_len < 0 {
 		return error('negative bytes length: ${data_len}')
 	}
@@ -110,6 +122,9 @@ fn read_bytes(data []u8, offset int) !([]u8, int) {
 fn decode_fields(data []u8, start_pos int) !domain.ReplicationMessage {
 	mut pos := start_pos
 
+	if pos >= data.len {
+		return error('insufficient data: need msg_type byte at offset ${pos}, have ${data.len}')
+	}
 	msg_type_byte := data[pos]
 	pos++
 	msg_type := decode_msg_type(msg_type_byte)!
@@ -120,18 +135,21 @@ fn decode_fields(data []u8, start_pos int) !domain.ReplicationMessage {
 	sender, sender_len := read_string(data, pos)!
 	pos += sender_len
 
-	ts := read_i64(data, pos)
+	ts := read_i64(data, pos)!
 	pos += 8
 
 	topic, topic_len := read_string(data, pos)!
 	pos += topic_len
 
-	partition := read_i32(data, pos)
+	partition := read_i32(data, pos)!
 	pos += 4
 
-	offset := read_i64(data, pos)
+	offset := read_i64(data, pos)!
 	pos += 8
 
+	if pos >= data.len {
+		return error('insufficient data: need success byte at offset ${pos}, have ${data.len}')
+	}
 	success := data[pos] == 1
 	pos++
 

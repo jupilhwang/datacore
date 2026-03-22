@@ -3,7 +3,6 @@
 module broker
 
 import domain
-import infra.observability
 import service.port
 import time
 
@@ -13,6 +12,7 @@ pub struct FetchUseCase {
 mut:
 	topic_storage  port.TopicStoragePort
 	record_storage port.RecordStoragePort
+	logger         port.LoggerPort
 }
 
 /// new_fetch_usecase creates a new FetchUseCase.
@@ -20,6 +20,7 @@ pub fn new_fetch_usecase(topic_storage port.TopicStoragePort, record_storage por
 	return &FetchUseCase{
 		topic_storage:  topic_storage
 		record_storage: record_storage
+		logger:         port.new_noop_logger()
 	}
 }
 
@@ -122,12 +123,7 @@ fn (mut u FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
 			timeout_ms * time.millisecond {
 				// Timeout reached - stop waiting for more responses
 				timed_out = true
-				observability.log_with_context('fetch', .warn, 'ParallelFetch', 'Parallel fetch timeout',
-					{
-					'timeout_ms':       timeout_ms.str()
-					'received':         received.str()
-					'total_partitions': req.partitions.len.str()
-				})
+				u.logger.warn('ParallelFetch: Parallel fetch timeout timeout_ms=${timeout_ms} received=${received} total_partitions=${req.partitions.len}')
 			}
 		}
 	}

@@ -3,7 +3,6 @@ module cluster
 
 import domain
 import service.port
-import infra.observability
 import sync
 import time
 
@@ -30,7 +29,7 @@ mut:
 	prev_time        i64
 	// Partition assignment service
 	partition_assigner ?&PartitionAssigner
-	logger             &observability.Logger
+	logger             port.LoggerPort
 	// Broker change callback
 	on_broker_change_cb ?fn (changes BrokerChanges)
 }
@@ -93,7 +92,7 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 		prev_bytes_out:      0
 		prev_time:           time.now().unix_milli()
 		partition_assigner:  none
-		logger:              observability.get_named_logger('broker_registry')
+		logger:              port.new_noop_logger()
 		on_broker_change_cb: none
 	}
 }
@@ -102,6 +101,11 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 /// This callback is periodically called in heartbeat_loop to collect actual server metrics.
 pub fn (mut r BrokerRegistry) set_metrics_provider(provider MetricsProvider) {
 	r.metrics_provider = provider
+}
+
+/// set_logger sets the logger for the broker registry.
+pub fn (mut r BrokerRegistry) set_logger(logger port.LoggerPort) {
+	r.logger = logger
 }
 
 /// set_partition_assigner sets the partition assignment service.
@@ -146,7 +150,7 @@ pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 				removed: []domain.BrokerInfo{}
 			}
 			r.on_broker_change(changes) or {
-				r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
+				r.logger.warn('Failed to handle broker change error=${err.str()}')
 			}
 
 			return registered
@@ -172,7 +176,7 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 		removed: [r.local_broker]
 	}
 	r.on_broker_change(changes) or {
-		r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
+		r.logger.warn('Failed to handle broker change error=${err.str()}')
 	}
 
 	// In multi-broker mode with distributed storage
@@ -304,7 +308,7 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 					removed: expired_brokers
 				}
 				r.on_broker_change(changes) or {
-					r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
+					r.logger.warn('Failed to handle broker change error=${err.str()}')
 				}
 			}
 
@@ -332,7 +336,7 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 			removed: expired_brokers
 		}
 		r.on_broker_change(changes) or {
-			r.logger.warn('Failed to handle broker change', observability.field_err_str(err.str()))
+			r.logger.warn('Failed to handle broker change error=${err.str()}')
 		}
 	}
 
@@ -362,15 +366,12 @@ fn (mut r BrokerRegistry) heartbeat_loop() {
 			domain.BrokerLoad{}
 		}
 
-		r.send_heartbeat(load) or {
-			r.logger.warn('Failed to send heartbeat', observability.field_err_str(err.str()))
-		}
+		r.send_heartbeat(load) or { r.logger.warn('Failed to send heartbeat error=${err.str()}') }
 
 		// Check for expired brokers
 		expired := r.check_expired_brokers() or { []i32{} }
 		if expired.len > 0 {
-			r.logger.info('Detected expired brokers', observability.field_int('count',
-				i64(expired.len)))
+			r.logger.info('Detected expired brokers count=${expired.len}')
 		}
 
 		time.sleep(interval)
@@ -411,9 +412,7 @@ pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 /// on_broker_change is called when the broker list changes.
 /// Note: Caller must already hold r.lock (internal use only).
 pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
-	r.logger.info('Broker change detected', observability.field_string('reason', changes.reason),
-		observability.field_int('added', i64(changes.added.len)), observability.field_int('removed',
-		i64(changes.removed.len)))
+	r.logger.info('Broker change detected reason=${changes.reason} added=${changes.added.len} removed=${changes.removed.len}')
 
 	// Call callback
 	if cb := r.on_broker_change_cb {
@@ -461,8 +460,7 @@ pub fn (mut r BrokerRegistry) trigger_rebalance_for_topic(topic_name string) ! {
 			return error('rebalance failed: ${err}')
 		}
 
-		r.logger.info('Rebalance completed for topic', observability.field_string('topic',
-			topic_name))
+		r.logger.info('Rebalance completed for topic topic=${topic_name}')
 	} else {
 		return error('partition assigner not configured')
 	}

@@ -370,7 +370,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 
 	mut pos := 0
 
-	key_len := int(common.read_i32_be(data[pos..pos + 4]))
+	key_len := int(common.read_i32_be(data[pos..pos + 4])!)
 	pos += 4
 	if pos + key_len > data.len {
 		return error('Invalid key length')
@@ -381,7 +381,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	if pos + 4 > data.len {
 		return error('Data too short for value length')
 	}
-	val_len := int(common.read_i32_be(data[pos..pos + 4]))
+	val_len := int(common.read_i32_be(data[pos..pos + 4])!)
 	pos += 4
 	if pos + val_len > data.len {
 		return error('Invalid value length')
@@ -392,13 +392,13 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	if pos + 8 > data.len {
 		return error('Data too short for timestamp')
 	}
-	timestamp := common.read_i64_be(data[pos..pos + 8])
+	timestamp := common.read_i64_be(data[pos..pos + 8])!
 	pos += 8
 
 	if pos + 4 > data.len {
 		return error('Data too short for header count')
 	}
-	header_count := int(common.read_i32_be(data[pos..pos + 4]))
+	header_count := int(common.read_i32_be(data[pos..pos + 4])!)
 	pos += 4
 
 	mut headers := map[string][]u8{}
@@ -406,7 +406,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 		if pos + 2 > data.len {
 			return error('Data too short for header key length')
 		}
-		hk_len := int(common.read_i16_be(data[pos..pos + 2]))
+		hk_len := int(common.read_i16_be(data[pos..pos + 2])!)
 		pos += 2
 		if pos + hk_len > data.len {
 			return error('Invalid header key length')
@@ -417,7 +417,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 		if pos + 2 > data.len {
 			return error('Data too short for header value length')
 		}
-		hv_len := int(common.read_i16_be(data[pos..pos + 2]))
+		hv_len := int(common.read_i16_be(data[pos..pos + 2])!)
 		pos += 2
 		if pos + hv_len > data.len {
 			return error('Invalid header value length')
