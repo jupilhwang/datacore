@@ -3,15 +3,19 @@ module replication
 import domain
 import time
 
+// Replica Buffer Storage
+//
+// This file encapsulates all replica buffer operations.
+// Protected data group: replica_buffers map + replica_buffers_lock + total_buffer_bytes
+//
+// Lock ordering position: 3rd (assignments_lock -> broker_health_lock -> replica_buffers_lock -> stats_lock)
+
 // store_replica_buffer stores replicated record data in the in-memory buffer.
 // Thread-safe; uses replica_buffers_lock internally.
 // Buffers are keyed by "topic:partition" and appended in arrival order.
 //
 // Returns an error if the buffer size limit (max_replica_buffer_size_bytes) would be exceeded.
 // TTL-expired messages are pruned from the partition buffer before the size check.
-//
-// Parameters:
-// - buffer: ReplicaBuffer containing the replicated data to store
 /// store_replica_buffer stores replicated record data in the in-memory buffer.
 pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 	key := '${buffer.topic}:${buffer.partition}'
@@ -44,12 +48,10 @@ pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 	if m.config.max_replica_buffer_size_bytes > 0 {
 		if m.total_buffer_bytes + i64(buffer.records_data.len) > m.config.max_replica_buffer_size_bytes {
 			m.replica_buffers_lock.unlock()
-			m.stats_lock.@lock()
 			if ttl_dropped > 0 {
-				m.stats.record_ttl_dropped(ttl_dropped)
+				m.record_stats_ttl_dropped(ttl_dropped)
 			}
-			m.stats.record_buffer_overflow()
-			m.stats_lock.unlock()
+			m.record_stats_buffer_overflow()
 			if ttl_dropped > 0 {
 				m.logger.warn('TTL: dropped ${ttl_dropped} expired buffer(s) from ${key}')
 			}
@@ -61,11 +63,9 @@ pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 	m.total_buffer_bytes += i64(buffer.records_data.len)
 	m.replica_buffers_lock.unlock()
 
-	m.stats_lock.@lock()
 	if ttl_dropped > 0 {
-		m.stats.record_ttl_dropped(ttl_dropped)
+		m.record_stats_ttl_dropped(ttl_dropped)
 	}
-	m.stats_lock.unlock()
 
 	if ttl_dropped > 0 {
 		m.logger.warn('TTL: dropped ${ttl_dropped} expired buffer(s) from ${key} before insert')
@@ -76,11 +76,6 @@ pub fn (mut m Manager) store_replica_buffer(buffer domain.ReplicaBuffer) ! {
 // delete_replica_buffer removes all buffered replicas with offset <= the given offset.
 // Called when a FLUSH_ACK is received, confirming S3 persistence.
 // Thread-safe; uses replica_buffers_lock internally.
-//
-// Parameters:
-// - topic: topic name
-// - partition: partition index
-// - offset: flush offset; buffers with offset <= this value are removed
 /// delete_replica_buffer removes all buffered replicas with offset <= the given offset.
 pub fn (mut m Manager) delete_replica_buffer(topic string, partition i32, offset i64) ! {
 	key := '${topic}:${partition}'
@@ -106,8 +101,6 @@ pub fn (mut m Manager) delete_replica_buffer(topic string, partition i32, offset
 // across all topic:partition keys. Intended for crash recovery scenarios
 // where buffered data needs to be replayed.
 // Thread-safe; uses replica_buffers_lock internally.
-//
-// Returns: list of all ReplicaBuffer entries currently held in memory
 /// get_all_replica_buffers returns a flat list of all in-memory replica buffers.
 pub fn (mut m Manager) get_all_replica_buffers() ![]domain.ReplicaBuffer {
 	m.replica_buffers_lock.@lock()

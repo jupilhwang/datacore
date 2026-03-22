@@ -1,5 +1,13 @@
 # DataCore Changelog
 
+## v0.50.8 - 2026-03-23
+
+### Refactoring (God Class Decomposition)
+- Handler: Introduced HandlerContext + 7 sub-handler structs (ProduceSubHandler, FetchSubHandler, AuthSubHandler, TransactionSubHandler, GroupSubHandler, AdminSubHandler, ShareGroupSubHandler)
+- Replication Manager: Extracted BrokerHealthTracker (92L), ReplicationStatsCollector (141L), ReplicaAssignmentStore (129L) from 586L Manager
+- BrokerRegistry: Split into broker_registry.v (233L), broker_registry_heartbeat.v (133L), broker_registry_queries.v (119L)
+- 13 new focused files created, all under 200 lines
+
 ## v0.50.7 - 2026-03-23
 
 ### ISP Consumer Migration
