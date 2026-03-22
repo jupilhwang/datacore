@@ -560,6 +560,12 @@ fn (mut m Manager) create_handler() MessageHandler {
 
 				m.logger.info('Sending ${recovery_data.len} buffered record(s) for recovery of ${key}')
 
+				// Concatenate all buffered records_data into a single byte slice
+				mut combined := []u8{}
+				for rd in recovery_data {
+					combined << rd.records_data
+				}
+
 				return domain.ReplicationMessage{
 					msg_type:       domain.ReplicationType.replicate_ack
 					correlation_id: msg.correlation_id
@@ -568,6 +574,7 @@ fn (mut m Manager) create_handler() MessageHandler {
 					topic:          msg.topic
 					partition:      msg.partition
 					offset:         msg.offset
+					records_data:   combined
 					success:        true
 				}
 			}

@@ -4,6 +4,7 @@ module transaction
 
 import domain
 import service.port
+import sync
 import time
 import rand
 
@@ -15,9 +16,11 @@ const error_invalid_producer_epoch = i16(1)
 
 /// TransactionCoordinator manages transactional producers and transactions.
 /// Responsible for beginning transactions, adding partitions, and commit/rollback.
+/// Thread-safe: all public methods are guarded by an internal mutex.
 pub struct TransactionCoordinator {
 mut:
 	store port.TransactionStore
+	mtx   sync.Mutex
 }
 
 /// new_transaction_coordinator creates a new transaction coordinator.
@@ -29,6 +32,10 @@ pub fn new_transaction_coordinator(store port.TransactionStore) &TransactionCoor
 
 /// get_transaction returns transaction metadata for the given transactional_id.
 pub fn (mut c TransactionCoordinator) get_transaction(transactional_id string) !domain.TransactionMetadata {
+	c.mtx.@lock()
+	defer {
+		c.mtx.unlock()
+	}
 	return c.store.get_transaction(transactional_id)
 }
 
@@ -38,6 +45,16 @@ pub fn (mut c TransactionCoordinator) get_transaction(transactional_id string) !
 /// producer_id: existing producer ID (-1 to create a new one)
 /// producer_epoch: existing producer epoch
 pub fn (mut c TransactionCoordinator) init_producer_id(transactional_id ?string, transaction_timeout_ms i32, producer_id i64, producer_epoch i16) !domain.InitProducerIdResult {
+	c.mtx.@lock()
+	defer {
+		c.mtx.unlock()
+	}
+	return c.init_producer_id_unlocked(transactional_id, transaction_timeout_ms, producer_id,
+		producer_epoch)
+}
+
+/// init_producer_id_unlocked is the internal implementation without locking.
+fn (mut c TransactionCoordinator) init_producer_id_unlocked(transactional_id ?string, transaction_timeout_ms i32, producer_id i64, producer_epoch i16) !domain.InitProducerIdResult {
 	// 1. Idempotent producer (no transactional_id)
 	if transactional_id == none {
 		// Generate a new producer ID
@@ -84,7 +101,12 @@ pub fn (mut c TransactionCoordinator) init_producer_id(transactional_id ?string,
 	// Existing transaction - increment epoch
 	// If a transaction is in progress, it must be rolled back (implicit rollback)
 	// Currently only increments the epoch and resets the state
-	new_epoch := metadata.producer_epoch + 1
+	// Wrap around to 0 when reaching i16 max to prevent overflow
+	new_epoch := if metadata.producer_epoch >= i16(32767) {
+		i16(0)
+	} else {
+		metadata.producer_epoch + 1
+	}
 
 	updated_meta := domain.TransactionMetadata{
 		...metadata
@@ -105,6 +127,11 @@ pub fn (mut c TransactionCoordinator) init_producer_id(transactional_id ?string,
 /// add_partitions_to_txn adds partitions to a transaction.
 /// Registers the list of topic/partitions to be included in the transaction.
 pub fn (mut c TransactionCoordinator) add_partitions_to_txn(transactional_id string, producer_id i64, producer_epoch i16, partitions []domain.TopicPartition) ! {
+	c.mtx.@lock()
+	defer {
+		c.mtx.unlock()
+	}
+
 	// 1. Retrieve transaction metadata
 	mut meta := c.store.get_transaction(transactional_id) or {
 		return error('transactional_id not found: ${transactional_id}')
@@ -145,6 +172,11 @@ pub fn (mut c TransactionCoordinator) add_partitions_to_txn(transactional_id str
 /// add_offsets_to_txn adds consumer group offsets to a transaction.
 /// Offsets will be committed together when the transaction is committed.
 pub fn (mut c TransactionCoordinator) add_offsets_to_txn(transactional_id string, producer_id i64, producer_epoch i16, group_id string) ! {
+	c.mtx.@lock()
+	defer {
+		c.mtx.unlock()
+	}
+
 	// 1. Retrieve transaction metadata
 	mut meta := c.store.get_transaction(transactional_id) or {
 		return error('transactional_id not found: ${transactional_id}')
@@ -215,6 +247,16 @@ fn contains_topic_partition(list []domain.TopicPartition, tp domain.TopicPartiti
 /// For each marker, validates the producer_id against known transactions.
 /// Returns per-partition results indicating success or failure.
 pub fn (mut c TransactionCoordinator) write_txn_markers(markers []domain.WriteTxnMarker) []domain.WriteTxnMarkerResult {
+	c.mtx.@lock()
+	defer {
+		c.mtx.unlock()
+	}
+	return c.write_txn_markers_unlocked(markers)
+}
+
+/// write_txn_markers_unlocked is the internal implementation without locking.
+/// Called by both write_txn_markers (with lock) and end_txn (already locked).
+fn (mut c TransactionCoordinator) write_txn_markers_unlocked(markers []domain.WriteTxnMarker) []domain.WriteTxnMarkerResult {
 	mut results := []domain.WriteTxnMarkerResult{}
 	for marker in markers {
 		results << c.process_single_marker(marker)
@@ -313,6 +355,11 @@ fn build_end_txn_markers(meta domain.TransactionMetadata, result domain.Transact
 /// end_txn ends a transaction (commit or rollback).
 /// Transitions the transaction state: Prepare -> Complete -> Empty.
 pub fn (mut c TransactionCoordinator) end_txn(transactional_id string, producer_id i64, producer_epoch i16, result domain.TransactionResult) ! {
+	c.mtx.@lock()
+	defer {
+		c.mtx.unlock()
+	}
+
 	// 1. Retrieve transaction metadata
 	mut meta := c.store.get_transaction(transactional_id) or {
 		return error('transactional_id not found: ${transactional_id}')
@@ -355,8 +402,9 @@ pub fn (mut c TransactionCoordinator) end_txn(transactional_id string, producer_
 	// Write transaction markers to all partitions in the transaction.
 	// The coordinator validates marker metadata; physical record writing
 	// is handled at the infrastructure layer (handler).
+	// Uses unlocked variant since end_txn already holds the mutex.
 	markers := build_end_txn_markers(meta, result)
-	c.write_txn_markers(markers)
+	c.write_txn_markers_unlocked(markers)
 
 	// Transition to complete state
 	complete_state := if result == .commit {

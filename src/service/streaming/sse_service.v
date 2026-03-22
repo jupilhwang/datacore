@@ -6,7 +6,7 @@ import domain
 import service.port
 import sync
 import time
-import infra.performance.core
+import common
 
 // SSE Service
 
@@ -559,12 +559,12 @@ fn encode_message_data(data domain.SSEMessageData) string {
 	json += ',"timestamp":${data.timestamp}'
 
 	if key := data.key {
-		json += ',"key":"${core.escape_json_string(key)}"'
+		json += ',"key":"${common.escape_json_string(key)}"'
 	} else {
 		json += ',"key":null'
 	}
 
-	json += ',"value":"${core.escape_json_string(data.value)}"'
+	json += ',"value":"${common.escape_json_string(data.value)}"'
 
 	// Headers
 	json += ',"headers":{'
@@ -573,7 +573,7 @@ fn encode_message_data(data domain.SSEMessageData) string {
 		if !first {
 			json += ','
 		}
-		json += '"${core.escape_json_string(k)}":"${core.escape_json_string(v)}"'
+		json += '"${common.escape_json_string(k)}":"${common.escape_json_string(v)}"'
 		first = false
 	}
 	json += '}'

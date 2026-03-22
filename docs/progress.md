@@ -353,3 +353,11 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - Fixed stale version string in health_handler.v (0.44.1 -> 0.50.2)
 - QA: 123/123 test files pass, 1,675 test functions, build SUCCESS, lint CLEAN
 
+## v0.50.4 Code Review Auto-Fixes (2026-03-22)
+- config.v 969 -> 218 lines (5 files: parse, save, validate, cli, credentials)
+- metrics_helpers.v new_datacore_metrics() 296 -> 47 lines (12 extracted sub-functions)
+- domain/grpc.v Clean Architecture fix: common/binary_utils.v extracted, 6 service/domain files updated
+- coordinator.v: i16 epoch overflow + Mutex for thread safety
+- manager.v: recovery handler now returns buffered data
+- Review score: D (69.6) -> C (74.5), target: B (80+)
+

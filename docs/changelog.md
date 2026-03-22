@@ -1,5 +1,16 @@
 # DataCore Changelog
 
+## v0.50.4 (2026-03-22)
+### Refactoring
+- config.v God File split: 969 lines -> 5 files (config.v 218, config_parse.v 300, config_save.v 259, config_validate.v 76, config_cli.v 92)
+- metrics_helpers.v: decomposed 296-line new_datacore_metrics() into 12 sub-functions (largest: 47 lines)
+- Fixed Clean Architecture violation: domain/grpc.v no longer imports infra layer; extracted common/binary_utils.v
+
+### Bug Fixes
+- Fixed i16 producer_epoch overflow in TransactionCoordinator (wraps at 32767 -> 0)
+- Added sync.Mutex to TransactionCoordinator for thread-safe state transitions
+- Fixed recovery handler in ReplicationManager to return buffered data (was returning empty ACK)
+
 ## v0.50.3 (2026-03-22) - Post-Merge Refactoring
 
 ### Refactoring
