@@ -1,4 +1,4 @@
-module io
+module sysio
 
 // dma.v tests - DMA and Scatter-Gather I/O
 import os

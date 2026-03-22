@@ -9,19 +9,19 @@ import log
 /// Client sends replication messages to remote brokers.
 pub struct Client {
 mut:
-	protocol   Protocol
-	timeout_ms int
-	logger     log.Logger
-	pool       &ConnectionPool = unsafe { nil }
+	binary_protocol BinaryProtocol
+	timeout_ms      int
+	logger          log.Logger
+	pool            &ConnectionPool = unsafe { nil }
 }
 
 // Client.new creates a new replication Client with the given timeout in milliseconds.
 /// Client.
 pub fn Client.new(timeout_ms int) &Client {
 	return &Client{
-		protocol:   Protocol.new()
-		timeout_ms: timeout_ms
-		logger:     log.Log{}
+		binary_protocol: BinaryProtocol.new()
+		timeout_ms:      timeout_ms
+		logger:          log.Log{}
 	}
 }
 
@@ -29,10 +29,10 @@ pub fn Client.new(timeout_ms int) &Client {
 /// Client.new_with_pool creates a Client that reuses TCP connections from the given pool.
 pub fn Client.new_with_pool(timeout_ms int, pool &ConnectionPool) &Client {
 	return &Client{
-		protocol:   Protocol.new()
-		timeout_ms: timeout_ms
-		logger:     log.Log{}
-		pool:       pool
+		binary_protocol: BinaryProtocol.new()
+		timeout_ms:      timeout_ms
+		logger:          log.Log{}
+		pool:            pool
 	}
 }
 
@@ -67,14 +67,15 @@ fn (mut c Client) send_direct(broker_address string, msg domain.ReplicationMessa
 		conn.close() or { c.logger.error('Failed to close connection: ${err}') }
 	}
 
-	conn.set_read_timeout(time.Duration(c.timeout_ms * time.millisecond))
 	conn.set_write_timeout(time.Duration(c.timeout_ms * time.millisecond))
 
-	c.protocol.write_message(mut conn, msg) or { return error('failed to write message: ${err}') }
+	c.binary_protocol.write_message(mut conn, msg) or {
+		return error('failed to write message: ${err}')
+	}
 
 	c.logger.debug('Sent ${msg.msg_type} to ${broker_address}')
 
-	response := c.protocol.read_message(mut conn) or {
+	response := c.binary_protocol.read_message(mut conn, i64(c.timeout_ms)) or {
 		return error('failed to read response: ${err}')
 	}
 
@@ -90,17 +91,16 @@ fn (mut c Client) send_pooled(broker_address string, msg domain.ReplicationMessa
 	mut pool := c.pool
 	mut pc := pool.acquire(broker_address)!
 
-	pc.conn.set_read_timeout(time.Duration(c.timeout_ms * time.millisecond))
 	pc.conn.set_write_timeout(time.Duration(c.timeout_ms * time.millisecond))
 
-	c.protocol.write_message(mut pc.conn, msg) or {
+	c.binary_protocol.write_message(mut pc.conn, msg) or {
 		pc.conn.close() or {}
 		return error('failed to write message: ${err}')
 	}
 
 	c.logger.debug('Sent ${msg.msg_type} to ${broker_address}')
 
-	response := c.protocol.read_message(mut pc.conn) or {
+	response := c.binary_protocol.read_message(mut pc.conn, i64(c.timeout_ms)) or {
 		pc.conn.close() or {}
 		return error('failed to read response: ${err}')
 	}

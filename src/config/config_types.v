@@ -26,6 +26,14 @@ const default_max_memory_mb = 20480 // 20 GB
 const default_max_connections = 10000
 const default_rest_max_connections = 1000
 
+// -- Rate limiter defaults --
+const default_rate_limit_max_requests_per_sec = 1000
+const default_rate_limit_max_bytes_per_sec = i64(104857600) // 100 MB/s
+const default_rate_limit_per_ip_max_requests_per_sec = 200
+const default_rate_limit_per_ip_max_connections = 50
+const default_rate_limit_burst_multiplier = 1.5
+const default_rate_limit_window_ms = 1000
+
 // -- Timeouts and intervals (milliseconds) --
 const default_request_timeout_ms = 30000 // 30 seconds
 
@@ -118,6 +126,7 @@ pub:
 /// request_timeout_ms: request timeout (milliseconds)
 /// idle_timeout_ms: idle connection timeout (milliseconds)
 /// advertised_host: host address to advertise to clients
+/// rate_limit: rate limiter configuration
 pub struct BrokerConfig {
 pub:
 	host               string = '0.0.0.0'
@@ -129,6 +138,26 @@ pub:
 	request_timeout_ms int    = default_request_timeout_ms
 	idle_timeout_ms    int    = default_idle_timeout_ms
 	advertised_host    string = '127.0.0.1'
+	rate_limit         RateLimitConfig
+}
+
+/// RateLimitConfig represents rate limiter configuration for the broker.
+/// enabled: whether rate limiting is active (default: false for backward compatibility)
+/// max_requests_per_sec: global maximum requests per second
+/// max_bytes_per_sec: global maximum bytes per second
+/// per_ip_max_requests_per_sec: per-IP maximum requests per second
+/// per_ip_max_connections: per-IP maximum concurrent connections
+/// burst_multiplier: token bucket burst capacity multiplier
+/// window_ms: rate limiting window size in milliseconds
+pub struct RateLimitConfig {
+pub:
+	enabled                     bool
+	max_requests_per_sec        int = default_rate_limit_max_requests_per_sec
+	max_bytes_per_sec           i64 = default_rate_limit_max_bytes_per_sec
+	per_ip_max_requests_per_sec int = default_rate_limit_per_ip_max_requests_per_sec
+	per_ip_max_connections      int = default_rate_limit_per_ip_max_connections
+	burst_multiplier            f64 = default_rate_limit_burst_multiplier
+	window_ms                   int = default_rate_limit_window_ms
 }
 
 /// GrpcGatewayConfig represents the gRPC gateway configuration.

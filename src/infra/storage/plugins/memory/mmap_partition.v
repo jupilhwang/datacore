@@ -10,7 +10,7 @@ module memory
 
 import os
 import time
-import infra.performance.io
+import infra.performance.sysio
 
 /// MmapPartitionStore is an mmap-based partition storage.
 /// Each partition consists of multiple segments managed via mmap.
@@ -20,8 +20,8 @@ pub:
 	partition  int
 	base_dir   string
 mut:
-	segments       []&io.LogSegmentMmap
-	active_segment ?&io.LogSegmentMmap
+	segments       []&sysio.LogSegmentMmap
+	active_segment ?&sysio.LogSegmentMmap
 	base_offset    i64
 	high_watermark i64
 	segment_size   i64
@@ -67,7 +67,7 @@ pub fn new_mmap_partition(config MmapPartitionConfig) !&MmapPartitionStore {
 		topic_name:     config.topic_name
 		partition:      config.partition
 		base_dir:       partition_dir
-		segments:       []&io.LogSegmentMmap{}
+		segments:       []&sysio.LogSegmentMmap{}
 		active_segment: none
 		base_offset:    0
 		high_watermark: 0
@@ -103,7 +103,7 @@ fn (mut s MmapPartitionStore) load_existing_segments() ! {
 		base_name := file.replace('.log', '')
 		base_offset := base_name.i64()
 
-		segment := io.LogSegmentMmap.open(s.base_dir, base_offset) or {
+		segment := sysio.LogSegmentMmap.open(s.base_dir, base_offset) or {
 			eprintln('[MmapPartition] Failed to open segment ${file}: ${err}')
 			continue
 		}
@@ -130,7 +130,7 @@ fn (mut s MmapPartitionStore) create_new_segment() ! {
 	// The base_offset of the new segment is the current high_watermark
 	base_offset := s.high_watermark
 
-	segment := io.LogSegmentMmap.create(s.base_dir, base_offset, s.segment_size) or {
+	segment := sysio.LogSegmentMmap.create(s.base_dir, base_offset, s.segment_size) or {
 		return error('failed to create segment: ${err}')
 	}
 

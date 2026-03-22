@@ -242,8 +242,8 @@ fn test_server_multiple_messages() {
 
 	time.sleep(time.Duration(100 * time.millisecond))
 
-	// Protocol을 직접 사용하여 하나의 연결에서 여러 메시지 전송
-	p := Protocol.new()
+	// BinaryProtocol을 직접 사용하여 하나의 연결에서 여러 메시지 전송
+	bp := BinaryProtocol.new()
 	mut conn := net.dial_tcp('127.0.0.1:19208') or {
 		server.stop() or {}
 		assert false, '연결 실패: ${err}'
@@ -264,14 +264,14 @@ fn test_server_multiple_messages() {
 			offset:         i64(i * 10)
 		}
 
-		p.write_message(mut conn, msg) or {
+		bp.write_message(mut conn, msg) or {
 			conn.close() or {}
 			server.stop() or {}
 			assert false, 'write_message 실패 (${i}): ${err}'
 			return
 		}
 
-		response := p.read_message(mut conn) or {
+		response := bp.read_message(mut conn, 3000) or {
 			conn.close() or {}
 			server.stop() or {}
 			assert false, 'read_message 실패 (${i}): ${err}'

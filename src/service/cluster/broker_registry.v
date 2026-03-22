@@ -30,9 +30,7 @@ mut:
 	prev_time        i64
 	// Partition assignment service
 	partition_assigner ?&PartitionAssigner
-	// Rebalance trigger for automated partition redistribution
-	rebalance_trigger ?&RebalanceTrigger
-	logger            &observability.Logger
+	logger             &observability.Logger
 	// Broker change callback
 	on_broker_change_cb ?fn (changes BrokerChanges)
 }
@@ -95,7 +93,6 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 		prev_bytes_out:      0
 		prev_time:           time.now().unix_milli()
 		partition_assigner:  none
-		rebalance_trigger:   none
 		logger:              observability.get_named_logger('broker_registry')
 		on_broker_change_cb: none
 	}
@@ -114,15 +111,6 @@ pub fn (mut r BrokerRegistry) set_partition_assigner(assigner &PartitionAssigner
 
 	r.partition_assigner = assigner
 	r.logger.info('Partition assigner registered')
-}
-
-/// set_rebalance_trigger sets the rebalance trigger for automated partition redistribution.
-pub fn (mut r BrokerRegistry) set_rebalance_trigger(trigger &RebalanceTrigger) {
-	r.lock.@lock()
-	defer { r.lock.unlock() }
-
-	r.rebalance_trigger = trigger
-	r.logger.info('Rebalance trigger registered')
 }
 
 /// set_on_broker_change sets the callback to be called when a broker changes.
@@ -421,7 +409,6 @@ pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 }
 
 /// on_broker_change is called when the broker list changes.
-/// Triggers partition rebalancing and calls the callback.
 /// Note: Caller must already hold r.lock (internal use only).
 pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 	r.logger.info('Broker change detected', observability.field_string('reason', changes.reason),
@@ -433,29 +420,7 @@ pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 		spawn cb(changes)
 	}
 
-	// Trigger rebalancing if partition assigner is configured
-	if r.partition_assigner != none {
-		// Get list of active brokers
-		active_brokers := r.list_active_brokers_internal() or { []domain.BrokerInfo{} }
-
-		if active_brokers.len == 0 {
-			r.logger.warn('No active brokers available for rebalance')
-			return
-		}
-
-		// Delegate to rebalance trigger if available
-		if mut trigger := r.rebalance_trigger {
-			for broker in changes.added {
-				trigger.on_broker_added(broker.broker_id)
-			}
-			for broker in changes.removed {
-				trigger.on_broker_removed(broker.broker_id)
-			}
-		} else {
-			r.logger.info('No rebalance trigger configured, skipping partition rebalance',
-				observability.field_int('active_brokers', i64(active_brokers.len)))
-		}
-	}
+	// TODO(jira#XXX): Perform rebalancing for all topics
 
 	return
 }

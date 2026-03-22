@@ -277,6 +277,91 @@ fn test_detect_sasl_mechanism_empty() {
 	assert result == domain.SaslMechanism.plain
 }
 
+// -- 감사 로그 연동 헬퍼 --
+
+fn create_sasl_handler_with_audit_logger() (kafka.Handler, &infra_auth.AuditLogger) {
+	storage := SaslMockStorage{}
+	mut user_store := infra_auth.new_memory_user_store()
+	user_store.create_user('admin', 'adminpass', .plain) or {}
+	auth_service := auth.new_auth_service(user_store, [.plain])
+	cs := compression.new_default_compression_service() or {
+		panic('compression service creation failed: ${err}')
+	}
+	audit_logger := infra_auth.new_audit_logger(true)
+	mut handler := kafka.new_handler_with_auth(1, '127.0.0.1', 9092, 'test-cluster', storage,
+		auth_service, cs)
+	handler.set_audit_logger(audit_logger)
+	return handler, audit_logger
+}
+
+// -- 감사 로그 연동 테스트 --
+
+fn test_sasl_authenticate_success_logs_audit_event() {
+	mut handler, mut audit_logger := create_sasl_handler_with_audit_logger()
+	auth_bytes := build_plain_auth('', 'admin', 'adminpass')
+	req := build_sasl_authenticate_request(300, 0, auth_bytes)
+
+	mut conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(req, mut conn) or {
+		panic('request processing failed: ${err}')
+	}
+
+	// Verify auth succeeded
+	mut reader := kafka.new_reader(response)
+	_ := reader.read_i32()! // size
+	_ := reader.read_i32()! // correlation_id
+	error_code := reader.read_i16()!
+	assert error_code == 0
+
+	// Verify audit event was logged
+	events := audit_logger.get_recent_events(10)
+	assert events.len == 1
+	assert events[0].event_type == .authentication_success
+	assert events[0].principal == 'admin'
+	assert events[0].operation == 'PLAIN'
+}
+
+fn test_sasl_authenticate_failure_logs_audit_event() {
+	mut handler, mut audit_logger := create_sasl_handler_with_audit_logger()
+	auth_bytes := build_plain_auth('', 'admin', 'wrongpass')
+	req := build_sasl_authenticate_request(301, 0, auth_bytes)
+
+	mut conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(req, mut conn) or {
+		panic('request processing failed: ${err}')
+	}
+
+	// Verify auth failed
+	mut reader := kafka.new_reader(response)
+	_ := reader.read_i32()! // size
+	_ := reader.read_i32()! // correlation_id
+	error_code := reader.read_i16()!
+	assert error_code == 58 // SASL_AUTHENTICATION_FAILED
+
+	// Verify audit event was logged
+	events := audit_logger.get_recent_events(10)
+	assert events.len == 1
+	assert events[0].event_type == .authentication_failure
+}
+
+fn test_sasl_handler_without_audit_logger_backward_compat() {
+	// Handler without audit_logger should work identically to before
+	mut handler := create_sasl_handler_plain_only()
+	auth_bytes := build_plain_auth('', 'admin', 'adminpass')
+	req := build_sasl_authenticate_request(302, 0, auth_bytes)
+
+	mut conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(req, mut conn) or {
+		panic('request processing failed: ${err}')
+	}
+
+	mut reader := kafka.new_reader(response)
+	_ := reader.read_i32()! // size
+	_ := reader.read_i32()! // correlation_id
+	error_code := reader.read_i16()!
+	assert error_code == 0 // Auth succeeds without audit logger
+}
+
 // -- SaslMockStorage: 최소한의 StoragePort 구현 --
 
 struct SaslMockStorage {}

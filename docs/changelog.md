@@ -1,5 +1,23 @@
 # DataCore Changelog
 
+## v0.50.1 (2026-03-22)
+
+### Removed
+- ISR Manager, Rebalance Trigger, Partition Leader Election -- incompatible with stateless architecture
+
+### Changed
+- Replication protocol migrated from JSON to compact binary format (reduced wire size, improved throughput)
+- `infra/performance/io/` renamed to `sysio/` to resolve V 0.5 stdlib module name collision
+
+### Added
+- `[broker.rate_limit]` configuration section in config.toml (disabled by default)
+- Audit logger wired into SASL authentication handlers
+- Binary replication integration tests (client-server roundtrip, wire format verification)
+
+### Fixed
+- infra/performance V 0.5 compatibility: all 8 test files now pass (previously 5 failures)
+- http_exporter.v adapted to V 0.5 stdlib (removed io.new_buffered_reader usage)
+
 ## v0.50.0 (2026-03-22) - Comprehensive Architecture Improvement
 
 ### Test Coverage

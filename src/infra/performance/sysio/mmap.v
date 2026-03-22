@@ -1,6 +1,6 @@
 /// Memory-mapped file I/O for high-performance storage
 /// Provides efficient file access using OS-level memory mapping
-module io
+module sysio
 
 import os
 import time

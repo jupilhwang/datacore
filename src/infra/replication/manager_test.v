@@ -31,6 +31,7 @@ fn create_test_manager() &Manager {
 	mut m := &Manager{
 		broker_id:           'broker-test-1'
 		config:              config
+		binary_protocol:     BinaryProtocol.new()
 		server:              Server.new(config.replication_port, handler)
 		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
@@ -380,6 +381,7 @@ fn test_manager_worker_lifecycle() {
 	mut m := &Manager{
 		broker_id:           'broker-lifecycle'
 		config:              config
+		binary_protocol:     BinaryProtocol.new()
 		server:              Server.new(config.replication_port, handler)
 		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
@@ -527,6 +529,7 @@ fn test_assign_replicas_excludes_self_by_broker_id() {
 	mut m := &Manager{
 		broker_id:           'self-broker'
 		config:              config
+		binary_protocol:     BinaryProtocol.new()
 		server:              Server.new(config.replication_port, handler)
 		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
@@ -582,6 +585,7 @@ fn test_assign_replicas_legacy_addr_fallback() {
 	mut m := &Manager{
 		broker_id:       'legacy-broker'
 		config:          config
+		binary_protocol: BinaryProtocol.new()
 		server:          Server.new(config.replication_port, handler)
 		client:          Client.new(config.replica_timeout_ms)
 		replica_buffers: map[string][]domain.ReplicaBuffer{}

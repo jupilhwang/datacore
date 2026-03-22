@@ -10,13 +10,14 @@ import log
 /// Server handles incoming replication connections.
 pub struct Server {
 mut:
-	port     int
-	listener net.TcpListener
-	protocol Protocol
-	handler  MessageHandler = unsafe { nil }
-	running  bool
-	mtx      sync.Mutex
-	logger   log.Logger
+	port            int
+	listener        net.TcpListener
+	binary_protocol BinaryProtocol
+	handler         MessageHandler = unsafe { nil }
+	running         bool
+	read_timeout_ms i64
+	mtx             sync.Mutex
+	logger          log.Logger
 }
 
 // MessageHandler is a callback interface for handling messages
@@ -27,11 +28,12 @@ pub type MessageHandler = fn (domain.ReplicationMessage) !domain.ReplicationMess
 /// Server.
 pub fn Server.new(port int, handler MessageHandler) &Server {
 	return &Server{
-		port:     port
-		protocol: Protocol.new()
-		handler:  handler
-		running:  false
-		logger:   log.Log{}
+		port:            port
+		binary_protocol: BinaryProtocol.new()
+		handler:         handler
+		running:         false
+		read_timeout_ms: 30000
+		logger:          log.Log{}
 	}
 }
 
@@ -102,8 +104,8 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 	s.logger.debug('Accepted connection from ${remote_addr}')
 
 	for {
-		// Read message
-		msg := s.protocol.read_message(mut conn) or {
+		// Read message using binary protocol
+		msg := s.binary_protocol.read_message(mut conn, s.read_timeout_ms) or {
 			if err.msg().contains('EOF') || err.msg().contains('closed') {
 				s.logger.debug('Connection closed by ${remote_addr}')
 			} else {
@@ -131,14 +133,14 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				error_msg:      err.msg()
 			}
 
-			s.protocol.write_message(mut conn, error_response) or {
+			s.binary_protocol.write_message(mut conn, error_response) or {
 				s.logger.error('Failed to send error response: ${err}')
 			}
 			continue
 		}
 
 		// Send response
-		s.protocol.write_message(mut conn, response) or {
+		s.binary_protocol.write_message(mut conn, response) or {
 			s.logger.error('Failed to send response: ${err}')
 			break
 		}

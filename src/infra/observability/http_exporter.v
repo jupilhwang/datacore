@@ -3,7 +3,6 @@
 module observability
 
 import net
-import io
 
 // MetricsServer serves metrics over HTTP
 /// MetricsServer serves metrics over HTTP.
@@ -45,25 +44,24 @@ pub fn (s MetricsServer) start_background() {
 fn (s MetricsServer) handle_connection(mut conn net.TcpConn) {
 	defer { conn.close() or {} }
 
-	// Read request (simple HTTP/1.1 parsing)
-	mut reader := io.new_buffered_reader(reader: conn)
-	line := reader.read_line() or { return }
+	// Read request (simple HTTP/1.1 parsing using direct socket read)
+	mut buf := []u8{len: 4096}
+	bytes_read := conn.read(mut buf) or { return }
+	if bytes_read == 0 {
+		return
+	}
+
+	request_data := buf[..bytes_read].bytestr()
 
 	// Parse request line: GET /path HTTP/1.1
+	first_line_end := request_data.index('\n') or { request_data.len }
+	line := request_data[..first_line_end].trim_right('\r')
 	parts := line.split(' ')
 	if parts.len < 2 {
 		return
 	}
 
 	path := parts[1]
-
-	// Skip headers
-	for {
-		header_line := reader.read_line() or { break }
-		if header_line.len == 0 || header_line == '\r' {
-			break
-		}
-	}
 
 	// Route request
 	response := match path {

@@ -13,6 +13,7 @@ import startup
 import interface.server
 import interface.cli
 import interface.rest
+import infra.auth
 import infra.compression
 import infra.observability
 import service.schema
@@ -125,6 +126,12 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	mut protocol_handler := startup.init_protocol_handler(conf, storage, compression_service)
 	cli.print_done()
 
+	// 3a. Create and attach audit logger
+	audit_logger := auth.new_audit_logger(true)
+	protocol_handler.set_audit_logger(audit_logger)
+	logger.info('Audit logger initialized', observability.field_int('max_buffer_size',
+		audit_logger.max_buffer_size))
+
 	// 4. Initialize Broker Registry for multi-broker mode (S3 storage)
 	cluster_result := startup.init_cluster_registry(conf, mut storage, s3_adapter_ref, mut
 		protocol_handler, mut logger)
@@ -221,6 +228,22 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	}
 
 	mut tcp_server := server.new_server(server_config, protocol_handler)
+
+	// Configure rate limiter if enabled
+	if conf.broker.rate_limit.enabled {
+		rl_cfg := conf.broker.rate_limit
+		rate_limiter := server.new_rate_limiter(server.RateLimiterConfig{
+			max_requests_per_second:        rl_cfg.max_requests_per_sec
+			max_bytes_per_second:           rl_cfg.max_bytes_per_sec
+			per_ip_max_requests_per_second: rl_cfg.per_ip_max_requests_per_sec
+			per_ip_max_connections:         rl_cfg.per_ip_max_connections
+			burst_multiplier:               rl_cfg.burst_multiplier
+			window_size_ms:                 i64(rl_cfg.window_ms)
+		})
+		tcp_server.set_rate_limiter(rate_limiter)
+		logger.info('Rate limiter enabled', observability.field_int('max_rps', rl_cfg.max_requests_per_sec),
+			observability.field_int('per_ip_max_rps', rl_cfg.per_ip_max_requests_per_sec))
+	}
 
 	// Log startup
 	logger.info('Broker started', observability.field_int('broker_id', conf.broker.broker_id),

@@ -118,6 +118,12 @@ pub fn new_server(config ServerConfig, handler RequestHandler) &Server {
 	}
 }
 
+/// set_rate_limiter configures the rate limiter for the server.
+/// Must be called before start(). Pass a limiter created by new_rate_limiter().
+pub fn (mut s Server) set_rate_limiter(rl &RateLimiter) {
+	s.rate_limiter = rl
+}
+
 /// start starts the TCP server.
 /// Returns an error if the server is already running.
 /// This method blocks and runs until stop() is called.

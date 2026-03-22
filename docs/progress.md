@@ -315,3 +315,22 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - Rate limiter is optional in TCP server (backward compatible)
 - ISR Manager, RebalanceTrigger, PartitionLeaderElector are standalone services (wired via setters)
 
+## 2026-03-22 -- Residual Work Sprint (Post v0.50.0)
+
+### Completed
+- R0: Removed ISR/Rebalancing/LeaderElection (stateless architecture cleanup) - 6 files deleted, broker_registry.v reverted
+- R2: Migrated replication from JSON to binary protocol (manager.v, client.v, server.v + integration tests)
+- R3: Added rate limiter configuration to config.toml and wired into server startup
+- R4: Wired audit logger into SASL authentication handlers (handler.v, handler_sasl.v)
+- R5: Fixed infra/performance V 0.5 compatibility (io/ -> sysio/ rename, http_exporter.v fix)
+
+### QA Verification
+- 123/123 test files pass (1,672 test functions)
+- Production build: SUCCESS, Lint: CLEAN
+- All infra/performance tests now pass (previously 5 failures)
+
+### Decisions
+- DataCore is a STATELESS broker: ISR, partition rebalancing, and partition-level leader election are architectural mismatches. Removed to keep codebase clean.
+- Binary replication protocol is now the default; JSON protocol.v kept as reference
+- Rate limiter disabled by default (enabled = false) for backward compatibility
+

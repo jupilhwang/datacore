@@ -12,10 +12,11 @@ import rand
 /// Manager coordinates all replication operations.
 pub struct Manager {
 pub mut:
-	broker_id string
-	config    domain.ReplicationConfig
-	server    &Server = unsafe { nil }
-	client    &Client = unsafe { nil }
+	broker_id       string
+	config          domain.ReplicationConfig
+	binary_protocol BinaryProtocol
+	server          &Server = unsafe { nil }
+	client          &Client = unsafe { nil }
 	// In-memory storage
 	replica_buffers map[string][]domain.ReplicaBuffer
 	assignments     map[string]domain.ReplicaAssignment
@@ -48,6 +49,7 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 	mut m := &Manager{
 		broker_id:           broker_id
 		config:              config
+		binary_protocol:     BinaryProtocol.new()
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
 		assignments:         map[string]domain.ReplicaAssignment{}
 		broker_health:       map[string]domain.ReplicationHealth{}

@@ -1,6 +1,6 @@
 /// Infrastructure layer - zero-copy I/O
 /// High-performance I/O operations using system sendfile
-module io
+module sysio
 
 import os
 import infra.performance.core

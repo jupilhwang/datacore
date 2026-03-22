@@ -5,6 +5,7 @@
 // and produces responses.
 module kafka
 
+import infra.auth
 import infra.compression
 import infra.observability
 import service.cluster
@@ -43,6 +44,7 @@ mut:
 	logger                  &observability.Logger
 	metrics                 &observability.ProtocolMetrics
 	compression_service     &compression.CompressionService
+	audit_logger            ?&auth.AuditLogger
 	// negotiated_mechanism stores the mechanism agreed upon during SaslHandshake
 	// so that handle_sasl_authenticate can use it instead of guessing from bytes
 	negotiated_mechanism ?domain.SaslMechanism
@@ -62,6 +64,7 @@ pub:
 	txn_coordinator     ?transaction.TransactionCoordinator
 	share_coordinator   ?&group.ShareGroupCoordinator
 	compression_service &compression.CompressionService = unsafe { nil }
+	audit_logger        ?&auth.AuditLogger
 }
 
 // StorageSubPorts wraps a StoragePort in a concrete struct, enabling V to satisfy
@@ -131,6 +134,7 @@ pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 		logger:                  logger
 		metrics:                 metrics
 		compression_service:     cfg.compression_service
+		audit_logger:            cfg.audit_logger
 	}
 }
 
@@ -214,6 +218,11 @@ pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroup
 /// set_schema_registry sets the schema registry on the handler.
 pub fn (mut h Handler) set_schema_registry(registry &schema.SchemaRegistry) {
 	h.schema_registry = registry
+}
+
+/// set_audit_logger sets the audit logger on the handler.
+pub fn (mut h Handler) set_audit_logger(logger &auth.AuditLogger) {
+	h.audit_logger = logger
 }
 
 /// get_topic_schema retrieves the schema configuration for a topic.

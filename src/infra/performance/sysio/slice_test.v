@@ -1,4 +1,4 @@
-module io
+module sysio
 
 // slice.v tests - zero-copy slice operations
 
