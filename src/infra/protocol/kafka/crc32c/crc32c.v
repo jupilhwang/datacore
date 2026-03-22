@@ -279,14 +279,21 @@ const crc32c_table = [
 
 // CPU feature detection
 
-/// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
-/// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available
+/// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available.
+/// Returns false because no hardware CRC32-C computation path exists yet.
+/// The `calculate()` function always uses software paths (Slicing-by-8 or basic table).
+/// When a C interop hardware CRC function is added (SSE4.2 or ARM CRC32),
+/// this function should perform actual CPUID detection and return accordingly.
 pub fn cpu_supports_hw_crc32c() bool {
-	// TODO(jira#XXX): return true when hardware acceleration is supported via C interop
+	// No hardware CRC32-C computation function is implemented yet.
+	// Returning true here would cause `is_hardware_accelerated()` to report
+	// misleading results since `calculate()` only dispatches to software paths.
+	// When a hardware path is added to `calculate()`, implement detection:
+	//   x86_64: CPUID EAX=1, check ECX bit 20 (SSE4.2)
+	//   arm64:  ARMv8 CRC extension (most modern ARM64 CPUs)
 	return false
 }
 
-/// cpu_supports_sse42 - checks if SSE4.2 CRC32-C support is available
 /// cpu_supports_sse42 - checks if SSE4.2 CRC32-C support is available
 pub fn cpu_supports_sse42() bool {
 	return cpu_supports_hw_crc32c()

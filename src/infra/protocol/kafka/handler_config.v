@@ -226,6 +226,19 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 	mut results := []DescribeConfigsResult{}
 
 	for res in req.resources {
+		// Helper to check if a specific config key was requested
+		is_requested := fn (key string, names ?[]string) bool {
+			if names == none {
+				return true
+			}
+			for n in names {
+				if n == key {
+					return true
+				}
+			}
+			return false
+		}
+
 		// resource_type: 2 = TOPIC, 4 = BROKER
 		if res.resource_type == 2 {
 			// TOPIC config
@@ -245,19 +258,6 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 
 			// Prepare configs
 			mut configs := []DescribeConfigsEntry{}
-
-			// Helper to check if a key is requested
-			is_requested := fn (key string, names ?[]string) bool {
-				if names == none {
-					return true
-				}
-				for n in names {
-					if n == key {
-						return true
-					}
-				}
-				return false
-			}
 
 			if is_requested('retention.ms', res.config_names) {
 				configs << DescribeConfigsEntry{
@@ -302,7 +302,76 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 			// Check if it matches our broker ID
 			if broker_id_str == '${h.broker_id}' {
 				mut configs := []DescribeConfigsEntry{}
-				// TODO(jira#XXX): Add actual broker configs if needed
+
+				if is_requested('log.retention.ms', res.config_names) {
+					configs << DescribeConfigsEntry{
+						name:          'log.retention.ms'
+						value:         '604800000'
+						read_only:     false
+						is_default:    true
+						config_source: 4
+						is_sensitive:  false
+						synonyms:      []
+						config_type:   0
+						documentation: 'The number of milliseconds to keep a log segment before deletion'
+					}
+				}
+
+				if is_requested('num.partitions', res.config_names) {
+					configs << DescribeConfigsEntry{
+						name:          'num.partitions'
+						value:         '1'
+						read_only:     false
+						is_default:    true
+						config_source: 4
+						is_sensitive:  false
+						synonyms:      []
+						config_type:   0
+						documentation: 'The default number of partitions per topic'
+					}
+				}
+
+				if is_requested('default.replication.factor', res.config_names) {
+					configs << DescribeConfigsEntry{
+						name:          'default.replication.factor'
+						value:         '1'
+						read_only:     false
+						is_default:    true
+						config_source: 4
+						is_sensitive:  false
+						synonyms:      []
+						config_type:   0
+						documentation: 'The default replication factor for automatically created topics'
+					}
+				}
+
+				if is_requested('max.message.bytes', res.config_names) {
+					configs << DescribeConfigsEntry{
+						name:          'max.message.bytes'
+						value:         '1048576'
+						read_only:     false
+						is_default:    true
+						config_source: 4
+						is_sensitive:  false
+						synonyms:      []
+						config_type:   0
+						documentation: 'The largest record batch size allowed by the broker'
+					}
+				}
+
+				if is_requested('log.segment.bytes', res.config_names) {
+					configs << DescribeConfigsEntry{
+						name:          'log.segment.bytes'
+						value:         '1073741824'
+						read_only:     false
+						is_default:    true
+						config_source: 4
+						is_sensitive:  false
+						synonyms:      []
+						config_type:   0
+						documentation: 'The maximum size of a single log segment file'
+					}
+				}
 
 				results << DescribeConfigsResult{
 					error_code:    0

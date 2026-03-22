@@ -9,9 +9,9 @@ import crypto.md5
 /// IdentifierFieldIds: list of identifier field IDs
 pub struct IcebergSchema {
 pub mut:
-	schema_id            int
+	schema_id            int @[json: 'schema-id']
 	fields               []IcebergField
-	identifier_field_ids []int
+	identifier_field_ids []int @[json: 'identifier-field-ids']
 }
 
 /// IcebergField represents an Iceberg schema field.
@@ -24,9 +24,9 @@ pub struct IcebergField {
 pub mut:
 	id            int
 	name          string
-	typ           string
+	typ           string @[json: 'type']
 	required      bool
-	default_value string
+	default_value string @[json: 'initial-default']
 }
 
 /// IcebergPartitionSpec represents a partition specification.
@@ -34,7 +34,7 @@ pub mut:
 /// Fields: list of partition fields
 pub struct IcebergPartitionSpec {
 pub mut:
-	spec_id int
+	spec_id int @[json: 'spec-id']
 	fields  []IcebergPartitionField
 }
 
@@ -46,11 +46,11 @@ pub mut:
 /// TransformArgs: list of transform arguments (v3: multi-argument transforms support)
 pub struct IcebergPartitionField {
 pub mut:
-	source_id      int
-	field_id       int
+	source_id      int @[json: 'source-id']
+	field_id       int @[json: 'field-id']
 	name           string
 	transform      string
-	transform_args []string
+	transform_args []string @[json: 'transform-args']
 }
 
 /// IcebergSnapshot represents a table snapshot.
@@ -61,26 +61,28 @@ pub mut:
 /// Summary: snapshot summary information
 pub struct IcebergSnapshot {
 pub mut:
-	snapshot_id   i64
-	timestamp_ms  i64
-	manifest_list string
-	schema_id     int
+	snapshot_id   i64    @[json: 'snapshot-id']
+	timestamp_ms  i64    @[json: 'timestamp-ms']
+	manifest_list string @[json: 'manifest-list']
+	schema_id     int    @[json: 'schema-id']
 	summary       map[string]string
 }
 
 /// IcebergManifest represents a manifest containing a list of data files.
 /// ManifestPath: manifest file path
+/// ManifestLength: byte size of the manifest file
 /// SnapshotId: owning snapshot ID
 /// AddedFiles: number of added files
 /// DeletedFiles: number of deleted files
 pub struct IcebergManifest {
 pub mut:
-	manifest_path string
-	snapshot_id   i64
-	added_files   int
-	deleted_files int
-	added_rows    i64
-	deleted_rows  i64
+	manifest_path   string
+	manifest_length i64
+	snapshot_id     i64
+	added_files     int
+	deleted_files   int
+	added_rows      i64
+	deleted_rows    i64
 }
 
 /// IcebergDataFile represents an actual data file.
@@ -125,17 +127,16 @@ pub mut:
 /// Properties: table properties
 pub struct IcebergMetadata {
 pub mut:
-	// 기본값 2: v3 기능(row lineage 등) 미구현으로 안정 스펙인 v2 사용
-	format_version      int = 2
-	table_uuid          string
+	format_version      int    @[json: 'format-version']
+	table_uuid          string @[json: 'table-uuid']
 	location            string
-	last_updated_ms     i64
+	last_updated_ms     i64 @[json: 'last-updated-ms']
 	schemas             []IcebergSchema
-	current_schema_id   int
-	partition_specs     []IcebergPartitionSpec
-	default_spec_id     int
+	current_schema_id   int                    @[json: 'current-schema-id']
+	partition_specs     []IcebergPartitionSpec @[json: 'partition-specs']
+	default_spec_id     int                    @[json: 'default-spec-id']
 	snapshots           []IcebergSnapshot
-	current_snapshot_id i64
+	current_snapshot_id i64 @[json: 'current-snapshot-id']
 	properties          map[string]string
 }
 

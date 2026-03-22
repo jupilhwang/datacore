@@ -4,11 +4,6 @@ module s3
 
 import time
 import json
-import strings
-import net.http
-import crypto.hmac
-import crypto.sha256
-import encoding.base64
 import sync
 
 /// IcebergCatalog defines the Iceberg table catalog interface.
@@ -30,10 +25,19 @@ struct CachedIcebergMetadata {
 	cached_at time.Time
 }
 
+/// ObjectStore provides basic object storage operations for catalog backends.
+interface ObjectStore {
+mut:
+	put_object(key string, data []u8) !
+	get_object(key string, range_start i64, range_end i64) !([]u8, string)
+	list_objects(prefix string) ![]S3Object
+	delete_objects_with_prefix(prefix string) !
+}
+
 /// HadoopCatalog is an S3-based Hadoop catalog implementation.
 pub struct HadoopCatalog {
 pub mut:
-	adapter    &S3StorageAdapter
+	adapter    ObjectStore
 	warehouse  string
 	properties map[string]string
 	// Iceberg metadata cache
@@ -61,8 +65,15 @@ fn (mut c HadoopCatalog) cache_put(cache_key string, metadata IcebergMetadata) {
 	}
 }
 
+/// invalidate_cache removes a single entry from the metadata cache.
+fn (mut c HadoopCatalog) invalidate_cache(key string) {
+	c.metadata_lock.@lock()
+	c.metadata_cache.delete(key)
+	c.metadata_lock.unlock()
+}
+
 /// new_hadoop_catalog creates a new Hadoop catalog.
-pub fn new_hadoop_catalog(adapter &S3StorageAdapter, warehouse string) &HadoopCatalog {
+pub fn new_hadoop_catalog(adapter ObjectStore, warehouse string) &HadoopCatalog {
 	return &HadoopCatalog{
 		adapter:    adapter
 		warehouse:  normalize_s3_location(warehouse)
@@ -149,6 +160,9 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 	for obj in objects {
 		filename := obj.key.split('/').last()
 		if filename.ends_with('.metadata.json') {
+			if filename.len < 5 {
+				continue
+			}
 			// Extract version from filename (e.g., 00001-uuid.metadata.json -> 1)
 			version_str := filename[0..5]
 			file_version := version_str.int()
@@ -189,10 +203,7 @@ pub fn (mut c HadoopCatalog) update_table(identifier IcebergTableIdentifier, met
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
 
-	// Invalidate cache
-	c.metadata_lock.@lock()
-	c.metadata_cache.delete(c.table_path(identifier))
-	c.metadata_lock.unlock()
+	c.invalidate_cache(table_path)
 }
 
 /// drop_table drops the table.
@@ -208,10 +219,7 @@ pub fn (mut c HadoopCatalog) drop_table(identifier IcebergTableIdentifier) ! {
 	prefix := '${table_path}/'
 	c.adapter.delete_objects_with_prefix(prefix)!
 
-	// Invalidate cache
-	c.metadata_lock.@lock()
-	c.metadata_cache.delete(table_path)
-	c.metadata_lock.unlock()
+	c.invalidate_cache(table_path)
 }
 
 /// list_tables lists all tables in the namespace.
@@ -310,10 +318,7 @@ pub fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, 
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	c.adapter.put_object(version_hint_path, new_version.str().bytes())!
 
-	// Invalidate cache
-	c.metadata_lock.@lock()
-	c.metadata_cache.delete(c.table_path(identifier))
-	c.metadata_lock.unlock()
+	c.invalidate_cache(table_path)
 }
 
 fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {
@@ -338,145 +343,34 @@ fn (mut c HadoopCatalog) namespace_path(namespace []string) string {
 	return '${c.warehouse}/${namespace.join('/')}'
 }
 
-/// encode_metadata encodes metadata as a JSON string.
+/// encode_metadata encodes metadata as a JSON string using standard json.encode.
+/// Output uses kebab-case keys per the Iceberg specification.
 fn encode_metadata(metadata IcebergMetadata) string {
-	// Estimate initial capacity: base fields + per-schema/snapshot overhead
-	estimated_size := 512 + metadata.schemas.len * 256 + metadata.partition_specs.len * 128 +
-		metadata.snapshots.len * 512
-	mut sb := strings.new_builder(estimated_size)
-
-	sb.write_string('{')
-	sb.write_string('"formatVersion":${metadata.format_version},')
-	sb.write_string('"tableUuid":"${metadata.table_uuid}",')
-	sb.write_string('"location":"${metadata.location}",')
-	sb.write_string('"lastUpdatedMs":${metadata.last_updated_ms},')
-	sb.write_string('"currentSchemaId":${metadata.current_schema_id},')
-	sb.write_string('"defaultSpecId":${metadata.default_spec_id},')
-	sb.write_string('"currentSnapshotId":${metadata.current_snapshot_id},')
-
-	// properties
-	sb.write_string('"properties":${json.encode(metadata.properties)},')
-
-	// schemas
-	sb.write_string('"schemas":[')
-	for i, schema in metadata.schemas {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"schemaId":${schema.schema_id},"fields":[')
-		for j, field in schema.fields {
-			if j > 0 {
-				sb.write_string(',')
-			}
-			sb.write_string('{"id":${field.id},')
-			sb.write_string('"name":"${field.name}",')
-			sb.write_string('"type":"${field.typ}",')
-			sb.write_string('"required":${field.required}}')
-		}
-		sb.write_string(']}')
-	}
-	sb.write_string('],')
-
-	// partitionSpecs
-	sb.write_string('"partitionSpecs":[')
-	for i, spec in metadata.partition_specs {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"specId":${spec.spec_id},"fields":[')
-		for j, field in spec.fields {
-			if j > 0 {
-				sb.write_string(',')
-			}
-			sb.write_string('{"sourceId":${field.source_id},')
-			sb.write_string('"fieldId":${field.field_id},')
-			sb.write_string('"name":"${field.name}",')
-			sb.write_string('"transform":"${field.transform}"}')
-		}
-		sb.write_string(']}')
-	}
-	sb.write_string('],')
-
-	// snapshots
-	sb.write_string('"snapshots":[')
-	for i, snapshot in metadata.snapshots {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"snapshotId":${snapshot.snapshot_id},')
-		sb.write_string('"timestampMs":${snapshot.timestamp_ms},')
-		sb.write_string('"manifestList":"${snapshot.manifest_list}",')
-		sb.write_string('"schemaId":${snapshot.schema_id},')
-		sb.write_string('"summary":${json.encode(snapshot.summary)}}')
-	}
-	sb.write_string(']')
-
-	sb.write_string('}')
-
-	return sb.str()
+	return json.encode(metadata)
 }
 
 /// decode_metadata decodes a JSON string into IcebergMetadata.
-/// Parses all fields: format_version, table_uuid, location, schemas, partition_specs, snapshots.
+/// Handles both kebab-case (Iceberg standard) and camelCase (legacy) keys
+/// by normalizing camelCase to kebab-case before decoding.
 fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 	if json_str == '' {
 		return error('Empty metadata JSON')
 	}
 
-	mut metadata := IcebergMetadata{}
-
-	// format-version / formatVersion
-	metadata.format_version = json_extract_int_dual(json_str, 'format-version', 'formatVersion') or {
-		2
+	normalized := normalize_metadata_json_keys(json_str)
+	mut metadata := json.decode(IcebergMetadata, normalized) or {
+		return error('Failed to decode metadata JSON: ${err}')
 	}
 
-	// table-uuid / tableUuid
-	metadata.table_uuid = json_extract_string_dual(json_str, 'table-uuid', 'tableUuid') or {
-		generate_table_uuid(json_str)
+	// Apply defaults for fields missing from the JSON (zero-value means absent)
+	if metadata.format_version == 0 {
+		metadata.format_version = 2
 	}
-
-	// location
-	if v := json_extract_string(json_str, 'location') {
-		metadata.location = v
+	if metadata.table_uuid == '' {
+		metadata.table_uuid = generate_table_uuid(json_str)
 	}
-
-	// last-updated-ms / lastUpdatedMs
-	metadata.last_updated_ms = json_extract_i64_dual(json_str, 'last-updated-ms', 'lastUpdatedMs') or {
-		time.now().unix_milli()
+	if metadata.last_updated_ms == 0 {
+		metadata.last_updated_ms = time.now().unix_milli()
 	}
-
-	// current-schema-id / currentSchemaId
-	metadata.current_schema_id = json_extract_int_dual(json_str, 'current-schema-id',
-		'currentSchemaId') or { 0 }
-
-	// default-spec-id / defaultSpecId
-	metadata.default_spec_id = json_extract_int_dual(json_str, 'default-spec-id', 'defaultSpecId') or {
-		0
-	}
-
-	// current-snapshot-id / currentSnapshotId
-	metadata.current_snapshot_id = json_extract_i64_dual(json_str, 'current-snapshot-id',
-		'currentSnapshotId') or { i64(0) }
-
-	// properties
-	if props_str := json_extract_object(json_str, 'properties') {
-		metadata.properties = json_parse_string_map(props_str)
-	}
-
-	// schemas
-	if schemas_str := json_extract_array(json_str, 'schemas') {
-		metadata.schemas = json_parse_schemas(schemas_str)
-	}
-
-	// partition-specs / partitionSpecs
-	if specs_str := json_extract_array_dual(json_str, 'partition-specs', 'partitionSpecs') {
-		metadata.partition_specs = json_parse_partition_specs(specs_str)
-	}
-
-	// snapshots
-	if snaps_str := json_extract_array(json_str, 'snapshots') {
-		metadata.snapshots = json_parse_snapshots(snaps_str)
-	}
-
 	return metadata
 }

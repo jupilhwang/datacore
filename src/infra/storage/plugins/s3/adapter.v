@@ -2,17 +2,17 @@
 module s3
 
 import domain
+import config as app_config
 import service.port
 import time
-import json
 import crypto.md5
 import sync
 import sync.stdatomic
-import net.http
-import infra.observability
 
 // NOTE: S3 client functions in s3_client.v; index types in partition_index.v;
 // buffer types in buffer_manager.v; compaction in compaction.v
+// NOTE: Topic CRUD in adapter_topic.v; record ops in adapter_record.v;
+// consumer group/offset ops in adapter_group.v
 
 // Configuration Constants
 
@@ -63,7 +63,8 @@ pub mut:
 	target_segment_bytes   i64
 	index_cache_ttl_ms     int
 	// Broker settings
-	broker_id i32
+	broker_id  i32
+	cluster_id string = 'datacore-cluster'
 	// Offset batch settings
 	offset_batch_enabled         bool = true
 	offset_flush_interval_ms     int  = 100
@@ -78,49 +79,81 @@ pub mut:
 	use_server_side_copy bool = true
 }
 
+/// S3CacheManager groups local cache maps and their associated locks.
+struct S3CacheManager {
+mut:
+	topic_cache            map[string]CachedTopic
+	topic_id_cache         map[string]string
+	topic_id_reverse_cache map[string]string
+	group_cache            map[string]CachedGroup
+	offset_cache           map[string]map[string]i64
+	topic_index_cache      map[string]CachedPartitionIndex
+	topic_lock             sync.RwMutex
+	group_lock             sync.RwMutex
+	offset_lock            sync.RwMutex
+}
+
+/// S3MetricsCollector groups metrics data and its protective mutex.
+struct S3MetricsCollector {
+mut:
+	data S3Metrics
+	mu   sync.Mutex
+}
+
+/// S3OffsetBatcher groups offset batch buffers and their lock.
+struct S3OffsetBatcher {
+mut:
+	buffers     map[string]OffsetGroupBuffer
+	buffer_lock sync.Mutex
+}
+
+/// S3IcebergManager groups Iceberg writers, lock, and runtime config.
+struct S3IcebergManager {
+mut:
+	writers map[string]&IcebergWriter
+	mu      sync.RwMutex
+	config  IcebergConfig
+}
+
+/// S3SyncLinger groups sync linger buffers and their lock.
+struct S3SyncLinger {
+mut:
+	buffers map[string]SyncLingerBuffer
+	mu      sync.Mutex
+}
+
 /// S3StorageAdapter implements the StoragePort for S3 storage.
 pub struct S3StorageAdapter {
 pub mut:
 	config S3Config
-	// Local cache with TTL
-	topic_cache       map[string]CachedTopic
-	topic_id_cache    map[string]string
-	group_cache       map[string]CachedGroup
-	offset_cache      map[string]map[string]i64
-	topic_index_cache map[string]CachedPartitionIndex
-	// Locks for thread safety
-	topic_lock  sync.RwMutex
-	group_lock  sync.RwMutex
-	offset_lock sync.RwMutex
-	// Flush buffers for batched S3 writes
+mut:
+	// Composed sub-structs
+	cache             S3CacheManager
+	metrics_collector S3MetricsCollector
+	offset_batcher    S3OffsetBatcher
+	iceberg           S3IcebergManager
+	sync_linger       S3SyncLinger
+	// Write buffering
 	topic_partition_buffers map[string]TopicPartitionBuffer
-	buffer_lock             sync.Mutex
+	buffer_lock             sync.RwMutex
 	index_update_lock       sync.Mutex
-	is_flushing             bool
-	// Flush skip counters per partition (for min_flush_bytes threshold)
-	flush_skip_counts map[string]int
-	// Compaction settings
-	min_segment_count_to_compact int = 5
-	compactor_running            bool
-	// Metrics
-	metrics      S3Metrics
-	metrics_lock sync.Mutex
-	// Offset batch buffers
-	offset_buffers     map[string]OffsetGroupBuffer
-	offset_buffer_lock sync.Mutex
-	// Pending index batch updates: accumulate segments before writing index to S3
+	is_flushing_flag        i64
+	flush_skip_counts       map[string]int
+	// Index batching
 	pending_index_updates map[string][]LogSegment
 	index_flush_counter   map[string]int
 	index_flush_lock      sync.Mutex
 	last_index_flush_at   i64
-	// Iceberg table writers (when Iceberg is enabled)
-	iceberg_writers map[string]&IcebergWriter
-	iceberg_lock    sync.RwMutex
-	// Iceberg 런타임 설정 (config 패키지와의 연결)
-	iceberg_config IcebergConfig
-	// Sync linger buffers for acks=1/-1 batching
-	sync_linger_buffers map[string]SyncLingerBuffer
-	sync_linger_lock    sync.Mutex
+	// Worker lifecycle
+	is_running_flag              i64
+	worker_wg                    sync.WaitGroup
+	min_segment_count_to_compact int = 5
+	// Partition append
+	partition_append_locks map[string]&sync.Mutex
+	partition_append_mu    sync.Mutex
+	// SigV4 signing
+	signing_key_cache CachedSigningKey
+	signing_key_lock  sync.Mutex
 }
 
 /// CachedTopic holds cached topic information.
@@ -134,12 +167,6 @@ struct CachedTopic {
 struct CachedGroup {
 	group     domain.ConsumerGroup
 	etag      string
-	cached_at time.Time
-}
-
-/// CachedSignature holds cached signature information.
-struct CachedSignature {
-	header    http.Header
 	cached_at time.Time
 }
 
@@ -258,859 +285,74 @@ fn (m &S3Metrics) get_summary() string {
 pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 	return &S3StorageAdapter{
 		config:                  config
-		topic_cache:             map[string]CachedTopic{}
-		group_cache:             map[string]CachedGroup{}
-		offset_cache:            map[string]map[string]i64{}
-		topic_index_cache:       map[string]CachedPartitionIndex{}
+		cache:                   S3CacheManager{
+			topic_cache:            map[string]CachedTopic{}
+			topic_id_reverse_cache: map[string]string{}
+			group_cache:            map[string]CachedGroup{}
+			offset_cache:           map[string]map[string]i64{}
+			topic_index_cache:      map[string]CachedPartitionIndex{}
+		}
+		offset_batcher:          S3OffsetBatcher{
+			buffers: map[string]OffsetGroupBuffer{}
+		}
+		iceberg:                 S3IcebergManager{
+			writers: map[string]&IcebergWriter{}
+		}
+		sync_linger:             S3SyncLinger{
+			buffers: map[string]SyncLingerBuffer{}
+		}
 		topic_partition_buffers: map[string]TopicPartitionBuffer{}
 		flush_skip_counts:       map[string]int{}
-		offset_buffers:          map[string]OffsetGroupBuffer{}
 		pending_index_updates:   map[string][]LogSegment{}
 		index_flush_counter:     map[string]int{}
-		iceberg_writers:         map[string]&IcebergWriter{}
-		sync_linger_buffers:     map[string]SyncLingerBuffer{}
 	}
 }
 
-/// create_topic creates a new topic in S3.
-pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
-	// Input validation
-	if name == '' {
-		return error('Topic name cannot be empty')
-	}
-	if name.len > max_topic_name_length {
-		return error('Topic name too long: ${name.len} > ${max_topic_name_length}')
-	}
-	// Check for disallowed characters in topic name
-	for ch in name {
-		if !ch.is_alnum() && ch != `_` && ch != `-` && ch != `.` {
-			return error('Invalid character in topic name: ${ch.ascii_str()}')
-		}
-	}
-	if partitions <= 0 {
-		return error('Partition count must be positive: ${partitions}')
-	}
-	if partitions > max_partition_count {
-		return error('Partition count too large: ${partitions} > ${max_partition_count}')
-	}
-
-	// Check if topic already exists
-	existing := a.get_topic(name) or { domain.TopicMetadata{} }
-	if existing.name.len > 0 {
-		return error('Topic already exists: ${name}')
-	}
-
-	topic_id := generate_topic_id(name)
-
-	// Convert TopicConfig to map[string]string
-	mut config_map := map[string]string{}
-	config_map['retention.ms'] = config.retention_ms.str()
-	config_map['retention.bytes'] = config.retention_bytes.str()
-	config_map['segment.bytes'] = config.segment_bytes.str()
-	config_map['cleanup.policy'] = config.cleanup_policy
-
-	meta := domain.TopicMetadata{
-		name:            name
-		topic_id:        topic_id
-		partition_count: partitions
-		config:          config_map
-		is_internal:     name.starts_with('_')
-	}
-
-	// Save metadata to S3 with conditional write (If-None-Match: *)
-	key := a.topic_metadata_key(name)
-	data := json.encode(meta)
-	a.put_object_if_not_exists(key, data.bytes())!
-
-	// Initialize partition indexes
-	for p in 0 .. partitions {
-		index_key := a.partition_index_key(name, p)
-		index := PartitionIndex{
-			topic:           name
-			partition:       p
-			earliest_offset: 0
-			high_watermark:  0
-			log_segments:    []
-		}
-		a.put_object(index_key, json.encode(index).bytes())!
-	}
-
-	// Store in topic cache
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	a.topic_cache[name] = CachedTopic{
-		meta:      meta
-		etag:      ''
-		cached_at: time.now()
-	}
-	// Also cache topic_id -> name mapping for O(1) lookup
-	a.topic_id_cache[meta.topic_id.hex()] = name
-
-	return meta
-}
-
-/// delete_topic deletes a topic from S3.
-pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-
-	// Look up topic metadata to remove from id cache
-	if cached := a.topic_cache[name] {
-		a.topic_id_cache.delete(cached.meta.topic_id.hex())
-	}
-
-	// Delete all objects starting with topic prefix (S3 operation, no lock needed)
-	prefix := '${a.config.prefix}topics/${name}/'
-	a.delete_objects_with_prefix(prefix)!
-
-	// Remove from cache
-	a.topic_cache.delete(name)
-}
-
-/// list_topics retrieves all topics from S3.
-pub fn (mut a S3StorageAdapter) list_topics() ![]domain.TopicMetadata {
-	prefix := '${a.config.prefix}topics/'
-	objects := a.list_objects(prefix)!
-
-	mut topics := []domain.TopicMetadata{}
-	mut seen := map[string]bool{}
-
-	// First add all cached topics
-	a.topic_lock.rlock()
-	for name, cached in a.topic_cache {
-		if name !in seen {
-			seen[name] = true
-			topics << cached.meta
-		}
-	}
-	a.topic_lock.runlock()
-
-	// Add topics from S3 that are not in cache
-	for obj in objects {
-		// Extract topic name from path in format "datacore/topics/my-topic/metadata.json"
-		if obj.key.ends_with('/metadata.json') {
-			parts := obj.key.split('/')
-			if parts.len >= 3 {
-				topic_name := parts[parts.len - 2]
-				if topic_name !in seen {
-					seen[topic_name] = true
-					if meta := a.get_topic(topic_name) {
-						topics << meta
-					}
-				}
-			}
-		}
-	}
-
-	return topics
-}
-
-/// get_topic retrieves topic metadata from S3.
-pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
-	// Check cache first
-	a.topic_lock.rlock()
-	if cached := a.topic_cache[name] {
-		if time.since(cached.cached_at) < topic_cache_ttl {
-			a.topic_lock.runlock()
-			a.record_cache_hit()
-			return cached.meta
-		}
-	}
-	a.topic_lock.runlock()
-
-	// Cache miss metric
-	a.record_cache_miss()
-
-	// Fetch from S3
-	key := a.topic_metadata_key(name)
-	data, etag := a.get_object(key, -1, -1)!
-
-	meta := json.decode(domain.TopicMetadata, data.bytestr())!
-
-	// Update cache
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	a.topic_cache[name] = CachedTopic{
-		meta:      meta
-		etag:      etag
-		cached_at: time.now()
-	}
-
-	return meta
-}
-
-/// get_topic_by_id retrieves a topic by topic_id.
-/// Uses O(1) cache lookup.
-pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
-	// Convert topic_id to hex string for map lookup
-	topic_id_hex := topic_id.hex()
-
-	// Check cache first (O(1) lookup)
-	a.topic_lock.rlock()
-	if topic_name := a.topic_id_cache[topic_id_hex] {
-		if cached := a.topic_cache[topic_name] {
-			a.topic_lock.runlock()
-			return cached.meta
-		}
-	}
-	a.topic_lock.runlock()
-
-	// Cache miss - fetch from S3 and populate cache
-	topics := a.list_topics()!
-
-	// Acquire lock once for all cache updates
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	for t in topics {
-		// Populate topic_id_cache for future lookups
-		a.topic_id_cache[t.topic_id.hex()] = t.name
-	}
-
-	// Find matching topic
-	for t in topics {
-		if t.topic_id == topic_id {
-			return t
-		}
-	}
-	return error('Topic not found')
-}
-
-/// add_partitions adds partitions to a topic.
-pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
-	meta := a.get_topic(name)!
-	if new_count <= meta.partition_count {
-		return error('New partition count must be greater than current')
-	}
-
-	// Initialize new partition indexes
-	for p in meta.partition_count .. new_count {
-		index_key := a.partition_index_key(name, p)
-		index := PartitionIndex{
-			topic:           name
-			partition:       p
-			earliest_offset: 0
-			high_watermark:  0
-			log_segments:    []
-		}
-		a.put_object(index_key, json.encode(index).bytes())!
-	}
-
-	// Update topic metadata with conditional write
-	updated_meta := domain.TopicMetadata{
-		...meta
-		partition_count: new_count
-	}
-
-	key := a.topic_metadata_key(name)
-	a.put_object(key, json.encode(updated_meta).bytes())!
-
-	// Update cache directly (instead of invalidating)
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	if cached := a.topic_cache[name] {
-		a.topic_cache[name] = CachedTopic{
-			meta:      updated_meta
-			etag:      cached.etag
-			cached_at: time.now()
-		}
+/// from_storage_config creates an S3Config from the application-level S3StorageConfig.
+/// Centralizes the mapping to reduce drift risk between the two config structs.
+/// Fields not present in S3StorageConfig (max_retries, retry_delay_ms, use_path_style,
+/// broker_id) retain their S3Config defaults and must be set separately if needed.
+fn from_storage_config(cfg app_config.S3StorageConfig) S3Config {
+	return S3Config{
+		bucket_name:                  cfg.bucket
+		region:                       cfg.region
+		endpoint:                     cfg.endpoint
+		access_key:                   cfg.access_key
+		secret_key:                   cfg.secret_key
+		prefix:                       cfg.prefix
+		timezone:                     cfg.timezone
+		batch_timeout_ms:             cfg.batch_timeout_ms
+		batch_max_bytes:              cfg.batch_max_bytes
+		min_flush_bytes:              cfg.min_flush_bytes
+		max_flush_skip_count:         cfg.max_flush_skip_count
+		compaction_interval_ms:       cfg.compaction_interval_ms
+		target_segment_bytes:         cfg.target_segment_bytes
+		index_cache_ttl_ms:           cfg.index_cache_ttl_ms
+		offset_batch_enabled:         cfg.offset_batch_enabled
+		offset_flush_interval_ms:     cfg.offset_flush_interval_ms
+		offset_flush_threshold_count: cfg.offset_flush_threshold_count
+		index_batch_size:             cfg.index_batch_size
+		index_flush_interval_ms:      cfg.index_flush_interval_ms
+		sync_linger_ms:               cfg.sync_linger_ms
+		use_server_side_copy:         cfg.use_server_side_copy
 	}
 }
 
-/// append appends records to a partition.
-/// Selects sync/async path based on required_acks:
-///   acks=0: appends to in-memory buffer and returns immediately (best-effort)
-///   acks=1/-1: returns after S3 PUT + index update completes (durability guaranteed)
-pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
-	if records.len == 0 {
-		return domain.AppendResult{
-			base_offset:      0
-			log_append_time:  time.now().unix_milli()
-			log_start_offset: 0
-		}
-	}
-
-	// 1. Fetch current partition index
-	mut index := a.get_partition_index(topic, partition)!
-	base_offset := index.high_watermark
-	partition_key := '${topic}:${partition}'
-
-	// 2. Create StoredRecords
-	mut bytes_to_add := i64(0)
-	mut stored_records := []StoredRecord{}
-
-	for i, rec in records {
-		srec := StoredRecord{
-			offset:    base_offset + i64(i)
-			timestamp: if rec.timestamp.unix_milli() == 0 { time.now() } else { rec.timestamp }
-			key:       rec.key
-			value:     rec.value
-			headers:   rec.headers
-		}
-		stored_records << srec
-		bytes_to_add += i64(srec.value.len + srec.key.len + record_overhead_bytes)
-	}
-
-	if required_acks == 0 {
-		// === acks=0: async path (existing behavior) ===
-		// Append to in-memory buffer and return immediately.
-		// flush_worker drains the buffer every batch_timeout_ms automatically.
-		a.buffer_lock.lock()
-		mut tp_buffer := a.topic_partition_buffers[partition_key] or {
-			TopicPartitionBuffer{
-				records:            []
-				current_size_bytes: 0
-			}
-		}
-
-		tp_buffer.records << stored_records
-		tp_buffer.current_size_bytes += bytes_to_add
-
-		a.topic_partition_buffers[partition_key] = tp_buffer
-		a.buffer_lock.unlock()
-	} else {
-		// === acks=1/-1: sync path (durability guarantee) ===
-		if a.config.sync_linger_ms > 0 {
-			// Linger path: batch multiple sync requests within the linger window
-			ch := chan LingerResult{cap: 1}
-			a.sync_linger_lock.lock()
-			should_flush := a.add_to_sync_linger_buffer(partition_key, stored_records,
-				ch)
-			mut flush_buf := SyncLingerBuffer{}
-			if should_flush {
-				flush_buf = a.drain_sync_linger_buffer(partition_key)
-			}
-			a.sync_linger_lock.unlock()
-
-			if should_flush && flush_buf.records.len > 0 {
-				a.flush_sync_linger_buffer(topic, partition, flush_buf)
-			}
-
-			// Wait for result from linger flush
-			result := <-ch
-			if err_val := result.err {
-				return error('durable append failed (acks=${required_acks}): ${err_val}')
-			}
-		} else {
-			// Immediate path: write directly to S3 (original behavior)
-			a.sync_append_immediate(topic, partition, stored_records, required_acks)!
-		}
-	}
-
-	// Append records to Iceberg table (when Iceberg is enabled)
-	if a.is_iceberg_enabled() {
-		a.append_to_iceberg(topic, partition, records, base_offset) or {
-			observability.log_with_context('s3', .warn, 'IcebergAppend', 'Failed to append to Iceberg',
-				{
-				'topic':     topic
-				'partition': partition.str()
-				'error':     err.str()
-			})
-		}
-	}
-
-	// Update in-memory high_watermark so the next append gets a correct offset.
-	// Only topic_lock is required here: topic_index_cache is guarded by topic_lock alone.
-	// index_update_lock is not needed for this cache-only update.
-	new_high_watermark := base_offset + i64(records.len)
-	a.topic_lock.@lock()
-	defer { a.topic_lock.unlock() }
-	if cached := a.topic_index_cache[partition_key] {
-		mut updated_index := cached.index
-		updated_index.high_watermark = new_high_watermark
-		a.topic_index_cache[partition_key] = CachedPartitionIndex{
-			index:     updated_index
-			etag:      cached.etag
-			cached_at: cached.cached_at
-		}
-	}
-
-	return domain.AppendResult{
-		base_offset:      base_offset
-		log_append_time:  time.now().unix_milli()
-		log_start_offset: index.earliest_offset
-	}
+/// new_s3_adapter_from_storage_config creates a new S3 storage adapter
+/// from the application-level S3StorageConfig. Uses from_storage_config
+/// to centralize the field mapping. broker_id and cluster_id are passed
+/// separately because they originate from BrokerConfig, not S3StorageConfig.
+pub fn new_s3_adapter_from_storage_config(s3_cfg app_config.S3StorageConfig, broker_id i32, cluster_id string) !&S3StorageAdapter {
+	mut s3_config := from_storage_config(s3_cfg)
+	s3_config.broker_id = broker_id
+	s3_config.cluster_id = cluster_id
+	return new_s3_adapter(s3_config)
 }
 
-/// fetch retrieves records from a partition.
-pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
-	partition_key := '${topic}:${partition}'
-
-	// Fetch S3 index for segment information
-	index := a.get_partition_index(topic, partition)!
-
-	if offset < index.earliest_offset {
-		return error('Offset out of range (too old): ${offset} < ${index.earliest_offset}')
-	}
-
-	// Find relevant segments
-	mut all_records := []domain.Record{}
-	mut bytes_read := 0
-	mut highest_offset_read := offset - 1
-
-	// 1. Try reading from S3 segments first
-	for seg in index.log_segments {
-		if seg.end_offset < offset {
-			continue
-		}
-		if seg.start_offset > offset + i64(max_bytes / fetch_offset_estimate_divisor) {
-			break
-		}
-
-		// Fetch segment from S3
-		// Optimization: use Range Request when reading from start of segment
-		mut data := []u8{}
-		if offset == seg.start_offset && max_bytes > 0 {
-			mut fetch_size := i64(max_bytes) * fetch_size_multiplier
-			if fetch_size > seg.size_bytes {
-				fetch_size = -1
-			}
-			range_end := if fetch_size > 0 { fetch_size } else { -1 }
-			data, _ = a.get_object(seg.key, 0, range_end) or { continue }
-		} else {
-			// Random access without index: must download full segment
-			data, _ = a.get_object(seg.key, -1, -1) or { continue }
-		}
-
-		stored_records := decode_stored_records(data)
-
-		for rec in stored_records {
-			if rec.offset >= offset && bytes_read < max_bytes {
-				// Convert StoredRecord to domain.Record
-				all_records << domain.Record{
-					key:       rec.key
-					value:     rec.value
-					headers:   rec.headers
-					timestamp: rec.timestamp
-				}
-				bytes_read += rec.value.len + rec.key.len
-				if rec.offset > highest_offset_read {
-					highest_offset_read = rec.offset
-				}
-			}
-		}
-
-		if bytes_read >= max_bytes {
-			break
-		}
-	}
-
-	// 2. Also read from in-memory buffer (data not yet flushed to S3)
-	// Important for data not yet persisted
-	if bytes_read < max_bytes {
-		a.buffer_lock.lock()
-		if tp_buffer := a.topic_partition_buffers[partition_key] {
-			for rec in tp_buffer.records {
-				// Read records at or above requested offset not already read from S3 segments
-				if rec.offset >= offset && rec.offset > highest_offset_read
-					&& bytes_read < max_bytes {
-					all_records << domain.Record{
-						key:       rec.key
-						value:     rec.value
-						headers:   rec.headers
-						timestamp: rec.timestamp
-					}
-					bytes_read += rec.value.len + rec.key.len
-					if rec.offset > highest_offset_read {
-						highest_offset_read = rec.offset
-					}
-				}
-			}
-		}
-		a.buffer_lock.unlock()
-	}
-
-	// Offset of the first record actually returned
-	actual_first_offset := if all_records.len > 0 { offset } else { index.high_watermark }
-
-	return domain.FetchResult{
-		records:            all_records
-		first_offset:       actual_first_offset
-		high_watermark:     index.high_watermark
-		last_stable_offset: index.high_watermark
-		log_start_offset:   index.earliest_offset
-	}
-}
-
-/// delete_records deletes records before the specified offset.
-pub fn (mut a S3StorageAdapter) delete_records(topic string, partition int, before_offset i64) ! {
-	mut index := a.get_partition_index(topic, partition)!
-
-	// Find segments to delete
-	mut segments_to_delete := []string{}
-	mut remaining_segments := []LogSegment{}
-
-	for seg in index.log_segments {
-		if seg.end_offset < before_offset {
-			segments_to_delete << seg.key
-		} else {
-			remaining_segments << seg
-		}
-	}
-
-	// Delete segments from S3 using batch API
-	if segments_to_delete.len > 0 {
-		a.delete_objects_batch(segments_to_delete) or {
-			observability.log_with_context('s3', .warn, 'S3Client', 'Batch delete failed in delete_records, falling back',
-				{
-				'error': err.msg()
-				'count': segments_to_delete.len.str()
-			})
-			// Fallback: individual deletes
-			for key in segments_to_delete {
-				a.delete_object(key) or {
-					observability.log_with_context('s3', .warn, 'S3Client', 'delete_records: failed to delete segment ${key}',
-						{
-						'key':   key
-						'error': err.msg()
-					})
-				}
-			}
-		}
-	}
-
-	// Update index
-	index.earliest_offset = before_offset
-	index.log_segments = remaining_segments
-
-	index_key := a.partition_index_key(topic, partition)
-	a.put_object(index_key, json.encode(index).bytes())!
-}
-
-/// get_partition_info retrieves partition information.
-pub fn (mut a S3StorageAdapter) get_partition_info(topic string, partition int) !domain.PartitionInfo {
-	index := a.get_partition_index(topic, partition)!
-
-	return domain.PartitionInfo{
-		topic:           topic
-		partition:       partition
-		earliest_offset: index.earliest_offset
-		latest_offset:   index.high_watermark
-		high_watermark:  index.high_watermark
-	}
-}
-
-/// save_group saves a consumer group.
-pub fn (mut a S3StorageAdapter) save_group(group domain.ConsumerGroup) ! {
-	key := a.group_key(group.group_id)
-	data := json.encode(group)
-	a.put_object(key, data.bytes())!
-
-	// Update cache
-	a.group_lock.@lock()
-	defer { a.group_lock.unlock() }
-	a.group_cache[group.group_id] = CachedGroup{
-		group:     group
-		etag:      ''
-		cached_at: time.now()
-	}
-}
-
-/// load_group loads a consumer group.
-pub fn (mut a S3StorageAdapter) load_group(group_id string) !domain.ConsumerGroup {
-	// Check cache
-	a.group_lock.rlock()
-	if cached := a.group_cache[group_id] {
-		if time.since(cached.cached_at) < group_cache_ttl {
-			a.group_lock.runlock()
-			return cached.group
-		}
-	}
-	a.group_lock.runlock()
-
-	key := a.group_key(group_id)
-	data, etag := a.get_object(key, -1, -1)!
-
-	group := json.decode(domain.ConsumerGroup, data.bytestr())!
-
-	// Update cache
-	a.group_lock.@lock()
-	defer { a.group_lock.unlock() }
-	a.group_cache[group_id] = CachedGroup{
-		group:     group
-		etag:      etag
-		cached_at: time.now()
-	}
-
-	return group
-}
-
-/// delete_group deletes a consumer group.
-pub fn (mut a S3StorageAdapter) delete_group(group_id string) ! {
-	key := a.group_key(group_id)
-	a.delete_object(key)!
-
-	// Also delete offsets
-	offsets_prefix := '${a.config.prefix}offsets/${group_id}/'
-	a.delete_objects_with_prefix(offsets_prefix)!
-
-	// Remove from cache
-	a.group_lock.@lock()
-	defer { a.group_lock.unlock() }
-	a.group_cache.delete(group_id)
-}
-
-/// list_groups returns all consumer groups.
-pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
-	prefix := '${a.config.prefix}groups/'
-	objects := a.list_objects(prefix)!
-
-	mut groups := []domain.GroupInfo{}
-	mut group_ids := []string{}
-	mut seen := map[string]bool{}
-
-	// First pass: collect unique group IDs
-	for obj in objects {
-		if obj.key.ends_with('/state.json') {
-			parts := obj.key.split('/')
-			if parts.len >= 2 {
-				group_id := parts[parts.len - 2]
-				if group_id !in seen {
-					seen[group_id] = true
-					group_ids << group_id
-				}
-			}
-		}
-	}
-
-	// Batch load groups (parallel lookup for better performance)
-	// Lower threshold to 1 to enable parallel processing in almost all cases
-	if group_ids.len == 0 {
-		return groups
-	} else if group_ids.len == 1 {
-		// Single group: sequential load
-		group_id := group_ids[0]
-		if group := a.load_group(group_id) {
-			groups << domain.GroupInfo{
-				group_id:      group_id
-				protocol_type: group.protocol_type
-				state:         group.state.str()
-			}
-		}
-	} else {
-		// Large batch: parallel load using channels
-		// Channels don't support optional types, so use domain.GroupInfo directly
-		ch := chan domain.GroupInfo{cap: group_ids.len}
-
-		for group_id in group_ids {
-			spawn fn [mut a, group_id, ch] () {
-				if group := a.load_group(group_id) {
-					ch <- domain.GroupInfo{
-						group_id:      group.group_id
-						protocol_type: group.protocol_type
-						state:         group.state.str()
-					}
-				} else {
-					// Send empty GroupInfo for failed loads (filtered out)
-					ch <- domain.GroupInfo{
-						group_id: ''
-					}
-				}
-			}()
-		}
-
-		// Collect results
-		for _ in 0 .. group_ids.len {
-			info := <-ch
-			if info.group_id.len > 0 {
-				groups << info
-			}
-		}
-	}
-
-	return groups
-}
-
-/// commit_offsets commits offsets via the batch snapshot path.
-/// Offsets are buffered in memory and flushed to S3 as a single binary snapshot
-/// by flush_pending_offsets (background worker).
-pub fn (mut a S3StorageAdapter) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
-	if offsets.len == 0 {
-		return
-	}
-
-	a.record_commit_start_metrics(offsets.len)
-
-	// Buffer all offsets into the batch snapshot path
-	a.offset_buffer_lock.lock()
-	for offset in offsets {
-		a.buffer_offset(group_id, offset)
-	}
-	a.offset_buffer_lock.unlock()
-
-	// Update offset cache for immediate read-after-write consistency
-	a.update_offset_cache(group_id, offsets)
-	a.record_commit_success_metrics(offsets.len)
-}
-
-/// record_commit_start_metrics records commit start metrics.
-fn (mut a S3StorageAdapter) record_commit_start_metrics(count int) {
-	stdatomic.add_i64(&a.metrics.offset_commit_count, count)
-}
-
-/// update_offset_cache updates the offset cache.
-fn (mut a S3StorageAdapter) update_offset_cache(group_id string, succeeded []domain.PartitionOffset) {
-	a.offset_lock.@lock()
-	defer { a.offset_lock.unlock() }
-	if group_id !in a.offset_cache {
-		a.offset_cache[group_id] = map[string]i64{}
-	}
-	for offset in succeeded {
-		cache_key := '${offset.topic}:${offset.partition}'
-		a.offset_cache[group_id][cache_key] = offset.offset
-	}
-
-	observability.log_with_context('s3', .info, 'OffsetCommit', 'Successfully committed offsets',
-		{
-		'group_id': group_id
-		'count':    succeeded.len.str()
-	})
-}
-
-/// record_commit_success_metrics records successful offset commit metrics.
-/// Note: s3_put_count is NOT incremented here because the batch path defers
-/// the actual S3 PUT to flush_pending_offsets (background worker).
-fn (mut a S3StorageAdapter) record_commit_success_metrics(count int) {
-	stdatomic.add_i64(&a.metrics.offset_commit_success_count, count)
-}
-
-/// record_cache_hit increments the cache hit counter.
-fn (mut a S3StorageAdapter) record_cache_hit() {
-	stdatomic.add_i64(&a.metrics.cache_hit_count, 1)
-}
-
-/// record_cache_miss increments the cache miss and S3 GET counters.
-fn (mut a S3StorageAdapter) record_cache_miss() {
-	stdatomic.add_i64(&a.metrics.cache_miss_count, 1)
-	stdatomic.add_i64(&a.metrics.s3_get_count, 1)
-}
-
-/// record_sync_append_error increments the sync append error and S3 error counters.
-fn (mut a S3StorageAdapter) record_sync_append_error() {
-	stdatomic.add_i64(&a.metrics.sync_append_error_count, 1)
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
-}
-
-/// record_sync_append_put increments the S3 PUT and sync append counters.
-fn (mut a S3StorageAdapter) record_sync_append_put() {
-	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
-	stdatomic.add_i64(&a.metrics.sync_append_count, 1)
-}
-
-/// record_sync_append_index_error increments only the sync append error counter.
-fn (mut a S3StorageAdapter) record_sync_append_index_error() {
-	stdatomic.add_i64(&a.metrics.sync_append_error_count, 1)
-}
-
-/// record_sync_append_success increments the success counter and accumulates elapsed time.
-// NOTE: stdatomic.add_i64 delta parameter is int (i32), not i64.
-// Individual elapsed_ms values are typically small (< 2^31 ms = ~24 days per call),
-// so truncation of a single sample is acceptable. The i64 accumulator field
-// (sync_append_total_ms) handles the cumulative sum without overflow.
-fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
-	stdatomic.add_i64(&a.metrics.sync_append_success_count, 1)
-	stdatomic.add_i64(&a.metrics.sync_append_total_ms, int(elapsed_ms))
-}
-
-/// OffsetFetchResult holds the result of a single offset fetch operation.
-struct OffsetFetchItem {
-	result domain.OffsetFetchResult
-}
-
-/// fetch_single_offset fetches a single partition offset from S3.
-fn (mut a S3StorageAdapter) fetch_single_offset(group_id string, part domain.TopicPartition, ch chan OffsetFetchItem) {
-	key := a.offset_key(group_id, part.topic, part.partition)
-	data, _ := a.get_object(key, -1, -1) or {
-		ch <- OffsetFetchItem{
-			result: domain.OffsetFetchResult{
-				topic:      part.topic
-				partition:  part.partition
-				offset:     -1
-				metadata:   ''
-				error_code: 0
-			}
-		}
-		return
-	}
-
-	offset_data := json.decode(domain.PartitionOffset, data.bytestr()) or {
-		ch <- OffsetFetchItem{
-			result: domain.OffsetFetchResult{
-				topic:      part.topic
-				partition:  part.partition
-				offset:     -1
-				metadata:   ''
-				error_code: 0
-			}
-		}
-		return
-	}
-
-	ch <- OffsetFetchItem{
-		result: domain.OffsetFetchResult{
-			topic:      part.topic
-			partition:  part.partition
-			offset:     offset_data.offset
-			metadata:   offset_data.metadata
-			error_code: 0
-		}
-	}
-}
-
-/// fetch_offsets retrieves committed offsets.
-/// Cache hits are resolved immediately; S3 GETs are issued in parallel.
-pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
-	mut results := []domain.OffsetFetchResult{}
-
-	// Separate cache hits from partitions that require S3 GETs
-	mut s3_partitions := []domain.TopicPartition{}
-	for part in partitions {
-		// Try cache first
-		a.offset_lock.rlock()
-		cache_key := '${part.topic}:${part.partition}'
-		cached_offset := if group_id in a.offset_cache {
-			a.offset_cache[group_id][cache_key] or { i64(-1) }
-		} else {
-			i64(-1)
-		}
-		a.offset_lock.runlock()
-
-		if cached_offset >= 0 {
-			results << domain.OffsetFetchResult{
-				topic:      part.topic
-				partition:  part.partition
-				offset:     cached_offset
-				metadata:   ''
-				error_code: 0
-			}
-		} else {
-			s3_partitions << part
-		}
-	}
-
-	// Fetch remaining partitions from S3 in parallel (bounded concurrency)
-	if s3_partitions.len > 0 {
-		ch := chan OffsetFetchItem{cap: s3_partitions.len}
-		mut active := 0
-
-		for part in s3_partitions {
-			// Wait for a slot when concurrency limit is reached
-			for active >= max_fetch_concurrent {
-				item := <-ch
-				results << item.result
-				active--
-			}
-			active++
-			spawn a.fetch_single_offset(group_id, part, ch)
-		}
-
-		// Collect remaining results
-		for _ in 0 .. active {
-			item := <-ch
-			results << item.result
-		}
-	}
-
-	return results
+/// set_iceberg_config sets the Iceberg runtime configuration.
+/// Called from startup to inject config-package fields into the adapter.
+pub fn (mut a S3StorageAdapter) set_iceberg_config(config IcebergConfig) {
+	a.iceberg.config = config
 }
 
 /// health_check checks the storage health status.
@@ -1157,6 +399,11 @@ fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int
 	return '${a.config.prefix}offsets/${group_id}/${topic}:${partition}.json'
 }
 
+/// share_partition_key returns the S3 key for a share partition state.
+fn (a &S3StorageAdapter) share_partition_key(group_id string, topic string, partition int) string {
+	return '${a.config.prefix}share-partitions/${group_id}/${topic}:${partition}.json'
+}
+
 // Moved to s3_client.v.
 
 // Note: PartitionIndex, LogSegment, get_partition_index have been moved to partition_index.v.
@@ -1167,10 +414,18 @@ fn (a &S3StorageAdapter) offset_key(group_id string, topic string, partition int
 
 /// start_workers starts flush, compaction, and sync linger workers.
 pub fn (mut a S3StorageAdapter) start_workers() {
-	if a.compactor_running {
+	// Atomic check-then-set to prevent double-start race
+	if stdatomic.load_i64(&a.is_running_flag) == 1 {
 		return
 	}
-	a.compactor_running = true
+	stdatomic.store_i64(&a.is_running_flag, 1)
+
+	mut worker_count := 2
+	if a.config.sync_linger_ms > 0 {
+		worker_count = 3
+	}
+	a.worker_wg.add(worker_count)
+
 	go a.flush_worker()
 	go a.compaction_worker()
 	if a.config.sync_linger_ms > 0 {
@@ -1180,35 +435,37 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 
 /// stop_workers signals all background workers to stop.
 /// Workers drain pending buffers before exiting (graceful shutdown).
+/// Blocks until all workers have completed via WaitGroup.
 pub fn (mut a S3StorageAdapter) stop_workers() {
-	a.compactor_running = false
+	stdatomic.store_i64(&a.is_running_flag, 0)
+	a.worker_wg.wait()
 }
 
 /// get_metrics returns the current metrics snapshot.
 pub fn (mut a S3StorageAdapter) get_metrics() S3Metrics {
-	a.metrics_lock.@lock()
+	a.metrics_collector.mu.@lock()
 	defer {
-		a.metrics_lock.unlock()
+		a.metrics_collector.mu.unlock()
 	}
-	return a.metrics
+	return a.metrics_collector.data
 }
 
 /// get_metrics_summary returns the metrics summary string.
 pub fn (mut a S3StorageAdapter) get_metrics_summary() string {
-	a.metrics_lock.@lock()
+	a.metrics_collector.mu.@lock()
 	defer {
-		a.metrics_lock.unlock()
+		a.metrics_collector.mu.unlock()
 	}
-	return a.metrics.get_summary()
+	return a.metrics_collector.data.get_summary()
 }
 
 /// reset_metrics resets all metrics to zero.
 pub fn (mut a S3StorageAdapter) reset_metrics() {
-	a.metrics_lock.@lock()
+	a.metrics_collector.mu.@lock()
 	defer {
-		a.metrics_lock.unlock()
+		a.metrics_collector.mu.unlock()
 	}
-	a.metrics.reset()
+	a.metrics_collector.data.reset()
 }
 
 // Note: compaction_worker, compact_all_partitions, compact_partition, merge_segments have been moved to compaction.v.
@@ -1221,23 +478,40 @@ fn generate_topic_id(name string) []u8 {
 	return hash[0..16]
 }
 
-// TODO(jira#XXX): Implement S3 shared partition state persistence
-/// save_share_partition_state saves a SharePartition state (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) save_share_partition_state(state domain.SharePartitionState) ! {
-	return error('share partition state persistence not yet implemented for S3')
+/// record_cache_hit increments the cache hit counter.
+fn (mut a S3StorageAdapter) record_cache_hit() {
+	stdatomic.add_i64(&a.metrics_collector.data.cache_hit_count, 1)
 }
 
-/// load_share_partition_state loads a SharePartition state (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
-	return none
+/// record_cache_miss increments the cache miss and S3 GET counters.
+fn (mut a S3StorageAdapter) record_cache_miss() {
+	stdatomic.add_i64(&a.metrics_collector.data.cache_miss_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_get_count, 1)
 }
 
-/// delete_share_partition_state deletes a SharePartition state (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {
-	return error('share partition state persistence not yet implemented for S3')
+/// record_sync_append_error increments the sync append error and S3 error counters.
+fn (mut a S3StorageAdapter) record_sync_append_error() {
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 }
 
-/// load_all_share_partition_states loads all SharePartition states for a group (not yet implemented for S3).
-pub fn (mut a S3StorageAdapter) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
-	return []
+/// record_sync_append_put increments the S3 PUT and sync append counters.
+fn (mut a S3StorageAdapter) record_sync_append_put() {
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_count, 1)
+}
+
+/// record_sync_append_index_error increments only the sync append error counter.
+fn (mut a S3StorageAdapter) record_sync_append_index_error() {
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_error_count, 1)
+}
+
+/// record_sync_append_success increments the success counter and accumulates elapsed time.
+// NOTE: stdatomic.add_i64 delta parameter is int (i32), not i64.
+// Individual elapsed_ms values are typically small (< 2^31 ms = ~24 days per call),
+// so truncation of a single sample is acceptable. The i64 accumulator field
+// (sync_append_total_ms) handles the cumulative sum without overflow.
+fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_success_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.sync_append_total_ms, int(elapsed_ms))
 }

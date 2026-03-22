@@ -362,12 +362,15 @@ fn (mut r BrokerRegistry) heartbeat_loop() {
 			domain.BrokerLoad{}
 		}
 
-		r.send_heartbeat(load) or { eprintln('[WARN] Failed to send heartbeat: ${err}') }
+		r.send_heartbeat(load) or {
+			r.logger.warn('Failed to send heartbeat', observability.field_err_str(err.str()))
+		}
 
 		// Check for expired brokers
 		expired := r.check_expired_brokers() or { []i32{} }
 		if expired.len > 0 {
-			eprintln('[INFO] Detected ${expired.len} expired brokers: ${expired}')
+			r.logger.info('Detected expired brokers', observability.field_int('count',
+				i64(expired.len)))
 		}
 
 		time.sleep(interval)

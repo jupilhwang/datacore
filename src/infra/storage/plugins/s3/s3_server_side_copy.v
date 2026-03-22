@@ -81,7 +81,7 @@ fn (mut a S3StorageAdapter) merge_segments_server_side(topic string, partition i
 /// copy_object performs a simple S3 CopyObject (PUT with x-amz-copy-source).
 /// Used for single-source copies under 5GB.
 fn (mut a S3StorageAdapter) copy_object(dest_key string, source_key string) ! {
-	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
 
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -99,19 +99,19 @@ fn (mut a S3StorageAdapter) copy_object(dest_key string, source_key string) ! {
 		method: .put
 		header: headers
 	}) or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CopyObject prepare failed: ${err}')
 	}
 	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
 	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 	resp := req.do() or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CopyObject failed: ${err}')
 	}
 
 	if resp.status_code != 200 {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 CopyObject failed with status ${resp.status_code}')
 	}
 }

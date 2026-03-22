@@ -1,5 +1,6 @@
 module performance
 
+import infra.observability
 import infra.performance.core
 import infra.performance.engines
 
@@ -19,16 +20,16 @@ pub fn new_performance_manager(config core.PerformanceConfig) &PerformanceManage
 
 	$if linux {
 		if config.enable_linux_optimizations {
-			// TODO(jira#XXX): initialize when LinuxPerformanceEngine is fully implemented
-			// For now, use Generic but log that Linux is available
-			// mut linux_engine := engines.LinuxPerformanceEngine{}
-			// engine = linux_engine
+			engine = engines.LinuxPerformanceEngine{}
 		}
 	}
 
 	engine.init(config) or {
 		// On error, fall back to minimal/generic engine
-		println('Failed to init optimized engine, falling back to Generic')
+		observability.log_with_context('performance', .warn, 'PerformanceManager', 'Failed to init optimized engine, falling back to Generic',
+			{
+			'error': err.str()
+		})
 	}
 
 	return &PerformanceManager{

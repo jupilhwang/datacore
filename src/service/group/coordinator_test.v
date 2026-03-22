@@ -3,9 +3,8 @@
 module group
 
 import domain
-import service.port
 
-// CoordMockStorage is an in-memory StoragePort implementation for GroupCoordinator tests.
+// CoordMockStorage is an in-memory GroupStoragePort implementation for GroupCoordinator tests.
 // It persists consumer groups in a map to enable realistic round-trip testing.
 struct CoordMockStorage {
 mut:
@@ -15,55 +14,6 @@ mut:
 fn new_coord_mock_storage() CoordMockStorage {
 	return CoordMockStorage{
 		groups: map[string]domain.ConsumerGroup{}
-	}
-}
-
-fn (mut s CoordMockStorage) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
-	return domain.TopicMetadata{
-		name:            name
-		topic_id:        []u8{len: 16}
-		partition_count: partitions
-	}
-}
-
-fn (s CoordMockStorage) delete_topic(name string) ! {}
-
-fn (s CoordMockStorage) list_topics() ![]domain.TopicMetadata {
-	return []domain.TopicMetadata{}
-}
-
-fn (s CoordMockStorage) get_topic(name string) !domain.TopicMetadata {
-	return error('topic not found')
-}
-
-fn (s CoordMockStorage) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
-	return error('topic not found')
-}
-
-fn (s CoordMockStorage) add_partitions(name string, new_count int) ! {}
-
-fn (mut s CoordMockStorage) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
-	return domain.AppendResult{
-		base_offset:     0
-		log_append_time: 0
-	}
-}
-
-fn (s CoordMockStorage) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
-	return domain.FetchResult{
-		records:        []domain.Record{}
-		high_watermark: 0
-	}
-}
-
-fn (s CoordMockStorage) delete_records(topic string, partition int, before_offset i64) ! {}
-
-fn (mut s CoordMockStorage) get_partition_info(topic string, partition int) !domain.PartitionInfo {
-	return domain.PartitionInfo{
-		topic:           topic
-		partition:       partition
-		high_watermark:  0
-		earliest_offset: 0
 	}
 }
 
@@ -89,36 +39,6 @@ fn (s CoordMockStorage) list_groups() ![]domain.GroupInfo {
 		}
 	}
 	return result
-}
-
-fn (s CoordMockStorage) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {}
-
-fn (s CoordMockStorage) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
-	return []domain.OffsetFetchResult{}
-}
-
-fn (s CoordMockStorage) health_check() !port.HealthStatus {
-	return .healthy
-}
-
-fn (s &CoordMockStorage) get_storage_capability() domain.StorageCapability {
-	return domain.memory_storage_capability
-}
-
-fn (s CoordMockStorage) save_share_partition_state(state domain.SharePartitionState) ! {}
-
-fn (s CoordMockStorage) load_share_partition_state(group_id string, topic_name string, partition i32) ?domain.SharePartitionState {
-	return none
-}
-
-fn (s CoordMockStorage) delete_share_partition_state(group_id string, topic_name string, partition i32) ! {}
-
-fn (s CoordMockStorage) load_all_share_partition_states(group_id string) []domain.SharePartitionState {
-	return []
-}
-
-fn (s &CoordMockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
-	return none
 }
 
 // ============================================================

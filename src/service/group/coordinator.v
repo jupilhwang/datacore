@@ -10,11 +10,11 @@ import service.port
 /// Responsible for group membership management, rebalancing, and offset management.
 pub struct GroupCoordinator {
 mut:
-	storage port.StoragePort
+	storage port.GroupStoragePort
 }
 
 /// new_group_coordinator creates a new GroupCoordinator.
-pub fn new_group_coordinator(storage port.StoragePort) &GroupCoordinator {
+pub fn new_group_coordinator(storage port.GroupStoragePort) &GroupCoordinator {
 	return &GroupCoordinator{
 		storage: storage
 	}

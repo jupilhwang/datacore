@@ -5,6 +5,7 @@ module s3
 
 import strconv
 import time
+import sync.stdatomic
 
 /// LingerResult holds the outcome of a linger flush, delivered to all waiters.
 struct LingerResult {
@@ -31,14 +32,14 @@ fn (mut a S3StorageAdapter) add_to_sync_linger_buffer(partition_key string, reco
 		bytes_added += i64(rec.value.len + rec.key.len + record_overhead_bytes)
 	}
 
-	if partition_key in a.sync_linger_buffers {
-		mut buf := a.sync_linger_buffers[partition_key]
+	if partition_key in a.sync_linger.buffers {
+		mut buf := a.sync_linger.buffers[partition_key]
 		buf.records << records
 		buf.channels << ch
 		buf.size_bytes += bytes_added
-		a.sync_linger_buffers[partition_key] = buf
+		a.sync_linger.buffers[partition_key] = buf
 	} else {
-		a.sync_linger_buffers[partition_key] = SyncLingerBuffer{
+		a.sync_linger.buffers[partition_key] = SyncLingerBuffer{
 			records:    records.clone()
 			channels:   [ch]
 			created_at: time.now().unix_milli()
@@ -46,21 +47,21 @@ fn (mut a S3StorageAdapter) add_to_sync_linger_buffer(partition_key string, reco
 		}
 	}
 
-	buf := a.sync_linger_buffers[partition_key]
+	buf := a.sync_linger.buffers[partition_key]
 	return buf.size_bytes >= a.config.batch_max_bytes
 }
 
 /// drain_sync_linger_buffer extracts and removes the linger buffer for a partition.
 /// Returns the drained buffer contents. Caller must hold sync_linger_lock (or test).
 fn (mut a S3StorageAdapter) drain_sync_linger_buffer(partition_key string) SyncLingerBuffer {
-	if buf := a.sync_linger_buffers[partition_key] {
+	if buf := a.sync_linger.buffers[partition_key] {
 		result := SyncLingerBuffer{
 			records:    buf.records.clone()
 			channels:   buf.channels.clone()
 			created_at: buf.created_at
 			size_bytes: buf.size_bytes
 		}
-		a.sync_linger_buffers.delete(partition_key)
+		a.sync_linger.buffers.delete(partition_key)
 		return result
 	}
 	return SyncLingerBuffer{}
@@ -72,7 +73,7 @@ fn (a &S3StorageAdapter) get_expired_sync_linger_keys() []string {
 	mut expired := []string{}
 	now_ms := time.now().unix_milli()
 	linger_ms := i64(a.config.sync_linger_ms)
-	for key, buf in a.sync_linger_buffers {
+	for key, buf in a.sync_linger.buffers {
 		if buf.records.len > 0 && (now_ms - buf.created_at) >= linger_ms {
 			expired << key
 		}
@@ -105,7 +106,7 @@ fn (mut a S3StorageAdapter) sync_append_immediate(topic string, partition int, s
 
 	a.index_update_lock.lock()
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset_val,
-		end_offset, segment_data.len) or {
+		end_offset, segment_data.len, []RecordIndex{}) or {
 		a.index_update_lock.unlock()
 		a.record_sync_append_index_error()
 		return error('durable append failed (acks=${required_acks}): index update error: ${err}')
@@ -144,7 +145,7 @@ fn (mut a S3StorageAdapter) flush_sync_linger_buffer(topic string, partition int
 	// Index update
 	a.index_update_lock.lock()
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset_val,
-		end_offset, segment_data.len) or {
+		end_offset, segment_data.len, []RecordIndex{}) or {
 		a.index_update_lock.unlock()
 		a.record_sync_append_index_error()
 		err_result := LingerResult{
@@ -167,9 +168,12 @@ fn (mut a S3StorageAdapter) flush_sync_linger_buffer(topic string, partition int
 
 /// sync_linger_worker periodically checks for expired linger buffers and flushes them.
 /// Poll interval is clamped to max(1, min(5, sync_linger_ms / 2)) for CPU efficiency.
-/// Stops when compactor_running becomes false.
+/// Stops when is_running_flag becomes 0.
 /// On shutdown, drains all remaining linger buffers to prevent goroutine leaks.
 fn (mut a S3StorageAdapter) sync_linger_worker() {
+	defer {
+		a.worker_wg.done()
+	}
 	mut poll_ms := a.config.sync_linger_ms / 2
 	if poll_ms < 1 {
 		poll_ms = 1
@@ -177,10 +181,10 @@ fn (mut a S3StorageAdapter) sync_linger_worker() {
 	if poll_ms > 5 {
 		poll_ms = 5
 	}
-	for a.compactor_running {
+	for stdatomic.load_i64(&a.is_running_flag) == 1 {
 		time.sleep(poll_ms * time.millisecond)
 
-		a.sync_linger_lock.lock()
+		a.sync_linger.mu.lock()
 		expired_keys := a.get_expired_sync_linger_keys()
 		mut flush_list := []SyncLingerFlushItem{}
 		for key in expired_keys {
@@ -192,7 +196,7 @@ fn (mut a S3StorageAdapter) sync_linger_worker() {
 				}
 			}
 		}
-		a.sync_linger_lock.unlock()
+		a.sync_linger.mu.unlock()
 
 		for item in flush_list {
 			parts := item.partition_key.split(':')
@@ -218,9 +222,9 @@ struct SyncLingerFlushItem {
 /// drain_all_sync_linger_buffers flushes all remaining linger buffers during shutdown.
 /// Ensures no goroutines are left permanently blocked on their result channels.
 fn (mut a S3StorageAdapter) drain_all_sync_linger_buffers() {
-	a.sync_linger_lock.lock()
+	a.sync_linger.mu.lock()
 	mut remaining := []SyncLingerFlushItem{}
-	for key, _ in a.sync_linger_buffers {
+	for key, _ in a.sync_linger.buffers {
 		buf := a.drain_sync_linger_buffer(key)
 		if buf.records.len > 0 {
 			remaining << SyncLingerFlushItem{
@@ -229,7 +233,7 @@ fn (mut a S3StorageAdapter) drain_all_sync_linger_buffers() {
 			}
 		}
 	}
-	a.sync_linger_lock.unlock()
+	a.sync_linger.mu.unlock()
 
 	for item in remaining {
 		parts := item.partition_key.split(':')

@@ -622,8 +622,9 @@ fn get_metric_value(body string, name string) int {
 }
 
 // get_broker_stats queries the running broker's metrics endpoint for live status
-fn get_broker_stats(metrics_port int) BrokerStats {
-	url := 'http://localhost:${metrics_port}/metrics'
+fn get_broker_stats(metrics_host string, metrics_port int) BrokerStats {
+	host := if metrics_host == '0.0.0.0' { 'localhost' } else { metrics_host }
+	url := 'http://${host}:${metrics_port}/metrics'
 
 	resp := http.get(url) or {
 		return BrokerStats{
@@ -661,7 +662,7 @@ fn show_status(opts cli.CliOptions) ! {
 	running := cli.check_pid_running(pid)
 
 	if running {
-		stats := get_broker_stats(conf.observability.metrics.prometheus_port)
+		stats := get_broker_stats(conf.broker.host, conf.observability.metrics.prometheus_port)
 
 		mut topics := 0
 		mut partitions := 0

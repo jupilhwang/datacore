@@ -2,85 +2,11 @@
 module s3
 
 import json
-import strings
 import time
 
-/// encode_metadata_json encodes table metadata as JSON.
+/// encode_metadata_json encodes table metadata as JSON using standard json.encode.
 fn (w &IcebergWriter) encode_metadata_json() string {
-	// Iceberg metadata JSON format - build string directly
-	mut sb := strings.new_builder(4096)
-
-	sb.write_string('{')
-	sb.write_string('"formatVersion":${w.table_metadata.format_version},')
-	sb.write_string('"tableUuid":"${w.table_metadata.table_uuid}",')
-	sb.write_string('"location":"${w.table_metadata.location}",')
-	sb.write_string('"lastUpdatedMs":${w.table_metadata.last_updated_ms},')
-	sb.write_string('"currentSchemaId":${w.table_metadata.current_schema_id},')
-	sb.write_string('"defaultSpecId":${w.table_metadata.default_spec_id},')
-	sb.write_string('"currentSnapshotId":${w.table_metadata.current_snapshot_id},')
-
-	// properties
-	sb.write_string('"properties":${json.encode(w.table_metadata.properties)},')
-
-	// schemas
-	sb.write_string('"schemas":[')
-	for i, schema in w.table_metadata.schemas {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"schemaId":${schema.schema_id},')
-		sb.write_string('"fields":[')
-		for j, field in schema.fields {
-			if j > 0 {
-				sb.write_string(',')
-			}
-			sb.write_string('{"id":${field.id},')
-			sb.write_string('"name":"${field.name}",')
-			sb.write_string('"type":"${field.typ}",')
-			sb.write_string('"required":${field.required}}')
-		}
-		sb.write_string(']}')
-	}
-	sb.write_string('],')
-
-	// partitionSpecs
-	sb.write_string('"partitionSpecs":[')
-	for i, spec in w.table_metadata.partition_specs {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"specId":${spec.spec_id},')
-		sb.write_string('"fields":[')
-		for j, field in spec.fields {
-			if j > 0 {
-				sb.write_string(',')
-			}
-			sb.write_string('{"sourceId":${field.source_id},')
-			sb.write_string('"fieldId":${field.field_id},')
-			sb.write_string('"name":"${field.name}",')
-			sb.write_string('"transform":"${field.transform}"}')
-		}
-		sb.write_string(']}')
-	}
-	sb.write_string('],')
-
-	// snapshots
-	sb.write_string('"snapshots":[')
-	for i, snapshot in w.table_metadata.snapshots {
-		if i > 0 {
-			sb.write_string(',')
-		}
-		sb.write_string('{"snapshotId":${snapshot.snapshot_id},')
-		sb.write_string('"timestampMs":${snapshot.timestamp_ms},')
-		sb.write_string('"manifestList":"${snapshot.manifest_list}",')
-		sb.write_string('"schemaId":${snapshot.schema_id},')
-		sb.write_string('"summary":${json.encode(snapshot.summary)}}')
-	}
-	sb.write_string(']')
-
-	sb.write_string('}')
-
-	return sb.str()
+	return json.encode(w.table_metadata)
 }
 
 /// write_metadata_file writes the table metadata file to S3.
@@ -124,10 +50,11 @@ pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic
 
 	// Step 2: Build manifest metadata and write manifest-list file
 	manifest := IcebergManifest{
-		manifest_path: '${w.table_metadata.location}/${manifest_path}'
-		snapshot_id:   snapshot_id
-		added_files:   added_files
-		added_rows:    added_records
+		manifest_path:   '${w.table_metadata.location}/${manifest_path}'
+		manifest_length: i64(manifest_content.len)
+		snapshot_id:     snapshot_id
+		added_files:     added_files
+		added_rows:      added_records
 	}
 	manifest_list_path := w.generate_manifest_list_path(snapshot_id)
 	manifest_list_content := w.encode_manifest_list(manifest)!

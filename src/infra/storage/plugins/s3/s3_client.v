@@ -3,8 +3,7 @@
 // Provides AWS SigV4 signed requests and S3 API operations
 module s3
 
-import crypto.sha256
-import crypto.hmac
+import encoding.xml
 import net.http
 import time
 import sync.stdatomic
@@ -17,13 +16,39 @@ import infra.observability
 const dns_backoff_ms = 1000
 const max_backoff_jitter_ms = 50
 const max_delete_concurrent = 20
-const hmac_block_size = 64
 const s3_read_timeout_ms = 15000
 const s3_write_timeout_ms = 15000
 
+/// S3NetworkError represents transient network connectivity errors.
+/// Used for retry decisions instead of fragile string matching.
+struct S3NetworkError {
+	Error
+	detail string
+}
+
+fn (e S3NetworkError) msg() string {
+	return 'S3 network error: ${e.detail}'
+}
+
+/// S3ETagMismatchError indicates a conditional PUT failed due to ETag mismatch.
+/// Returned on HTTP 412 Precondition Failed.
+struct S3ETagMismatchError {
+	Error
+}
+
+fn (e S3ETagMismatchError) msg() string {
+	return 'etag_mismatch'
+}
+
 /// is_network_error detects network errors such as DNS resolution failures, connection refused, and timeouts.
 /// Identifies transient errors that may occur when connecting to S3 endpoints in Docker container environments.
-fn is_network_error(err_str string) bool {
+/// Checks for S3NetworkError type first, then falls back to string matching for V stdlib errors.
+fn is_network_error(err IError) bool {
+	if err is S3NetworkError {
+		return true
+	}
+	// Fallback for errors from V's stdlib (net.http) which are still string-based
+	err_str := err.msg()
 	return err_str.contains('socket error') || err_str.contains('resolve')
 		|| err_str.contains('connection refused') || err_str.contains('timed out')
 		|| err_str.contains('Connection refused') || err_str.contains('ECONNREFUSED')
@@ -50,7 +75,7 @@ pub:
 /// Retries with exponential backoff on DNS/network errors.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
 	// Metric: S3 GET request
-	stdatomic.add_i64(&a.metrics.s3_get_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_get_count, 1)
 
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -78,7 +103,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			header: headers
 		}) or {
 			last_err = 'S3 GET prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -89,7 +114,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 			err_str := err.msg()
 
 			// Retry on DNS/network errors
-			if is_network_error(err_str) && attempt < cfg_max_retries - 1 {
+			if is_network_error(err) && attempt < cfg_max_retries - 1 {
 				backoff_ms := dns_backoff_ms * (1 << attempt)
 				observability.log_with_context('s3', .warn, 'S3Client', 'GET retry (network error)',
 					{
@@ -104,19 +129,19 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 
 			// Non-network error or last retry: fail immediately
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 
 		if resp.status_code == 404 {
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error('Object not found: ${key}')
 		}
 		// 206 Partial Content is also a success for Range requests
 		if resp.status_code != 200 && resp.status_code != 206 {
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error('S3 GET failed with status ${resp.status_code}')
 		}
 
@@ -125,7 +150,7 @@ fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, s
 	}
 
 	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 	return error(last_err)
 }
 
@@ -141,7 +166,7 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 /// Adds jitter to prevent thundering herd on concurrent retries.
 fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries_ int) ! {
 	// Metric: S3 PUT request (counted once, including retries)
-	stdatomic.add_i64(&a.metrics.s3_put_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
 
 	cfg_retry_delay_ms := a.config.retry_delay_ms
 	endpoint := a.get_endpoint()
@@ -162,7 +187,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 			data:   data.bytestr()
 		}) or {
 			last_err = 'S3 PUT prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -174,7 +199,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 
 			if attempt < max_retries_ - 1 {
 				// Apply longer backoff for DNS/network errors (1s, 2s, 4s)
-				backoff_ms := if is_network_error(err_str) {
+				backoff_ms := if is_network_error(err) {
 					dns_backoff_ms * (1 << attempt)
 				} else {
 					cfg_retry_delay_ms * (1 << attempt)
@@ -202,7 +227,7 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 				'retries':  max_retries_.str()
 			})
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 
@@ -230,11 +255,11 @@ fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_ret
 		}
 
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 PUT failed with status ${resp.status_code}')
 	}
 	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 	return error(last_err)
 }
 
@@ -297,7 +322,7 @@ fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag stri
 	resp := req.do() or { return error('S3 PUT failed: ${err}') }
 
 	if resp.status_code == 412 {
-		return error('etag_mismatch')
+		return S3ETagMismatchError{}
 	}
 	if resp.status_code !in [200, 201, 204] {
 		return error('S3 PUT failed with status ${resp.status_code}')
@@ -308,7 +333,7 @@ fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag stri
 /// Returns 200 or 204 status code on successful deletion.
 fn (mut a S3StorageAdapter) delete_object(key string) ! {
 	// Metric: S3 DELETE request
-	stdatomic.add_i64(&a.metrics.s3_delete_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_delete_count, 1)
 
 	endpoint := a.get_endpoint()
 	url := if a.config.use_path_style {
@@ -324,7 +349,7 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 		method: .delete
 		header: headers
 	}) or {
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 DELETE prepare failed: ${err}')
 	}
 	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -332,13 +357,13 @@ fn (mut a S3StorageAdapter) delete_object(key string) ! {
 
 	resp := req.do() or {
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 DELETE failed: ${err}')
 	}
 
 	if resp.status_code !in [200, 204] {
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 DELETE failed with status ${resp.status_code}')
 	}
 }
@@ -410,7 +435,7 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 /// Includes retry logic for transient network and server errors.
 fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token string) !ListObjectsPage {
 	// Metric: S3 LIST request
-	stdatomic.add_i64(&a.metrics.s3_list_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_list_count, 1)
 
 	cfg_max_retries := a.config.max_retries
 	cfg_retry_delay_ms := a.config.retry_delay_ms
@@ -441,7 +466,7 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 			header: headers
 		}) or {
 			last_err = 'S3 LIST prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
@@ -460,7 +485,7 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 
 			if attempt < cfg_max_retries - 1 {
 				// Apply longer backoff for DNS/network errors (1s, 2s, 4s)
-				backoff_ms := if is_network_error(err_str) {
+				backoff_ms := if is_network_error(err) {
 					dns_backoff_ms * (1 << attempt)
 				} else {
 					cfg_retry_delay_ms * (1 << attempt)
@@ -474,7 +499,7 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 				continue
 			}
 			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(last_err)
 		}
 
@@ -499,80 +524,13 @@ fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token 
 		}
 
 		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 		return error('S3 LIST failed with status ${resp.status_code}')
 	}
 
 	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 	return error(last_err)
-}
-
-/// sign_request signs an HTTP request using AWS Signature V4.
-/// Generates authentication headers required for AWS S3 API calls.
-/// Signing process: Canonical Request -> String to Sign -> Signing Key -> Signature
-fn (a &S3StorageAdapter) sign_request(method string, key string, query string, body []u8) http.Header {
-	mut h := http.Header{}
-	now := time.utc()
-
-	// Manual formatting to ensure UTC time
-	date_day := now.custom_format('YYYYMMDD')
-	hours := now.hour
-	minutes := now.minute
-	seconds := now.second
-	date_str := '${date_day}T${hours:02}${minutes:02}${seconds:02}Z'
-
-	h.add_custom('x-amz-date', date_str) or {}
-	host := a.get_host()
-	h.add_custom('Host', host) or {}
-
-	payload_hash := sha256.sum(body).hex()
-	h.add_custom('x-amz-content-sha256', payload_hash) or {}
-
-	if body.len > 0 {
-		h.add_custom('Content-Length', body.len.str()) or {}
-	}
-
-	if a.config.access_key.len == 0 || a.config.secret_key.len == 0 {
-		return h
-	}
-
-	// Canonical Request
-	canonical_uri := if key == '' {
-		'/${a.config.bucket_name}'
-	} else if key.starts_with('/') {
-		'/${a.config.bucket_name}${key}'
-	} else {
-		'/${a.config.bucket_name}/${key}'
-	}
-	canonical_querystring := a.canonicalize_query(query)
-
-	canonical_headers := 'host:${host}\nx-amz-content-sha256:${payload_hash}\nx-amz-date:${date_str}\n'
-	signed_headers := 'host;x-amz-content-sha256;x-amz-date'
-
-	canonical_request := '${method}\n${canonical_uri}\n${canonical_querystring}\n${canonical_headers}\n${signed_headers}\n${payload_hash}'
-
-	// String to Sign
-	algorithm := 'AWS4-HMAC-SHA256'
-	credential_scope := '${date_day}/${a.config.region}/s3/aws4_request'
-	canonical_request_hash := sha256.sum(canonical_request.bytes()).hex()
-
-	string_to_sign := '${algorithm}\n${date_str}\n${credential_scope}\n${canonical_request_hash}'
-
-	// Signing Key
-	k_date := hmac.new(('AWS4' + a.config.secret_key).bytes(), date_day.bytes(), sha256.sum,
-		hmac_block_size)
-	k_region := hmac.new(k_date, a.config.region.bytes(), sha256.sum, hmac_block_size)
-	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, hmac_block_size)
-	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, hmac_block_size)
-
-	// Signature
-	signature := hmac.new(k_signing, string_to_sign.bytes(), sha256.sum, hmac_block_size).hex()
-
-	auth_header := '${algorithm} Credential=${a.config.access_key}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}'
-	h.add_custom('Authorization', auth_header) or {}
-
-	return h
 }
 
 /// get_endpoint returns the S3 endpoint URL.
@@ -610,132 +568,6 @@ fn (a &S3StorageAdapter) get_host() string {
 	}
 }
 
-/// canonicalize_query sorts and encodes query parameters for AWS SigV4.
-/// Sorts query parameters alphabetically and applies URL encoding.
-fn (a &S3StorageAdapter) canonicalize_query(query string) string {
-	if query == '' {
-		return ''
-	}
-
-	// Parse query string into map
-	mut params := map[string]string{}
-	for pair in query.split('&') {
-		parts := pair.split_nth('=', 2)
-		if parts.len == 2 {
-			// URL-decode then re-encode keys and values for AWS SigV4
-			key := url_decode(parts[0])
-			value := url_decode(parts[1])
-			params[key] = value
-		}
-	}
-
-	// Sort keys alphabetically
-	mut keys := []string{}
-	for k in params.keys() {
-		keys << k
-	}
-	keys.sort()
-
-	// Build canonical query string
-	mut result := []string{}
-	for key in keys {
-		// AWS SigV4 requires specific encoding
-		encoded_key := url_encode_for_sigv4(key)
-		encoded_value := url_encode_for_sigv4(params[key])
-		result << '${encoded_key}=${encoded_value}'
-	}
-
-	return result.join('&')
-}
-
-/// url_decode decodes a percent-encoded string.
-/// Example: %20 -> space, %2F -> /
-fn url_decode(s string) string {
-	mut result := s
-	mut i := 0
-	for i < result.len {
-		if result[i] == u8(`%`) && i + 2 < result.len {
-			hex_str := result[i + 1..i + 3]
-			if is_hex_char(hex_str[0]) && is_hex_char(hex_str[1]) {
-				c := hex_to_u8(hex_str)
-				result = result[0..i] + c.ascii_str() + result[i + 3..]
-			} else {
-				i++
-			}
-		} else {
-			i++
-		}
-	}
-	return result
-}
-
-/// is_hex_char checks whether a character is a valid hexadecimal digit.
-/// Accepts characters in the range 0-9, A-F, a-f.
-fn is_hex_char(c u8) bool {
-	return (c >= `0` && c <= `9`) || (c >= `A` && c <= `F`) || (c >= `a` && c <= `f`)
-}
-
-/// hex_to_u8 converts a two-character hexadecimal string to a byte.
-/// Example: "4A" -> 74
-fn hex_to_u8(s string) u8 {
-	mut result := u8(0)
-	for c in s {
-		result <<= 4
-		if c >= `0` && c <= `9` {
-			result += c - `0`
-		} else if c >= `A` && c <= `F` {
-			result += c - `A` + 10
-		} else if c >= `a` && c <= `f` {
-			result += c - `a` + 10
-		}
-	}
-	return result
-}
-
-/// u8_to_hex converts a byte to a two-character uppercase hexadecimal string.
-/// Example: 74 -> "4A"
-fn u8_to_hex(c u8) string {
-	high := (c >> 4) & 0x0F
-	low := c & 0x0F
-	mut high_hex := '0'
-	mut low_hex := '0'
-
-	if high < 10 {
-		high_hex = (u8(`0`) + high).ascii_str()
-	} else {
-		high_hex = (u8(`A`) + high - 10).ascii_str()
-	}
-
-	if low < 10 {
-		low_hex = (u8(`0`) + low).ascii_str()
-	} else {
-		low_hex = (u8(`A`) + low - 10).ascii_str()
-	}
-
-	return high_hex + low_hex
-}
-
-/// url_encode_for_sigv4 encodes a string according to AWS SigV4 requirements.
-/// Does not encode A-Z, a-z, 0-9, -, ., _, ~ characters.
-/// All other characters are percent-encoded in %XX format.
-fn url_encode_for_sigv4(s string) string {
-	mut result := []u8{}
-	for c in s {
-		match c {
-			`A`...`Z`, `a`...`z`, `0`...`9`, `-`, `.`, `_`, `~` {
-				result << c
-			}
-			else {
-				result << u8(`%`)
-				hex := u8_to_hex(c)
-				result << hex[0]
-				result << hex[1]
-			}
-		}
-	}
-	return result.bytestr()
-}
-
 /// ListObjectsPage holds a single page of S3 ListObjectsV2 results
 /// including pagination state for iterating beyond MaxKeys=1000.
 struct ListObjectsPage {
@@ -748,45 +580,79 @@ struct ListObjectsPage {
 /// ListObjectsPage, extracting IsTruncated and NextContinuationToken for
 /// pagination support.
 fn parse_list_objects_page(body string) ListObjectsPage {
-	objects := parse_list_objects_response(body)
+	doc := xml.XMLDocument.from_string(body) or { return ListObjectsPage{} }
 
-	is_truncated := body.contains('<IsTruncated>true</IsTruncated>')
+	is_truncated_nodes := doc.root.get_elements_by_tag('IsTruncated')
+	is_truncated := if is_truncated_nodes.len > 0 {
+		xml_node_text(is_truncated_nodes[0]) == 'true'
+	} else {
+		false
+	}
 
-	mut token := ''
-	if token_start := body.index('<NextContinuationToken>') {
-		token_end := body.index('</NextContinuationToken>') or { body.len }
-		if token_end > token_start + 23 {
-			token = body[token_start + 23..token_end]
-		}
+	token_nodes := doc.root.get_elements_by_tag('NextContinuationToken')
+	token := if token_nodes.len > 0 {
+		xml_node_text(token_nodes[0])
+	} else {
+		''
 	}
 
 	return ListObjectsPage{
-		objects:                 objects
+		objects:                 parse_contents_to_objects(doc.root.get_elements_by_tag('Contents'))
 		is_truncated:            is_truncated
 		next_continuation_token: token
 	}
 }
 
-/// parse_list_objects_response parses an S3 ListObjectsV2 XML response.
-/// Simplified XML parsing that extracts only <Key> tags.
-/// A proper XML parser is recommended for production use.
+/// parse_list_objects_response parses an S3 ListObjectsV2 XML response,
+/// extracting Key, Size, LastModified, and ETag from each Contents element.
 fn parse_list_objects_response(body string) []S3Object {
-	// Simplified XML parsing - use a proper XML parser in production
-	mut objects := []S3Object{}
+	doc := xml.XMLDocument.from_string(body) or { return [] }
+	return parse_contents_to_objects(doc.root.get_elements_by_tag('Contents'))
+}
 
-	mut remaining := body
-	for {
-		key_start := remaining.index('<Key>') or { break }
-		key_end := remaining.index('</Key>') or { break }
-
-		key := remaining[key_start + 5..key_end]
-		objects << S3Object{
-			key:  key
-			size: 0
+/// xml_node_text extracts the text content from an XML node's children.
+fn xml_node_text(node xml.XMLNode) string {
+	for child in node.children {
+		if child is string {
+			return child
 		}
-
-		remaining = remaining[key_end + 6..]
 	}
+	return ''
+}
 
+/// parse_contents_to_objects converts a list of XML Contents nodes into S3Objects.
+fn parse_contents_to_objects(contents_nodes []xml.XMLNode) []S3Object {
+	mut objects := []S3Object{cap: contents_nodes.len}
+	for node in contents_nodes {
+		mut key := ''
+		mut size := i64(0)
+		mut etag := ''
+		mut last_modified := time.Time{}
+		for child in node.children {
+			if child is xml.XMLNode {
+				match child.name {
+					'Key' {
+						key = xml_node_text(child)
+					}
+					'Size' {
+						size = xml_node_text(child).i64()
+					}
+					'ETag' {
+						etag = xml_node_text(child).trim('"')
+					}
+					'LastModified' {
+						last_modified = time.parse_iso8601(xml_node_text(child)) or { time.Time{} }
+					}
+					else {}
+				}
+			}
+		}
+		objects << S3Object{
+			key:           key
+			size:          size
+			last_modified: last_modified
+			etag:          etag
+		}
+	}
 	return objects
 }

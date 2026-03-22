@@ -24,15 +24,15 @@ pub mut:
 fn (mut a S3StorageAdapter) buffer_offset(group_id string, offset domain.PartitionOffset) bool {
 	cache_key := '${offset.topic}:${offset.partition}'
 
-	if group_id !in a.offset_buffers {
-		a.offset_buffers[group_id] = OffsetGroupBuffer{
+	if group_id !in a.offset_batcher.buffers {
+		a.offset_batcher.buffers[group_id] = OffsetGroupBuffer{
 			offsets:     map[string]OffsetEntry{}
 			dirty:       true
 			dirty_count: 1
 		}
 	}
 
-	mut buf := a.offset_buffers[group_id]
+	mut buf := a.offset_batcher.buffers[group_id]
 	buf.offsets[cache_key] = OffsetEntry{
 		offset:       offset.offset
 		leader_epoch: offset.leader_epoch
@@ -41,7 +41,7 @@ fn (mut a S3StorageAdapter) buffer_offset(group_id string, offset domain.Partiti
 	}
 	buf.dirty = true
 	buf.dirty_count++
-	a.offset_buffers[group_id] = buf
+	a.offset_batcher.buffers[group_id] = buf
 
 	return a.config.offset_flush_threshold_count > 0
 		&& buf.dirty_count >= a.config.offset_flush_threshold_count
@@ -52,8 +52,8 @@ fn (mut a S3StorageAdapter) buffer_offset(group_id string, offset domain.Partiti
 /// Must be called with offset_buffer_lock held by the caller.
 fn (a &S3StorageAdapter) get_buffered_offset(group_id string, topic string, partition int) ?i64 {
 	cache_key := '${topic}:${partition}'
-	if group_id in a.offset_buffers {
-		if entry := a.offset_buffers[group_id].offsets[cache_key] {
+	if group_id in a.offset_batcher.buffers {
+		if entry := a.offset_batcher.buffers[group_id].offsets[cache_key] {
 			return entry.offset
 		}
 	}
@@ -64,15 +64,15 @@ fn (a &S3StorageAdapter) get_buffered_offset(group_id string, topic string, part
 /// Called via spawn from flush_worker.
 fn (mut a S3StorageAdapter) flush_pending_offsets() {
 	// 1. Acquire offset_buffer_lock and extract dirty groups
-	a.offset_buffer_lock.lock()
+	a.offset_batcher.buffer_lock.lock()
 
 	mut groups_to_flush := map[string]OffsetGroupBuffer{}
-	for group_id, _ in a.offset_buffers {
-		buf := a.offset_buffers[group_id]
+	for group_id, _ in a.offset_batcher.buffers {
+		buf := a.offset_batcher.buffers[group_id]
 		if buf.dirty {
 			now := time.now().unix_milli()
 			// Move existing map and replace with empty map (avoids clone)
-			mut updated := a.offset_buffers[group_id]
+			mut updated := a.offset_batcher.buffers[group_id]
 			groups_to_flush[group_id] = OffsetGroupBuffer{
 				offsets:       updated.offsets
 				version:       updated.version
@@ -84,11 +84,11 @@ fn (mut a S3StorageAdapter) flush_pending_offsets() {
 			updated.dirty = false
 			updated.dirty_count = 0
 			updated.last_flush_at = now
-			a.offset_buffers[group_id] = updated
+			a.offset_batcher.buffers[group_id] = updated
 		}
 	}
 
-	a.offset_buffer_lock.unlock()
+	a.offset_batcher.buffer_lock.unlock()
 
 	if groups_to_flush.len == 0 {
 		return
@@ -100,9 +100,9 @@ fn (mut a S3StorageAdapter) flush_pending_offsets() {
 			// Restore buffer on failure (follows flush_worker pattern in buffer_manager.v)
 			a.restore_offset_buffer(group_id, buf)
 			// Metric: offset flush failure
-			a.metrics_lock.@lock()
-			a.metrics.offset_flush_error_count++
-			a.metrics_lock.unlock()
+			a.metrics_collector.mu.@lock()
+			a.metrics_collector.data.offset_flush_error_count++
+			a.metrics_collector.mu.unlock()
 			observability.log_with_context('s3', .error, 'OffsetFlush', 'Failed to flush offsets',
 				{
 				'group_id': group_id
@@ -143,19 +143,19 @@ fn (mut a S3StorageAdapter) flush_group_offsets(group_id string, buf OffsetGroup
 	a.put_object(snapshot_key, encoded)!
 
 	// 5. Update buffer version
-	a.offset_buffer_lock.lock()
-	if group_id in a.offset_buffers {
-		mut updated := a.offset_buffers[group_id]
+	a.offset_batcher.buffer_lock.lock()
+	if group_id in a.offset_batcher.buffers {
+		mut updated := a.offset_batcher.buffers[group_id]
 		updated.version = merged.version
-		a.offset_buffers[group_id] = updated
+		a.offset_batcher.buffers[group_id] = updated
 	}
-	a.offset_buffer_lock.unlock()
+	a.offset_batcher.buffer_lock.unlock()
 
 	// Metric: offset flush success
-	a.metrics_lock.@lock()
-	a.metrics.offset_flush_count++
-	a.metrics.offset_flush_success_count++
-	a.metrics_lock.unlock()
+	a.metrics_collector.mu.@lock()
+	a.metrics_collector.data.offset_flush_count++
+	a.metrics_collector.data.offset_flush_success_count++
+	a.metrics_collector.mu.unlock()
 }
 
 /// merge_offset_entries merges offset entries from source into target.
@@ -175,18 +175,18 @@ fn merge_offset_entries(mut target map[string]OffsetEntry, source map[string]Off
 /// restore_offset_buffer restores the buffer to its previous state on flush failure.
 /// Follows the flush_worker failure recovery pattern in buffer_manager.v.
 fn (mut a S3StorageAdapter) restore_offset_buffer(group_id string, failed_buf OffsetGroupBuffer) {
-	a.offset_buffer_lock.lock()
-	defer { a.offset_buffer_lock.unlock() }
+	a.offset_batcher.buffer_lock.lock()
+	defer { a.offset_batcher.buffer_lock.unlock() }
 
-	if group_id in a.offset_buffers {
-		mut current := a.offset_buffers[group_id]
+	if group_id in a.offset_batcher.buffers {
+		mut current := a.offset_batcher.buffers[group_id]
 		merge_offset_entries(mut current.offsets, failed_buf.offsets)
 		current.dirty = true
 		current.dirty_count += failed_buf.dirty_count
-		a.offset_buffers[group_id] = current
+		a.offset_batcher.buffers[group_id] = current
 	} else {
 		// Recreate if group was deleted
-		a.offset_buffers[group_id] = OffsetGroupBuffer{
+		a.offset_batcher.buffers[group_id] = OffsetGroupBuffer{
 			offsets:       failed_buf.offsets
 			version:       failed_buf.version
 			dirty:         true

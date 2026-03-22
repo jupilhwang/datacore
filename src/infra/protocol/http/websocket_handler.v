@@ -206,16 +206,48 @@ pub fn (mut h WebSocketHandler) start_connection(conn_id string, mut conn net.Tc
 }
 
 /// receiver_loop processes incoming WebSocket frames.
+/// Handles both single-frame and fragmented messages per RFC 6455 Section 5.4.
 fn (mut h WebSocketHandler) receiver_loop(conn_id string, mut conn net.TcpConn) {
+	// per-connection fragment reassembly state
+	mut fragment_buffer := []u8{}
+	mut fragment_opcode := WebSocketOpcode.continuation
+	mut is_fragmented := false
+
 	for {
 		frame := h.read_frame(mut conn) or { break }
 
 		match frame.opcode {
-			.text {
-				h.handle_text_message(conn_id, frame.payload)
+			.text, .binary {
+				if is_fragmented {
+					h.close_with_protocol_error(conn_id, mut conn, 'new data frame during fragmented message')
+					break
+				}
+				if frame.fin {
+					h.dispatch_message(conn_id, frame.opcode, frame.payload)
+				} else {
+					is_fragmented = true
+					fragment_opcode = frame.opcode
+					fragment_buffer = frame.payload.clone()
+				}
 			}
-			.binary {
-				h.handle_binary_message(conn_id, frame.payload)
+			.continuation {
+				if !is_fragmented {
+					h.close_with_protocol_error(conn_id, mut conn, 'unexpected continuation frame')
+					break
+				}
+				fragment_buffer << frame.payload
+				if u64(fragment_buffer.len) > u64(h.config.max_message_size) {
+					h.close_with_protocol_error(conn_id, mut conn, 'fragmented message too large')
+					is_fragmented = false
+					fragment_buffer = []u8{}
+					break
+				}
+				if frame.fin {
+					h.dispatch_message(conn_id, fragment_opcode, fragment_buffer)
+					fragment_buffer = []u8{}
+					fragment_opcode = .continuation
+					is_fragmented = false
+				}
 			}
 			.ping {
 				h.send_pong(mut conn, frame.payload) or { break }
@@ -227,11 +259,28 @@ fn (mut h WebSocketHandler) receiver_loop(conn_id string, mut conn net.TcpConn) 
 				h.handle_close(conn_id, mut conn, frame.payload)
 				break
 			}
-			.continuation {
-				// TODO(jira#XXX): implement fragmented frame message handling
-			}
 		}
 	}
+}
+
+/// dispatch_message routes a complete message payload to the appropriate handler
+/// based on the original opcode.
+fn (mut h WebSocketHandler) dispatch_message(conn_id string, opcode WebSocketOpcode, payload []u8) {
+	match opcode {
+		.text { h.handle_text_message(conn_id, payload) }
+		.binary { h.handle_binary_message(conn_id, payload) }
+		else {}
+	}
+}
+
+/// close_with_protocol_error sends a close frame with status 1002 (protocol error)
+/// and logs the violation.
+fn (mut h WebSocketHandler) close_with_protocol_error(conn_id string, mut conn net.TcpConn, reason string) {
+	observability.log_with_context('websocket', .warn, 'Fragment', 'Protocol error: ${reason}',
+		{
+		'conn_id': conn_id
+	})
+	h.send_close(mut conn, 1002, reason) or {}
 }
 
 /// sender_loop processes outgoing messages.

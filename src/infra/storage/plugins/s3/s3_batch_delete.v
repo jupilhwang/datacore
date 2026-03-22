@@ -123,7 +123,7 @@ fn (mut a S3StorageAdapter) delete_objects_batch(keys []string) ! {
 		return
 	}
 
-	stdatomic.add_i64(&a.metrics.s3_delete_count, keys.len)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_delete_count, keys.len)
 
 	chunks := chunk_keys(keys, max_delete_batch_size)
 	endpoint := a.get_endpoint()
@@ -131,17 +131,17 @@ fn (mut a S3StorageAdapter) delete_objects_batch(keys []string) ! {
 
 	for chunk in chunks {
 		mut req := a.build_delete_request(url, chunk) or {
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error(err.msg())
 		}
 
 		resp := req.do() or {
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return error('S3 batch DELETE failed: ${err}')
 		}
 
 		a.parse_delete_response(resp) or {
-			stdatomic.add_i64(&a.metrics.s3_error_count, 1)
+			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
 			return err
 		}
 	}

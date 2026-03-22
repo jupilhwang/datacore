@@ -135,7 +135,7 @@ fn (s &MockStorage) get_cluster_metadata_port() ?&port.ClusterMetadataPort {
 fn test_create_share_group() {
 	mut storage := new_mock_storage()
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	group := coordinator.get_or_create_group('test-group')
 	assert group.group_id == 'test-group'
@@ -147,7 +147,7 @@ fn test_heartbeat_new_member() {
 	storage.create_topic('test-topic', 3, domain.TopicConfig{}) or { panic('failed') }
 
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	req := ShareGroupHeartbeatRequest{
 		group_id:               'test-group'
@@ -170,7 +170,7 @@ fn test_heartbeat_existing_member() {
 	storage.create_topic('test-topic', 3, domain.TopicConfig{}) or { panic('failed') }
 
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// First heartbeat - join
 	req1 := ShareGroupHeartbeatRequest{
@@ -202,7 +202,7 @@ fn test_heartbeat_fenced_member() {
 	storage.create_topic('test-topic', 3, domain.TopicConfig{}) or { panic('failed') }
 
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// First heartbeat - join
 	req1 := ShareGroupHeartbeatRequest{
@@ -230,7 +230,7 @@ fn test_heartbeat_fenced_member() {
 fn test_leave_group() {
 	mut storage := new_mock_storage()
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Join
 	req := ShareGroupHeartbeatRequest{
@@ -258,7 +258,7 @@ fn test_acquire_records() {
 		max_partition_locks:     100
 		record_lock_duration_ms: 30000
 	}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Create group and join
 	req := ShareGroupHeartbeatRequest{
@@ -286,7 +286,7 @@ fn test_acknowledge_accept() {
 		max_partition_locks:     100
 		record_lock_duration_ms: 30000
 	}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Create group and join
 	req := ShareGroupHeartbeatRequest{
@@ -319,7 +319,7 @@ fn test_acknowledge_release() {
 		record_lock_duration_ms: 30000
 		delivery_attempt_limit:  5
 	}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Create group and join
 	req := ShareGroupHeartbeatRequest{
@@ -350,7 +350,7 @@ fn test_acknowledge_reject() {
 		max_partition_locks:     100
 		record_lock_duration_ms: 30000
 	}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Create group and join
 	req := ShareGroupHeartbeatRequest{
@@ -378,7 +378,7 @@ fn test_acknowledge_reject() {
 fn test_get_stats() {
 	mut storage := new_mock_storage()
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Create group and join
 	req := ShareGroupHeartbeatRequest{
@@ -399,7 +399,7 @@ fn test_get_stats() {
 fn test_list_groups() {
 	mut storage := new_mock_storage()
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Create multiple groups
 	for i in 0 .. 3 {
@@ -517,7 +517,7 @@ fn test_simple_assignor_empty_members() {
 fn test_session_management() {
 	mut storage := new_mock_storage()
 	config := domain.ShareGroupConfig{}
-	mut coordinator := new_share_group_coordinator(storage, config)
+	mut coordinator := new_share_group_coordinator(storage, storage, storage, config)
 
 	// Create session
 	session := coordinator.get_or_create_session('test-group', 'member-1')

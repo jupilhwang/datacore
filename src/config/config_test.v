@@ -2,6 +2,7 @@
 module config
 
 import os
+import toml
 
 fn test_parse_cli_args() {
 	// --key=value format
@@ -67,4 +68,156 @@ fn test_load_config_no_file_uses_defaults() {
 	assert cfg.storage.engine == 'memory'
 	assert cfg.schema_registry.enabled == true
 	assert cfg.schema_registry.topic == '__schemas'
+}
+
+fn test_escape_toml_string_escapes_special_characters() {
+	// backslash must be escaped
+	assert escape_toml_string('path\\to\\file') == 'path\\\\to\\\\file'
+	// double-quote must be escaped
+	assert escape_toml_string('say "hello"') == 'say \\"hello\\"'
+	// newline must be escaped
+	assert escape_toml_string('line1\nline2') == 'line1\\nline2'
+	// carriage return must be escaped
+	assert escape_toml_string('line1\rline2') == 'line1\\rline2'
+	// tab must be escaped
+	assert escape_toml_string('col1\tcol2') == 'col1\\tcol2'
+	// empty string passes through unchanged
+	assert escape_toml_string('') == ''
+	// normal string passes through unchanged
+	assert escape_toml_string('normal_value') == 'normal_value'
+}
+
+fn test_validate_rejects_invalid_storage_engine() {
+	cfg := Config{
+		broker:  BrokerConfig{
+			broker_id: 1
+		}
+		storage: StorageConfig{
+			engine: 'nonexistent'
+		}
+	}
+	cfg.validate() or {
+		assert err.msg().contains('Unknown storage engine')
+		return
+	}
+	assert false, 'validate() should return error for invalid engine'
+}
+
+fn test_validate_accepts_valid_storage_engine() {
+	cfg := Config{
+		broker:  BrokerConfig{
+			broker_id: 1
+		}
+		storage: StorageConfig{
+			engine: 's3'
+			s3:     S3StorageConfig{
+				bucket:     'test-bucket'
+				region:     'us-east-1'
+				endpoint:   'https://test-bucket.s3.us-east-1.amazonaws.com'
+				access_key: 'AKIAIOSFODNN7EXAMPLE'
+				secret_key: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'
+			}
+		}
+	}
+	cfg.validate() or {
+		assert false, 'validate() should succeed for valid s3 config: ${err}'
+		return
+	}
+}
+
+fn test_load_default_config_has_valid_defaults() {
+	cfg := load_config_with_args('/non/existent/path', map[string]string{}) or {
+		assert false, 'load_config_with_args should not fail: ${err}'
+		return
+	}
+	assert cfg.broker.port == 9092
+	assert cfg.broker.host == '0.0.0.0'
+	assert cfg.storage.engine == 'memory'
+	assert cfg.storage.memory.max_memory_mb == 20480
+}
+
+fn test_parse_cli_args_key_value_format() {
+	result := parse_cli_args(['--broker-port', '9999'])
+	assert result['broker-port'] == '9999'
+}
+
+fn test_parse_cli_args_equals_format() {
+	result := parse_cli_args(['--broker-port=9999'])
+	assert result['broker-port'] == '9999'
+}
+
+fn test_parse_cli_args_mixed_formats() {
+	result := parse_cli_args(['--broker-port=9999', '--broker-host', 'localhost'])
+	assert result['broker-port'] == '9999'
+	assert result['broker-host'] == 'localhost'
+}
+
+fn test_generate_deterministic_broker_id_consistency() {
+	id1 := generate_deterministic_broker_id()
+	id2 := generate_deterministic_broker_id()
+	assert id1 == id2
+	assert id1 >= 1
+}
+
+fn test_save_escapes_special_characters() {
+	// config with TOML injection payload in string fields
+	mut cfg := Config{
+		broker:          BrokerConfig{
+			host:       '0.0.0.0'
+			port:       9092
+			broker_id:  1
+			cluster_id: 'injected"\nmalicious_key = "evil'
+		}
+		storage:         StorageConfig{
+			engine: 'mem\\ory'
+		}
+		schema_registry: SchemaRegistryConfig{
+			enabled: true
+			topic:   '__schemas\twith\ttabs'
+		}
+		observability:   ObservabilityConfig{
+			logging: LoggingConfig{
+				level:  'info\rcarriage'
+				format: 'json"quote'
+			}
+		}
+	}
+
+	// save to temp file
+	tmp_path := os.join_path(os.temp_dir(), 'test_toml_escape.toml')
+	defer {
+		os.rm(tmp_path) or {}
+	}
+	cfg.save(tmp_path) or {
+		assert false, 'save() should not fail: ${err}'
+		return
+	}
+
+	// read back and verify special characters are escaped in the TOML output
+	content := os.read_file(tmp_path) or {
+		assert false, 'failed to read saved file: ${err}'
+		return
+	}
+
+	// the cluster_id with injected quote must have escaped quote in output
+	assert content.contains('cluster_id = "injected\\"'), 'double-quote in cluster_id not escaped'
+
+	// the storage engine with backslash must be escaped
+	assert content.contains('engine = "mem\\\\ory"'), 'backslash in engine not escaped'
+
+	// the saved file must be valid TOML (parseable without error)
+	// this is the critical check: if injection succeeded, TOML parse would either
+	// fail or produce an unexpected key
+	parsed := toml.parse_text(content) or {
+		assert false, 'saved file is not valid TOML: ${err}'
+		return
+	}
+
+	// verify the injected payload is NOT a separate TOML key
+	// if escaping works, malicious_key should not exist as a key
+	malicious_val := parsed.value_opt('malicious_key') or {
+		// good: key does not exist, injection was prevented
+		return
+	}
+	assert false, 'TOML injection: malicious_key parsed as separate key with value: ${malicious_val}'
 }

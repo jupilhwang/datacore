@@ -434,8 +434,14 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 					continue
 				}
 
-				// TODO(jira#XXX): Actually persist config changes when config storage is implemented
-				// For now, just return success (configs are accepted but not persisted)
+				// Config persistence not yet implemented -- log the requested changes
+				// so they are not silently dropped. Requires a config storage layer
+				// (e.g. persistent topic metadata) to fully persist at runtime.
+				for c in res.configs {
+					h.logger.warn('topic config change not persisted', observability.field_string('topic',
+						res.resource_name), observability.field_string('config_name',
+						c.name), observability.field_string('config_value', c.value or { '<null>' }))
+				}
 				results << AlterConfigsResult{
 					error_code:    0
 					error_message: none
@@ -444,23 +450,18 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 				}
 			}
 			4 {
-				// BROKER config - currently not supported
-				// Return success for validate_only, otherwise return error
-				if req.validate_only {
-					results << AlterConfigsResult{
-						error_code:    0
-						error_message: none
-						resource_type: res.resource_type
-						resource_name: res.resource_name
-					}
-				} else {
-					// Accept but don't persist (like topic configs)
-					results << AlterConfigsResult{
-						error_code:    0
-						error_message: none
-						resource_type: res.resource_type
-						resource_name: res.resource_name
-					}
+				// BROKER config -- runtime broker config changes are not supported.
+				// Log the requested entries and return success for client compatibility.
+				for c in res.configs {
+					h.logger.warn('broker config change not supported at runtime (requires restart)',
+						observability.field_string('broker', res.resource_name), observability.field_string('config_name',
+						c.name), observability.field_string('config_value', c.value or { '<null>' }))
+				}
+				results << AlterConfigsResult{
+					error_code:    0
+					error_message: none
+					resource_type: res.resource_type
+					resource_name: res.resource_name
 				}
 			}
 			else {
