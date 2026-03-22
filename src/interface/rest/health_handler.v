@@ -10,6 +10,9 @@ import json
 import net
 import time
 
+// Application version matching src/v.mod. Update on release.
+const app_version = '0.50.2'
+
 // HealthResponse is the health check response struct.
 struct HealthResponse {
 	status         string @[json: 'status']
@@ -61,7 +64,7 @@ fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
 		status:         status
 		storage:        status
 		uptime_seconds: uptime_seconds
-		version:        '0.44.1'
+		version:        app_version
 	}
 	s.send_json(mut conn, http_status, json.encode(resp))
 	conn.close() or {}

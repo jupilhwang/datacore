@@ -7,6 +7,12 @@ import service.port
 import time
 import rand
 
+// Default partition count for __consumer_offsets topic.
+const default_consumer_offsets_partitions = 50
+
+// Error code returned when a producer epoch is stale.
+const error_invalid_producer_epoch = i16(1)
+
 /// TransactionCoordinator manages transactional producers and transactions.
 /// Responsible for beginning transactions, adding partitions, and commit/rollback.
 pub struct TransactionCoordinator {
@@ -120,15 +126,7 @@ pub fn (mut c TransactionCoordinator) add_partitions_to_txn(transactional_id str
 	// 4. Add partitions
 	mut new_partitions := meta.topic_partitions.clone()
 	for p in partitions {
-		// Check for duplicates
-		mut exists := false
-		for existing in new_partitions {
-			if existing.topic == p.topic && existing.partition == p.partition {
-				exists = true
-				break
-			}
-		}
-		if !exists {
+		if !contains_topic_partition(new_partitions, p) {
 			new_partitions << p
 		}
 	}
@@ -167,7 +165,7 @@ pub fn (mut c TransactionCoordinator) add_offsets_to_txn(transactional_id string
 
 	// 4. Add the __consumer_offsets partition for this group to the transaction
 	// Partition is determined by: hash(group_id) % 50 (default __consumer_offsets partition count)
-	group_partition := hash_group_id(group_id) % 50
+	group_partition := hash_group_id(group_id) % default_consumer_offsets_partitions
 
 	// Add __consumer_offsets partition to the transaction
 	mut new_partitions := meta.topic_partitions.clone()
@@ -177,15 +175,7 @@ pub fn (mut c TransactionCoordinator) add_offsets_to_txn(transactional_id string
 	}
 
 	// Check if already added
-	mut already_added := false
-	for tp in new_partitions {
-		if tp.topic == '__consumer_offsets' && tp.partition == group_partition {
-			already_added = true
-			break
-		}
-	}
-
-	if !already_added {
+	if !contains_topic_partition(new_partitions, consumer_offsets_partition) {
 		new_partitions << consumer_offsets_partition
 	}
 
@@ -209,6 +199,16 @@ fn hash_group_id(group_id string) int {
 	}
 	// Convert to positive value
 	return int(hash & 0x7fffffff)
+}
+
+/// contains_topic_partition checks if a TopicPartition already exists in the list.
+fn contains_topic_partition(list []domain.TopicPartition, tp domain.TopicPartition) bool {
+	for existing in list {
+		if existing.topic == tp.topic && existing.partition == tp.partition {
+			return true
+		}
+	}
+	return false
 }
 
 /// write_txn_markers validates and processes transaction markers for commit/abort.
@@ -247,7 +247,7 @@ fn (mut c TransactionCoordinator) validate_marker_producer(marker domain.WriteTx
 
 	if meta.producer_epoch != marker.producer_epoch {
 		// Epoch mismatch indicates stale producer
-		return 1 // INVALID_PRODUCER_EPOCH
+		return error_invalid_producer_epoch // INVALID_PRODUCER_EPOCH
 	}
 
 	return 0

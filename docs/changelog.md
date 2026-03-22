@@ -1,5 +1,21 @@
 # DataCore Changelog
 
+## v0.50.3 (2026-03-22) - Post-Merge Refactoring
+
+### Refactoring
+- Split manager.v God Class into manager.v + manager_workers.v + manager_buffers.v
+- Split metrics.v into metrics.v + metrics_types.v + metrics_helpers.v
+- Extracted magic numbers to named constants in binary_protocol.v, coordinator.v
+- Extracted contains_topic_partition() helper for DRY compliance
+- Fixed stale hardcoded version in health_handler.v
+
+### Bug Fixes
+- Fixed TOCTOU race in connection_pool.v acquire() with post-dial limit re-check
+- Fixed cleanup_idle() holding mutex during I/O operations
+
+### Performance
+- Replaced O(n) buffer size scan with O(1) incremental counter in replication manager
+
 ## v0.50.2 (2026-03-22) - Code Review Fixes
 
 ### Bug Fixes
