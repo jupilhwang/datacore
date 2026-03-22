@@ -8,23 +8,28 @@ import net
 
 // write_i16 appends a big-endian i16 to the buffer.
 fn write_i16(mut buf []u8, val i16) {
-	mut tmp := []u8{len: 2}
-	binary.big_endian_put_u16(mut tmp, u16(val))
-	buf << tmp
+	buf << u8(val >> 8)
+	buf << u8(val)
 }
 
 // write_i32 appends a big-endian i32 to the buffer.
 fn write_i32(mut buf []u8, val i32) {
-	mut tmp := []u8{len: 4}
-	binary.big_endian_put_u32(mut tmp, u32(val))
-	buf << tmp
+	buf << u8(val >> 24)
+	buf << u8(val >> 16)
+	buf << u8(val >> 8)
+	buf << u8(val)
 }
 
 // write_i64 appends a big-endian i64 to the buffer.
 fn write_i64(mut buf []u8, val i64) {
-	mut tmp := []u8{len: 8}
-	binary.big_endian_put_u64(mut tmp, u64(val))
-	buf << tmp
+	buf << u8(val >> 56)
+	buf << u8(val >> 48)
+	buf << u8(val >> 40)
+	buf << u8(val >> 32)
+	buf << u8(val >> 24)
+	buf << u8(val >> 16)
+	buf << u8(val >> 8)
+	buf << u8(val)
 }
 
 // write_string appends a 2-byte length-prefixed UTF-8 string to the buffer.

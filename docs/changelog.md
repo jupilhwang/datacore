@@ -1,5 +1,15 @@
 # DataCore Changelog
 
+## v0.50.6 (2026-03-22) - Performance & ISP Optimization
+
+### Performance
+- connection_pool close_all(): TCP close moved outside lock (prevents shutdown stall)
+- binary_helpers write_i16/i32/i64: zero-alloc bit-shift pattern (eliminates temp buffer allocation)
+- rate_limiter: combined allow_request_with_bytes() reduces lock acquisition from 2x to 1x per request
+
+### Architecture
+- ClusterMetadataPort (15 methods) split into 5 ISP-compliant sub-interfaces: BrokerRegistryPort(6), ClusterStatePort(2), PartitionAssignmentPort(3), DistributedLockPort(3), BrokerHealthPort(2)
+
 ## v0.50.5 (2026-03-22)
 
 ### Bug Fixes

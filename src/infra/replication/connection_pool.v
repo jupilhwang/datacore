@@ -126,18 +126,27 @@ pub fn (mut p ConnectionPool) release(mut pc PooledConnection) {
 }
 
 /// close_all shuts down every connection and marks the pool as closed.
+/// Collects connections under lock, then closes them outside the lock
+/// to avoid blocking on TCP close while holding the mutex.
 pub fn (mut p ConnectionPool) close_all() {
+	mut to_close := []&PooledConnection{}
+
 	p.mtx.@lock()
 	addrs := p.connections.keys()
 	for addr in addrs {
-		mut conns := unsafe { p.connections[addr] }
-		for mut pc in conns {
-			pc.conn.close() or {}
+		conns := unsafe { p.connections[addr] }
+		for pc in conns {
+			to_close << pc
 		}
 	}
 	p.connections = map[string][]&PooledConnection{}
 	p.closed = true
 	p.mtx.unlock()
+
+	// Close connections outside the lock to avoid blocking on TCP close
+	for mut pc in to_close {
+		pc.conn.close() or {}
+	}
 }
 
 /// cleanup_idle removes idle connections that exceeded max_idle_time_ms.
