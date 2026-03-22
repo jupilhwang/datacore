@@ -3,6 +3,9 @@
 *.so
 *.a
 *.dll
+*.dylib
+*.bak
+*.tmp
 *.exe
 *.out
 /datacore
