@@ -3,6 +3,7 @@
 module engines
 
 import os
+import sync.stdatomic
 import infra.performance.core
 
 /// GenericPerformanceEngine is a general-purpose performance optimization engine.
@@ -13,6 +14,7 @@ pub mut:
 	batch_pool   &core.RecordBatchPool = unsafe { nil }
 	request_pool &core.RequestPool     = unsafe { nil }
 	config       core.PerformanceConfig
+	ops_count    i64
 }
 
 /// name returns the engine name.
@@ -84,6 +86,7 @@ pub fn (mut e GenericPerformanceEngine) put_request(r &core.PooledRequest) {
 
 /// read_file_at reads data from the specified offset in a file.
 pub fn (mut e GenericPerformanceEngine) read_file_at(path string, offset i64, size int) ![]u8 {
+	stdatomic.add_i64(&e.ops_count, 1)
 	// Standard fallback: use mmap if possible, otherwise read
 	mut f := os.open(path)!
 	defer { f.close() }
@@ -95,6 +98,7 @@ pub fn (mut e GenericPerformanceEngine) read_file_at(path string, offset i64, si
 
 /// write_file_at writes data to the specified offset in a file.
 pub fn (mut e GenericPerformanceEngine) write_file_at(path string, offset i64, data []u8) ! {
+	stdatomic.add_i64(&e.ops_count, 1)
 	mut f := os.open_file(path, 'r+', 0o644)!
 	defer { f.close() }
 	f.seek(offset, .start)!
@@ -108,6 +112,6 @@ pub fn (mut e GenericPerformanceEngine) get_stats() core.PerformanceStats {
 		engine_name:   e.name()
 		buffer_hits:   buf_stats.total_hits()
 		buffer_misses: buf_stats.total_misses()
-		ops_count:     0 // TODO(jira#XXX): track other operations
+		ops_count:     u64(stdatomic.load_i64(&e.ops_count))
 	}
 }
