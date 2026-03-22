@@ -1,5 +1,73 @@
 # DataCore Changelog
 
+## v0.50.2 (2026-03-22) - Code Review Fixes
+
+### Bug Fixes
+- fix: binary protocol negative length validation (CRITICAL - C1, C2)
+- fix: connection pool TOCTOU race condition (H1)
+- fix: connection pool leak on send failure (H2)
+- fix: replication server/manager data race with stdatomic (H3, H5)
+- fix: manager cluster_broker_refs data race (H4)
+- fix: binary protocol i16 overflow guard (H6)
+- fix: SASL handler internal error message leak (H10)
+
+### Refactoring
+- refactor: extract broker_startup_helpers.v from broker_startup.v (269 lines, was 400)
+- refactor: extract binary_helpers.v from binary_protocol.v (145 lines, was 311)
+- refactor: DRY extraction in handler_transaction.v (-58 lines)
+
+### Performance
+- perf: replace O(n^2) string concatenation with strings.Builder in metrics export
+
+## v0.50.1 (2026-03-22)
+
+### Removed
+- ISR Manager, Rebalance Trigger, Partition Leader Election -- incompatible with stateless architecture
+
+### Changed
+- Replication protocol migrated from JSON to compact binary format (reduced wire size, improved throughput)
+- `infra/performance/io/` renamed to `sysio/` to resolve V 0.5 stdlib module name collision
+
+### Added
+- `[broker.rate_limit]` configuration section in config.toml (disabled by default)
+- Audit logger wired into SASL authentication handlers
+- Binary replication integration tests (client-server roundtrip, wire format verification)
+
+### Fixed
+- infra/performance V 0.5 compatibility: all 8 test files now pass (previously 5 failures)
+- http_exporter.v adapted to V 0.5 stdlib (removed io.new_buffered_reader usage)
+
+## v0.50.0 (2026-03-22) - Comprehensive Architecture Improvement
+
+### Test Coverage
+- Added 36+ test files covering ALL Kafka protocol handlers (produce, fetch, metadata, topic, offset, group, sasl, acl, transaction, consumer, share_group, config, describe_cluster, log_dirs, admin, incremental_alter_configs, api_versions, find_coordinator, list_offsets)
+- Added service layer tests (produce, fetch, topic_manager, transaction_coordinator)
+- Added infra tests (replication protocol/client/server, s3_client, SCRAM-SHA-512)
+- Total: 125 test files, 1,704 test functions (from ~89 files)
+
+### Breaking Changes
+- Removed all `__global` variable declarations (replaced with const holder pattern)
+- Requires V 0.5+ (no longer needs `-enable-globals` flag)
+
+### High Availability
+- ISR Manager: tracks replica offsets, shrinks/expands ISR set, validates min.insync.replicas, calculates high watermark
+- Partition Rebalancing: RebalanceTrigger with debounce, wired into BrokerRegistry
+- Partition-Level Leader Election: elect from ISR, unclean election option, preferred leader election, broker failure handling
+
+### Performance
+- Replication Connection Pooling: reusable TCP connections per host, idle cleanup
+- Binary Replication Protocol: compact binary serialization (smaller than JSON)
+- Rate Limiting: token bucket algorithm, global + per-IP limits, Kafka error 55 throttle response
+
+### Security
+- SCRAM-SHA-512: comprehensive test coverage (17 tests)
+- Audit Logger: buffered event logging with type filtering
+
+### Structural Improvements
+- REST server.v split: 907 -> 375 lines (+health_handler, topic_handler, message_handler, metrics_handler)
+- main.v split: 700 -> 112 lines (+broker_startup, cli_commands)
+- WriteTxnMarkers: fully implemented (was TODO)
+
 ## v0.49.0 (2026-03-22)
 
 ### Breaking Changes

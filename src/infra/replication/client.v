@@ -9,23 +9,35 @@ import log
 /// Client sends replication messages to remote brokers.
 pub struct Client {
 mut:
-	protocol   Protocol
-	timeout_ms int
-	logger     log.Logger
+	binary_protocol BinaryProtocol
+	timeout_ms      int
+	logger          log.Logger
+	pool            &ConnectionPool = unsafe { nil }
 }
 
 // Client.new creates a new replication Client with the given timeout in milliseconds.
 /// Client.
 pub fn Client.new(timeout_ms int) &Client {
 	return &Client{
-		protocol:   Protocol.new()
-		timeout_ms: timeout_ms
-		logger:     log.Log{}
+		binary_protocol: BinaryProtocol.new()
+		timeout_ms:      timeout_ms
+		logger:          log.Log{}
+	}
+}
+
+// Client.new_with_pool creates a Client that reuses connections from the given pool.
+/// Client.new_with_pool creates a Client that reuses TCP connections from the given pool.
+pub fn Client.new_with_pool(timeout_ms int, pool &ConnectionPool) &Client {
+	return &Client{
+		binary_protocol: BinaryProtocol.new()
+		timeout_ms:      timeout_ms
+		logger:          log.Log{}
+		pool:            pool
 	}
 }
 
 // send sends a replication message to a remote broker and waits for response.
-// Establishes a new TCP connection for each call (no connection pooling).
+// Uses connection pooling when a pool is configured, otherwise creates a new connection.
 //
 // Parameters:
 // - broker_address: target broker address in "host:port" format (e.g., "localhost:9093")
@@ -39,7 +51,14 @@ pub fn Client.new(timeout_ms int) &Client {
 // - Protocol error if message serialization/deserialization fails
 /// send sends a replication message to a remote broker and waits for response.
 pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage) !domain.ReplicationMessage {
-	// Connect to broker
+	if !isnil(c.pool) {
+		return c.send_pooled(broker_address, msg)
+	}
+	return c.send_direct(broker_address, msg)
+}
+
+// send_direct creates a new TCP connection for a single request-response cycle.
+fn (mut c Client) send_direct(broker_address string, msg domain.ReplicationMessage) !domain.ReplicationMessage {
 	mut conn := net.dial_tcp(broker_address) or {
 		return error('failed to connect to ${broker_address}: ${err}')
 	}
@@ -48,21 +67,48 @@ pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage)
 		conn.close() or { c.logger.error('Failed to close connection: ${err}') }
 	}
 
-	// Set read/write timeout
-	conn.set_read_timeout(time.Duration(c.timeout_ms * time.millisecond))
 	conn.set_write_timeout(time.Duration(c.timeout_ms * time.millisecond))
 
-	// Send message
-	c.protocol.write_message(mut conn, msg) or { return error('failed to write message: ${err}') }
+	c.binary_protocol.write_message(mut conn, msg) or {
+		return error('failed to write message: ${err}')
+	}
 
 	c.logger.debug('Sent ${msg.msg_type} to ${broker_address}')
 
-	// Wait for response
-	response := c.protocol.read_message(mut conn) or {
+	response := c.binary_protocol.read_message(mut conn, i64(c.timeout_ms)) or {
 		return error('failed to read response: ${err}')
 	}
 
 	c.logger.debug('Received ${response.msg_type} from ${broker_address}')
+
+	return response
+}
+
+// send_pooled acquires a pooled connection for the request-response cycle.
+// On success the connection is released back to the pool for reuse.
+// On failure the underlying TCP socket is closed (not returned to pool).
+fn (mut c Client) send_pooled(broker_address string, msg domain.ReplicationMessage) !domain.ReplicationMessage {
+	mut pool := c.pool
+	mut pc := pool.acquire(broker_address)!
+
+	pc.conn.set_write_timeout(time.Duration(c.timeout_ms * time.millisecond))
+
+	c.binary_protocol.write_message(mut pc.conn, msg) or {
+		pc.conn.close() or {}
+		pool.remove_connection(pc)
+		return error('failed to write message: ${err}')
+	}
+
+	c.logger.debug('Sent ${msg.msg_type} to ${broker_address}')
+
+	response := c.binary_protocol.read_message(mut pc.conn, i64(c.timeout_ms)) or {
+		pc.conn.close() or {}
+		pool.remove_connection(pc)
+		return error('failed to read response: ${err}')
+	}
+
+	c.logger.debug('Received ${response.msg_type} from ${broker_address}')
+	pool.release(mut pc)
 
 	return response
 }
@@ -129,9 +175,8 @@ pub fn (mut c Client) send_with_retry(broker_address string, msg domain.Replicat
 }
 
 // close releases any resources held by the Client.
-// Currently a no-op since each send() creates its own connection,
-// but kept for interface compatibility and future connection pooling.
+// The pool lifecycle is managed externally; close does not shut down a shared pool.
 /// close releases any resources held by the Client.
 pub fn (mut c Client) close() {
-	// No persistent connections to close
+	// Pool lifecycle is managed by the caller, not the client.
 }

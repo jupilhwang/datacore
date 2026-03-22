@@ -59,21 +59,22 @@ pub fn (p Protocol) decode(data []u8) !domain.ReplicationMessage {
 	return msg
 }
 
-// WireMessage is a JSON-decodable representation of ReplicationMessage
+// WireMessage - JSON 디코딩용 중간 표현
+// to_json()가 map[string]string으로 직렬화하므로 모든 필드를 string으로 선언
 struct WireMessage {
 pub:
 	msg_type       string
 	correlation_id string
 	sender_id      string
-	timestamp      i64
+	timestamp      string
 	topic          string
-	partition      i32
-	offset         i64
-	success        bool
+	partition      string
+	offset         string
+	success        string
 	error_msg      string
 }
 
-// parse_message parses JSON string to ReplicationMessage
+// parse_message는 JSON 문자열을 ReplicationMessage로 변환한다.
 fn parse_message(json_str string) !domain.ReplicationMessage {
 	wire := json.decode(WireMessage, json_str)!
 
@@ -89,12 +90,12 @@ fn parse_message(json_str string) !domain.ReplicationMessage {
 		msg_type:       msg_type_val
 		correlation_id: wire.correlation_id
 		sender_id:      wire.sender_id
-		timestamp:      wire.timestamp
+		timestamp:      wire.timestamp.i64()
 		topic:          wire.topic
-		partition:      wire.partition
-		offset:         wire.offset
+		partition:      i32(wire.partition.int())
+		offset:         wire.offset.i64()
 		records_data:   []
-		success:        wire.success
+		success:        wire.success == 'true'
 		error_msg:      wire.error_msg
 	}
 }

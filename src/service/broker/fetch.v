@@ -10,6 +10,7 @@ import time
 /// FetchUseCase handles fetch request business logic.
 /// Supports single and parallel fetch, including timeout handling.
 pub struct FetchUseCase {
+mut:
 	topic_storage  port.TopicStoragePort
 	record_storage port.RecordStoragePort
 }
@@ -70,7 +71,7 @@ const parallel_fetch_timeout_ms = 30000
 
 /// execute processes a fetch request.
 /// Selects sequential or parallel processing based on partition count.
-pub fn (u &FetchUseCase) execute(req FetchRequest) FetchResponse {
+pub fn (mut u FetchUseCase) execute(req FetchRequest) FetchResponse {
 	if req.partitions.len > parallel_threshold {
 		return u.execute_parallel(req)
 	}
@@ -78,7 +79,7 @@ pub fn (u &FetchUseCase) execute(req FetchRequest) FetchResponse {
 }
 
 /// execute_sequential processes fetch requests sequentially (for small requests).
-fn (u &FetchUseCase) execute_sequential(req FetchRequest) FetchResponse {
+fn (mut u FetchUseCase) execute_sequential(req FetchRequest) FetchResponse {
 	mut partition_responses := []FetchPartitionResponse{cap: req.partitions.len}
 
 	for part_req in req.partitions {
@@ -94,7 +95,7 @@ fn (u &FetchUseCase) execute_sequential(req FetchRequest) FetchResponse {
 
 /// execute_parallel processes fetch requests in parallel using spawn.
 /// Includes timeout handling.
-fn (u &FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
+fn (mut u FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
 	ch := chan FetchPartitionResponse{cap: req.partitions.len}
 	for part_req in req.partitions {
 		spawn u.fetch_partition_async(part_req, ch)
@@ -161,12 +162,12 @@ fn (u &FetchUseCase) execute_parallel(req FetchRequest) FetchResponse {
 }
 
 /// fetch_partition_async fetches a single partition and sends the result to the channel.
-fn (u &FetchUseCase) fetch_partition_async(part_req FetchPartitionRequest, ch chan FetchPartitionResponse) {
+fn (mut u FetchUseCase) fetch_partition_async(part_req FetchPartitionRequest, ch chan FetchPartitionResponse) {
 	ch <- u.fetch_partition(part_req)
 }
 
 /// fetch_partition fetches records from a single partition.
-fn (u &FetchUseCase) fetch_partition(part_req FetchPartitionRequest) FetchPartitionResponse {
+fn (mut u FetchUseCase) fetch_partition(part_req FetchPartitionRequest) FetchPartitionResponse {
 	_ := u.topic_storage.get_topic(part_req.topic) or {
 		return FetchPartitionResponse{
 			topic:      part_req.topic

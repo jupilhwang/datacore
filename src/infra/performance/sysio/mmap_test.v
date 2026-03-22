@@ -1,4 +1,4 @@
-module io
+module sysio
 
 // mmap.v tests - memory-mapped file I/O
 import os

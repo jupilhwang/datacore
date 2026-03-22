@@ -77,6 +77,25 @@ fn parse_broker_config(cli_args map[string]string, doc toml.Doc) BrokerConfig {
 			'broker.idle_timeout_ms', 600000)
 		advertised_host:    src.get_string('advertised-host', 'DATACORE_ADVERTISED_HOST',
 			'broker.advertised_host', broker_host)
+		rate_limit:         parse_rate_limit_config(doc)
+	}
+}
+
+/// parse_rate_limit_config parses the [broker.rate_limit] TOML section.
+fn parse_rate_limit_config(doc toml.Doc) RateLimitConfig {
+	return RateLimitConfig{
+		enabled:                     get_bool(doc, 'broker.rate_limit.enabled', false)
+		max_requests_per_sec:        get_int(doc, 'broker.rate_limit.max_requests_per_sec',
+			default_rate_limit_max_requests_per_sec)
+		max_bytes_per_sec:           get_i64(doc, 'broker.rate_limit.max_bytes_per_sec',
+			default_rate_limit_max_bytes_per_sec)
+		per_ip_max_requests_per_sec: get_int(doc, 'broker.rate_limit.per_ip_max_requests_per_sec',
+			default_rate_limit_per_ip_max_requests_per_sec)
+		per_ip_max_connections:      get_int(doc, 'broker.rate_limit.per_ip_max_connections',
+			default_rate_limit_per_ip_max_connections)
+		burst_multiplier:            get_f64(doc, 'broker.rate_limit.burst_multiplier',
+			default_rate_limit_burst_multiplier)
+		window_ms:                   get_int(doc, 'broker.rate_limit.window_ms', default_rate_limit_window_ms)
 	}
 }
 
@@ -565,7 +584,7 @@ pub fn (c Config) save(path string) ! {
 	os.write_file(path, b.str())!
 }
 
-/// save_broker_section writes the [broker] TOML section.
+/// save_broker_section writes the [broker] and [broker.rate_limit] TOML sections.
 fn (c Config) save_broker_section(mut b strings.Builder) {
 	b.write_string('[broker]\n')
 	b.write_string('host = "${escape_toml_string(c.broker.host)}"\n')
@@ -577,6 +596,17 @@ fn (c Config) save_broker_section(mut b strings.Builder) {
 	b.write_string('request_timeout_ms = ${c.broker.request_timeout_ms}\n')
 	b.write_string('idle_timeout_ms = ${c.broker.idle_timeout_ms}\n')
 	b.write_string('advertised_host = "${escape_toml_string(c.broker.advertised_host)}"\n')
+	b.write_string('\n')
+	// [broker.rate_limit] sub-section
+	rl := c.broker.rate_limit
+	b.write_string('[broker.rate_limit]\n')
+	b.write_string('enabled = ${rl.enabled}\n')
+	b.write_string('max_requests_per_sec = ${rl.max_requests_per_sec}\n')
+	b.write_string('max_bytes_per_sec = ${rl.max_bytes_per_sec}\n')
+	b.write_string('per_ip_max_requests_per_sec = ${rl.per_ip_max_requests_per_sec}\n')
+	b.write_string('per_ip_max_connections = ${rl.per_ip_max_connections}\n')
+	b.write_string('burst_multiplier = ${rl.burst_multiplier}\n')
+	b.write_string('window_ms = ${rl.window_ms}\n')
 	b.write_string('\n')
 }
 
@@ -769,6 +799,9 @@ pub fn (c Config) validate() ! {
 		return error('Invalid broker_id: ${c.broker.broker_id}')
 	}
 
+	// validate rate limit configuration
+	c.validate_rate_limit()!
+
 	// validate storage configuration
 	match c.storage.engine {
 		'memory' {
@@ -803,6 +836,29 @@ pub fn (c Config) validate() ! {
 		else {
 			return error('Unknown storage engine: ${c.storage.engine}')
 		}
+	}
+}
+
+/// validate_rate_limit checks the validity of rate limit configuration values.
+fn (c Config) validate_rate_limit() ! {
+	rl := c.broker.rate_limit
+	if rl.max_requests_per_sec < 0 {
+		return error('Invalid rate_limit.max_requests_per_sec: ${rl.max_requests_per_sec} (must be >= 0)')
+	}
+	if rl.max_bytes_per_sec < 0 {
+		return error('Invalid rate_limit.max_bytes_per_sec: ${rl.max_bytes_per_sec} (must be >= 0)')
+	}
+	if rl.per_ip_max_requests_per_sec < 0 {
+		return error('Invalid rate_limit.per_ip_max_requests_per_sec: ${rl.per_ip_max_requests_per_sec} (must be >= 0)')
+	}
+	if rl.per_ip_max_connections < 0 {
+		return error('Invalid rate_limit.per_ip_max_connections: ${rl.per_ip_max_connections} (must be >= 0)')
+	}
+	if rl.burst_multiplier < 0.0 {
+		return error('Invalid rate_limit.burst_multiplier: ${rl.burst_multiplier} (must be >= 0.0)')
+	}
+	if rl.window_ms < 0 {
+		return error('Invalid rate_limit.window_ms: ${rl.window_ms} (must be >= 0)')
 	}
 }
 

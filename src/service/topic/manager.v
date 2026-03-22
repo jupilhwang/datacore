@@ -9,6 +9,7 @@ import common
 /// TopicManager handles topic management business logic.
 /// Responsible for topic lifecycle management and configuration validation.
 pub struct TopicManager {
+mut:
 	storage port.TopicStoragePort
 }
 
@@ -40,10 +41,10 @@ pub:
 
 /// create_topic creates a new topic.
 /// Performs validation on topic name and partition count.
-pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicResponse {
+pub fn (mut m TopicManager) create_topic(req CreateTopicRequest) CreateTopicResponse {
 	// Validate topic name
 	// Internal topics (prefixed with __) are only allowed for __schemas
-	if req.name.len == 0 || req.name.starts_with('__') && req.name != '__schemas' {
+	if req.name.len == 0 || (req.name.starts_with('__') && req.name != '__schemas') {
 		return CreateTopicResponse{
 			name:          req.name
 			error_code:    i16(domain.ErrorCode.invalid_topic_exception)
@@ -96,7 +97,7 @@ pub fn (m &TopicManager) create_topic(req CreateTopicRequest) CreateTopicRespons
 
 /// delete_topic deletes a topic.
 /// Internal topics (prefixed with __) cannot be deleted except for __schemas.
-pub fn (m &TopicManager) delete_topic(name string) ! {
+pub fn (mut m TopicManager) delete_topic(name string) ! {
 	// Prevent deletion of internal topics
 	if name.starts_with('__') && name != '__schemas' {
 		return error('Cannot delete internal topic')
@@ -106,18 +107,18 @@ pub fn (m &TopicManager) delete_topic(name string) ! {
 }
 
 /// list_topics returns a list of all topics.
-pub fn (m &TopicManager) list_topics() ![]domain.TopicMetadata {
+pub fn (mut m TopicManager) list_topics() ![]domain.TopicMetadata {
 	return m.storage.list_topics()
 }
 
 /// get_topic retrieves topic metadata.
-pub fn (m &TopicManager) get_topic(name string) !domain.TopicMetadata {
+pub fn (mut m TopicManager) get_topic(name string) !domain.TopicMetadata {
 	return m.storage.get_topic(name)
 }
 
 /// add_partitions adds partitions to a topic.
 /// The new partition count must be greater than the current count.
-pub fn (m &TopicManager) add_partitions(name string, new_count int) ! {
+pub fn (mut m TopicManager) add_partitions(name string, new_count int) ! {
 	// Retrieve current topic information
 	topic := m.storage.get_topic(name)!
 

@@ -94,3 +94,45 @@ pub:
 	producer_id    i64
 	producer_epoch i16
 }
+
+// WriteTxnMarkers domain types
+// Used by the coordinator to validate and process transaction markers
+// during commit/abort flows.
+
+/// WriteTxnMarker represents a single transaction marker to write.
+/// Contains producer identity and the target partitions.
+pub struct WriteTxnMarker {
+pub:
+	producer_id        i64
+	producer_epoch     i16
+	transaction_result TransactionResult
+	topics             []WriteTxnMarkerTopic
+}
+
+/// WriteTxnMarkerTopic represents a topic and its partitions for marker writing.
+pub struct WriteTxnMarkerTopic {
+pub:
+	name       string
+	partitions []int
+}
+
+/// WriteTxnMarkerResult holds the result of writing markers for a single producer.
+pub struct WriteTxnMarkerResult {
+pub:
+	producer_id i64
+	topics      []WriteTxnMarkerTopicResult
+}
+
+/// WriteTxnMarkerTopicResult holds per-topic marker writing results.
+pub struct WriteTxnMarkerTopicResult {
+pub:
+	name       string
+	partitions []WriteTxnMarkerPartitionResult
+}
+
+/// WriteTxnMarkerPartitionResult holds per-partition marker writing result.
+pub struct WriteTxnMarkerPartitionResult {
+pub:
+	partition  int
+	error_code i16
+}

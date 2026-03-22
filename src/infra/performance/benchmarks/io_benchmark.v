@@ -10,7 +10,7 @@ module benchmarks
 import os
 import time
 import infra.performance.engines
-import infra.performance.io
+import infra.performance.sysio
 import infra.performance.core
 
 // I/O benchmark configuration
@@ -95,7 +95,7 @@ pub fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
 fn detect_system_capabilities() SystemInfo {
 	topology := engines.get_numa_topology()
 	io_caps := engines.get_async_io_capabilities()
-	dma_caps := io.get_platform_capabilities()
+	dma_caps := sysio.get_platform_capabilities()
 
 	mut detected_os := 'Unknown'
 	$if linux {
@@ -204,7 +204,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_read(path string) {
 
 	// Warmup
 	for _ in 0 .. s.config.warmup_runs {
-		if mut mm := io.MmapFile.open(path, true) {
+		if mut mm := sysio.MmapFile.open(path, true) {
 			if region := mm.map_region(0, int(s.config.data_size)) {
 				mm.unmap_region(region) or {}
 			}
@@ -215,7 +215,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_read(path string) {
 	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		if mut mm := io.MmapFile.open(path, true) {
+		if mut mm := sysio.MmapFile.open(path, true) {
 			if region := mm.map_region(0, int(s.config.data_size)) {
 				mm.unmap_region(region) or {}
 			}
@@ -238,7 +238,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_write(path string) {
 	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		if mut mm := io.MmapFile.open(test_path, false) {
+		if mut mm := sysio.MmapFile.open(test_path, false) {
 			if region := mm.map_region(0, int(s.config.data_size)) {
 				mm.sync_region(region) or {}
 				mm.unmap_region(region) or {}
@@ -255,7 +255,7 @@ fn (mut s IoBenchmarkSuite) bench_mmap_write(path string) {
 /// bench_dma_read benchmarks DMA scatter reading.
 fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 	mut times := []i64{cap: s.config.iterations}
-	caps := io.get_platform_capabilities()
+	caps := sysio.get_platform_capabilities()
 
 	if !caps.has_scatter_gather {
 		s.results << IoBenchmarkResults{
@@ -266,10 +266,10 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 
 	// Prepare scatter buffers
 	mut bufs := [
-		io.new_sg_buffer(1024),
-		io.new_sg_buffer(1024),
-		io.new_sg_buffer(1024),
-		io.new_sg_buffer(1024),
+		sysio.new_sg_buffer(1024),
+		sysio.new_sg_buffer(1024),
+		sysio.new_sg_buffer(1024),
+		sysio.new_sg_buffer(1024),
 	]
 
 	mut file := os.open_file(path, 'r') or { return }
@@ -280,7 +280,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 	// Benchmark
 	for _ in 0 .. s.config.iterations {
 		start := time.now()
-		_ = io.scatter_read_native(file.fd, mut bufs)
+		_ = sysio.scatter_read_native(file.fd, mut bufs)
 		times << time.since(start).nanoseconds()
 	}
 
@@ -290,7 +290,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_read(path string) {
 /// bench_dma_write benchmarks DMA gather writing.
 fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 	mut times := []i64{cap: s.config.iterations}
-	caps := io.get_platform_capabilities()
+	caps := sysio.get_platform_capabilities()
 	test_path := '${path}.dma_write'
 
 	if !caps.has_scatter_gather {
@@ -302,10 +302,10 @@ fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 
 	// Prepare gather buffers
 	bufs := [
-		io.new_sg_buffer_from([]u8{len: 1024, init: 0xAA}),
-		io.new_sg_buffer_from([]u8{len: 1024, init: 0xBB}),
-		io.new_sg_buffer_from([]u8{len: 1024, init: 0xCC}),
-		io.new_sg_buffer_from([]u8{len: 1024, init: 0xDD}),
+		sysio.new_sg_buffer_from([]u8{len: 1024, init: 0xAA}),
+		sysio.new_sg_buffer_from([]u8{len: 1024, init: 0xBB}),
+		sysio.new_sg_buffer_from([]u8{len: 1024, init: 0xCC}),
+		sysio.new_sg_buffer_from([]u8{len: 1024, init: 0xDD}),
 	]
 
 	// Benchmark
@@ -313,7 +313,7 @@ fn (mut s IoBenchmarkSuite) bench_dma_write(path string) {
 		mut fd := os.open_file(test_path, 'w') or { continue }
 
 		start := time.now()
-		_ = io.gather_write_native(fd.fd, bufs)
+		_ = sysio.gather_write_native(fd.fd, bufs)
 		times << time.since(start).nanoseconds()
 
 		fd.close()

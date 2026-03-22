@@ -221,3 +221,98 @@ fn test_save_escapes_special_characters() {
 	}
 	assert false, 'TOML injection: malicious_key parsed as separate key with value: ${malicious_val}'
 }
+
+fn test_rate_limit_config_defaults_when_absent() {
+	// When no [broker.rate_limit] section exists, defaults should be applied
+	toml_content := '
+[broker]
+broker_id = 1
+port = 9092
+'
+	doc := toml.parse_text(toml_content) or {
+		assert false, 'failed to parse test TOML: ${err}'
+		return
+	}
+	rl := parse_rate_limit_config(doc)
+	assert rl.enabled == false, 'rate limit should be disabled by default'
+	assert rl.max_requests_per_sec == 1000
+	assert rl.max_bytes_per_sec == i64(104857600)
+	assert rl.per_ip_max_requests_per_sec == 200
+	assert rl.per_ip_max_connections == 50
+	assert rl.burst_multiplier == 1.5
+	assert rl.window_ms == 1000
+}
+
+fn test_rate_limit_config_custom_values() {
+	// Custom values from TOML should override defaults
+	toml_content := '
+[broker]
+broker_id = 1
+
+[broker.rate_limit]
+enabled = true
+max_requests_per_sec = 5000
+max_bytes_per_sec = 209715200
+per_ip_max_requests_per_sec = 500
+per_ip_max_connections = 100
+burst_multiplier = 2.0
+window_ms = 2000
+'
+	doc := toml.parse_text(toml_content) or {
+		assert false, 'failed to parse test TOML: ${err}'
+		return
+	}
+	rl := parse_rate_limit_config(doc)
+	assert rl.enabled == true
+	assert rl.max_requests_per_sec == 5000
+	assert rl.max_bytes_per_sec == i64(209715200)
+	assert rl.per_ip_max_requests_per_sec == 500
+	assert rl.per_ip_max_connections == 100
+	assert rl.burst_multiplier == 2.0
+	assert rl.window_ms == 2000
+}
+
+fn test_rate_limit_config_disabled_explicitly() {
+	// Explicitly disabled rate limiter
+	toml_content := '
+[broker]
+broker_id = 1
+
+[broker.rate_limit]
+enabled = false
+max_requests_per_sec = 9999
+'
+	doc := toml.parse_text(toml_content) or {
+		assert false, 'failed to parse test TOML: ${err}'
+		return
+	}
+	rl := parse_rate_limit_config(doc)
+	assert rl.enabled == false, 'rate limit should be explicitly disabled'
+	assert rl.max_requests_per_sec == 9999, 'custom value should still be parsed even when disabled'
+}
+
+fn test_rate_limit_config_in_full_config_load() {
+	// Verify RateLimitConfig is accessible via Config.broker.rate_limit
+	toml_content := '
+[broker]
+broker_id = 1
+
+[broker.rate_limit]
+enabled = true
+max_requests_per_sec = 2000
+'
+	tmp_path := os.join_path(os.temp_dir(), 'test_rate_limit_config.toml')
+	defer {
+		os.rm(tmp_path) or {}
+	}
+	os.write_file(tmp_path, toml_content) or {
+		assert false, 'failed to write test config: ${err}'
+		return
+	}
+	cfg := load_config(tmp_path) or {
+		assert false, 'load_config should not fail: ${err}'
+		return
+	}
+	assert cfg.broker.rate_limit.enabled == true
+	assert cfg.broker.rate_limit.max_requests_per_sec == 2000
+}

@@ -8,6 +8,7 @@ import service.port
 /// ProduceUseCase handles produce request business logic.
 /// Responsible for message validation, topic verification, and storage writes.
 pub struct ProduceUseCase {
+mut:
 	topic_storage  port.TopicStoragePort
 	record_storage port.RecordStoragePort
 }
@@ -41,7 +42,7 @@ pub:
 }
 
 /// execute processes a produce request.
-pub fn (u &ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
+pub fn (mut u ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 	// Validation
 	if req.topic.len == 0 {
 		return ProduceResponse{

@@ -7,10 +7,29 @@ import time
 import json
 import infra.observability
 
-// Workaround for V interface value copy bug: keep config backup at module level
-// Adding a config field to the struct causes a segfault on interface assignment,
-// so a global variable is used to preserve config.
-__global cluster_metadata_config_backup = S3Config{}
+// V interface value copy 버그 우회: 모듈 수준 const holder로 config 백업 보존
+struct ClusterMetadataConfigHolder {
+mut:
+	config  S3Config
+	is_init bool
+}
+
+const g_cluster_metadata_config_holder = &ClusterMetadataConfigHolder{}
+
+// get_cluster_metadata_config_backup은 백업된 config를 반환한다.
+fn get_cluster_metadata_config_backup() S3Config {
+	holder := unsafe { g_cluster_metadata_config_holder }
+	return holder.config
+}
+
+// set_cluster_metadata_config_backup은 config를 백업한다.
+fn set_cluster_metadata_config_backup(config S3Config) {
+	mut holder := unsafe { g_cluster_metadata_config_holder }
+	unsafe {
+		holder.config = config
+		holder.is_init = true
+	}
+}
 
 /// S3ClusterMetadataAdapter implements ClusterMetadataPort using S3 as the backend.
 /// Holds its own S3StorageAdapter instance to resolve config loss issue
@@ -23,8 +42,8 @@ pub mut:
 /// new_s3_cluster_metadata_adapter creates a new S3 cluster metadata adapter.
 /// Saves the adapter's config to a global backup and uses the original adapter directly.
 pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMetadataAdapter {
-	// Workaround for V interface value copy bug: save config to global variable
-	cluster_metadata_config_backup = adapter.config
+	// V interface value copy 버그 우회: config를 모듈 홀더에 백업
+	set_cluster_metadata_config_backup(adapter.config)
 	observability.log_with_context('s3', .info, 'ClusterMetadata', 'Creating cluster metadata adapter',
 		{
 		'endpoint':    adapter.config.endpoint
@@ -41,8 +60,8 @@ pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMeta
 /// To prevent config loss during V interface value copy,
 /// holds config internally and forcibly sets it on the adapter too.
 pub fn new_s3_cluster_metadata_with_config(config S3Config) !&S3ClusterMetadataAdapter {
-	// Workaround for V interface value copy bug: backup config to global variable
-	cluster_metadata_config_backup = config
+	// V interface value copy 버그 우회: config를 모듈 홀더에 백업
+	set_cluster_metadata_config_backup(config)
 	mut own_adapter := new_s3_adapter(config)!
 	// Forcibly overwrite adapter config with original
 	own_adapter.config = config
@@ -598,10 +617,11 @@ pub fn (a &S3ClusterMetadataAdapter) get_capability() domain.StorageCapability {
 
 // Config Recovery (V interface value copy bug workaround)
 
-// V interface value copy bug workaround: recover config from global backup if lost from adapter
+// V interface value copy 버그 우회: adapter의 config가 손실된 경우 모듈 홀더에서 복구
 fn (mut a S3ClusterMetadataAdapter) ensure_adapter_config() {
-	if a.adapter.config.endpoint.len == 0 && cluster_metadata_config_backup.endpoint.len > 0 {
-		a.adapter.config = cluster_metadata_config_backup
+	backup := get_cluster_metadata_config_backup()
+	if a.adapter.config.endpoint.len == 0 && backup.endpoint.len > 0 {
+		a.adapter.config = backup
 	}
 }
 

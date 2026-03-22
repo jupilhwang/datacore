@@ -409,7 +409,6 @@ pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 }
 
 /// on_broker_change is called when the broker list changes.
-/// Triggers partition rebalancing and calls the callback.
 /// Note: Caller must already hold r.lock (internal use only).
 pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 	r.logger.info('Broker change detected', observability.field_string('reason', changes.reason),
@@ -421,21 +420,7 @@ pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 		spawn cb(changes)
 	}
 
-	// Trigger rebalancing if partition assigner is configured
-	if r.partition_assigner != none {
-		// Get list of active brokers
-		active_brokers := r.list_active_brokers_internal() or { []domain.BrokerInfo{} }
-
-		if active_brokers.len == 0 {
-			r.logger.warn('No active brokers available for rebalance')
-			return
-		}
-
-		// TODO(jira#XXX): Perform rebalancing for all topics
-		// Currently only calls callback; actual rebalancing is handled externally
-		r.logger.info('Triggering partition rebalance for all topics', observability.field_int('active_brokers',
-			i64(active_brokers.len)))
-	}
+	// TODO(jira#XXX): Perform rebalancing for all topics
 
 	return
 }

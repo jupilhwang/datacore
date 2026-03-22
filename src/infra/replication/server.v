@@ -3,6 +3,7 @@ module replication
 import net
 import domain
 import sync
+import sync.stdatomic
 import time
 import log
 
@@ -10,13 +11,14 @@ import log
 /// Server handles incoming replication connections.
 pub struct Server {
 mut:
-	port     int
-	listener net.TcpListener
-	protocol Protocol
-	handler  MessageHandler = unsafe { nil }
-	running  bool
-	mtx      sync.Mutex
-	logger   log.Logger
+	port            int
+	listener        net.TcpListener
+	binary_protocol BinaryProtocol
+	handler         MessageHandler = unsafe { nil }
+	running_flag    i64
+	read_timeout_ms i64
+	mtx             sync.Mutex
+	logger          log.Logger
 }
 
 // MessageHandler is a callback interface for handling messages
@@ -27,11 +29,12 @@ pub type MessageHandler = fn (domain.ReplicationMessage) !domain.ReplicationMess
 /// Server.
 pub fn Server.new(port int, handler MessageHandler) &Server {
 	return &Server{
-		port:     port
-		protocol: Protocol.new()
-		handler:  handler
-		running:  false
-		logger:   log.Log{}
+		port:            port
+		binary_protocol: BinaryProtocol.new()
+		handler:         handler
+		running_flag:    0
+		read_timeout_ms: 30000
+		logger:          log.Log{}
 	}
 }
 
@@ -39,11 +42,11 @@ pub fn Server.new(port int, handler MessageHandler) &Server {
 /// start begins listening on the configured port.
 pub fn (mut s Server) start() ! {
 	s.mtx.@lock()
-	if s.running {
+	if stdatomic.load_i64(&s.running_flag) == 1 {
 		s.mtx.unlock()
 		return error('server already running')
 	}
-	s.running = true
+	stdatomic.store_i64(&s.running_flag, 1)
 	s.mtx.unlock()
 
 	// Create TCP listener
@@ -58,11 +61,11 @@ pub fn (mut s Server) start() ! {
 /// stop shuts down the server.
 pub fn (mut s Server) stop() ! {
 	s.mtx.@lock()
-	if !s.running {
+	if stdatomic.load_i64(&s.running_flag) != 1 {
 		s.mtx.unlock()
 		return
 	}
-	s.running = false
+	stdatomic.store_i64(&s.running_flag, 0)
 	s.mtx.unlock()
 
 	s.listener.close()!
@@ -72,16 +75,13 @@ pub fn (mut s Server) stop() ! {
 // accept_loop accepts incoming connections
 fn (mut s Server) accept_loop() {
 	for {
-		s.mtx.@lock()
-		if !s.running {
-			s.mtx.unlock()
+		if stdatomic.load_i64(&s.running_flag) != 1 {
 			break
 		}
-		s.mtx.unlock()
 
 		// Accept connection (with timeout)
 		mut conn := s.listener.accept() or {
-			if s.running {
+			if stdatomic.load_i64(&s.running_flag) == 1 {
 				s.logger.error('Failed to accept connection: ${err}')
 			}
 			continue
@@ -102,8 +102,8 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 	s.logger.debug('Accepted connection from ${remote_addr}')
 
 	for {
-		// Read message
-		msg := s.protocol.read_message(mut conn) or {
+		// Read message using binary protocol
+		msg := s.binary_protocol.read_message(mut conn, s.read_timeout_ms) or {
 			if err.msg().contains('EOF') || err.msg().contains('closed') {
 				s.logger.debug('Connection closed by ${remote_addr}')
 			} else {
@@ -131,14 +131,14 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				error_msg:      err.msg()
 			}
 
-			s.protocol.write_message(mut conn, error_response) or {
+			s.binary_protocol.write_message(mut conn, error_response) or {
 				s.logger.error('Failed to send error response: ${err}')
 			}
 			continue
 		}
 
 		// Send response
-		s.protocol.write_message(mut conn, response) or {
+		s.binary_protocol.write_message(mut conn, response) or {
 			s.logger.error('Failed to send response: ${err}')
 			break
 		}
@@ -148,5 +148,5 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 // is_running checks if server is running
 /// is_running returns whether the server is running.
 pub fn (s Server) is_running() bool {
-	return s.running
+	return stdatomic.load_i64(&s.running_flag) == 1
 }

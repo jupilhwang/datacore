@@ -232,9 +232,13 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 				mechanism.str()), observability.field_err_str(err.msg()), observability.field_duration('latency',
 				elapsed))
 
+			if mut al := h.audit_logger {
+				al.log_auth_failure('', err.msg())
+			}
+
 			response := SaslAuthenticateResponse{
 				error_code:          i16(ErrorCode.sasl_authentication_failed)
-				error_message:       'Authentication failed: ${err.msg()}'
+				error_message:       'Authentication failed'
 				auth_bytes:          []u8{}
 				session_lifetime_ms: 0
 			}
@@ -250,6 +254,15 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 			if result.complete {
 				h.logger.info('SASL authentication successful', observability.field_string('mechanism',
 					mechanism.str()), observability.field_duration('latency', elapsed))
+
+				principal_name := if p := result.principal {
+					p.name
+				} else {
+					'unknown'
+				}
+				if mut al := h.audit_logger {
+					al.log_auth_success('', principal_name, mechanism.str())
+				}
 			} else {
 				h.logger.debug('SASL authentication step completed', observability.field_string('mechanism',
 					mechanism.str()), observability.field_duration('latency', elapsed))
@@ -271,9 +284,13 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 				mechanism.str()), observability.field_string('error', result.error_message),
 				observability.field_duration('latency', elapsed))
 
+			if mut al := h.audit_logger {
+				al.log_auth_failure('', result.error_message)
+			}
+
 			response := SaslAuthenticateResponse{
 				error_code:          i16(result.error_code)
-				error_message:       result.error_message
+				error_message:       'Authentication failed'
 				auth_bytes:          []u8{}
 				session_lifetime_ms: 0
 			}

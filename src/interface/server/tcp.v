@@ -93,6 +93,8 @@ mut:
 	worker_pool   &WorkerPool
 	// running_flag is an atomic bool (0=stopped, 1=running) for lock-free is_running() checks.
 	running_flag i64
+	// Rate limiter (optional, nil when disabled)
+	rate_limiter ?&RateLimiter
 }
 
 /// new_server creates a new TCP server.
@@ -114,6 +116,12 @@ pub fn new_server(config ServerConfig, handler RequestHandler) &Server {
 		shutdown_chan: chan bool{cap: 1}
 		worker_pool:   new_worker_pool(pool_config)
 	}
+}
+
+/// set_rate_limiter configures the rate limiter for the server.
+/// Must be called before start(). Pass a limiter created by new_rate_limiter().
+pub fn (mut s Server) set_rate_limiter(rl &RateLimiter) {
+	s.rate_limiter = rl
 }
 
 /// start starts the TCP server.
@@ -409,6 +417,16 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				'size':           request_size.str()
 			})
 
+			// Rate limit check (if rate limiter is configured)
+			if mut rl := s.rate_limiter {
+				client_ip := extract_ip(client_addr)
+				if !rl.allow_request(client_ip) || !rl.allow_bytes(client_ip, i64(request_size)) {
+					throttle_resp := build_throttle_response(correlation_id)
+					conn.write(throttle_resp) or {}
+					continue
+				}
+			}
+
 			// Add to pipeline queue (supports pipelining)
 			// Clone request_buf so the pipeline owns an independent copy;
 			// the connection-level buffer is reused for subsequent reads.
@@ -572,4 +590,25 @@ fn format_bytes(bytes u64) string {
 		return '${f64(bytes) / 1024.0:.2}KB'
 	}
 	return '${bytes}B'
+}
+
+/// build_throttle_response creates a Kafka error response with THROTTLING_QUOTA_EXCEEDED (55).
+/// Returns a minimal response: size(4) + correlation_id(4) + error_code(2).
+fn build_throttle_response(correlation_id i32) []u8 {
+	// Response body: correlation_id(4) + error_code(2) = 6 bytes
+	mut resp := []u8{len: 10}
+	// Size prefix (6 bytes)
+	resp[0] = 0
+	resp[1] = 0
+	resp[2] = 0
+	resp[3] = 6
+	// Correlation ID
+	resp[4] = u8(correlation_id >> 24)
+	resp[5] = u8(correlation_id >> 16)
+	resp[6] = u8(correlation_id >> 8)
+	resp[7] = u8(correlation_id)
+	// Error code 55 = THROTTLING_QUOTA_EXCEEDED
+	resp[8] = 0
+	resp[9] = 55
+	return resp
 }

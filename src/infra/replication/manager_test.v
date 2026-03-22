@@ -2,6 +2,7 @@ module replication
 
 import domain
 import sync
+import sync.stdatomic
 import log
 import time
 
@@ -31,6 +32,7 @@ fn create_test_manager() &Manager {
 	mut m := &Manager{
 		broker_id:           'broker-test-1'
 		config:              config
+		binary_protocol:     BinaryProtocol.new()
 		server:              Server.new(config.replication_port, handler)
 		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
@@ -48,7 +50,7 @@ fn create_test_manager() &Manager {
 			},
 		]
 		logger:              log.Log{}
-		running:             false
+		running_flag:        0
 	}
 	return m
 }
@@ -122,7 +124,7 @@ fn test_crash_before_flush_replica_has_data() {
 
 fn test_orphan_cleanup_removes_stale_buffers() {
 	mut m := create_test_manager()
-	m.running = true
+	stdatomic.store_i64(&m.running_flag, 1)
 
 	now := time.now().unix_milli()
 	old_timestamp := now - 61000
@@ -211,7 +213,7 @@ fn test_orphan_cleanup_removes_stale_buffers() {
 
 fn test_flush_ack_failure_triggers_reassignment() {
 	mut m := create_test_manager()
-	m.running = true
+	stdatomic.store_i64(&m.running_flag, 1)
 
 	// Setup: assign replicas for topic-x:0
 	m.assignments['topic-x:0'] = domain.ReplicaAssignment{
@@ -380,6 +382,7 @@ fn test_manager_worker_lifecycle() {
 	mut m := &Manager{
 		broker_id:           'broker-lifecycle'
 		config:              config
+		binary_protocol:     BinaryProtocol.new()
 		server:              Server.new(config.replication_port, handler)
 		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
@@ -388,7 +391,7 @@ fn test_manager_worker_lifecycle() {
 		stats:               domain.ReplicationStats{}
 		cluster_broker_refs: []domain.BrokerRef{}
 		logger:              log.Log{}
-		running:             true
+		running_flag:        1
 	}
 
 	// Start workers (no cluster_brokers, so workers run but do minimal work)
@@ -398,14 +401,14 @@ fn test_manager_worker_lifecycle() {
 	time.sleep(time.Duration(250 * time.millisecond))
 
 	// Stop workers
-	m.running = false
+	stdatomic.store_i64(&m.running_flag, 0)
 	m.stop_workers()
 
 	// Wait for workers to exit
 	time.sleep(time.Duration(200 * time.millisecond))
 
 	// If we reach here without panic, lifecycle test passes
-	assert !m.running, 'manager should be stopped'
+	assert stdatomic.load_i64(&m.running_flag) == 0, 'manager should be stopped'
 }
 
 // --- Test: Heartbeat updates broker health ---
@@ -527,6 +530,7 @@ fn test_assign_replicas_excludes_self_by_broker_id() {
 	mut m := &Manager{
 		broker_id:           'self-broker'
 		config:              config
+		binary_protocol:     BinaryProtocol.new()
 		server:              Server.new(config.replication_port, handler)
 		client:              Client.new(config.replica_timeout_ms)
 		replica_buffers:     map[string][]domain.ReplicaBuffer{}
@@ -548,7 +552,7 @@ fn test_assign_replicas_excludes_self_by_broker_id() {
 			},
 		]
 		logger:              log.Log{}
-		running:             false
+		running_flag:        0
 	}
 
 	m.assign_replicas('id-topic', 0) or {
@@ -582,6 +586,7 @@ fn test_assign_replicas_legacy_addr_fallback() {
 	mut m := &Manager{
 		broker_id:       'legacy-broker'
 		config:          config
+		binary_protocol: BinaryProtocol.new()
 		server:          Server.new(config.replication_port, handler)
 		client:          Client.new(config.replica_timeout_ms)
 		replica_buffers: map[string][]domain.ReplicaBuffer{}
@@ -600,7 +605,7 @@ fn test_assign_replicas_legacy_addr_fallback() {
 			},
 		]
 		logger:              log.Log{}
-		running:             false
+		running_flag:        0
 	}
 
 	m.assign_replicas('legacy-topic', 0) or {
@@ -656,7 +661,7 @@ fn test_update_cluster_broker_refs() {
 
 fn test_concurrent_store_and_read_replica_buffers() {
 	mut m := create_test_manager()
-	m.running = true
+	stdatomic.store_i64(&m.running_flag, 1)
 	num_writers := 4
 	writes_per_writer := 50
 
@@ -753,7 +758,7 @@ fn test_concurrent_broker_health_updates() {
 
 fn test_concurrent_store_and_delete_replica_buffers() {
 	mut m := create_test_manager()
-	m.running = true
+	stdatomic.store_i64(&m.running_flag, 1)
 
 	// Pre-populate buffers
 	for i in 0 .. 100 {
@@ -940,7 +945,7 @@ fn test_orphan_cleanup_uses_ttl_ms() {
 	mut m := create_test_manager()
 	m.config.replica_buffer_ttl_ms = 500 // 500ms TTL
 	m.config.replica_timeout_ms = 1000 // fallback TTL (not used when ttl_ms > 0)
-	m.running = true
+	stdatomic.store_i64(&m.running_flag, 1)
 
 	now := time.now().unix_milli()
 	old_ts := now - 2000 // 2s old

@@ -1,6 +1,6 @@
 /// Zero-copy slice operations for high-performance data processing
 /// Provides efficient byte slice views without memory copies
-module io
+module sysio
 
 import time
 
