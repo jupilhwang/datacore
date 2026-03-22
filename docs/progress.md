@@ -395,3 +395,15 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - 28 modules, 122/122 test files, 1,683 test functions - ALL PASS
 - Build SUCCESS, Lint CLEAN, ISP migration verified
 
+## v0.50.8 God Class Decomposition Sprint (2026-03-23)
+
+### Completed
+- Handler God Class: Introduced HandlerContext shared struct + 7 sub-handler structs (Phase 1 - struct creation, methods remain on Handler)
+- Manager God Class: Extracted 3 focused components (health tracker, stats collector, assignment store), manager.v reduced 586->367 lines (-37%)
+- BrokerRegistry God Class: Split into 3 focused files by concern (registration, heartbeat, queries), main file reduced 475->233 lines (-51%)
+
+### Results
+- 13 new files created, all under 200 lines
+- QA: 123/123 test files pass, build SUCCESS, lint CLEAN
+- Zero test modifications required
+

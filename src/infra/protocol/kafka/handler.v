@@ -26,6 +26,8 @@ pub type PartitionAssignerPtr = &cluster.PartitionAssigner
 ///
 /// It handles all Kafka API requests for the broker and integrates with
 /// storage, authentication, ACL, transaction coordinator, and other components.
+/// Sub-handler structs group domain-specific dependencies while the Handler
+/// itself remains the dispatcher that routes requests.
 pub struct Handler {
 	broker_id   i32
 	host        string
@@ -48,6 +50,16 @@ mut:
 	// negotiated_mechanism stores the mechanism agreed upon during SaslHandshake
 	// so that handle_sasl_authenticate can use it instead of guessing from bytes
 	negotiated_mechanism ?domain.SaslMechanism
+	// Sub-handler structs that group domain-specific dependencies.
+	// These are wired at construction time and hold references to shared context.
+	handler_ctx   &HandlerContext
+	produce       &ProduceSubHandler
+	fetch_handler &FetchSubHandler
+	auth          &AuthSubHandler
+	txn           &TransactionSubHandler
+	group_handler &GroupSubHandler
+	admin         &AdminSubHandler
+	share         &ShareGroupSubHandler
 }
 
 /// HandlerConfig holds all configuration for creating a Kafka protocol handler.
@@ -110,6 +122,8 @@ fn (mut w StorageSubPorts) fetch_offsets(group_id string, partitions []domain.To
 
 /// new_handler_from_config creates a Handler from a HandlerConfig.
 /// This is the single initialization path that all constructor helpers delegate to.
+/// It builds the shared HandlerContext and wires each sub-handler with its
+/// domain-specific dependencies.
 pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 	logger := observability.get_named_logger('kafka.handler')
 	mut sub := StorageSubPorts{
@@ -117,6 +131,17 @@ pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 	}
 	offset_mgr := offset.new_offset_manager(sub, sub, observability.new_logger_adapter(logger))
 	metrics := observability.new_protocol_metrics()
+
+	ctx := &HandlerContext{
+		broker_id:           cfg.broker_id
+		host:                cfg.host
+		port:                cfg.broker_port
+		cluster_id:          cfg.cluster_id
+		storage:             cfg.storage
+		logger:              logger
+		metrics:             metrics
+		compression_service: cfg.compression_service
+	}
 
 	return Handler{
 		broker_id:               cfg.broker_id
@@ -135,6 +160,36 @@ pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 		metrics:                 metrics
 		compression_service:     cfg.compression_service
 		audit_logger:            cfg.audit_logger
+		handler_ctx:             ctx
+		produce:                 &ProduceSubHandler{
+			ctx:             ctx
+			txn_coordinator: cfg.txn_coordinator
+			schema_registry: none
+		}
+		fetch_handler:           &FetchSubHandler{
+			ctx: ctx
+		}
+		auth:                    &AuthSubHandler{
+			ctx:          ctx
+			auth_manager: cfg.auth_manager
+			acl_manager:  cfg.acl_manager
+			audit_logger: cfg.audit_logger
+		}
+		txn:                     &TransactionSubHandler{
+			ctx:             ctx
+			txn_coordinator: cfg.txn_coordinator
+		}
+		group_handler:           &GroupSubHandler{
+			ctx:            ctx
+			offset_manager: offset_mgr
+		}
+		admin:                   &AdminSubHandler{
+			ctx: ctx
+		}
+		share:                   &ShareGroupSubHandler{
+			ctx:                     ctx
+			share_group_coordinator: cfg.share_coordinator
+		}
 	}
 }
 
