@@ -3,7 +3,7 @@
 // https://protobuf.dev/programming-guides/encoding/
 module schema
 
-import infra.performance.core
+import common
 
 // Protobuf Binary Encoder
 // Implements Protocol Buffers wire format encoding
@@ -73,7 +73,7 @@ fn encode_message(json_str string, schema ProtoMessage) ![]u8 {
 		// Encode field tag (field_number << 3 | wire_type)
 		wire_type := get_wire_type(field.field_type)
 		tag := (u32(field.number) << 3) | u32(wire_type)
-		result << core.encode_uvarint(u64(tag))
+		result << common.encode_uvarint(u64(tag))
 
 		// Encode field value based on type
 		encoded := encode_field(value, field)!
@@ -88,15 +88,15 @@ fn encode_field(value string, field ProtoField) ![]u8 {
 	match field.field_type {
 		'int32', 'int64', 'uint32', 'uint64' {
 			val := parse_json_long(value) or { return error('invalid integer') }
-			return core.encode_uvarint(u64(val))
+			return common.encode_uvarint(u64(val))
 		}
 		'sint32' {
 			val := parse_json_int(value) or { return error('invalid sint32') }
-			return core.encode_varint(i64(val))
+			return common.encode_varint(i64(val))
 		}
 		'sint64' {
 			val := parse_json_long(value) or { return error('invalid sint64') }
-			return core.encode_varint(val)
+			return common.encode_varint(val)
 		}
 		'bool' {
 			val := parse_json_bool(value) or { return error('invalid bool') }
@@ -105,39 +105,39 @@ fn encode_field(value string, field ProtoField) ![]u8 {
 		'fixed32', 'sfixed32' {
 			val := parse_json_int(value) or { return error('invalid fixed32') }
 			mut buf := []u8{}
-			core.write_i32_le(mut buf, i32(val))
+			common.write_i32_le(mut buf, i32(val))
 			return buf
 		}
 		'fixed64', 'sfixed64' {
 			val := parse_json_long(value) or { return error('invalid fixed64') }
 			mut buf := []u8{}
-			core.write_i64_le(mut buf, i64(val))
+			common.write_i64_le(mut buf, i64(val))
 			return buf
 		}
 		'float' {
 			val := parse_json_float(value) or { return error('invalid float') }
 			bits := *unsafe { &u32(&val) }
 			mut buf := []u8{}
-			core.write_i32_le(mut buf, i32(bits))
+			common.write_i32_le(mut buf, i32(bits))
 			return buf
 		}
 		'double' {
 			val := parse_json_double(value) or { return error('invalid double') }
 			bits := *unsafe { &u64(&val) }
 			mut buf := []u8{}
-			core.write_i64_le(mut buf, i64(bits))
+			common.write_i64_le(mut buf, i64(bits))
 			return buf
 		}
 		'string' {
 			str := parse_json_string_value(value) or { return error('invalid string') }
 			bytes := str.bytes()
-			mut result := core.encode_uvarint(u64(bytes.len))
+			mut result := common.encode_uvarint(u64(bytes.len))
 			result << bytes
 			return result
 		}
 		'bytes' {
 			bytes := parse_json_bytes(value) or { return error('invalid bytes') }
-			mut result := core.encode_uvarint(u64(bytes.len))
+			mut result := common.encode_uvarint(u64(bytes.len))
 			result << bytes
 			return result
 		}
@@ -148,12 +148,12 @@ fn encode_field(value string, field ProtoField) ![]u8 {
 				str := parse_json_string_value(value) or {
 					// Try as integer
 					val := parse_json_int(value) or { return error('invalid enum') }
-					return core.encode_uvarint(u64(val))
+					return common.encode_uvarint(u64(val))
 				}
 
 				for i, name in field.enum_values {
 					if name == str {
-						return core.encode_uvarint(u64(i))
+						return common.encode_uvarint(u64(i))
 					}
 				}
 				return error('unknown enum value: ${str}')
@@ -263,7 +263,7 @@ fn decode_field(mut reader ProtoReader, field ProtoField, wire_type int) !string
 			}
 			str := reader.data[reader.pos..reader.pos + int(len)].bytestr()
 			reader.pos += int(len)
-			return '"${core.escape_json_string(str)}"'
+			return '"${common.escape_json_string(str)}"'
 		}
 		'bytes' {
 			len := proto_decode_varint(mut reader)!
@@ -331,7 +331,7 @@ mut:
 }
 
 fn proto_decode_varint(mut reader ProtoReader) !u64 {
-	val, n := core.decode_uvarint(reader.data[reader.pos..])
+	val, n := common.decode_uvarint(reader.data[reader.pos..])
 	if n <= 0 {
 		return error('invalid or incomplete varint')
 	}
@@ -340,7 +340,7 @@ fn proto_decode_varint(mut reader ProtoReader) !u64 {
 }
 
 fn proto_decode_zigzag32(mut reader ProtoReader) !int {
-	val, n := core.decode_varint(reader.data[reader.pos..])
+	val, n := common.decode_varint(reader.data[reader.pos..])
 	if n <= 0 {
 		return error('invalid or incomplete zigzag')
 	}
@@ -349,7 +349,7 @@ fn proto_decode_zigzag32(mut reader ProtoReader) !int {
 }
 
 fn proto_decode_zigzag64(mut reader ProtoReader) !i64 {
-	val, n := core.decode_varint(reader.data[reader.pos..])
+	val, n := common.decode_varint(reader.data[reader.pos..])
 	if n <= 0 {
 		return error('invalid or incomplete zigzag')
 	}
@@ -362,7 +362,7 @@ fn proto_decode_fixed32(mut reader ProtoReader) !u32 {
 		return error('unexpected end of fixed32')
 	}
 
-	val := core.read_i32_le(reader.data[reader.pos..reader.pos + 4])
+	val := common.read_i32_le(reader.data[reader.pos..reader.pos + 4])
 	reader.pos += 4
 
 	return u32(val)
@@ -373,7 +373,7 @@ fn proto_decode_fixed64(mut reader ProtoReader) !u64 {
 		return error('unexpected end of fixed64')
 	}
 
-	val := core.read_i64_le(reader.data[reader.pos..reader.pos + 8])
+	val := common.read_i64_le(reader.data[reader.pos..reader.pos + 8])
 	reader.pos += 8
 
 	return u64(val)

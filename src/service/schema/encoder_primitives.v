@@ -2,18 +2,18 @@
 // Low-level binary encoding/decoding for Avro primitive types
 module schema
 
-import infra.performance.core
+import common
 
 // Varint Encoding/Decoding
 
 // encode_varint_zigzag encodes an i64 using variable-length zigzag encoding
 fn encode_varint_zigzag(val i64) []u8 {
-	return core.encode_varint(val)
+	return common.encode_varint(val)
 }
 
 // encode_varint encodes a u64 using variable-length encoding
 fn encode_varint(val u64) []u8 {
-	return core.encode_uvarint(val)
+	return common.encode_uvarint(val)
 }
 
 // Float/Double Encoding/Decoding
@@ -22,7 +22,7 @@ fn encode_varint(val u64) []u8 {
 fn encode_float(val f32) []u8 {
 	mut buf := []u8{}
 	bits := *unsafe { &u32(&val) }
-	core.write_i32_le(mut buf, i32(bits))
+	common.write_i32_le(mut buf, i32(bits))
 	return buf
 }
 
@@ -30,7 +30,7 @@ fn encode_float(val f32) []u8 {
 fn encode_double(val f64) []u8 {
 	mut buf := []u8{}
 	bits := *unsafe { &u64(&val) }
-	core.write_i64_le(mut buf, i64(bits))
+	common.write_i64_le(mut buf, i64(bits))
 	return buf
 }
 

@@ -706,3 +706,60 @@ fn test_write_txn_markers_empty_markers() {
 	results := coordinator.write_txn_markers([]domain.WriteTxnMarker{})
 	assert results.len == 0, 'results가 비어야 한다'
 }
+
+// ============================================================
+// producer_epoch i16 overflow 테스트
+// ============================================================
+
+fn test_init_producer_id_epoch_wraps_at_max_i16() {
+	// producer_epoch가 i16 최대값(32767)일 때 다음 epoch은 0으로 순환해야 한다.
+	mut coordinator := create_test_coordinator()
+
+	result1 := coordinator.init_producer_id('wrap-txn', 60000, -1, 0) or {
+		assert false, 'init 실패: ${err}'
+		return
+	}
+
+	// epoch을 32767로 설정한 메타데이터를 직접 저장
+	meta := domain.TransactionMetadata{
+		transactional_id:          'wrap-txn'
+		producer_id:               result1.producer_id
+		producer_epoch:            i16(32767)
+		txn_timeout_ms:            60000
+		state:                     .empty
+		topic_partitions:          []
+		txn_start_timestamp:       0
+		txn_last_update_timestamp: 0
+	}
+	coordinator.store.save_transaction(meta) or {
+		assert false, 'save 실패: ${err}'
+		return
+	}
+
+	// init을 다시 호출하면 epoch이 0으로 순환해야 한다
+	result2 := coordinator.init_producer_id('wrap-txn', 60000, -1, 0) or {
+		assert false, 'wrap init 실패: ${err}'
+		return
+	}
+
+	assert result2.producer_epoch == i16(0), 'epoch가 32767에서 0으로 순환해야 한다, 실제: ${result2.producer_epoch}'
+	assert result2.producer_id == result1.producer_id, '같은 producer_id를 유지해야 한다'
+}
+
+fn test_init_producer_id_epoch_increments_below_max() {
+	// 최대값 미만에서는 정상적으로 epoch가 1 증가해야 한다.
+	mut coordinator := create_test_coordinator()
+
+	result1 := coordinator.init_producer_id('normal-epoch-txn', 60000, -1, 0) or {
+		assert false, 'init 실패: ${err}'
+		return
+	}
+	assert result1.producer_epoch == i16(0)
+
+	// epoch 0 -> 1
+	result2 := coordinator.init_producer_id('normal-epoch-txn', 60000, -1, 0) or {
+		assert false, 'second init 실패: ${err}'
+		return
+	}
+	assert result2.producer_epoch == i16(1), 'epoch가 0에서 1로 증가해야 한다'
+}

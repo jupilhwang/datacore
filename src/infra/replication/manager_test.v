@@ -1010,3 +1010,87 @@ fn test_orphan_cleanup_uses_ttl_ms() {
 	assert stats.total_orphans_cleaned == 1, 'expected total_orphans_cleaned=1, got ${stats.total_orphans_cleaned}'
 	assert stats.total_ttl_dropped == 1, 'expected total_ttl_dropped=1, got ${stats.total_ttl_dropped}'
 }
+
+// --- Test: Recovery handler returns buffered data ---
+// Scenario: Replica buffers contain records for a topic:partition.
+// A .recover request arrives asking for data from a given offset.
+// Verify: The response includes the buffered records_data in its records_data field.
+
+fn test_recover_handler_returns_buffered_data() {
+	mut m := create_test_manager()
+
+	// Store replica buffers for topic-r:0
+	buf1 := domain.ReplicaBuffer{
+		topic:        'topic-r'
+		partition:    0
+		offset:       10
+		records_data: 'record-at-10'.bytes()
+		timestamp:    time.now().unix_milli()
+	}
+	buf2 := domain.ReplicaBuffer{
+		topic:        'topic-r'
+		partition:    0
+		offset:       20
+		records_data: 'record-at-20'.bytes()
+		timestamp:    time.now().unix_milli()
+	}
+	buf3 := domain.ReplicaBuffer{
+		topic:        'topic-r'
+		partition:    0
+		offset:       30
+		records_data: 'record-at-30'.bytes()
+		timestamp:    time.now().unix_milli()
+	}
+
+	m.store_replica_buffer(buf1) or {
+		assert false, 'store buf1 failed: ${err}'
+		return
+	}
+	m.store_replica_buffer(buf2) or {
+		assert false, 'store buf2 failed: ${err}'
+		return
+	}
+	m.store_replica_buffer(buf3) or {
+		assert false, 'store buf3 failed: ${err}'
+		return
+	}
+
+	// Get the real handler from create_handler
+	handler := m.create_handler()
+
+	// Send recover request from offset 20 (should return buf2 + buf3 data)
+	recover_msg := domain.ReplicationMessage{
+		msg_type:       domain.ReplicationType.recover
+		correlation_id: 'test-recovery-123'
+		sender_id:      'requester-broker'
+		timestamp:      time.now().unix_milli()
+		topic:          'topic-r'
+		partition:      0
+		offset:         20
+		success:        true
+	}
+
+	response := handler(recover_msg) or {
+		assert false, 'handler returned error: ${err}'
+		return
+	}
+
+	// Verify response metadata
+	assert response.msg_type == domain.ReplicationType.replicate_ack
+	assert response.correlation_id == 'test-recovery-123'
+	assert response.topic == 'topic-r'
+	assert response.partition == 0
+	assert response.success == true
+
+	// Verify response contains buffered data (the critical assertion)
+	assert response.records_data.len > 0, 'recovery response must contain records_data but got empty'
+
+	// The response should contain data from buf2 and buf3 (offsets >= 20), concatenated
+	expected_data_2 := 'record-at-20'.bytes()
+	expected_data_3 := 'record-at-30'.bytes()
+	mut expected_combined := []u8{}
+	expected_combined << expected_data_2
+	expected_combined << expected_data_3
+
+	assert response.records_data == expected_combined, 'recovery records_data mismatch: expected ${expected_combined.len} bytes, got ${response.records_data.len} bytes'
+}

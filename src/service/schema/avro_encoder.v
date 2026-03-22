@@ -3,7 +3,7 @@
 // https://avro.apache.org/docs/current/specification/
 module schema
 
-import infra.performance.core
+import common
 
 // AvroEncoder provides binary encoding and decoding for Avro data
 /// AvroEncoder provides binary encoding and decoding for Avro data.
@@ -109,7 +109,7 @@ pub fn (mut e AvroEncoder) decode(data []u8, schema_str string) ![]u8 {
 		}
 		'string' {
 			str := decode_string(mut reader)!
-			'"${core.escape_json_string(str)}"'
+			'"${common.escape_json_string(str)}"'
 		}
 		'bytes' {
 			bytes := decode_bytes(mut reader)!
@@ -300,7 +300,7 @@ fn (mut e AvroEncoder) decode_value_by_type(field_type string, mut reader AvroRe
 	match field_type {
 		'string' {
 			str := decode_string(mut reader)!
-			return '"${core.escape_json_string(str)}"'
+			return '"${common.escape_json_string(str)}"'
 		}
 		'bytes' {
 			bytes := decode_bytes(mut reader)!
@@ -459,7 +459,7 @@ fn (mut e AvroEncoder) decode_enum(mut reader AvroReader, schema AvroSchema) !st
 	}
 
 	symbol := schema.symbols[symbol_index]
-	return '"${core.escape_json_string(symbol)}"'
+	return '"${common.escape_json_string(symbol)}"'
 }
 
 // Array encoding/decoding
@@ -567,7 +567,7 @@ fn (mut e AvroEncoder) decode_fixed(mut reader AvroReader, schema AvroSchema) ![
 // Low-level decoding functions using primitives
 
 fn decode_varint_zigzag(mut reader AvroReader) !i64 {
-	val, n := core.decode_varint(reader.data[reader.pos..])
+	val, n := common.decode_varint(reader.data[reader.pos..])
 	if n <= 0 {
 		return error('invalid or incomplete varint')
 	}
@@ -604,7 +604,7 @@ fn decode_float(mut reader AvroReader) !f32 {
 		return error('unexpected end of float')
 	}
 
-	bits := core.read_i32_le(reader.data[reader.pos..reader.pos + 4])
+	bits := common.read_i32_le(reader.data[reader.pos..reader.pos + 4])
 	reader.pos += 4
 
 	return *unsafe { &f32(&bits) }
@@ -615,7 +615,7 @@ fn decode_double(mut reader AvroReader) !f64 {
 		return error('unexpected end of double')
 	}
 
-	bits := core.read_i64_le(reader.data[reader.pos..reader.pos + 8])
+	bits := common.read_i64_le(reader.data[reader.pos..reader.pos + 8])
 	reader.pos += 8
 
 	return *unsafe { &f64(&bits) }
@@ -670,7 +670,7 @@ fn parse_json_bytes(json_str string) ?[]u8 {
 			for i := 0; i < hex_str.len; i += 2 {
 				high := hex_str[i]
 				low := hex_str[i + 1]
-				byte_val := (u8(core.hex_char_to_nibble(high)) << 4) | u8(core.hex_char_to_nibble(low))
+				byte_val := (u8(common.hex_char_to_nibble(high)) << 4) | u8(common.hex_char_to_nibble(low))
 				result << byte_val
 			}
 			return result
