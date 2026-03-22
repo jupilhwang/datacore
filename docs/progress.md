@@ -379,3 +379,19 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - Refactored: ClusterMetadataPort 15-method ISP violation -> 5 sub-interfaces
 - QA: 123/123 test files pass, build SUCCESS, lint CLEAN
 
+## v0.50.7 Quick Fix Sprint - 2026-03-23
+
+### ISP Consumer Migration
+- Narrowed 3 service files from composite ClusterMetadataPort to focused sub-interfaces
+- Created ClusterPortAdapter for V interface bridging (V does not support interface-to-sub-interface conversion)
+- grep verification: 0 ClusterMetadataPort references in service consumer files
+
+### Rate Limiter Fix
+- Implemented can_consume() pre-check pattern to prevent token non-rollback
+- Two-phase approach: pre-check all buckets (non-mutating) then consume (all-or-nothing)
+- Test proves no global token leak on per-IP rejection
+
+### QA
+- 28 modules, 122/122 test files, 1,683 test functions - ALL PASS
+- Build SUCCESS, Lint CLEAN, ISP migration verified
+

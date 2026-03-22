@@ -130,6 +130,11 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 		return ClusterRegistryResult{}
 	}
 
+	// Wrap composite port in adapter for ISP-narrowed sub-port injection.
+	// V does not support interface-to-sub-interface conversion, so a concrete
+	// adapter is required to satisfy the narrowed port parameters.
+	mut adapter := port.new_cluster_port_adapter(cluster_port)
+
 	registry_config := cluster.BrokerRegistryConfig{
 		broker_id:             conf.broker.broker_id
 		host:                  conf.broker.advertised_host
@@ -141,7 +146,8 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 		session_timeout_ms:    10000
 	}
 
-	mut broker_registry := cluster.new_broker_registry(registry_config, capability, cluster_port)
+	mut broker_registry := cluster.new_broker_registry(registry_config, capability, adapter,
+		adapter, adapter)
 	registry_logger := observability.new_logger_adapter(observability.get_named_logger('broker_registry'))
 	broker_registry.set_logger(registry_logger)
 
@@ -184,7 +190,8 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 		sticky_assign: true
 		cluster_id:    conf.broker.cluster_id
 	}
-	mut partition_assigner := cluster.new_partition_assigner(assigner_config, cluster_port)
+	mut partition_assigner := cluster.new_partition_assigner(assigner_config, adapter,
+		adapter)
 	assigner_logger := observability.new_logger_adapter(observability.get_named_logger('partition_assigner'))
 	partition_assigner.set_logger(assigner_logger)
 

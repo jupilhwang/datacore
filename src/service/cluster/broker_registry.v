@@ -18,7 +18,9 @@ pub struct BrokerRegistry {
 	config domain.ClusterConfig
 mut:
 	local_broker     domain.BrokerInfo
-	metadata_port    ?port.ClusterMetadataPort
+	registry_port    ?port.BrokerRegistryPort
+	state_port       ?port.ClusterStatePort
+	health_port      ?port.BrokerHealthPort
 	brokers          map[i32]domain.BrokerInfo
 	lock             sync.RwMutex
 	running          bool
@@ -51,8 +53,10 @@ pub:
 /// new_broker_registry creates a new broker registry.
 /// config: broker configuration
 /// capability: storage capability information
-/// metadata_port: cluster metadata port for distributed storage (multi-broker mode)
-pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.StorageCapability, metadata_port ?port.ClusterMetadataPort) &BrokerRegistry {
+/// registry_port: broker registration port (multi-broker mode)
+/// state_port: cluster state port (multi-broker mode)
+/// health_port: broker health port (multi-broker mode)
+pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.StorageCapability, registry_port ?port.BrokerRegistryPort, state_port ?port.ClusterStatePort, health_port ?port.BrokerHealthPort) &BrokerRegistry {
 	local_broker := domain.BrokerInfo{
 		broker_id:         config.broker_id
 		host:              config.host
@@ -84,7 +88,9 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 	return &BrokerRegistry{
 		config:              cluster_config
 		local_broker:        local_broker
-		metadata_port:       metadata_port
+		registry_port:       registry_port
+		state_port:          state_port
+		health_port:         health_port
 		brokers:             map[i32]domain.BrokerInfo{}
 		capability:          capability
 		running:             false
@@ -137,7 +143,7 @@ pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 
 	// In multi-broker mode with distributed storage
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.registry_port {
 			// Register with distributed storage
 			registered := mp.register_broker(r.local_broker)!
 			r.local_broker = registered
@@ -181,7 +187,7 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 
 	// In multi-broker mode with distributed storage
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.registry_port {
 			mp.deregister_broker(r.local_broker.broker_id)!
 		}
 	}
@@ -206,7 +212,7 @@ pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 
 	// In multi-broker mode with distributed storage
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.registry_port {
 			mp.update_broker_heartbeat(heartbeat)!
 		}
 	}
@@ -227,7 +233,7 @@ pub fn (mut r BrokerRegistry) get_broker(broker_id i32) !domain.BrokerInfo {
 
 	// Try distributed storage first
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.registry_port {
 			return mp.get_broker(broker_id)
 		}
 	}
@@ -243,7 +249,7 @@ pub fn (mut r BrokerRegistry) list_brokers() ![]domain.BrokerInfo {
 
 	// Try distributed storage first
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.registry_port {
 			return mp.list_brokers()
 		}
 	}
@@ -263,7 +269,7 @@ pub fn (mut r BrokerRegistry) list_active_brokers() ![]domain.BrokerInfo {
 
 	// Try distributed storage first
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.registry_port {
 			return mp.list_active_brokers()
 		}
 	}
@@ -290,13 +296,15 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 
 	// Check distributed storage in multi-broker mode
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
-			brokers := mp.list_brokers()!
+		if mut rp := r.registry_port {
+			brokers := rp.list_brokers()!
 			for broker in brokers {
 				if broker.status == .active && now - broker.last_heartbeat > timeout {
 					expired << broker.broker_id
 					expired_brokers << broker
-					mp.mark_broker_dead(broker.broker_id) or {}
+					if mut hp := r.health_port {
+						hp.mark_broker_dead(broker.broker_id) or {}
+					}
 				}
 			}
 
@@ -382,7 +390,7 @@ fn (mut r BrokerRegistry) heartbeat_loop() {
 pub fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
 	// Try distributed storage first
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.state_port {
 			return mp.get_cluster_metadata()
 		}
 	}
@@ -429,7 +437,7 @@ pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 fn (mut r BrokerRegistry) list_active_brokers_internal() ![]domain.BrokerInfo {
 	// Try distributed storage first
 	if r.capability.supports_multi_broker {
-		if mut mp := r.metadata_port {
+		if mut mp := r.registry_port {
 			return mp.list_active_brokers()
 		}
 	}

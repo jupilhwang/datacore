@@ -10,7 +10,7 @@ fn test_assign_partitions_round_robin() {
 		broker_id: 1
 		strategy:  .round_robin
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	brokers := [
 		domain.BrokerInfo{
@@ -53,7 +53,7 @@ fn test_assign_partitions_single_broker() {
 		broker_id: 1
 		strategy:  .round_robin
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	brokers := [
 		domain.BrokerInfo{
@@ -81,7 +81,7 @@ fn test_assign_partitions_no_brokers() {
 		broker_id: 1
 		strategy:  .round_robin
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	brokers := []domain.BrokerInfo{}
 
@@ -100,7 +100,7 @@ fn test_assign_partitions_zero_partitions() {
 		broker_id: 1
 		strategy:  .round_robin
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	brokers := [
 		domain.BrokerInfo{
@@ -128,7 +128,7 @@ fn test_rebalance_partitions_new_broker_joined() {
 		strategy:      .round_robin
 		sticky_assign: false
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	// Initial assignment: 2 brokers
 	initial_brokers := [
@@ -170,7 +170,7 @@ fn test_rebalance_partitions_new_broker_joined() {
 		},
 	]
 
-	// Note: Rebalancing requires metadata_port so this test does not fully execute
+	// Note: Rebalancing requires assignment_port so this test does not fully execute
 	// Instead, directly test the round-robin logic
 	new_assignments := assigner.do_rebalance('test-topic', initial_assignments, new_brokers)
 
@@ -190,7 +190,7 @@ fn test_rebalance_partitions_broker_left() {
 		strategy:      .round_robin
 		sticky_assign: false
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	initial_brokers := [
 		domain.BrokerInfo{
@@ -247,7 +247,7 @@ fn test_rebalance_sticky_preserves_existing() {
 		strategy:      .sticky
 		sticky_assign: true
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	// Initial assignment
 	initial_brokers := [
@@ -301,7 +301,7 @@ fn test_rebalance_range_assignment() {
 		broker_id: 1
 		strategy:  .range
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	brokers := [
 		domain.BrokerInfo{
@@ -367,7 +367,7 @@ fn test_set_strategy() {
 		broker_id: 1
 		strategy:  .round_robin
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	// When
 	assigner.set_strategy(.sticky)
@@ -382,7 +382,7 @@ fn test_set_sticky_assign() {
 		broker_id:     1
 		sticky_assign: false
 	}
-	mut assigner := new_partition_assigner(config, none)
+	mut assigner := new_partition_assigner(config, none, none)
 
 	// When
 	assigner.set_sticky_assign(true)

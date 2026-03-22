@@ -260,6 +260,37 @@ fn test_rate_limiter_creation() {
 	assert stats.throttled_bytes == 0
 }
 
+fn test_allow_request_with_bytes_no_token_leak() {
+	config := RateLimiterConfig{
+		max_requests_per_second:        10
+		per_ip_max_requests_per_second: 2
+		max_bytes_per_second:           i64(1_000_000)
+		burst_multiplier:               1.0
+		window_size_ms:                 i64(1000)
+	}
+
+	mut rl := new_rate_limiter(config)
+
+	// Exhaust per-IP limit: 2 allowed, 3rd rejected by per-IP
+	assert rl.allow_request_with_bytes('10.0.0.1', i64(0)) == true
+	assert rl.allow_request_with_bytes('10.0.0.1', i64(0)) == true
+	assert rl.allow_request_with_bytes('10.0.0.1', i64(0)) == false
+
+	// Count remaining global tokens using unique IPs
+	// Each new IP has fresh per-IP bucket, so only global limits matter
+	mut remaining := 0
+	for i in 0 .. 10 {
+		ip := '10.0.1.${i}'
+		if rl.allow_request_with_bytes(ip, i64(0)) {
+			remaining += 1
+		}
+	}
+
+	// Only 2 requests were actually served -> 8 global tokens should remain
+	// Bug: 3 global tokens consumed (leaked 1) -> remaining would be 7
+	assert remaining == 8
+}
+
 fn test_byte_stats_tracking() {
 	config := RateLimiterConfig{
 		max_bytes_per_second: i64(100)

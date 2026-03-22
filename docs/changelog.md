@@ -1,5 +1,18 @@
 # DataCore Changelog
 
+## v0.50.7 - 2026-03-23
+
+### ISP Consumer Migration
+- controller_election.v: ClusterMetadataPort -> DistributedLockPort + ClusterStatePort
+- partition_assigner.v: ClusterMetadataPort -> PartitionAssignmentPort + BrokerRegistryPort
+- broker_registry.v: ClusterMetadataPort -> BrokerRegistryPort + ClusterStatePort + BrokerHealthPort
+- New: cluster_port_adapter.v for V interface bridging
+
+### Bug Fixes
+- rate_limiter.v: Fixed token non-rollback in allow_request_with_bytes() via pre-check pattern
+- Added can_consume() non-mutating method to TokenBucket
+- New test: test_allow_request_with_bytes_no_token_leak
+
 ## v0.50.6 (2026-03-22) - Performance & ISP Optimization
 
 ### Performance
