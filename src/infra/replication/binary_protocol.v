@@ -11,6 +11,9 @@ const binary_protocol_version = u8(1)
 // Minimum binary frame size: 4 (length) + 1 (version) + 1 (msg_type)
 const binary_min_frame_size = 6
 
+// Maximum allowed binary payload size (10 MiB).
+const max_binary_payload_size = 10 * 1024 * 1024
+
 /// BinaryProtocol implements a compact binary wire format for ReplicationMessage.
 /// This is an alternative to the JSON-based Protocol, offering lower overhead
 /// and smaller payload sizes.
@@ -105,7 +108,7 @@ pub fn (p BinaryProtocol) read_message(mut conn net.TcpConn, timeout_ms i64) !do
 	read_exact(mut conn, mut len_buf)!
 
 	payload_len := int(binary.big_endian_u32(len_buf))
-	if payload_len <= 0 || payload_len > 10 * 1024 * 1024 {
+	if payload_len <= 0 || payload_len > max_binary_payload_size {
 		return error('invalid binary payload length: ${payload_len}')
 	}
 

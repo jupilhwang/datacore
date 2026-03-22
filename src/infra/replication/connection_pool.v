@@ -61,8 +61,7 @@ pub fn (mut p ConnectionPool) acquire(addr string) !&PooledConnection {
 		}
 	}
 
-	// Reserve a slot by incrementing connections count under lock before dialing.
-	// This prevents TOCTOU: another thread cannot exceed max_per_host while we dial.
+	// Release lock before dialing TCP (may block).
 	p.mtx.unlock()
 
 	mut conn := net.dial_tcp(addr) or { return error('failed to connect to ${addr}: ${err}') }
@@ -81,6 +80,14 @@ pub fn (mut p ConnectionPool) acquire(addr string) !&PooledConnection {
 		p.mtx.unlock()
 		conn.close() or {}
 		return error('connection pool is closed')
+	}
+	// Re-check max_per_host after re-acquiring lock (TOCTOU guard).
+	// Another thread may have added connections while we were dialing.
+	conns2 := p.connections[addr] or { []&PooledConnection{} }
+	if conns2.len >= p.max_per_host {
+		p.mtx.unlock()
+		conn.close() or {}
+		return error('connection limit exceeded for ${addr} (concurrent dial)')
 	}
 	if addr !in p.connections {
 		p.connections[addr] = []&PooledConnection{}
@@ -136,9 +143,10 @@ pub fn (mut p ConnectionPool) close_all() {
 /// cleanup_idle removes idle connections that exceeded max_idle_time_ms.
 /// Returns the number of connections removed.
 pub fn (mut p ConnectionPool) cleanup_idle() int {
+	mut to_close := []&PooledConnection{}
+
 	p.mtx.@lock()
 	now := time.now().unix_milli()
-	mut removed := 0
 	addrs := p.connections.keys()
 
 	for addr in addrs {
@@ -146,17 +154,21 @@ pub fn (mut p ConnectionPool) cleanup_idle() int {
 		mut conns := unsafe { p.connections[addr] }
 		for mut pc in conns {
 			if !pc.in_use && (now - pc.last_used_at) > p.max_idle_time_ms {
-				pc.conn.close() or {}
-				removed++
+				to_close << pc
 			} else {
 				kept << pc
 			}
 		}
 		p.connections[addr] = kept
 	}
-
 	p.mtx.unlock()
-	return removed
+
+	// Close connections outside the lock to avoid blocking on TCP close
+	for mut pc in to_close {
+		pc.conn.close() or {}
+	}
+
+	return to_close.len
 }
 
 /// pool_size returns the total number of connections across all hosts.

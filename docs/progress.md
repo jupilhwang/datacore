@@ -342,3 +342,14 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - Post-fix QA: 123/123 test files pass, 1,674 test functions, build SUCCESS, lint CLEAN
 - Remaining known issues (out of scope): domain/grpc.v imports infra (C3), credentials in config (H7), replication TLS (H9), iceberg direct import (H14)
 
+## Post-Merge Refactoring Sprint (2026-03-22)
+- Refactored manager.v (990 -> 579 + 300 + 121 lines): manager_workers.v, manager_buffers.v
+- Refactored metrics.v (1031 -> 283 + 261 + 489 lines): metrics_types.v, metrics_helpers.v
+- Extracted magic numbers to named constants (binary_protocol, coordinator, health_handler)
+- Fixed DRY violations in coordinator.v (contains_topic_partition helper)
+- Fixed O(n) buffer size scan -> incremental counter in manager.v
+- Fixed TOCTOU residual in connection_pool.v acquire() with re-check after re-lock
+- Fixed cleanup_idle() I/O under lock in connection_pool.v
+- Fixed stale version string in health_handler.v (0.44.1 -> 0.50.2)
+- QA: 123/123 test files pass, 1,675 test functions, build SUCCESS, lint CLEAN
+
