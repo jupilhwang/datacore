@@ -58,13 +58,13 @@ mut:
 	lock     sync.Mutex
 }
 
-// Global singleton registry holder
-__global g_registry_holder = RegistryHolder{
+// 모듈 수준 싱글톤 홀더 (const holder 패턴)
+const g_registry_const_holder = &RegistryHolder{
 	registry: unsafe { nil }
 }
 
 fn get_registry_holder() &RegistryHolder {
-	return &g_registry_holder
+	return unsafe { g_registry_const_holder }
 }
 
 /// get_registry returns the global metrics registry.

@@ -1,0 +1,153 @@
+module replication
+
+import sync
+import net
+import time
+
+/// PooledConnection wraps a TCP connection with pool management metadata.
+pub struct PooledConnection {
+pub mut:
+	conn         net.TcpConn
+	addr         string
+	created_at   i64
+	last_used_at i64
+	in_use       bool
+}
+
+/// ConnectionPool manages reusable TCP connections grouped by host address.
+/// All operations are thread-safe via sync.Mutex.
+@[heap]
+pub struct ConnectionPool {
+mut:
+	connections map[string][]&PooledConnection
+	mtx         sync.Mutex
+	closed      bool
+pub:
+	max_per_host     int
+	max_idle_time_ms i64
+}
+
+/// ConnectionPool.new creates a pool with the given per-host limit and idle timeout.
+pub fn ConnectionPool.new(max_per_host int, max_idle_time_ms i64) &ConnectionPool {
+	return &ConnectionPool{
+		max_per_host:     max_per_host
+		max_idle_time_ms: max_idle_time_ms
+		closed:           false
+	}
+}
+
+/// acquire returns an idle connection for the address, or creates a new one.
+/// Returns error if the pool is closed or the per-host limit has been reached.
+pub fn (mut p ConnectionPool) acquire(addr string) !&PooledConnection {
+	p.mtx.@lock()
+	if p.closed {
+		p.mtx.unlock()
+		return error('connection pool is closed')
+	}
+
+	if addr in p.connections {
+		mut conns := unsafe { p.connections[addr] }
+		for mut pc in conns {
+			if !pc.in_use {
+				pc.in_use = true
+				pc.last_used_at = time.now().unix_milli()
+				p.mtx.unlock()
+				return pc
+			}
+		}
+		if conns.len >= p.max_per_host {
+			p.mtx.unlock()
+			return error('max connections (${p.max_per_host}) reached for ${addr}')
+		}
+	}
+
+	p.mtx.unlock()
+	return p.create_connection(addr)
+}
+
+/// create_connection dials a new TCP connection and registers it in the pool.
+fn (mut p ConnectionPool) create_connection(addr string) !&PooledConnection {
+	mut conn := net.dial_tcp(addr) or { return error('failed to connect to ${addr}: ${err}') }
+
+	now := time.now().unix_milli()
+	mut pc := &PooledConnection{
+		conn:         conn
+		addr:         addr
+		created_at:   now
+		last_used_at: now
+		in_use:       true
+	}
+
+	p.mtx.@lock()
+	if addr !in p.connections {
+		p.connections[addr] = []&PooledConnection{}
+	}
+	unsafe {
+		p.connections[addr] << pc
+	}
+	p.mtx.unlock()
+
+	return pc
+}
+
+/// release marks a pooled connection as idle for reuse.
+pub fn (mut p ConnectionPool) release(mut pc PooledConnection) {
+	p.mtx.@lock()
+	pc.in_use = false
+	pc.last_used_at = time.now().unix_milli()
+	p.mtx.unlock()
+}
+
+/// close_all shuts down every connection and marks the pool as closed.
+pub fn (mut p ConnectionPool) close_all() {
+	p.mtx.@lock()
+	addrs := p.connections.keys()
+	for addr in addrs {
+		mut conns := unsafe { p.connections[addr] }
+		for mut pc in conns {
+			pc.conn.close() or {}
+		}
+	}
+	p.connections = map[string][]&PooledConnection{}
+	p.closed = true
+	p.mtx.unlock()
+}
+
+/// cleanup_idle removes idle connections that exceeded max_idle_time_ms.
+/// Returns the number of connections removed.
+pub fn (mut p ConnectionPool) cleanup_idle() int {
+	p.mtx.@lock()
+	now := time.now().unix_milli()
+	mut removed := 0
+	addrs := p.connections.keys()
+
+	for addr in addrs {
+		mut kept := []&PooledConnection{}
+		mut conns := unsafe { p.connections[addr] }
+		for mut pc in conns {
+			if !pc.in_use && (now - pc.last_used_at) > p.max_idle_time_ms {
+				pc.conn.close() or {}
+				removed++
+			} else {
+				kept << pc
+			}
+		}
+		p.connections[addr] = kept
+	}
+
+	p.mtx.unlock()
+	return removed
+}
+
+/// pool_size returns the total number of connections across all hosts.
+pub fn (mut p ConnectionPool) pool_size() int {
+	p.mtx.@lock()
+	mut total := 0
+	addrs := p.connections.keys()
+	for addr in addrs {
+		conns := unsafe { p.connections[addr] }
+		total += conns.len
+	}
+	p.mtx.unlock()
+	return total
+}

@@ -37,40 +37,50 @@ fn unwrap_confluent_wire_format(data []u8) !(int, []u8) {
 	return sid, data[confluent_wire_header_size..]
 }
 
-// Module-level cached encoders (lazily initialized via ensure_encoders_cached).
-// All encoder structs are stateless, so sharing cached instances is thread-safe.
-__global cached_avro_encoder = schema.AvroEncoder{}
-__global cached_json_encoder = schema.JsonEncoder{}
-__global cached_protobuf_encoder = schema.ProtobufEncoder{}
-__global encoders_cached = false
+// 모듈 수준 캐시 홀더 (const holder 패턴으로 __global 대체)
+struct EncoderCacheHolder {
+mut:
+	avro_encoder     schema.AvroEncoder
+	json_encoder     schema.JsonEncoder
+	protobuf_encoder schema.ProtobufEncoder
+	cached           bool
+}
 
-/// ensure_encoders_cached initializes all encoder caches on first use.
+const g_encoder_cache_holder = &EncoderCacheHolder{}
+
+/// ensure_encoders_cached는 최초 사용 시 모든 인코더 캐시를 초기화한다.
 fn ensure_encoders_cached() ! {
-	if encoders_cached {
+	mut holder := unsafe { g_encoder_cache_holder }
+	if holder.cached {
 		return
 	}
-	cached_avro_encoder = schema.new_avro_encoder()!
-	cached_json_encoder = schema.new_json_encoder()!
-	cached_protobuf_encoder = schema.new_protobuf_encoder()!
-	encoders_cached = true
+	unsafe {
+		holder.avro_encoder = schema.new_avro_encoder()!
+		holder.json_encoder = schema.new_json_encoder()!
+		holder.protobuf_encoder = schema.new_protobuf_encoder()!
+		holder.cached = true
+	}
 }
 
-/// get_or_create_avro_encoder returns a cached Avro encoder, creating it on first call.
+/// get_or_create_avro_encoder는 캐시된 Avro 인코더를 반환한다.
 fn get_or_create_avro_encoder() !schema.AvroEncoder {
 	ensure_encoders_cached()!
-	return cached_avro_encoder
+	holder := unsafe { g_encoder_cache_holder }
+	return holder.avro_encoder
 }
 
-/// get_or_create_json_encoder returns a cached JSON encoder, creating it on first call.
+/// get_or_create_json_encoder는 캐시된 JSON 인코더를 반환한다.
 fn get_or_create_json_encoder() !schema.JsonEncoder {
 	ensure_encoders_cached()!
-	return cached_json_encoder
+	holder := unsafe { g_encoder_cache_holder }
+	return holder.json_encoder
 }
 
-/// get_or_create_protobuf_encoder returns a cached Protobuf encoder, creating it on first call.
+/// get_or_create_protobuf_encoder는 캐시된 Protobuf 인코더를 반환한다.
 fn get_or_create_protobuf_encoder() !schema.ProtobufEncoder {
 	ensure_encoders_cached()!
-	return cached_protobuf_encoder
+	holder := unsafe { g_encoder_cache_holder }
+	return holder.protobuf_encoder
 }
 
 /// encode_with_schema dispatches encode to the correct concrete encoder.

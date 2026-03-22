@@ -266,41 +266,78 @@ fn (mut h Handler) handle_write_txn_markers(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_write_txn_markers_request(mut reader, version, is_flexible)!
 
+	// Validate via coordinator if available, then write physical records
+	if mut txn_coord := h.txn_coordinator {
+		domain_markers := convert_to_domain_markers(req.markers)
+		txn_coord.write_txn_markers(domain_markers)
+	}
+
+	// Write physical records to partitions
 	mut results := []WriteTxnMarkerResult{}
-
 	for marker in req.markers {
-		mut topic_results := []WriteTxnMarkerTopicResult{}
-
-		for topic in marker.topics {
-			mut partition_results := []WriteTxnMarkerPartitionResult{}
-
-			for partition_index in topic.partition_indexes {
-				// Write transaction marker (commit/abort) to the partition
-				error_code := h.write_txn_marker_to_partition(topic.name, partition_index,
-					marker.producer_id, marker.producer_epoch, marker.transaction_result,
-					marker.coordinator_epoch)
-
-				partition_results << WriteTxnMarkerPartitionResult{
-					partition_index: partition_index
-					error_code:      error_code
-				}
-			}
-
-			topic_results << WriteTxnMarkerTopicResult{
-				name:       topic.name
-				partitions: partition_results
-			}
-		}
-
-		results << WriteTxnMarkerResult{
-			producer_id: marker.producer_id
-			topics:      topic_results
-		}
+		results << h.write_single_txn_marker(marker)
 	}
 
 	return WriteTxnMarkersResponse{
 		markers: results
 	}.encode(version)
+}
+
+// write_single_txn_marker writes markers for a single producer to all target partitions.
+fn (mut h Handler) write_single_txn_marker(marker WriteTxnMarker) WriteTxnMarkerResult {
+	mut topic_results := []WriteTxnMarkerTopicResult{}
+
+	for topic in marker.topics {
+		mut partition_results := []WriteTxnMarkerPartitionResult{}
+		for partition_index in topic.partition_indexes {
+			error_code := h.write_txn_marker_to_partition(topic.name, partition_index,
+				marker.producer_id, marker.producer_epoch, marker.transaction_result,
+				marker.coordinator_epoch)
+			partition_results << WriteTxnMarkerPartitionResult{
+				partition_index: partition_index
+				error_code:      error_code
+			}
+		}
+		topic_results << WriteTxnMarkerTopicResult{
+			name:       topic.name
+			partitions: partition_results
+		}
+	}
+
+	return WriteTxnMarkerResult{
+		producer_id: marker.producer_id
+		topics:      topic_results
+	}
+}
+
+// convert_to_domain_markers converts kafka protocol markers to domain markers.
+fn convert_to_domain_markers(markers []WriteTxnMarker) []domain.WriteTxnMarker {
+	mut result := []domain.WriteTxnMarker{}
+	for m in markers {
+		mut topics := []domain.WriteTxnMarkerTopic{}
+		for t in m.topics {
+			mut partitions := []int{}
+			for p in t.partition_indexes {
+				partitions << int(p)
+			}
+			topics << domain.WriteTxnMarkerTopic{
+				name:       t.name
+				partitions: partitions
+			}
+		}
+		txn_result := if m.transaction_result {
+			domain.TransactionResult.commit
+		} else {
+			domain.TransactionResult.abort
+		}
+		result << domain.WriteTxnMarker{
+			producer_id:        m.producer_id
+			producer_epoch:     m.producer_epoch
+			transaction_result: txn_result
+			topics:             topics
+		}
+	}
+	return result
 }
 
 // write_txn_marker_to_partition writes a transaction marker to a specific partition

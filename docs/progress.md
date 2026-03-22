@@ -274,3 +274,44 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - M-5: 인덱스 배치 flush 실패 시 pending 세그먼트 restore 추가
 - 테스트: 12/12 PASS (v -enable-globals test src/infra/storage/plugins/s3/)
 
+## 2026-03-22: Comprehensive Architecture Improvement Sprint
+
+### Overview
+- Branch: `feature/comprehensive-improvements-v1`
+- 15 tasks across 3 batches, all completed and QA-verified
+- 116/116 module tests PASS, production build SUCCESS, lint CLEAN
+
+### Batch 1 - Test Coverage + Stability (G1)
+- Task A-C: 25 Kafka protocol handler test files (produce, fetch, metadata, topic, offset, group, find_coordinator, list_offsets, sasl, acl, transaction, api_versions, consumer)
+- Task D: 4 service layer test files (produce, fetch, topic_manager, transaction_coordinator)
+- Task E: writer_pool.v global variable fix (all `__global` -> const holder pattern), replication/s3 infra tests
+
+### Batch 2 - HA Features + Structure (G2)
+- Task F: 6 remaining handler tests (share_group, config, describe_cluster, log_dirs, admin, incremental_alter_configs)
+- Task G: Replication connection pooling (connection_pool.v)
+- Task H: ISR Manager (isr_manager.v) - ISR tracking, shrink/expand, min.insync.replicas, high watermark
+- Task I: Partition rebalancing (rebalance_trigger.v) - wired into broker_registry.v
+- Task J: File splitting - server.v (907->375), main.v (700->112)
+
+### Batch 3 - Advanced Features (G3)
+- Task K: Partition-level leader election (partition_leader_election.v)
+- Task L: Binary replication protocol (binary_protocol.v)
+- Task M: WriteTxnMarkers implementation (domain types + coordinator + handler)
+- Task N: Rate limiting (rate_limiter.v + tcp.v integration)
+- Task O: SCRAM-SHA-512 tests + Audit logging (audit_logger.v)
+
+### Metrics
+- New test files: 36+
+- New test functions: 400+
+- Total test files: 125 (from ~89)
+- Total test functions: 1,704
+- Source files modified: 12+
+- New source files: 10+
+- `__global` declarations: 0 remaining (was 8+)
+
+### Decisions
+- Used const holder pattern for global state (compatible without -enable-globals)
+- Connection pool is optional in replication client (backward compatible)
+- Rate limiter is optional in TCP server (backward compatible)
+- ISR Manager, RebalanceTrigger, PartitionLeaderElector are standalone services (wired via setters)
+

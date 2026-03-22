@@ -156,32 +156,38 @@ mut:
 	provider &TelemetryProvider = unsafe { nil }
 }
 
-__global g_telemetry_holder = TelemetryProviderHolder{
+// 모듈 수준 싱글톤 홀더 (const holder 패턴)
+const g_telemetry_const_holder = &TelemetryProviderHolder{
 	provider: unsafe { nil }
 }
 
-/// init_telemetry creates, initializes, and registers the global TelemetryProvider singleton.
+/// init_telemetry는 글로벌 TelemetryProvider 싱글톤을 생성, 초기화하고 등록한다.
 pub fn init_telemetry(cfg TelemetryConfig) &TelemetryProvider {
 	mut p := new_telemetry_provider(cfg)
 	p.init()
 	p.start_metrics_export()
-	g_telemetry_holder.provider = p
+	mut holder := unsafe { g_telemetry_const_holder }
+	unsafe {
+		holder.provider = p
+	}
 	return p
 }
 
-/// get_telemetry returns the global TelemetryProvider singleton, or none if not yet initialized.
+/// get_telemetry는 글로벌 TelemetryProvider 싱글톤을 반환한다. 초기화 전이면 none.
 pub fn get_telemetry() ?&TelemetryProvider {
-	if g_telemetry_holder.provider == unsafe { nil } {
+	holder := unsafe { g_telemetry_const_holder }
+	if holder.provider == unsafe { nil } {
 		return none
 	}
-	return g_telemetry_holder.provider
+	return holder.provider
 }
 
-/// shutdown_telemetry stops and clears the global TelemetryProvider singleton.
+/// shutdown_telemetry는 글로벌 TelemetryProvider 싱글톤을 중지하고 해제한다.
 pub fn shutdown_telemetry() {
-	if g_telemetry_holder.provider != unsafe { nil } {
-		g_telemetry_holder.provider.shutdown()
-		g_telemetry_holder.provider = unsafe { nil }
+	mut holder := unsafe { g_telemetry_const_holder }
+	if holder.provider != unsafe { nil } {
+		holder.provider.shutdown()
+		holder.provider = &TelemetryProvider(unsafe { nil })
 	}
 }
 

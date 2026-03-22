@@ -53,19 +53,38 @@ pub mut:
 	active bool
 }
 
-// Global WriterPool instance
-__global g_writer_pool = &WriterPool(unsafe { nil })
-
-/// init_global_writer_pool explicitly initializes the global WriterPool.
-/// Must be called once at application startup before using the global pool.
-pub fn init_global_writer_pool(config PoolConfig) {
-	g_writer_pool = new_writer_pool(config)
+// GlobalWriterPoolHolder - const holder 패턴으로 __global 대체
+// manager.v의 GlobalPerformanceHolder와 동일한 방식
+struct GlobalWriterPoolHolder {
+mut:
+	instance &WriterPool = unsafe { nil }
+	is_init  bool
 }
 
-/// get_global_writer_pool returns the global WriterPool instance.
-/// Requires init_global_writer_pool() to be called first at startup.
+// 모듈 수준 싱글톤 홀더
+const g_writer_pool_holder = &GlobalWriterPoolHolder{}
+
+/// init_global_writer_pool은 글로벌 WriterPool을 초기화한다.
+/// 애플리케이션 시작 시 한 번 호출해야 한다.
+pub fn init_global_writer_pool(config PoolConfig) {
+	mut holder := unsafe { g_writer_pool_holder }
+	if !holder.is_init {
+		unsafe {
+			holder.instance = new_writer_pool(config)
+			holder.is_init = true
+		}
+	}
+}
+
+/// get_global_writer_pool은 글로벌 WriterPool 인스턴스를 반환한다.
+/// init_global_writer_pool()이 먼저 호출되어야 한다.
+/// 초기화되지 않은 경우 기본 설정으로 자동 초기화한다.
 pub fn get_global_writer_pool() &WriterPool {
-	return g_writer_pool
+	holder := unsafe { g_writer_pool_holder }
+	if !holder.is_init {
+		init_global_writer_pool(PoolConfig{})
+	}
+	return unsafe { holder.instance }
 }
 
 /// new_writer_pool creates a new WriterPool.

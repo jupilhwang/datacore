@@ -1,5 +1,36 @@
 # DataCore Changelog
 
+## v0.50.0 (2026-03-22) - Comprehensive Architecture Improvement
+
+### Test Coverage
+- Added 36+ test files covering ALL Kafka protocol handlers (produce, fetch, metadata, topic, offset, group, sasl, acl, transaction, consumer, share_group, config, describe_cluster, log_dirs, admin, incremental_alter_configs, api_versions, find_coordinator, list_offsets)
+- Added service layer tests (produce, fetch, topic_manager, transaction_coordinator)
+- Added infra tests (replication protocol/client/server, s3_client, SCRAM-SHA-512)
+- Total: 125 test files, 1,704 test functions (from ~89 files)
+
+### Breaking Changes
+- Removed all `__global` variable declarations (replaced with const holder pattern)
+- Requires V 0.5+ (no longer needs `-enable-globals` flag)
+
+### High Availability
+- ISR Manager: tracks replica offsets, shrinks/expands ISR set, validates min.insync.replicas, calculates high watermark
+- Partition Rebalancing: RebalanceTrigger with debounce, wired into BrokerRegistry
+- Partition-Level Leader Election: elect from ISR, unclean election option, preferred leader election, broker failure handling
+
+### Performance
+- Replication Connection Pooling: reusable TCP connections per host, idle cleanup
+- Binary Replication Protocol: compact binary serialization (smaller than JSON)
+- Rate Limiting: token bucket algorithm, global + per-IP limits, Kafka error 55 throttle response
+
+### Security
+- SCRAM-SHA-512: comprehensive test coverage (17 tests)
+- Audit Logger: buffered event logging with type filtering
+
+### Structural Improvements
+- REST server.v split: 907 -> 375 lines (+health_handler, topic_handler, message_handler, metrics_handler)
+- main.v split: 700 -> 112 lines (+broker_startup, cli_commands)
+- WriteTxnMarkers: fully implemented (was TODO)
+
 ## v0.49.0 (2026-03-22)
 
 ### Breaking Changes

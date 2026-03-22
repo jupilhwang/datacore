@@ -30,7 +30,9 @@ mut:
 	prev_time        i64
 	// Partition assignment service
 	partition_assigner ?&PartitionAssigner
-	logger             &observability.Logger
+	// Rebalance trigger for automated partition redistribution
+	rebalance_trigger ?&RebalanceTrigger
+	logger            &observability.Logger
 	// Broker change callback
 	on_broker_change_cb ?fn (changes BrokerChanges)
 }
@@ -93,6 +95,7 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 		prev_bytes_out:      0
 		prev_time:           time.now().unix_milli()
 		partition_assigner:  none
+		rebalance_trigger:   none
 		logger:              observability.get_named_logger('broker_registry')
 		on_broker_change_cb: none
 	}
@@ -111,6 +114,15 @@ pub fn (mut r BrokerRegistry) set_partition_assigner(assigner &PartitionAssigner
 
 	r.partition_assigner = assigner
 	r.logger.info('Partition assigner registered')
+}
+
+/// set_rebalance_trigger sets the rebalance trigger for automated partition redistribution.
+pub fn (mut r BrokerRegistry) set_rebalance_trigger(trigger &RebalanceTrigger) {
+	r.lock.@lock()
+	defer { r.lock.unlock() }
+
+	r.rebalance_trigger = trigger
+	r.logger.info('Rebalance trigger registered')
 }
 
 /// set_on_broker_change sets the callback to be called when a broker changes.
@@ -431,10 +443,18 @@ pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 			return
 		}
 
-		// TODO(jira#XXX): Perform rebalancing for all topics
-		// Currently only calls callback; actual rebalancing is handled externally
-		r.logger.info('Triggering partition rebalance for all topics', observability.field_int('active_brokers',
-			i64(active_brokers.len)))
+		// Delegate to rebalance trigger if available
+		if mut trigger := r.rebalance_trigger {
+			for broker in changes.added {
+				trigger.on_broker_added(broker.broker_id)
+			}
+			for broker in changes.removed {
+				trigger.on_broker_removed(broker.broker_id)
+			}
+		} else {
+			r.logger.info('No rebalance trigger configured, skipping partition rebalance',
+				observability.field_int('active_brokers', i64(active_brokers.len)))
+		}
 	}
 
 	return
