@@ -16,7 +16,7 @@ mut:
 }
 
 /// new_fetch_usecase creates a new FetchUseCase.
-pub fn new_fetch_usecase(topic_storage port.TopicStoragePort, record_storage port.RecordStoragePort) &FetchUseCase {
+fn new_fetch_usecase(topic_storage port.TopicStoragePort, record_storage port.RecordStoragePort) &FetchUseCase {
 	return &FetchUseCase{
 		topic_storage:  topic_storage
 		record_storage: record_storage
@@ -72,7 +72,7 @@ const parallel_fetch_timeout_ms = 30000
 
 /// execute processes a fetch request.
 /// Selects sequential or parallel processing based on partition count.
-pub fn (mut u FetchUseCase) execute(req FetchRequest) FetchResponse {
+fn (mut u FetchUseCase) execute(req FetchRequest) FetchResponse {
 	if req.partitions.len > parallel_threshold {
 		return u.execute_parallel(req)
 	}

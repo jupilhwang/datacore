@@ -47,7 +47,7 @@ mut:
 
 // new_otlp_exporter creates a new OTLP exporter
 /// new_otlp_exporter creates a new OTLP exporter.
-pub fn new_otlp_exporter(config OTLPConfig) &OTLPExporter {
+fn new_otlp_exporter(config OTLPConfig) &OTLPExporter {
 	return &OTLPExporter{
 		config:      config
 		log_buffer:  []
@@ -58,7 +58,7 @@ pub fn new_otlp_exporter(config OTLPConfig) &OTLPExporter {
 
 // start starts the background flush loop
 /// start starts the background flush loop.
-pub fn (mut e OTLPExporter) start() {
+fn (mut e OTLPExporter) start() {
 	if e.running {
 		return
 	}
@@ -68,7 +68,7 @@ pub fn (mut e OTLPExporter) start() {
 
 // stop stops the exporter and flushes remaining data
 /// stop stops the exporter and flushes remaining data.
-pub fn (mut e OTLPExporter) stop() {
+fn (mut e OTLPExporter) stop() {
 	e.running = false
 	e.flush()
 }
@@ -85,7 +85,7 @@ fn (mut e OTLPExporter) flush_loop() {
 
 // flush sends all buffered data to OTLP endpoint
 /// flush sends all buffered data to OTLP endpoint.
-pub fn (mut e OTLPExporter) flush() {
+fn (mut e OTLPExporter) flush() {
 	e.flush_lock.@lock()
 	defer { e.flush_lock.unlock() }
 
@@ -116,7 +116,7 @@ pub fn (mut e OTLPExporter) flush() {
 
 // add_log adds a log entry to the buffer
 /// add_log adds a log entry to the buffer.
-pub fn (mut e OTLPExporter) add_log(entry LogEntry) {
+fn (mut e OTLPExporter) add_log(entry LogEntry) {
 	e.buffer_lock.@lock()
 
 	// Check buffer limit (v0.28.0) - prevent unbounded memory growth
@@ -218,7 +218,7 @@ fn (e &OTLPExporter) build_log_record(entry LogEntry) string {
 
 // add_span adds a span to the buffer
 /// add_span adds a span to the buffer.
-pub fn (mut e OTLPExporter) add_span(span &Span) {
+fn (mut e OTLPExporter) add_span(span &Span) {
 	e.buffer_lock.@lock()
 
 	// Check buffer limit (v0.28.0) - prevent unbounded memory growth
@@ -415,7 +415,7 @@ const otlp_holder = &OTLPExporterHolder{}
 
 // init_otlp_exporter initializes the global OTLP exporter
 /// init_otlp_exporter initializes the global OTLP exporter.
-pub fn init_otlp_exporter(config OTLPConfig) {
+fn init_otlp_exporter(config OTLPConfig) {
 	mut holder := unsafe { otlp_holder }
 	holder.lock.@lock()
 	defer { holder.lock.unlock() }
@@ -430,7 +430,7 @@ pub fn init_otlp_exporter(config OTLPConfig) {
 
 // get_otlp_exporter returns the global OTLP exporter
 /// get_otlp_exporter returns the global OTLP exporter.
-pub fn get_otlp_exporter() ?&OTLPExporter {
+fn get_otlp_exporter() ?&OTLPExporter {
 	holder := unsafe { otlp_holder }
 	if holder.exporter == unsafe { nil } {
 		return none
@@ -440,7 +440,7 @@ pub fn get_otlp_exporter() ?&OTLPExporter {
 
 // shutdown_otlp_exporter stops and flushes the global exporter
 /// shutdown_otlp_exporter stops and flushes the global exporter.
-pub fn shutdown_otlp_exporter() {
+fn shutdown_otlp_exporter() {
 	mut holder := unsafe { otlp_holder }
 	holder.lock.@lock()
 	defer { holder.lock.unlock() }
@@ -455,7 +455,7 @@ pub fn shutdown_otlp_exporter() {
 
 // export_metrics_snapshot exports a snapshot of all registered metrics to OTLP endpoint.
 /// export_metrics_snapshot exports all metrics from the registry to the OTLP /v1/metrics endpoint.
-pub fn (mut e OTLPExporter) export_metrics_snapshot() {
+fn (mut e OTLPExporter) export_metrics_snapshot() {
 	mut reg := get_registry()
 	payload := e.build_metrics_payload(mut reg)
 	if payload.len == 0 {
@@ -467,7 +467,7 @@ pub fn (mut e OTLPExporter) export_metrics_snapshot() {
 
 // build_metrics_payload converts the registry snapshot to OTLP JSON metrics payload.
 /// build_metrics_payload converts all metrics in the registry to an OTLP JSON payload.
-pub fn (e &OTLPExporter) build_metrics_payload(mut reg MetricsRegistry) string {
+fn (e &OTLPExporter) build_metrics_payload(mut reg MetricsRegistry) string {
 	reg.lock.rlock()
 	metrics_copy := reg.metrics.clone()
 	reg.lock.runlock()

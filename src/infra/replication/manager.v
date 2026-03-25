@@ -260,7 +260,7 @@ pub fn (mut m Manager) send_flush_ack(topic string, partition i32, offset i64) !
 // recover_replica initiates recovery for a replica partition from the given offset.
 // Sends a RECOVER request to the leader and counts the event as a replication operation.
 /// recover_replica initiates recovery for a replica partition from the given offset.
-pub fn (mut m Manager) recover_replica(topic string, partition i32, offset i64) ! {
+fn (mut m Manager) recover_replica(topic string, partition i32, offset i64) ! {
 	if !m.config.enabled {
 		return
 	}

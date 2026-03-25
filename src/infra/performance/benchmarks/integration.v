@@ -9,12 +9,12 @@ import infra.performance
 // Global performance manager proxy
 
 /// get_global_performance returns the global performance manager from the root module.
-pub fn get_global_performance() &performance.PerformanceManager {
+fn get_global_performance() &performance.PerformanceManager {
 	return performance.get_global_performance()
 }
 
 /// init_global_performance initializes the global performance manager.
-pub fn init_global_performance(config performance.PerformanceConfig) {
+fn init_global_performance(config performance.PerformanceConfig) {
 	performance.init_global_performance(config)
 }
 
@@ -30,7 +30,7 @@ pub mut:
 }
 
 /// new_request_buffer acquires a buffer for request processing.
-pub fn new_request_buffer(size int) &RequestBuffer {
+fn new_request_buffer(size int) &RequestBuffer {
 	mut mgr := get_global_performance()
 	return &RequestBuffer{
 		buffer:     mgr.get_buffer(size)
@@ -40,12 +40,12 @@ pub fn new_request_buffer(size int) &RequestBuffer {
 }
 
 /// data returns the internal byte slice.
-pub fn (r &RequestBuffer) data() []u8 {
+fn (r &RequestBuffer) data() []u8 {
 	return r.buffer.data
 }
 
 /// resize adjusts the buffer size if needed.
-pub fn (mut r RequestBuffer) resize(new_size int) {
+fn (mut r RequestBuffer) resize(new_size int) {
 	if new_size > r.buffer.cap {
 		// Return old buffer and acquire a larger one
 		r.manager.put_buffer(r.buffer)
@@ -55,7 +55,7 @@ pub fn (mut r RequestBuffer) resize(new_size int) {
 }
 
 /// release returns the buffer to the pool.
-pub fn (mut r RequestBuffer) release() {
+fn (mut r RequestBuffer) release() {
 	r.manager.put_buffer(r.buffer)
 }
 
@@ -69,7 +69,7 @@ pub mut:
 }
 
 /// new_response_buffer acquires a buffer for response building.
-pub fn new_response_buffer(estimated_size int) &ResponseBuffer {
+fn new_response_buffer(estimated_size int) &ResponseBuffer {
 	mut mgr := get_global_performance()
 	return &ResponseBuffer{
 		buffer:  mgr.get_buffer(estimated_size)
@@ -79,7 +79,7 @@ pub fn new_response_buffer(estimated_size int) &ResponseBuffer {
 }
 
 /// write appends data to the response buffer.
-pub fn (mut r ResponseBuffer) write(data []u8) {
+fn (mut r ResponseBuffer) write(data []u8) {
 	needed := r.offset + data.len
 	if needed > r.buffer.cap {
 		// Need a larger buffer - acquire new buffer and copy
@@ -99,27 +99,27 @@ pub fn (mut r ResponseBuffer) write(data []u8) {
 }
 
 /// write_i32_be writes a big-endian i32.
-pub fn (mut r ResponseBuffer) write_i32_be(val i32) {
+fn (mut r ResponseBuffer) write_i32_be(val i32) {
 	r.write([u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)])
 }
 
 /// write_i16_be writes a big-endian i16.
-pub fn (mut r ResponseBuffer) write_i16_be(val i16) {
+fn (mut r ResponseBuffer) write_i16_be(val i16) {
 	r.write([u8(val >> 8), u8(val)])
 }
 
 /// bytes returns the written bytes.
-pub fn (r &ResponseBuffer) bytes() []u8 {
+fn (r &ResponseBuffer) bytes() []u8 {
 	return r.buffer.data[..r.offset]
 }
 
 /// len returns the current length.
-pub fn (r &ResponseBuffer) len() int {
+fn (r &ResponseBuffer) len() int {
 	return r.offset
 }
 
 /// release returns the buffer to the pool.
-pub fn (mut r ResponseBuffer) release() {
+fn (mut r ResponseBuffer) release() {
 	r.manager.put_buffer(r.buffer)
 }
 
@@ -135,7 +135,7 @@ pub mut:
 }
 
 /// new_connection_buffers creates connection buffers.
-pub fn new_connection_buffers(read_size int, write_size int) &ConnectionBuffers {
+fn new_connection_buffers(read_size int, write_size int) &ConnectionBuffers {
 	mut mgr := get_global_performance()
 	return &ConnectionBuffers{
 		read_buffer:  mgr.get_buffer(read_size)
@@ -145,7 +145,7 @@ pub fn new_connection_buffers(read_size int, write_size int) &ConnectionBuffers 
 }
 
 /// get_read_slice returns a slice for reading.
-pub fn (c &ConnectionBuffers) get_read_slice(size int) []u8 {
+fn (c &ConnectionBuffers) get_read_slice(size int) []u8 {
 	if size <= c.read_buffer.cap {
 		return c.read_buffer.data[..size]
 	}
@@ -153,7 +153,7 @@ pub fn (c &ConnectionBuffers) get_read_slice(size int) []u8 {
 }
 
 /// get_write_slice returns a slice for writing.
-pub fn (c &ConnectionBuffers) get_write_slice(size int) []u8 {
+fn (c &ConnectionBuffers) get_write_slice(size int) []u8 {
 	if size <= c.write_buffer.cap {
 		return c.write_buffer.data[..size]
 	}
@@ -161,7 +161,7 @@ pub fn (c &ConnectionBuffers) get_write_slice(size int) []u8 {
 }
 
 /// release returns the buffers to the pool.
-pub fn (mut c ConnectionBuffers) release() {
+fn (mut c ConnectionBuffers) release() {
 	c.manager.put_buffer(c.read_buffer)
 	c.manager.put_buffer(c.write_buffer)
 }
@@ -176,29 +176,29 @@ mut:
 }
 
 /// new_storage_record_pool creates a storage record pool.
-pub fn new_storage_record_pool() &StorageRecordPool {
+fn new_storage_record_pool() &StorageRecordPool {
 	return &StorageRecordPool{
 		manager: get_global_performance()
 	}
 }
 
 /// get_record acquires a pooled record.
-pub fn (mut p StorageRecordPool) get_record() &core.PooledRecord {
+fn (mut p StorageRecordPool) get_record() &core.PooledRecord {
 	return p.manager.get_record()
 }
 
 /// put_record returns a record to the pool.
-pub fn (mut p StorageRecordPool) put_record(r &core.PooledRecord) {
+fn (mut p StorageRecordPool) put_record(r &core.PooledRecord) {
 	p.manager.put_record(r)
 }
 
 /// get_batch acquires a pooled batch.
-pub fn (mut p StorageRecordPool) get_batch() &core.PooledRecordBatch {
+fn (mut p StorageRecordPool) get_batch() &core.PooledRecordBatch {
 	return p.manager.get_batch()
 }
 
 /// put_batch returns a batch to the pool.
-pub fn (mut p StorageRecordPool) put_batch(b &core.PooledRecordBatch) {
+fn (mut p StorageRecordPool) put_batch(b &core.PooledRecordBatch) {
 	p.manager.put_batch(b)
 }
 
@@ -216,7 +216,7 @@ pub mut:
 }
 
 /// new_fetch_buffer creates a fetch buffer.
-pub fn new_fetch_buffer(size int) &FetchBuffer {
+fn new_fetch_buffer(size int) &FetchBuffer {
 	mut mgr := get_global_performance()
 	return &FetchBuffer{
 		buffer:        mgr.get_buffer(size)
@@ -228,19 +228,19 @@ pub fn new_fetch_buffer(size int) &FetchBuffer {
 }
 
 /// set_zero_copy configures zero-copy transfer.
-pub fn (mut f FetchBuffer) set_zero_copy(fd int, offset i64, length int) {
+fn (mut f FetchBuffer) set_zero_copy(fd int, offset i64, length int) {
 	f.zero_copy_fd = fd
 	f.zero_copy_off = offset
 	f.zero_copy_len = length
 }
 
 /// has_zero_copy checks if zero-copy is available.
-pub fn (f &FetchBuffer) has_zero_copy() bool {
+fn (f &FetchBuffer) has_zero_copy() bool {
 	return f.zero_copy_fd >= 0 && f.zero_copy_len > 0
 }
 
 /// release returns the buffer to the pool.
-pub fn (mut f FetchBuffer) release() {
+fn (mut f FetchBuffer) release() {
 	f.manager.put_buffer(f.buffer)
 }
 
@@ -274,7 +274,7 @@ fn get_metrics() &IntegrationMetrics {
 }
 
 /// get_integration_stats returns integration statistics.
-pub fn get_integration_stats() IntegrationStats {
+fn get_integration_stats() IntegrationStats {
 	mut mgr := get_global_performance()
 	metrics := get_metrics()
 	return IntegrationStats{
@@ -290,25 +290,25 @@ pub fn get_integration_stats() IntegrationStats {
 // Convenience functions
 
 /// with_request_buffer executes a function with a pooled request buffer.
-pub fn with_request_buffer(size int, f fn (mut RequestBuffer)) {
+fn with_request_buffer(size int, f fn (mut RequestBuffer)) {
 	mut buf := new_request_buffer(size)
 	defer { buf.release() }
 	f(mut buf)
 }
 
 /// with_response_buffer executes a function with a pooled response buffer.
-pub fn with_response_buffer(size int, f fn (mut ResponseBuffer)) {
+fn with_response_buffer(size int, f fn (mut ResponseBuffer)) {
 	mut buf := new_response_buffer(size)
 	defer { buf.release() }
 	f(mut buf)
 }
 
 /// allocate_request_buffer allocates and tracks a request buffer.
-pub fn allocate_request_buffer(size int) &RequestBuffer {
+fn allocate_request_buffer(size int) &RequestBuffer {
 	return new_request_buffer(size)
 }
 
 /// allocate_response_buffer allocates and tracks a response buffer.
-pub fn allocate_response_buffer(size int) &ResponseBuffer {
+fn allocate_response_buffer(size int) &ResponseBuffer {
 	return new_response_buffer(size)
 }

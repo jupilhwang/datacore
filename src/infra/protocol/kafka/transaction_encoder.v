@@ -3,7 +3,7 @@
 module kafka
 
 /// encode encodes an InitProducerIdResponse (API Key 22).
-pub fn (r InitProducerIdResponse) encode(version i16) []u8 {
+fn (r InitProducerIdResponse) encode(version i16) []u8 {
 	is_flexible := version >= 2
 	mut writer := new_writer()
 
@@ -28,7 +28,7 @@ pub fn (r InitProducerIdResponse) encode(version i16) []u8 {
 }
 
 /// encode encodes an AddPartitionsToTxnResponse (API Key 24).
-pub fn (r AddPartitionsToTxnResponse) encode(version i16) []u8 {
+fn (r AddPartitionsToTxnResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
 
@@ -70,7 +70,7 @@ pub fn (r AddPartitionsToTxnResponse) encode(version i16) []u8 {
 }
 
 /// encode encodes an AddOffsetsToTxnResponse (API Key 25).
-pub fn (r AddOffsetsToTxnResponse) encode(version i16) []u8 {
+fn (r AddOffsetsToTxnResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
 
@@ -85,7 +85,7 @@ pub fn (r AddOffsetsToTxnResponse) encode(version i16) []u8 {
 }
 
 /// encode encodes an EndTxnResponse (API Key 26).
-pub fn (r EndTxnResponse) encode(version i16) []u8 {
+fn (r EndTxnResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
 
@@ -100,7 +100,7 @@ pub fn (r EndTxnResponse) encode(version i16) []u8 {
 }
 
 /// encode encodes a WriteTxnMarkersResponse (API Key 27).
-pub fn (r WriteTxnMarkersResponse) encode(version i16) []u8 {
+fn (r WriteTxnMarkersResponse) encode(version i16) []u8 {
 	// v1 is always flexible
 	is_flexible := version >= 1
 	mut writer := new_writer()
@@ -156,7 +156,7 @@ pub fn (r WriteTxnMarkersResponse) encode(version i16) []u8 {
 }
 
 /// encode encodes a TxnOffsetCommitResponse (API Key 28).
-pub fn (r TxnOffsetCommitResponse) encode(version i16) []u8 {
+fn (r TxnOffsetCommitResponse) encode(version i16) []u8 {
 	is_flexible := version >= 3
 	mut writer := new_writer()
 

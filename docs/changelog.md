@@ -1,5 +1,31 @@
 # DataCore Changelog
 
+## [v0.52.1] -- 2026-03-25
+
+### Fixed
+- handler 파일 DIP 일관성: observability.field_* -> port.field_* 통일 (309건)
+- port.field_duration/field_bytes/field_float 포맷을 observability 버전과 동일하게 수정
+- Sub-handler 미사용 필드 18개 제거 (7 SubHandler struct 정리, net -64줄)
+- startup 시 인증 미설정 경고 로그 추가
+- handler_offset_test.dSYM macOS 디버그 심볼 git에서 제거
+
+## [v0.52.0] -- 2026-03-25
+
+### Added
+- 8 new Port interfaces for Handler DIP compliance: ProtocolMetricsPort, OffsetManagerPort, CompressionPort, AuditLoggerPort, SchemaRegistryPort, TransactionCoordinatorPort, PartitionAssignerPort, ShareGroupCoordinatorPort
+- ISP split: BrokerRegistryPort (query-only) + BrokerLifecyclePort (lifecycle mutations)
+- CompressionPortAdapter for bridging compression types via Port layer
+- handler_factory.v: Composition Root pattern isolating all concrete dependencies
+
+### Removed
+- 8 concrete imports from handler.v (infra.auth, infra.compression, infra.observability, service.cluster, service.group, service.offset, service.schema, service.transaction)
+- ~624 unnecessary pub fn converted to fn (module-internal visibility)
+- `-enable-globals` flag from Makefile (no global variables in codebase)
+
+### Fixed
+- BrokerRegistryPort ISP split resolving interface mismatch with BrokerRegistry concrete
+- Offset test type references updated for port module migration
+
 ## [v0.51.0] -- 2026-03-25
 
 ### Refactored

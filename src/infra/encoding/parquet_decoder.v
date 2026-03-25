@@ -22,7 +22,7 @@ mut:
 }
 
 // new_parquet_decoder creates a new decoder from raw Parquet file bytes.
-pub fn new_parquet_decoder(data []u8) !&ParquetDecoder {
+fn new_parquet_decoder(data []u8) !&ParquetDecoder {
 	mut parser := new_parquet_metadata_parser()
 	metadata := parser.parse(data)!
 
@@ -33,12 +33,12 @@ pub fn new_parquet_decoder(data []u8) !&ParquetDecoder {
 }
 
 // row_count returns the number of rows in the file.
-pub fn (d &ParquetDecoder) row_count() i64 {
+fn (d &ParquetDecoder) row_count() i64 {
 	return d.metadata.num_rows
 }
 
 // schema returns the schema as a ParquetSchema with named columns.
-pub fn (d &ParquetDecoder) schema() ParquetSchema {
+fn (d &ParquetDecoder) schema() ParquetSchema {
 	mut cols := []ParquetColumn{cap: d.metadata.schema.len}
 	for elem in d.metadata.schema {
 		cols << ParquetColumn{
@@ -53,7 +53,7 @@ pub fn (d &ParquetDecoder) schema() ParquetSchema {
 }
 
 // read_all reads all records from the file.
-pub fn (mut d ParquetDecoder) read_all() ![]ParquetRecord {
+fn (mut d ParquetDecoder) read_all() ![]ParquetRecord {
 	if d.metadata.row_groups.len == 0 {
 		return []
 	}

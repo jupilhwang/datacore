@@ -6,7 +6,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import time
 
 /// MetadataRequest queries cluster and topic metadata.
@@ -200,8 +200,8 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 	_ = version
 	start_time := time.now()
 
-	h.logger.debug('Processing metadata request', observability.field_int('topics', req.topics.len),
-		observability.field_bool('allow_auto_create', req.allow_auto_topic_creation))
+	h.logger.debug('Processing metadata request', port.field_int('topics', req.topics.len),
+		port.field_bool('allow_auto_create', req.allow_auto_topic_creation))
 
 	mut brokers := []MetadataResponseBroker{}
 	mut active_broker_ids := []i32{}
@@ -246,9 +246,8 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 	controller_id := if active_broker_ids.len > 0 { active_broker_ids[0] } else { h.broker_id }
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Metadata request completed', observability.field_int('brokers', brokers.len),
-		observability.field_int('topics', resp_topics.len), observability.field_duration('latency',
-		elapsed))
+	h.logger.debug('Metadata request completed', port.field_int('brokers', brokers.len),
+		port.field_int('topics', resp_topics.len), port.field_duration('latency', elapsed))
 
 	return MetadataResponse{
 		throttle_time_ms:       0
@@ -278,11 +277,11 @@ fn (mut h Handler) build_broker_list(mut brokers []MetadataResponseBroker, mut a
 	if brokers.len == 0 {
 		if h.broker_registry == none {
 			h.logger.debug('Metadata response: broker_registry not available, returning local broker only',
-				observability.field_int('broker_id', h.broker_id), observability.field_string('host',
-				h.host), observability.field_int('port', h.broker_port))
+				port.field_int('broker_id', h.broker_id), port.field_string('host', h.host),
+				port.field_int('port', h.broker_port))
 		} else {
 			h.logger.debug('Metadata response: broker_registry returned empty active brokers, returning local broker only',
-				observability.field_int('broker_id', h.broker_id))
+				port.field_int('broker_id', h.broker_id))
 		}
 		brokers << MetadataResponseBroker{
 			node_id: h.broker_id

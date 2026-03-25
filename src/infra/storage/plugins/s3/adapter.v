@@ -282,7 +282,7 @@ fn (m &S3Metrics) get_summary() string {
 // {prefix}/offsets/{group_id}/{topic}:{partition}.json
 
 /// new_s3_adapter creates a new S3 storage adapter.
-pub fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
+fn new_s3_adapter(config S3Config) !&S3StorageAdapter {
 	return &S3StorageAdapter{
 		config:                  config
 		cache:                   S3CacheManager{
@@ -436,13 +436,13 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 /// stop_workers signals all background workers to stop.
 /// Workers drain pending buffers before exiting (graceful shutdown).
 /// Blocks until all workers have completed via WaitGroup.
-pub fn (mut a S3StorageAdapter) stop_workers() {
+fn (mut a S3StorageAdapter) stop_workers() {
 	stdatomic.store_i64(&a.is_running_flag, 0)
 	a.worker_wg.wait()
 }
 
 /// get_metrics returns the current metrics snapshot.
-pub fn (mut a S3StorageAdapter) get_metrics() S3Metrics {
+fn (mut a S3StorageAdapter) get_metrics() S3Metrics {
 	a.metrics_collector.mu.@lock()
 	defer {
 		a.metrics_collector.mu.unlock()
@@ -451,7 +451,7 @@ pub fn (mut a S3StorageAdapter) get_metrics() S3Metrics {
 }
 
 /// get_metrics_summary returns the metrics summary string.
-pub fn (mut a S3StorageAdapter) get_metrics_summary() string {
+fn (mut a S3StorageAdapter) get_metrics_summary() string {
 	a.metrics_collector.mu.@lock()
 	defer {
 		a.metrics_collector.mu.unlock()
@@ -460,7 +460,7 @@ pub fn (mut a S3StorageAdapter) get_metrics_summary() string {
 }
 
 /// reset_metrics resets all metrics to zero.
-pub fn (mut a S3StorageAdapter) reset_metrics() {
+fn (mut a S3StorageAdapter) reset_metrics() {
 	a.metrics_collector.mu.@lock()
 	defer {
 		a.metrics_collector.mu.unlock()

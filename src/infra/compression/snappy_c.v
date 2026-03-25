@@ -14,7 +14,7 @@ pub struct SnappyCompressorC {
 }
 
 /// new_snappy_compressor_c creates a new SnappyCompressorC using the C library.
-pub fn new_snappy_compressor_c() &SnappyCompressorC {
+fn new_snappy_compressor_c() &SnappyCompressorC {
 	return &SnappyCompressorC{}
 }
 

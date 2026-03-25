@@ -261,7 +261,7 @@ pub:
 
 /// get_stats returns current storage statistics.
 /// Queries topic count, partition count, record count, and consumer group count.
-pub fn (mut a PostgresStorageAdapter) get_stats() !StorageStats {
+fn (mut a PostgresStorageAdapter) get_stats() !StorageStats {
 	mut db := a.pool.acquire()!
 	defer { a.pool.release(db) }
 
@@ -280,12 +280,12 @@ pub fn (mut a PostgresStorageAdapter) get_stats() !StorageStats {
 
 /// close closes all connections in the pool.
 /// Must be called when the adapter is no longer needed to release resources.
-pub fn (mut a PostgresStorageAdapter) close() {
+fn (mut a PostgresStorageAdapter) close() {
 	a.pool.close()
 }
 
 /// get_metrics returns a snapshot of current metrics.
-pub fn (mut a PostgresStorageAdapter) get_metrics() PostgresMetrics {
+fn (mut a PostgresStorageAdapter) get_metrics() PostgresMetrics {
 	a.metrics_lock.@lock()
 	defer {
 		a.metrics_lock.unlock()
@@ -294,7 +294,7 @@ pub fn (mut a PostgresStorageAdapter) get_metrics() PostgresMetrics {
 }
 
 /// get_metrics_summary returns a metrics summary string.
-pub fn (mut a PostgresStorageAdapter) get_metrics_summary() string {
+fn (mut a PostgresStorageAdapter) get_metrics_summary() string {
 	a.metrics_lock.@lock()
 	defer {
 		a.metrics_lock.unlock()
@@ -303,7 +303,7 @@ pub fn (mut a PostgresStorageAdapter) get_metrics_summary() string {
 }
 
 /// reset_metrics resets all metrics to zero.
-pub fn (mut a PostgresStorageAdapter) reset_metrics() {
+fn (mut a PostgresStorageAdapter) reset_metrics() {
 	a.metrics_lock.@lock()
 	defer {
 		a.metrics_lock.unlock()

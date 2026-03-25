@@ -4,7 +4,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import rand
 import time
 
@@ -17,8 +17,8 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	req := parse_init_producer_id_request(mut reader, version, is_flexible)!
 
 	txn_id := req.transactional_id or { '' }
-	h.logger.debug('Processing init producer id', observability.field_string('txn_id',
-		txn_id), observability.field_int('producer_id', req.producer_id), observability.field_int('producer_epoch',
+	h.logger.debug('Processing init producer id', port.field_string('txn_id', txn_id),
+		port.field_int('producer_id', req.producer_id), port.field_int('producer_epoch',
 		req.producer_epoch))
 
 	// Use TransactionCoordinator if available
@@ -48,8 +48,8 @@ fn (mut h Handler) handle_init_producer_id(body []u8, version i16) ![]u8 {
 	resp := build_fallback_producer_id_response(req)
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Init producer id completed', observability.field_int('producer_id',
-		resp.producer_id), observability.field_int('error_code', resp.error_code), observability.field_duration('latency',
+	h.logger.debug('Init producer id completed', port.field_int('producer_id', resp.producer_id),
+		port.field_int('error_code', resp.error_code), port.field_duration('latency',
 		elapsed))
 
 	return resp.encode(version)
@@ -62,9 +62,8 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_add_partitions_to_txn_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing add partitions to txn', observability.field_string('txn_id',
-		req.transactional_id), observability.field_int('producer_id', req.producer_id),
-		observability.field_int('topics', req.topics.len))
+	h.logger.debug('Processing add partitions to txn', port.field_string('txn_id', req.transactional_id),
+		port.field_int('producer_id', req.producer_id), port.field_int('topics', req.topics.len))
 
 	if mut txn_coord := h.txn_coordinator {
 		// Convert request topics to a TopicPartition list
@@ -87,8 +86,8 @@ fn (mut h Handler) handle_add_partitions_to_txn(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Add partitions to txn completed', observability.field_string('txn_id',
-		req.transactional_id), observability.field_duration('latency', elapsed))
+	h.logger.debug('Add partitions to txn completed', port.field_string('txn_id', req.transactional_id),
+		port.field_duration('latency', elapsed))
 
 	// Coordinator not available
 	return build_add_partitions_error_response(req, .coordinator_not_available).encode(version)
@@ -101,9 +100,8 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_end_txn_request(mut reader, version, is_flexible)!
 
-	h.logger.info('Processing end txn', observability.field_string('txn_id', req.transactional_id),
-		observability.field_int('producer_id', req.producer_id), observability.field_bool('commit',
-		req.transaction_result))
+	h.logger.info('Processing end txn', port.field_string('txn_id', req.transactional_id),
+		port.field_int('producer_id', req.producer_id), port.field_bool('commit', req.transaction_result))
 
 	if mut txn_coord := h.txn_coordinator {
 		result := if req.transaction_result {
@@ -126,8 +124,8 @@ fn (mut h Handler) handle_end_txn(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.warn('End txn failed: coordinator not available', observability.field_string('txn_id',
-		req.transactional_id), observability.field_duration('latency', elapsed))
+	h.logger.warn('End txn failed: coordinator not available', port.field_string('txn_id',
+		req.transactional_id), port.field_duration('latency', elapsed))
 
 	return EndTxnResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -142,9 +140,8 @@ fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_add_offsets_to_txn_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing add offsets to txn', observability.field_string('txn_id',
-		req.transactional_id), observability.field_string('group_id', req.group_id), observability.field_int('producer_id',
-		req.producer_id))
+	h.logger.debug('Processing add offsets to txn', port.field_string('txn_id', req.transactional_id),
+		port.field_string('group_id', req.group_id), port.field_int('producer_id', req.producer_id))
 
 	if mut txn_coord := h.txn_coordinator {
 		txn_coord.add_offsets_to_txn(req.transactional_id, req.producer_id, req.producer_epoch,
@@ -162,8 +159,8 @@ fn (mut h Handler) handle_add_offsets_to_txn(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.warn('Add offsets to txn failed: coordinator not available', observability.field_string('txn_id',
-		req.transactional_id), observability.field_duration('latency', elapsed))
+	h.logger.warn('Add offsets to txn failed: coordinator not available', port.field_string('txn_id',
+		req.transactional_id), port.field_duration('latency', elapsed))
 
 	return AddOffsetsToTxnResponse{
 		throttle_time_ms: default_throttle_time_ms

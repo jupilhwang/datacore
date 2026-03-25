@@ -426,7 +426,7 @@ pub fn (r UpdateNamespacePropertiesResponse) to_json() string {
 }
 
 /// schema_to_rest converts IcebergSchema to REST API format.
-pub fn schema_to_rest(schema IcebergSchema) SchemaRest {
+fn schema_to_rest(schema IcebergSchema) SchemaRest {
 	mut fields := []FieldRest{}
 	for field in schema.fields {
 		fields << FieldRest{
@@ -447,7 +447,7 @@ pub fn schema_to_rest(schema IcebergSchema) SchemaRest {
 }
 
 /// partition_spec_to_rest converts IcebergPartitionSpec to REST API format.
-pub fn partition_spec_to_rest(spec IcebergPartitionSpec) PartitionSpecRest {
+fn partition_spec_to_rest(spec IcebergPartitionSpec) PartitionSpecRest {
 	mut fields := []PartitionFieldRest{}
 	for field in spec.fields {
 		fields << PartitionFieldRest{
@@ -465,7 +465,7 @@ pub fn partition_spec_to_rest(spec IcebergPartitionSpec) PartitionSpecRest {
 }
 
 /// snapshot_to_rest converts IcebergSnapshot to REST API format.
-pub fn snapshot_to_rest(snapshot IcebergSnapshot) SnapshotRest {
+fn snapshot_to_rest(snapshot IcebergSnapshot) SnapshotRest {
 	return SnapshotRest{
 		snapshot_id:   snapshot.snapshot_id
 		timestamp_ms:  snapshot.timestamp_ms

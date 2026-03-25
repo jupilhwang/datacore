@@ -220,7 +220,7 @@ pub:
 }
 
 /// get_stats returns the current storage statistics.
-pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
+fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 	mut total_partitions := 0
 	mut total_records := i64(0)
 	mut total_bytes := i64(0)
@@ -252,23 +252,23 @@ pub fn (mut a MemoryStorageAdapter) get_stats() StorageStats {
 }
 
 /// get_metrics returns the current metrics snapshot.
-pub fn (mut a MemoryStorageAdapter) get_metrics() MemoryMetrics {
+fn (mut a MemoryStorageAdapter) get_metrics() MemoryMetrics {
 	return a.metrics.get_snapshot()
 }
 
 /// get_metrics_summary returns the metrics summary string.
-pub fn (mut a MemoryStorageAdapter) get_metrics_summary() string {
+fn (mut a MemoryStorageAdapter) get_metrics_summary() string {
 	snap := a.metrics.get_snapshot()
 	return snap.get_summary()
 }
 
 /// reset_metrics resets all metrics to zero.
-pub fn (mut a MemoryStorageAdapter) reset_metrics() {
+fn (mut a MemoryStorageAdapter) reset_metrics() {
 	a.metrics.reset()
 }
 
 /// clear deletes all data (for testing).
-pub fn (mut a MemoryStorageAdapter) clear() {
+fn (mut a MemoryStorageAdapter) clear() {
 	a.topics_lock.@lock()
 	a.topics.clear()
 	a.topic_id_index.clear()

@@ -46,7 +46,7 @@ mut:
 }
 
 /// new_registry creates a new metrics registry.
-pub fn new_registry() &MetricsRegistry {
+fn new_registry() &MetricsRegistry {
 	return &MetricsRegistry{
 		metrics: map[string]&Metric{}
 	}
@@ -119,7 +119,7 @@ pub fn (mut r MetricsRegistry) register(name string, help string, metric_type Me
 }
 
 /// get returns a metric by name.
-pub fn (mut r MetricsRegistry) get(name string) ?&Metric {
+fn (mut r MetricsRegistry) get(name string) ?&Metric {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 	return r.metrics[name] or { return none }
@@ -144,7 +144,7 @@ pub fn (mut m Metric) inc_by(v f64) {
 }
 
 /// dec decrements the gauge by 1.
-pub fn (mut m Metric) dec() {
+fn (mut m Metric) dec() {
 	m.mu.@lock()
 	defer { m.mu.unlock() }
 	if m.metric_type == .gauge {
@@ -153,7 +153,7 @@ pub fn (mut m Metric) dec() {
 }
 
 /// dec_by decrements the gauge by the specified value.
-pub fn (mut m Metric) dec_by(v f64) {
+fn (mut m Metric) dec_by(v f64) {
 	m.mu.@lock()
 	defer { m.mu.unlock() }
 	if m.metric_type == .gauge {
@@ -162,7 +162,7 @@ pub fn (mut m Metric) dec_by(v f64) {
 }
 
 /// set sets the gauge to the specified value.
-pub fn (mut m Metric) set(v f64) {
+fn (mut m Metric) set(v f64) {
 	m.mu.@lock()
 	defer { m.mu.unlock() }
 	if m.metric_type == .gauge {
@@ -171,7 +171,7 @@ pub fn (mut m Metric) set(v f64) {
 }
 
 /// get_value returns the current metric value safely.
-pub fn (mut m Metric) get_value() f64 {
+fn (mut m Metric) get_value() f64 {
 	m.mu.@lock()
 	defer { m.mu.unlock() }
 	return m.value
@@ -189,7 +189,7 @@ pub:
 /// snapshot returns a thread-safe copy of the metric data.
 /// Uses unsafe cast to obtain a mutable reference from an immutable pointer,
 /// which is safe here because the mutex ensures exclusive access during the copy.
-pub fn (m &Metric) snapshot() MetricSnapshot {
+fn (m &Metric) snapshot() MetricSnapshot {
 	unsafe {
 		mut mu := &m.mu
 		mu.@lock()
@@ -265,7 +265,7 @@ pub struct Timer {
 }
 
 /// start_timer starts a new timer for a histogram metric.
-pub fn (m &Metric) start_timer() Timer {
+fn (m &Metric) start_timer() Timer {
 	return Timer{
 		start_time: time.now()
 		metric:     unsafe { m }
@@ -273,7 +273,7 @@ pub fn (m &Metric) start_timer() Timer {
 }
 
 /// observe_duration records the elapsed time.
-pub fn (mut t Timer) observe_duration() {
+fn (mut t Timer) observe_duration() {
 	elapsed := time.since(t.start_time)
 	seconds := f64(elapsed) / f64(time.second)
 	unsafe {

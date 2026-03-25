@@ -302,7 +302,7 @@ pub fn (mut r IoUring) close() {
 }
 
 /// get_sqe retrieves an empty submission queue entry.
-pub fn (mut r IoUring) get_sqe() ?&IoUringSqe {
+fn (mut r IoUring) get_sqe() ?&IoUringSqe {
 	$if linux {
 		head := unsafe { *r.sq_head }
 		tail := unsafe { *r.sq_tail }
@@ -327,7 +327,7 @@ pub fn (mut r IoUring) get_sqe() ?&IoUringSqe {
 }
 
 /// submit_sqe submits the current SQE.
-pub fn (mut r IoUring) submit_sqe() {
+fn (mut r IoUring) submit_sqe() {
 	$if linux {
 		tail := unsafe { *r.sq_tail }
 		idx := tail & r.sq_mask
@@ -365,7 +365,7 @@ pub fn (mut r IoUring) submit(wait_nr u32) !int {
 }
 
 /// peek_cqe peeks at the next completion without consuming it.
-pub fn (r &IoUring) peek_cqe() ?&IoUringCqe {
+fn (r &IoUring) peek_cqe() ?&IoUringCqe {
 	$if linux {
 		head := unsafe { *r.cq_head }
 		tail := unsafe { *r.cq_tail }
@@ -382,7 +382,7 @@ pub fn (r &IoUring) peek_cqe() ?&IoUringCqe {
 }
 
 /// consume_cqe marks the current CQE as consumed.
-pub fn (mut r IoUring) consume_cqe() {
+fn (mut r IoUring) consume_cqe() {
 	$if linux {
 		unsafe {
 			*r.cq_head = *r.cq_head + 1
@@ -425,7 +425,7 @@ pub fn (mut r IoUring) wait_cqe() !IoUringResult {
 }
 
 /// get_stats returns io_uring statistics.
-pub fn (r &IoUring) get_stats() IoUringStats {
+fn (r &IoUring) get_stats() IoUringStats {
 	$if linux {
 		head := unsafe { *r.sq_head }
 		tail := unsafe { *r.sq_tail }
@@ -464,7 +464,7 @@ pub fn (mut r IoUring) prep_read(fd int, buf []u8, offset i64, user_data u64) bo
 }
 
 /// prep_write prepares a write operation.
-pub fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) bool {
+fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) bool {
 	$if linux {
 		mut sqe := r.get_sqe() or { return false }
 
@@ -483,7 +483,7 @@ pub fn (mut r IoUring) prep_write(fd int, buf []u8, offset i64, user_data u64) b
 }
 
 /// prep_fsync prepares an fsync operation.
-pub fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
+fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
 	$if linux {
 		mut sqe := r.get_sqe() or { return false }
 
@@ -499,7 +499,7 @@ pub fn (mut r IoUring) prep_fsync(fd int, user_data u64) bool {
 }
 
 /// prep_nop prepares a no-op (useful for testing).
-pub fn (mut r IoUring) prep_nop(user_data u64) bool {
+fn (mut r IoUring) prep_nop(user_data u64) bool {
 	$if linux {
 		mut sqe := r.get_sqe() or { return false }
 
@@ -518,7 +518,7 @@ pub fn (mut r IoUring) prep_nop(user_data u64) bool {
 /// prep_accept prepares to accept a connection on a socket.
 /// listen_fd: listening socket file descriptor
 /// user_data: user data to return upon completion
-pub fn (mut r IoUring) prep_accept(listen_fd int, user_data u64) bool {
+fn (mut r IoUring) prep_accept(listen_fd int, user_data u64) bool {
 	$if linux {
 		mut sqe := r.get_sqe() or { return false }
 
@@ -541,7 +541,7 @@ pub fn (mut r IoUring) prep_accept(listen_fd int, user_data u64) bool {
 /// addr: buffer to store the client address
 /// addrlen: pointer to store the address length
 /// user_data: user data to return upon completion
-pub fn (mut r IoUring) prep_accept_with_addr(listen_fd int, addr &SockaddrIn, addrlen &u32, user_data u64) bool {
+fn (mut r IoUring) prep_accept_with_addr(listen_fd int, addr &SockaddrIn, addrlen &u32, user_data u64) bool {
 	$if linux {
 		mut sqe := r.get_sqe() or { return false }
 
@@ -564,7 +564,7 @@ pub fn (mut r IoUring) prep_accept_with_addr(listen_fd int, addr &SockaddrIn, ad
 /// buf: buffer to receive data into
 /// flags: recv flags (typically 0)
 /// user_data: user data to return upon completion
-pub fn (mut r IoUring) prep_recv(fd int, buf []u8, flags u32, user_data u64) bool {
+fn (mut r IoUring) prep_recv(fd int, buf []u8, flags u32, user_data u64) bool {
 	$if linux {
 		mut sqe := r.get_sqe() or { return false }
 
@@ -587,7 +587,7 @@ pub fn (mut r IoUring) prep_recv(fd int, buf []u8, flags u32, user_data u64) boo
 /// buf: data buffer to send
 /// flags: send flags (typically 0)
 /// user_data: user data to return upon completion
-pub fn (mut r IoUring) prep_send(fd int, buf []u8, flags u32, user_data u64) bool {
+fn (mut r IoUring) prep_send(fd int, buf []u8, flags u32, user_data u64) bool {
 	$if linux {
 		mut sqe := r.get_sqe() or { return false }
 
@@ -609,7 +609,7 @@ pub fn (mut r IoUring) prep_send(fd int, buf []u8, flags u32, user_data u64) boo
 /// host: host to bind to (e.g., "0.0.0.0")
 /// port: port to bind to
 /// backlog: listen backlog size
-pub fn create_listen_socket(host string, port int, backlog int) !int {
+fn create_listen_socket(host string, port int, backlog int) !int {
 	$if linux {
 		// Create socket
 		fd := C.socket(net.AddrFamily.ip, net.SocketType.tcp, 0)
@@ -666,7 +666,7 @@ pub fn create_listen_socket(host string, port int, backlog int) !int {
 }
 
 /// close_socket closes a socket.
-pub fn close_socket(fd int) {
+fn close_socket(fd int) {
 	$if linux {
 		C.close(fd)
 	}
@@ -693,7 +693,7 @@ pub enum BatchOpType {
 }
 
 /// submit_batch submits multiple operations at once.
-pub fn (mut r IoUring) submit_batch(ops []BatchOp) !int {
+fn (mut r IoUring) submit_batch(ops []BatchOp) !int {
 	$if linux {
 		mut submitted := 0
 
@@ -716,7 +716,7 @@ pub fn (mut r IoUring) submit_batch(ops []BatchOp) !int {
 }
 
 /// wait_batch waits for multiple completions.
-pub fn (mut r IoUring) wait_batch(count int) ![]IoUringResult {
+fn (mut r IoUring) wait_batch(count int) ![]IoUringResult {
 	$if linux {
 		mut results := []IoUringResult{cap: count}
 
@@ -740,12 +740,12 @@ pub mut:
 }
 
 /// new_io_uring_fallback creates a fallback handler.
-pub fn new_io_uring_fallback() IoUringFallback {
+fn new_io_uring_fallback() IoUringFallback {
 	return IoUringFallback{}
 }
 
 /// sync_read performs a synchronous read (fallback).
-pub fn (mut f IoUringFallback) sync_read(mut file os.File, mut buf []u8, offset i64) !int {
+fn (mut f IoUringFallback) sync_read(mut file os.File, mut buf []u8, offset i64) !int {
 	if offset >= 0 {
 		file.seek(offset, .start) or { return error('seek failed: ${err}') }
 	}
@@ -755,7 +755,7 @@ pub fn (mut f IoUringFallback) sync_read(mut file os.File, mut buf []u8, offset 
 }
 
 /// sync_write performs a synchronous write (fallback).
-pub fn (mut f IoUringFallback) sync_write(mut file os.File, buf []u8, offset i64) !int {
+fn (mut f IoUringFallback) sync_write(mut file os.File, buf []u8, offset i64) !int {
 	if offset >= 0 {
 		file.seek(offset, .start) or { return error('seek failed: ${err}') }
 	}
@@ -801,7 +801,7 @@ pub fn get_async_io_capabilities() AsyncIoCapabilities {
 }
 
 /// is_io_uring_available checks at runtime whether io_uring is available.
-pub fn is_io_uring_available() bool {
+fn is_io_uring_available() bool {
 	$if linux {
 		// Create a minimal io_uring to verify availability
 		ring := new_io_uring(IoUringConfig{ queue_depth: 1 }) or { return false }

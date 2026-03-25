@@ -19,7 +19,7 @@ fn setup_manager_with_topic(topic string, partitions int) !(&OffsetManager, port
 }
 
 fn commit_single_offset(mut manager OffsetManager, group_id string, topic string, partition int, offset_val i64) ! {
-	manager.commit_offsets(OffsetCommitRequest{
+	manager.commit_offsets(port.OffsetCommitRequest{
 		group_id: group_id
 		offsets:  [
 			domain.PartitionOffset{
@@ -32,7 +32,7 @@ fn commit_single_offset(mut manager OffsetManager, group_id string, topic string
 }
 
 fn fetch_single_offset(mut manager OffsetManager, group_id string, topic string, partition int) !i64 {
-	resp := manager.fetch_offsets(OffsetFetchRequest{
+	resp := manager.fetch_offsets(port.OffsetFetchRequest{
 		group_id:   group_id
 		partitions: [
 			domain.TopicPartition{
@@ -98,7 +98,7 @@ fn test_offset_commit_negative_offset_stored() ! {
 fn test_offset_commit_empty_group_id_returns_error() ! {
 	mut manager, _ := setup_manager_with_topic('topic-x', 1)!
 
-	manager.commit_offsets(OffsetCommitRequest{
+	manager.commit_offsets(port.OffsetCommitRequest{
 		group_id: ''
 		offsets:  [
 			domain.PartitionOffset{
@@ -122,7 +122,7 @@ fn test_offset_commit_multiple_topics_in_one_request() ! {
 	logger := observability.get_named_logger('offset.multi.test')
 	mut mgr := new_offset_manager(storage, storage, logger)
 
-	mgr.commit_offsets(OffsetCommitRequest{
+	mgr.commit_offsets(port.OffsetCommitRequest{
 		group_id: 'grp-multi'
 		offsets:  [
 			domain.PartitionOffset{
@@ -179,7 +179,7 @@ fn test_offset_fetch_empty_group_id_returns_error_code() ! {
 	storage := memory.new_memory_adapter()
 	mut manager := new_offset_manager(storage, storage, logger)
 
-	resp := manager.fetch_offsets(OffsetFetchRequest{
+	resp := manager.fetch_offsets(port.OffsetFetchRequest{
 		group_id:   ''
 		partitions: [domain.TopicPartition{
 			topic:     't'
@@ -195,7 +195,7 @@ fn test_offset_fetch_empty_partition_list_returns_empty() ! {
 	storage := memory.new_memory_adapter()
 	mut manager := new_offset_manager(storage, storage, logger)
 
-	resp := manager.fetch_offsets(OffsetFetchRequest{
+	resp := manager.fetch_offsets(port.OffsetFetchRequest{
 		group_id:   'grp-empty'
 		partitions: []
 	})!
@@ -459,12 +459,12 @@ fn test_offset_commit_batch_then_fetch_all() ! {
 		},
 	]
 
-	manager.commit_offsets(OffsetCommitRequest{
+	manager.commit_offsets(port.OffsetCommitRequest{
 		group_id: 'grp-batch'
 		offsets:  offsets
 	})!
 
-	resp := manager.fetch_offsets(OffsetFetchRequest{
+	resp := manager.fetch_offsets(port.OffsetFetchRequest{
 		group_id:   'grp-batch'
 		partitions: [
 			domain.TopicPartition{

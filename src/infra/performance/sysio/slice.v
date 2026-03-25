@@ -14,7 +14,7 @@ pub:
 }
 
 /// new creates a new ByteSlice from a byte array.
-pub fn ByteSlice.new(data []u8) ByteSlice {
+fn ByteSlice.new(data []u8) ByteSlice {
 	return ByteSlice{
 		data:   data
 		offset: 0
@@ -23,7 +23,7 @@ pub fn ByteSlice.new(data []u8) ByteSlice {
 }
 
 /// slice creates a sub-slice without copying data.
-pub fn (s ByteSlice) slice(start int, end int) !ByteSlice {
+fn (s ByteSlice) slice(start int, end int) !ByteSlice {
 	if start < 0 || end > s.length || start > end {
 		return error('slice bounds out of range: [${start}:${end}] with length ${s.length}')
 	}
@@ -35,7 +35,7 @@ pub fn (s ByteSlice) slice(start int, end int) !ByteSlice {
 }
 
 /// at returns the byte at the given index.
-pub fn (s ByteSlice) at(index int) !u8 {
+fn (s ByteSlice) at(index int) !u8 {
 	if index < 0 || index >= s.length {
 		return error('index out of range: ${index} with length ${s.length}')
 	}
@@ -43,7 +43,7 @@ pub fn (s ByteSlice) at(index int) !u8 {
 }
 
 /// to_owned returns a copy of the slice data (use when ownership is required).
-pub fn (s ByteSlice) to_owned() []u8 {
+fn (s ByteSlice) to_owned() []u8 {
 	if s.length == 0 {
 		return []u8{}
 	}
@@ -55,7 +55,7 @@ pub fn (s ByteSlice) to_owned() []u8 {
 }
 
 /// bytes returns the raw bytes as a view (zero-copy when possible).
-pub fn (s ByteSlice) bytes() []u8 {
+fn (s ByteSlice) bytes() []u8 {
 	if s.offset == 0 && s.length == s.data.len {
 		return s.data
 	}
@@ -63,12 +63,12 @@ pub fn (s ByteSlice) bytes() []u8 {
 }
 
 /// len returns the length of the slice.
-pub fn (s ByteSlice) len() int {
+fn (s ByteSlice) len() int {
 	return s.length
 }
 
 /// is_empty checks whether the slice is empty.
-pub fn (s ByteSlice) is_empty() bool {
+fn (s ByteSlice) is_empty() bool {
 	return s.length == 0
 }
 
@@ -86,7 +86,7 @@ pub:
 }
 
 /// parse creates a RecordView from raw bytes (zero-copy parsing).
-pub fn RecordView.parse(data []u8) !RecordView {
+fn RecordView.parse(data []u8) !RecordView {
 	if data.len < 26 {
 		return error('record too small: ${data.len} bytes, minimum 26 required')
 	}
@@ -135,7 +135,7 @@ pub fn RecordView.parse(data []u8) !RecordView {
 }
 
 /// key returns the key as a zero-copy slice.
-pub fn (r RecordView) key() !ByteSlice {
+fn (r RecordView) key() !ByteSlice {
 	if r.key_length == 0 {
 		return ByteSlice{}
 	}
@@ -143,7 +143,7 @@ pub fn (r RecordView) key() !ByteSlice {
 }
 
 /// value returns the value as a zero-copy slice.
-pub fn (r RecordView) value() !ByteSlice {
+fn (r RecordView) value() !ByteSlice {
 	if r.value_length == 0 {
 		return ByteSlice{}
 	}
@@ -151,7 +151,7 @@ pub fn (r RecordView) value() !ByteSlice {
 }
 
 /// key_bytes returns the key as owned bytes (data is copied).
-pub fn (r RecordView) key_bytes() []u8 {
+fn (r RecordView) key_bytes() []u8 {
 	if r.key_length == 0 {
 		return []u8{}
 	}
@@ -160,7 +160,7 @@ pub fn (r RecordView) key_bytes() []u8 {
 }
 
 /// value_bytes returns the value as owned bytes (data is copied).
-pub fn (r RecordView) value_bytes() []u8 {
+fn (r RecordView) value_bytes() []u8 {
 	if r.value_length == 0 {
 		return []u8{}
 	}
@@ -176,7 +176,7 @@ pub mut:
 }
 
 /// new creates a new SliceReader.
-pub fn SliceReader.new(data []u8) SliceReader {
+fn SliceReader.new(data []u8) SliceReader {
 	return SliceReader{
 		slice:    ByteSlice.new(data)
 		position: 0
@@ -184,7 +184,7 @@ pub fn SliceReader.new(data []u8) SliceReader {
 }
 
 /// from_slice creates a SliceReader from an existing ByteSlice.
-pub fn SliceReader.from_slice(slice ByteSlice) SliceReader {
+fn SliceReader.from_slice(slice ByteSlice) SliceReader {
 	return SliceReader{
 		slice:    slice
 		position: 0
@@ -192,17 +192,17 @@ pub fn SliceReader.from_slice(slice ByteSlice) SliceReader {
 }
 
 /// remaining returns the number of bytes remaining to be read.
-pub fn (r SliceReader) remaining() int {
+fn (r SliceReader) remaining() int {
 	return r.slice.length - r.position
 }
 
 /// has_remaining checks whether the reader has more data.
-pub fn (r SliceReader) has_remaining() bool {
+fn (r SliceReader) has_remaining() bool {
 	return r.position < r.slice.length
 }
 
 /// read_u8 reads a single byte.
-pub fn (mut r SliceReader) read_u8() !u8 {
+fn (mut r SliceReader) read_u8() !u8 {
 	if r.position >= r.slice.length {
 		return error('read_u8: buffer underflow')
 	}
@@ -212,7 +212,7 @@ pub fn (mut r SliceReader) read_u8() !u8 {
 }
 
 /// read_i16_be reads a big-endian i16.
-pub fn (mut r SliceReader) read_i16_be() !i16 {
+fn (mut r SliceReader) read_i16_be() !i16 {
 	if r.remaining() < 2 {
 		return error('read_i16_be: buffer underflow')
 	}
@@ -224,7 +224,7 @@ pub fn (mut r SliceReader) read_i16_be() !i16 {
 }
 
 /// read_i32_be reads a big-endian i32.
-pub fn (mut r SliceReader) read_i32_be() !i32 {
+fn (mut r SliceReader) read_i32_be() !i32 {
 	if r.remaining() < 4 {
 		return error('read_i32_be: buffer underflow')
 	}
@@ -237,7 +237,7 @@ pub fn (mut r SliceReader) read_i32_be() !i32 {
 }
 
 /// read_i64_be reads a big-endian i64.
-pub fn (mut r SliceReader) read_i64_be() !i64 {
+fn (mut r SliceReader) read_i64_be() !i64 {
 	if r.remaining() < 8 {
 		return error('read_i64_be: buffer underflow')
 	}
@@ -249,7 +249,7 @@ pub fn (mut r SliceReader) read_i64_be() !i64 {
 }
 
 /// read_slice reads n bytes as a new ByteSlice (zero-copy).
-pub fn (mut r SliceReader) read_slice(n int) !ByteSlice {
+fn (mut r SliceReader) read_slice(n int) !ByteSlice {
 	if r.remaining() < n {
 		return error('read_slice: buffer underflow, requested ${n} but only ${r.remaining()} available')
 	}
@@ -259,13 +259,13 @@ pub fn (mut r SliceReader) read_slice(n int) !ByteSlice {
 }
 
 /// read_bytes reads n bytes into an owned array (data is copied).
-pub fn (mut r SliceReader) read_bytes(n int) ![]u8 {
+fn (mut r SliceReader) read_bytes(n int) ![]u8 {
 	slice := r.read_slice(n)!
 	return slice.to_owned()
 }
 
 /// skip skips n bytes.
-pub fn (mut r SliceReader) skip(n int) ! {
+fn (mut r SliceReader) skip(n int) ! {
 	if r.remaining() < n {
 		return error('skip: buffer underflow')
 	}
@@ -273,12 +273,12 @@ pub fn (mut r SliceReader) skip(n int) ! {
 }
 
 /// reset resets the reader position to the beginning.
-pub fn (mut r SliceReader) reset() {
+fn (mut r SliceReader) reset() {
 	r.position = 0
 }
 
 /// seek moves to an absolute position.
-pub fn (mut r SliceReader) seek(pos int) ! {
+fn (mut r SliceReader) seek(pos int) ! {
 	if pos < 0 || pos > r.slice.length {
 		return error('seek: position ${pos} out of bounds [0, ${r.slice.length}]')
 	}
@@ -294,7 +294,7 @@ mut:
 }
 
 /// new creates a new batch iterator.
-pub fn BatchSliceIterator.new(data []u8, record_count int) BatchSliceIterator {
+fn BatchSliceIterator.new(data []u8, record_count int) BatchSliceIterator {
 	return BatchSliceIterator{
 		reader:       SliceReader.new(data)
 		record_count: record_count
@@ -303,12 +303,12 @@ pub fn BatchSliceIterator.new(data []u8, record_count int) BatchSliceIterator {
 }
 
 /// count returns the number of records in the batch.
-pub fn (b BatchSliceIterator) count() int {
+fn (b BatchSliceIterator) count() int {
 	return b.record_count
 }
 
 /// has_next checks whether more records are available.
-pub fn (b BatchSliceIterator) has_next() bool {
+fn (b BatchSliceIterator) has_next() bool {
 	return b.current < b.record_count && b.reader.has_remaining()
 }
 
@@ -322,7 +322,7 @@ mut:
 }
 
 /// new creates a new SlicePool.
-pub fn SlicePool.new(initial_size int) SlicePool {
+fn SlicePool.new(initial_size int) SlicePool {
 	return SlicePool{
 		pool:      []ByteSlice{cap: initial_size}
 		pool_size: initial_size
@@ -332,7 +332,7 @@ pub fn SlicePool.new(initial_size int) SlicePool {
 }
 
 /// acquire obtains a ByteSlice from the pool or creates a new one.
-pub fn (mut p SlicePool) acquire(data []u8) ByteSlice {
+fn (mut p SlicePool) acquire(data []u8) ByteSlice {
 	if p.pool.len > 0 {
 		p.reused++
 		_ = p.pool.pop()
@@ -348,14 +348,14 @@ pub fn (mut p SlicePool) acquire(data []u8) ByteSlice {
 }
 
 /// release returns a ByteSlice to the pool.
-pub fn (mut p SlicePool) release(slice ByteSlice) {
+fn (mut p SlicePool) release(slice ByteSlice) {
 	if p.pool.len < p.pool_size {
 		p.pool << slice
 	}
 }
 
 /// stats returns pool statistics.
-pub fn (p SlicePool) stats() (u64, u64, int) {
+fn (p SlicePool) stats() (u64, u64, int) {
 	return p.created, p.reused, p.pool.len
 }
 
@@ -386,7 +386,7 @@ mut:
 }
 
 /// new creates a new SliceBenchmark.
-pub fn SliceBenchmark.new(iterations u64, data_size int) SliceBenchmark {
+fn SliceBenchmark.new(iterations u64, data_size int) SliceBenchmark {
 	return SliceBenchmark{
 		iterations: iterations
 		data_size:  data_size
@@ -394,7 +394,7 @@ pub fn SliceBenchmark.new(iterations u64, data_size int) SliceBenchmark {
 }
 
 /// run_comparison benchmarks zero-copy slice creation vs array copying.
-pub fn (b SliceBenchmark) run_comparison() (i64, i64) {
+fn (b SliceBenchmark) run_comparison() (i64, i64) {
 	// Generate test data
 	mut data := []u8{len: b.data_size}
 	for i in 0 .. b.data_size {

@@ -19,6 +19,7 @@ pub struct BrokerRegistry {
 mut:
 	local_broker     domain.BrokerInfo
 	registry_port    ?port.BrokerRegistryPort
+	lifecycle_port   ?port.BrokerLifecyclePort
 	state_port       ?port.ClusterStatePort
 	health_port      ?port.BrokerHealthPort
 	brokers          map[i32]domain.BrokerInfo
@@ -53,10 +54,11 @@ pub:
 /// new_broker_registry creates a new broker registry.
 /// config: broker configuration
 /// capability: storage capability information
-/// registry_port: broker registration port (multi-broker mode)
+/// registry_port: broker query port (multi-broker mode)
+/// lifecycle_port: broker lifecycle port (multi-broker mode)
 /// state_port: cluster state port (multi-broker mode)
 /// health_port: broker health port (multi-broker mode)
-pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.StorageCapability, registry_port ?port.BrokerRegistryPort, state_port ?port.ClusterStatePort, health_port ?port.BrokerHealthPort) &BrokerRegistry {
+pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.StorageCapability, registry_port ?port.BrokerRegistryPort, lifecycle_port ?port.BrokerLifecyclePort, state_port ?port.ClusterStatePort, health_port ?port.BrokerHealthPort) &BrokerRegistry {
 	local_broker := domain.BrokerInfo{
 		broker_id:         config.broker_id
 		host:              config.host
@@ -89,6 +91,7 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 		config:              cluster_config
 		local_broker:        local_broker
 		registry_port:       registry_port
+		lifecycle_port:      lifecycle_port
 		state_port:          state_port
 		health_port:         health_port
 		brokers:             map[i32]domain.BrokerInfo{}
@@ -105,7 +108,7 @@ pub fn new_broker_registry(config BrokerRegistryConfig, capability domain.Storag
 
 /// set_metrics_provider sets the callback function that provides broker load metrics.
 /// This callback is periodically called in heartbeat_loop to collect actual server metrics.
-pub fn (mut r BrokerRegistry) set_metrics_provider(provider MetricsProvider) {
+fn (mut r BrokerRegistry) set_metrics_provider(provider MetricsProvider) {
 	r.metrics_provider = provider
 }
 
@@ -124,7 +127,7 @@ pub fn (mut r BrokerRegistry) set_partition_assigner(assigner &PartitionAssigner
 }
 
 /// set_on_broker_change sets the callback to be called when a broker changes.
-pub fn (mut r BrokerRegistry) set_on_broker_change(callback fn (changes BrokerChanges)) {
+fn (mut r BrokerRegistry) set_on_broker_change(callback fn (changes BrokerChanges)) {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
 
@@ -143,7 +146,7 @@ pub fn (mut r BrokerRegistry) register() !domain.BrokerInfo {
 
 	// In multi-broker mode with distributed storage
 	if r.capability.supports_multi_broker {
-		if mut mp := r.registry_port {
+		if mut mp := r.lifecycle_port {
 			// Register with distributed storage
 			registered := mp.register_broker(r.local_broker)!
 			r.local_broker = registered
@@ -187,7 +190,7 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 
 	// In multi-broker mode with distributed storage
 	if r.capability.supports_multi_broker {
-		if mut mp := r.registry_port {
+		if mut mp := r.lifecycle_port {
 			mp.deregister_broker(r.local_broker.broker_id)!
 		}
 	}
@@ -197,7 +200,7 @@ pub fn (mut r BrokerRegistry) deregister() ! {
 
 /// on_broker_change is called when the broker list changes.
 /// Note: Caller must already hold r.lock (internal use only).
-pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
+fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 	r.logger.info('Broker change detected reason=${changes.reason} added=${changes.added.len} removed=${changes.removed.len}')
 
 	// Call callback

@@ -27,7 +27,7 @@ pub mut:
 }
 
 // new_thrift_writer creates a new ThriftWriter.
-pub fn new_thrift_writer() ThriftWriter {
+fn new_thrift_writer() ThriftWriter {
 	return ThriftWriter{
 		// Pre-allocate a reasonable default capacity to avoid early reallocations.
 		buf:           []u8{cap: 256}
@@ -38,7 +38,7 @@ pub fn new_thrift_writer() ThriftWriter {
 
 // bytes returns the encoded bytes.
 // Returns a reference to the internal buffer — callers must not modify the ThriftWriter after calling bytes().
-pub fn (w &ThriftWriter) bytes() []u8 {
+fn (w &ThriftWriter) bytes() []u8 {
 	return w.buf
 }
 
@@ -75,13 +75,13 @@ fn zigzag64(n i64) u64 {
 }
 
 // write_struct_begin starts a struct (saves current last_field_id to stack).
-pub fn (mut w ThriftWriter) write_struct_begin() {
+fn (mut w ThriftWriter) write_struct_begin() {
 	w.field_stack << w.last_field_id
 	w.last_field_id = 0
 }
 
 // write_struct_end ends a struct (writes stop byte, restores last_field_id).
-pub fn (mut w ThriftWriter) write_struct_end() {
+fn (mut w ThriftWriter) write_struct_end() {
 	w.buf << thrift_stop
 	if w.field_stack.len > 0 {
 		w.last_field_id = w.field_stack[w.field_stack.len - 1]
@@ -106,7 +106,7 @@ fn (mut w ThriftWriter) write_field_header(field_type u8, field_id i16) {
 }
 
 // write_bool writes a boolean field.
-pub fn (mut w ThriftWriter) write_bool(field_id i16, val bool) {
+fn (mut w ThriftWriter) write_bool(field_id i16, val bool) {
 	if val {
 		w.write_field_header(thrift_type_boolean_true, field_id)
 	} else {
@@ -115,31 +115,31 @@ pub fn (mut w ThriftWriter) write_bool(field_id i16, val bool) {
 }
 
 // write_i8 writes an i8 field.
-pub fn (mut w ThriftWriter) write_i8(field_id i16, val i8) {
+fn (mut w ThriftWriter) write_i8(field_id i16, val i8) {
 	w.write_field_header(thrift_type_byte, field_id)
 	w.buf << u8(val)
 }
 
 // write_i16 writes an i16 field as a zigzag varint.
-pub fn (mut w ThriftWriter) write_i16(field_id i16, val i16) {
+fn (mut w ThriftWriter) write_i16(field_id i16, val i16) {
 	w.write_field_header(thrift_type_i16, field_id)
 	w.write_varint32(zigzag32(i32(val)))
 }
 
 // write_i32 writes an i32 field as a zigzag varint.
-pub fn (mut w ThriftWriter) write_i32(field_id i16, val i32) {
+fn (mut w ThriftWriter) write_i32(field_id i16, val i32) {
 	w.write_field_header(thrift_type_i32, field_id)
 	w.write_varint32(zigzag32(val))
 }
 
 // write_i64 writes an i64 field as a zigzag varint.
-pub fn (mut w ThriftWriter) write_i64(field_id i16, val i64) {
+fn (mut w ThriftWriter) write_i64(field_id i16, val i64) {
 	w.write_field_header(thrift_type_i64, field_id)
 	w.write_varint64(zigzag64(val))
 }
 
 // write_binary writes a binary/string field (length-prefixed byte array).
-pub fn (mut w ThriftWriter) write_binary(field_id i16, data []u8) {
+fn (mut w ThriftWriter) write_binary(field_id i16, data []u8) {
 	w.write_field_header(thrift_type_binary, field_id)
 	w.write_varint32(u32(data.len))
 	w.buf << data
@@ -147,7 +147,7 @@ pub fn (mut w ThriftWriter) write_binary(field_id i16, data []u8) {
 
 // write_string writes a UTF-8 string field.
 // Writes directly from the string's internal byte representation to avoid an intermediate []u8 allocation.
-pub fn (mut w ThriftWriter) write_string(field_id i16, val string) {
+fn (mut w ThriftWriter) write_string(field_id i16, val string) {
 	w.write_field_header(thrift_type_binary, field_id)
 	w.write_varint32(u32(val.len))
 	for i in 0 .. val.len {
@@ -156,14 +156,14 @@ pub fn (mut w ThriftWriter) write_string(field_id i16, val string) {
 }
 
 // write_raw_binary writes a raw binary value (length-prefixed) without field header.
-pub fn (mut w ThriftWriter) write_raw_binary(data []u8) {
+fn (mut w ThriftWriter) write_raw_binary(data []u8) {
 	w.write_varint32(u32(data.len))
 	w.buf << data
 }
 
 // write_raw_string writes a raw string value without field header.
 // Writes directly from the string's internal byte representation to avoid an intermediate []u8 allocation.
-pub fn (mut w ThriftWriter) write_raw_string(val string) {
+fn (mut w ThriftWriter) write_raw_string(val string) {
 	w.write_varint32(u32(val.len))
 	for i in 0 .. val.len {
 		w.buf << val[i]
@@ -173,7 +173,7 @@ pub fn (mut w ThriftWriter) write_raw_string(val string) {
 // write_list_begin writes a list header (element type and count).
 // If count fits in 4 bits (0..14), packs count into upper nibble.
 // If count >= 15, writes 0xF0 | type, then count as varint.
-pub fn (mut w ThriftWriter) write_list_begin(field_id i16, elem_type u8, count int) {
+fn (mut w ThriftWriter) write_list_begin(field_id i16, elem_type u8, count int) {
 	w.write_field_header(thrift_type_list, field_id)
 	if count < 15 {
 		w.buf << u8((u8(count) << 4) | elem_type)
@@ -185,23 +185,23 @@ pub fn (mut w ThriftWriter) write_list_begin(field_id i16, elem_type u8, count i
 
 // write_raw_i32 writes an i32 value directly as zigzag varint (no field header).
 // Used inside list elements.
-pub fn (mut w ThriftWriter) write_raw_i32(val i32) {
+fn (mut w ThriftWriter) write_raw_i32(val i32) {
 	w.write_varint32(zigzag32(val))
 }
 
 // write_raw_i64 writes an i64 value directly as zigzag varint (no field header).
-pub fn (mut w ThriftWriter) write_raw_i64(val i64) {
+fn (mut w ThriftWriter) write_raw_i64(val i64) {
 	w.write_varint64(zigzag64(val))
 }
 
 // write_raw_struct_begin starts an inline struct (within a list, etc.) - saves field context.
-pub fn (mut w ThriftWriter) write_raw_struct_begin() {
+fn (mut w ThriftWriter) write_raw_struct_begin() {
 	w.field_stack << w.last_field_id
 	w.last_field_id = 0
 }
 
 // write_raw_struct_end ends an inline struct - writes stop byte and restores field context.
-pub fn (mut w ThriftWriter) write_raw_struct_end() {
+fn (mut w ThriftWriter) write_raw_struct_end() {
 	w.buf << thrift_stop
 	if w.field_stack.len > 0 {
 		w.last_field_id = w.field_stack[w.field_stack.len - 1]

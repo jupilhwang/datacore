@@ -101,7 +101,7 @@ pub fn (mut s SSEService) unregister_connection(conn_id string) ! {
 
 // get_connection returns connection info
 /// get_connection returns connection info.
-pub fn (mut s SSEService) get_connection(conn_id string) !domain.SSEConnection {
+fn (mut s SSEService) get_connection(conn_id string) !domain.SSEConnection {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
 
@@ -167,7 +167,7 @@ pub fn (mut s SSEService) subscribe(conn_id string, sub domain.Subscription) ! {
 
 // unsubscribe removes a subscription from a connection
 /// unsubscribe removes a subscription from a connection.
-pub fn (mut s SSEService) unsubscribe(conn_id string, topic string, partition ?i32) ! {
+fn (mut s SSEService) unsubscribe(conn_id string, topic string, partition ?i32) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
 
@@ -222,7 +222,7 @@ pub fn (mut s SSEService) get_subscriptions(conn_id string) []domain.Subscriptio
 
 // send_event sends an SSE event to a specific connection
 /// send_event sends an SSE event to a specific connection.
-pub fn (mut s SSEService) send_event(conn_id string, event domain.SSEEvent) ! {
+fn (mut s SSEService) send_event(conn_id string, event domain.SSEEvent) ! {
 	s.mutex.rlock()
 	state := s.connections[conn_id] or {
 		s.mutex.runlock()
@@ -247,7 +247,7 @@ pub fn (mut s SSEService) send_event(conn_id string, event domain.SSEEvent) ! {
 
 // broadcast_event sends an SSE event to all connections subscribed to a topic/partition
 /// broadcast_event sends an SSE event to all connections subscribed to a topic/partition.
-pub fn (mut s SSEService) broadcast_event(topic string, partition i32, event domain.SSEEvent) ! {
+fn (mut s SSEService) broadcast_event(topic string, partition i32, event domain.SSEEvent) ! {
 	s.mutex.rlock()
 	conn_ids := s.topic_subs[topic] or {
 		s.mutex.runlock()
@@ -301,7 +301,7 @@ pub fn (mut s SSEService) stream_messages(conn_id string, sub_id string) ! {
 
 // poll_messages fetches and sends new messages for all subscriptions
 /// poll_messages fetches and sends new messages for all subscriptions.
-pub fn (mut s SSEService) poll_messages() ! {
+fn (mut s SSEService) poll_messages() ! {
 	s.mutex.rlock()
 	connections := s.connections.clone()
 	s.mutex.runlock()
@@ -421,7 +421,7 @@ pub fn (mut s SSEService) poll_messages_for_connection(conn_id string) !(int, i6
 
 // send_heartbeats sends heartbeat events to all connections
 /// send_heartbeats sends heartbeat events to all connections.
-pub fn (mut s SSEService) send_heartbeats() {
+fn (mut s SSEService) send_heartbeats() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
 	s.mutex.runlock()
@@ -446,7 +446,7 @@ pub fn (mut s SSEService) send_heartbeats() {
 
 // cleanup_stale_connections removes connections that have timed out
 /// cleanup_stale_connections removes connections that have timed out.
-pub fn (mut s SSEService) cleanup_stale_connections() {
+fn (mut s SSEService) cleanup_stale_connections() {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
 

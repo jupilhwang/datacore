@@ -3,7 +3,7 @@
 // Moved from admin_api.v to handlers/admin.v for better structure
 module kafka
 
-import infra.observability
+import service.port
 import time
 
 // AlterConfigs Request/Response (API Key 33)
@@ -402,8 +402,8 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_alter_configs_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing alter configs', observability.field_int('resources', req.resources.len),
-		observability.field_bool('validate_only', req.validate_only))
+	h.logger.debug('Processing alter configs', port.field_int('resources', req.resources.len),
+		port.field_bool('validate_only', req.validate_only))
 
 	mut results := []AlterConfigsResult{}
 
@@ -438,9 +438,9 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 				// so they are not silently dropped. Requires a config storage layer
 				// (e.g. persistent topic metadata) to fully persist at runtime.
 				for c in res.configs {
-					h.logger.warn('topic config change not persisted', observability.field_string('topic',
-						res.resource_name), observability.field_string('config_name',
-						c.name), observability.field_string('config_value', c.value or { '<null>' }))
+					h.logger.warn('topic config change not persisted', port.field_string('topic',
+						res.resource_name), port.field_string('config_name', c.name),
+						port.field_string('config_value', c.value or { '<null>' }))
 				}
 				results << AlterConfigsResult{
 					error_code:    0
@@ -454,8 +454,8 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 				// Log the requested entries and return success for client compatibility.
 				for c in res.configs {
 					h.logger.warn('broker config change not supported at runtime (requires restart)',
-						observability.field_string('broker', res.resource_name), observability.field_string('config_name',
-						c.name), observability.field_string('config_value', c.value or { '<null>' }))
+						port.field_string('broker', res.resource_name), port.field_string('config_name',
+						c.name), port.field_string('config_value', c.value or { '<null>' }))
 				}
 				results << AlterConfigsResult{
 					error_code:    0
@@ -481,8 +481,8 @@ pub fn (mut h Handler) handle_alter_configs(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Alter configs completed', observability.field_int('results', results.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Alter configs completed', port.field_int('results', results.len),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }
@@ -495,8 +495,8 @@ pub fn (mut h Handler) handle_create_partitions(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_create_partitions_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing create partitions', observability.field_int('topics', req.topics.len),
-		observability.field_bool('validate_only', req.validate_only))
+	h.logger.debug('Processing create partitions', port.field_int('topics', req.topics.len),
+		port.field_bool('validate_only', req.validate_only))
 
 	mut results := []CreatePartitionsResult{}
 
@@ -554,8 +554,8 @@ pub fn (mut h Handler) handle_create_partitions(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Create partitions completed', observability.field_int('results', results.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Create partitions completed', port.field_int('results', results.len),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }
@@ -568,8 +568,8 @@ pub fn (mut h Handler) handle_delete_records(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_delete_records_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing delete records', observability.field_int('topics', req.topics.len),
-		observability.field_int('timeout_ms', req.timeout_ms))
+	h.logger.debug('Processing delete records', port.field_int('topics', req.topics.len),
+		port.field_int('timeout_ms', req.timeout_ms))
 
 	mut resp_topics := []DeleteRecordsResponseTopic{}
 
@@ -624,8 +624,8 @@ pub fn (mut h Handler) handle_delete_records(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Delete records completed', observability.field_int('topics', resp_topics.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Delete records completed', port.field_int('topics', resp_topics.len),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

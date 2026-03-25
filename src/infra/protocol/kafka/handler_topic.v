@@ -4,7 +4,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import time
 import common
 import infra.performance.core
@@ -259,8 +259,8 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	req := parse_create_topics_request(mut reader, version, is_flexible_version(.create_topics,
 		version))!
 
-	h.logger.debug('Processing create topics request', observability.field_int('topics',
-		req.topics.len), observability.field_int('timeout_ms', req.timeout_ms), observability.field_bool('validate_only',
+	h.logger.debug('Processing create topics request', port.field_int('topics', req.topics.len),
+		port.field_int('timeout_ms', req.timeout_ms), port.field_bool('validate_only',
 		req.validate_only))
 
 	mut topics := []CreateTopicsResponseTopic{}
@@ -268,9 +268,8 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	mut error_count := 0
 
 	for t in req.topics {
-		h.logger.trace('Creating topic', observability.field_string('topic', t.name),
-			observability.field_int('partitions', t.num_partitions), observability.field_int('replication_factor',
-			t.replication_factor))
+		h.logger.trace('Creating topic', port.field_string('topic', t.name), port.field_int('partitions',
+			t.num_partitions), port.field_int('replication_factor', t.replication_factor))
 		// Convert config map to domain.TopicConfig
 		topic_config := domain.TopicConfig{
 			retention_ms:        common.parse_config_i64(t.configs, 'retention.ms', 604800000)
@@ -297,9 +296,8 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 				i16(ErrorCode.unknown_server_error)
 			}
 
-			h.logger.warn('Failed to create topic', observability.field_string('topic',
-				t.name), observability.field_int('error_code', error_code), observability.field_string('error',
-				err.str()))
+			h.logger.warn('Failed to create topic', port.field_string('topic', t.name),
+				port.field_int('error_code', error_code), port.field_string('error', err.str()))
 			error_count += 1
 
 			topics << CreateTopicsResponseTopic{
@@ -313,7 +311,7 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 			continue
 		}
 
-		h.logger.info('Topic created', observability.field_string('topic', t.name), observability.field_int('partitions',
+		h.logger.info('Topic created', port.field_string('topic', t.name), port.field_int('partitions',
 			int(t.num_partitions)))
 		created_count += 1
 
@@ -329,9 +327,8 @@ fn (mut h Handler) handle_create_topics(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Create topics completed', observability.field_int('created', created_count),
-		observability.field_int('errors', error_count), observability.field_duration('latency',
-		elapsed))
+	h.logger.debug('Create topics completed', port.field_int('created', created_count),
+		port.field_int('errors', error_count), port.field_duration('latency', elapsed))
 
 	resp := CreateTopicsResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -348,8 +345,8 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	req := parse_delete_topics_request(mut reader, version, is_flexible_version(.delete_topics,
 		version))!
 
-	h.logger.debug('Processing delete topics request', observability.field_int('topics',
-		req.topics.len), observability.field_int('timeout_ms', req.timeout_ms))
+	h.logger.debug('Processing delete topics request', port.field_int('topics', req.topics.len),
+		port.field_int('timeout_ms', req.timeout_ms))
 
 	mut topics := []DeleteTopicsResponseTopic{}
 	mut deleted_count := 0
@@ -389,9 +386,8 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 				i16(ErrorCode.unknown_server_error)
 			}
 
-			h.logger.warn('Failed to delete topic', observability.field_string('topic',
-				topic_name), observability.field_int('error_code', error_code), observability.field_string('error',
-				err.str()))
+			h.logger.warn('Failed to delete topic', port.field_string('topic', topic_name),
+				port.field_int('error_code', error_code), port.field_string('error', err.str()))
 			error_count += 1
 
 			topics << DeleteTopicsResponseTopic{
@@ -403,7 +399,7 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 			continue
 		}
 
-		h.logger.info('Topic deleted', observability.field_string('topic', topic_name))
+		h.logger.info('Topic deleted', port.field_string('topic', topic_name))
 		deleted_count += 1
 
 		// Success
@@ -416,9 +412,8 @@ fn (mut h Handler) handle_delete_topics(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Delete topics completed', observability.field_int('deleted', deleted_count),
-		observability.field_int('errors', error_count), observability.field_duration('latency',
-		elapsed))
+	h.logger.debug('Delete topics completed', port.field_int('deleted', deleted_count),
+		port.field_int('errors', error_count), port.field_duration('latency', elapsed))
 
 	resp := DeleteTopicsResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -490,8 +485,8 @@ fn (mut h Handler) process_create_topics(req CreateTopicsRequest, version i16) !
 
 			// Perform partition assignment
 			assigner.assign_partitions(t.name, partitions, brokers) or {
-				h.logger.warn('Failed to assign partitions', observability.field_string('topic',
-					t.name), observability.field_int('partitions', partitions), observability.field_err_str(err.str()))
+				h.logger.warn('Failed to assign partitions', port.field_string('topic',
+					t.name), port.field_int('partitions', partitions), port.field_err_str(err.str()))
 			}
 		}
 

@@ -1,16 +1,10 @@
-// TransactionSubHandler owns the dependencies specific to transaction operations.
+// TransactionSubHandler is the sub-handler type for transaction operations.
 //
-// Holds a reference to HandlerContext for shared state, plus the
-// transaction coordinator needed by InitProducerId, AddPartitionsToTxn,
-// AddOffsetsToTxn, EndTxn, WriteTxnMarkers, and TxnOffsetCommit.
+// Dependencies live on the main Handler struct; this type exists only
+// as a grouping marker referenced by Handler.
 module kafka
 
-import service.transaction
-
-/// TransactionSubHandler groups the dependencies needed for transaction request handling.
-/// The main Handler delegates transaction-related work through this sub-handler.
+/// TransactionSubHandler is the sub-handler type for transaction request handling.
+/// All dependencies are accessed through the parent Handler struct.
 pub struct TransactionSubHandler {
-pub mut:
-	ctx             &HandlerContext
-	txn_coordinator ?transaction.TransactionCoordinator
 }

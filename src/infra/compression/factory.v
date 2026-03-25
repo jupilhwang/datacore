@@ -4,7 +4,7 @@ module compression
 
 /// new_compressor creates a Compressor matching the specified CompressionType.
 /// Returns a high-performance implementation using C libraries.
-pub fn new_compressor(compression_type CompressionType) !Compressor {
+fn new_compressor(compression_type CompressionType) !Compressor {
 	match compression_type {
 		.none {
 			return new_noop_compressor()
@@ -31,7 +31,7 @@ pub fn new_compressor(compression_type CompressionType) !Compressor {
 /// new_compressor_with_level creates a Compressor with the specified CompressionType and level.
 /// Only Gzip and ZSTD support levels.
 /// C libraries are used for all compression types for consistency.
-pub fn new_compressor_with_level(compression_type CompressionType, level int) !Compressor {
+fn new_compressor_with_level(compression_type CompressionType, level int) !Compressor {
 	match compression_type {
 		.none {
 			return new_noop_compressor()
@@ -56,7 +56,7 @@ pub fn new_compressor_with_level(compression_type CompressionType, level int) !C
 }
 
 /// Returns all available compression types.
-pub fn list_available_compressors() []CompressionType {
+fn list_available_compressors() []CompressionType {
 	return [
 		CompressionType.none,
 		CompressionType.gzip,

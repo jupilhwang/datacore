@@ -360,7 +360,7 @@ pub fn (mut s WebSocketService) send_message(conn_id string, response domain.Web
 
 // broadcast_to_topic sends a message to all connections subscribed to a topic
 /// broadcast_to_topic sends a message to all connections subscribed to a topic.
-pub fn (mut s WebSocketService) broadcast_to_topic(topic string, partition i32, response domain.WebSocketResponse) {
+fn (mut s WebSocketService) broadcast_to_topic(topic string, partition i32, response domain.WebSocketResponse) {
 	s.mutex.rlock()
 	conn_ids := s.topic_subs[topic] or {
 		s.mutex.runlock()
@@ -423,7 +423,7 @@ fn (mut s WebSocketService) poll_subscription(conn_id string, sub_id string, sub
 
 // send_pings sends ping messages to all connections
 /// send_pings sends ping messages to all connections.
-pub fn (mut s WebSocketService) send_pings() {
+fn (mut s WebSocketService) send_pings() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
 	s.mutex.runlock()
@@ -446,7 +446,7 @@ pub fn (mut s WebSocketService) send_pings() {
 
 // cleanup_stale_connections removes connections that have timed out
 /// cleanup_stale_connections removes connections that have timed out.
-pub fn (mut s WebSocketService) cleanup_stale_connections() []string {
+fn (mut s WebSocketService) cleanup_stale_connections() []string {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
 

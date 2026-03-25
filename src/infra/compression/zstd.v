@@ -19,7 +19,7 @@ const zstd_magic_number = u32(0xfd2fb528)
 
 /// new_zstd_compressor creates a new ZstdCompressor.
 /// The default compression level is 3.
-pub fn new_zstd_compressor() &ZstdCompressor {
+fn new_zstd_compressor() &ZstdCompressor {
 	return &ZstdCompressor{
 		level: 3
 	}
@@ -27,7 +27,7 @@ pub fn new_zstd_compressor() &ZstdCompressor {
 
 /// new_zstd_compressor_with_level creates a ZstdCompressor with the specified compression level.
 /// Level: 1-22 (1=fastest, 22=best compression)
-pub fn new_zstd_compressor_with_level(level int) &ZstdCompressor {
+fn new_zstd_compressor_with_level(level int) &ZstdCompressor {
 	mut lvl := level
 	if lvl < 1 {
 		lvl = 1

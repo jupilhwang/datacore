@@ -27,18 +27,18 @@ pub:
 pub struct ShareGroupSimpleAssignor {}
 
 /// new_simple_assignor creates a new SimpleAssignor.
-pub fn new_simple_assignor() &ShareGroupSimpleAssignor {
+fn new_simple_assignor() &ShareGroupSimpleAssignor {
 	return &ShareGroupSimpleAssignor{}
 }
 
 /// name returns the assignor name.
-pub fn (a &ShareGroupSimpleAssignor) name() string {
+fn (a &ShareGroupSimpleAssignor) name() string {
 	return 'simple'
 }
 
 /// assign computes partition assignments for share group members.
 /// Unlike consumer groups, share groups can assign the same partition to multiple members.
-pub fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, topics map[string]ShareTopicMetadata) map[string][]domain.SharePartitionAssignment {
+fn (a &ShareGroupSimpleAssignor) assign(members []ShareMemberSubscription, topics map[string]ShareTopicMetadata) map[string][]domain.SharePartitionAssignment {
 	mut assignments := map[string][]domain.SharePartitionAssignment{}
 
 	// Initialize empty assignments

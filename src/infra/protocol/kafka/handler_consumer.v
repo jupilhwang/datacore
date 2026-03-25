@@ -6,7 +6,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import rand
 import time
 
@@ -79,8 +79,8 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 	_ = version
 	start_time := time.now()
 
-	h.logger.debug('Processing consumer group heartbeat', observability.field_string('group_id',
-		req.group_id), observability.field_string('member_id', req.member_id), observability.field_int('member_epoch',
+	h.logger.debug('Processing consumer group heartbeat', port.field_string('group_id',
+		req.group_id), port.field_string('member_id', req.member_id), port.field_int('member_epoch',
 		req.member_epoch))
 
 	mut error_code := i16(0)
@@ -110,8 +110,8 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 		member_id = 'member-${h.broker_id}-${rand.i64()}'
 		member_epoch = 1
 
-		h.logger.info('New consumer group member joined', observability.field_string('group_id',
-			req.group_id), observability.field_string('member_id', member_id))
+		h.logger.info('New consumer group member joined', port.field_string('group_id',
+			req.group_id), port.field_string('member_id', member_id))
 
 		// Create partition assignment for subscribed topics
 		mut topic_partitions := []ConsumerGroupHeartbeatResponseTopicPartition{}
@@ -136,28 +136,26 @@ fn (mut h Handler) process_consumer_group_heartbeat(req ConsumerGroupHeartbeatRe
 		}
 	} else if req.member_epoch == -1 {
 		// Member leave request (epoch=-1)
-		h.logger.info('Consumer leaving group', observability.field_string('group_id',
-			req.group_id), observability.field_string('member_id', req.member_id))
+		h.logger.info('Consumer leaving group', port.field_string('group_id', req.group_id),
+			port.field_string('member_id', req.member_id))
 		member_epoch = -1
 		assignment = none
 	} else if req.member_epoch > 0 {
 		// Regular heartbeat - no state change
-		h.logger.trace('Consumer heartbeat', observability.field_string('group_id', req.group_id),
-			observability.field_string('member_id', req.member_id), observability.field_int('epoch',
-			req.member_epoch))
+		h.logger.trace('Consumer heartbeat', port.field_string('group_id', req.group_id),
+			port.field_string('member_id', req.member_id), port.field_int('epoch', req.member_epoch))
 	} else {
 		// Invalid epoch value
-		h.logger.warn('Invalid consumer heartbeat', observability.field_string('group_id',
-			req.group_id), observability.field_string('member_id', req.member_id), observability.field_int('epoch',
-			req.member_epoch))
+		h.logger.warn('Invalid consumer heartbeat', port.field_string('group_id', req.group_id),
+			port.field_string('member_id', req.member_id), port.field_int('epoch', req.member_epoch))
 		error_code = i16(ErrorCode.unknown_member_id)
 		error_message = 'Invalid member epoch'
 		member_epoch = -1
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Consumer group heartbeat completed', observability.field_string('group_id',
-		req.group_id), observability.field_int('error_code', error_code), observability.field_duration('latency',
+	h.logger.debug('Consumer group heartbeat completed', port.field_string('group_id',
+		req.group_id), port.field_int('error_code', error_code), port.field_duration('latency',
 		elapsed))
 
 	return ConsumerGroupHeartbeatResponse{
@@ -178,15 +176,15 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 	_ = version
 	start_time := time.now()
 
-	h.logger.debug('Processing join group request', observability.field_string('group_id',
-		req.group_id), observability.field_string('member_id', req.member_id), observability.field_string('protocol_type',
-		req.protocol_type), observability.field_int('protocols', req.protocols.len))
+	h.logger.debug('Processing join group request', port.field_string('group_id', req.group_id),
+		port.field_string('member_id', req.member_id), port.field_string('protocol_type',
+		req.protocol_type), port.field_int('protocols', req.protocols.len))
 
 	// Need to generate member_id on first join (return MEMBER_ID_REQUIRED error in v4+)
 	if req.member_id.len == 0 && req.group_instance_id == none {
 		new_member_id := 'member-${h.broker_id}-${rand.i64n(1000000) or { 0 }}'
-		h.logger.info('Member ID required, generated new ID', observability.field_string('group_id',
-			req.group_id), observability.field_string('new_member_id', new_member_id))
+		h.logger.info('Member ID required, generated new ID', port.field_string('group_id',
+			req.group_id), port.field_string('new_member_id', new_member_id))
 		return JoinGroupResponse{
 			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.member_id_required)
@@ -265,16 +263,16 @@ fn (mut h Handler) process_join_group(req JoinGroupRequest, version i16) !JoinGr
 
 	// Save group state
 	h.storage.save_group(new_group) or {
-		h.logger.error('Failed to save group', observability.field_string('group_id',
-			req.group_id), observability.field_string('error', err.str()))
+		h.logger.error('Failed to save group', port.field_string('group_id', req.group_id),
+			port.field_string('error', err.str()))
 		return error('failed to save group: ${err}')
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.info('Member joined group', observability.field_string('group_id', req.group_id),
-		observability.field_string('member_id', member_id), observability.field_int('generation',
-		new_gen), observability.field_string('leader', leader), observability.field_int('members',
-		new_members.len), observability.field_duration('latency', elapsed))
+	h.logger.info('Member joined group', port.field_string('group_id', req.group_id),
+		port.field_string('member_id', member_id), port.field_int('generation', new_gen),
+		port.field_string('leader', leader), port.field_int('members', new_members.len),
+		port.field_duration('latency', elapsed))
 
 	// Return member list only to the leader (for partition assignment)
 	response_members := if member_id == leader {
@@ -312,13 +310,13 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 	_ = version
 	start_time := time.now()
 
-	h.logger.debug('Processing sync group request', observability.field_string('group_id',
-		req.group_id), observability.field_string('member_id', req.member_id), observability.field_int('generation',
-		req.generation_id), observability.field_int('assignments', req.assignments.len))
+	h.logger.debug('Processing sync group request', port.field_string('group_id', req.group_id),
+		port.field_string('member_id', req.member_id), port.field_int('generation', req.generation_id),
+		port.field_int('assignments', req.assignments.len))
 
 	// Load group
 	mut group := h.storage.load_group(req.group_id) or {
-		h.logger.warn('Sync group failed: group not found', observability.field_string('group_id',
+		h.logger.warn('Sync group failed: group not found', port.field_string('group_id',
 			req.group_id))
 		return SyncGroupResponse{
 			throttle_time_ms: default_throttle_time_ms
@@ -331,8 +329,8 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 
 	// Validate generation number
 	if group.generation_id != req.generation_id {
-		h.logger.warn('Sync group failed: illegal generation', observability.field_string('group_id',
-			req.group_id), observability.field_int('expected', group.generation_id), observability.field_int('received',
+		h.logger.warn('Sync group failed: illegal generation', port.field_string('group_id',
+			req.group_id), port.field_int('expected', group.generation_id), port.field_int('received',
 			req.generation_id))
 		return SyncGroupResponse{
 			throttle_time_ms: default_throttle_time_ms
@@ -373,8 +371,8 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 			leader:        group.leader
 		}
 		h.storage.save_group(group) or {
-			h.logger.error('Failed to save group assignments', observability.field_string('group_id',
-				req.group_id), observability.field_string('error', err.str()))
+			h.logger.error('Failed to save group assignments', port.field_string('group_id',
+				req.group_id), port.field_string('error', err.str()))
 			return error('failed to save group: ${err}')
 		}
 	}
@@ -394,9 +392,9 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Sync group completed', observability.field_string('group_id', req.group_id),
-		observability.field_string('member_id', req.member_id), observability.field_bytes('assignment_size',
-		assignment.len), observability.field_duration('latency', elapsed))
+	h.logger.debug('Sync group completed', port.field_string('group_id', req.group_id),
+		port.field_string('member_id', req.member_id), port.field_bytes('assignment_size',
+		assignment.len), port.field_duration('latency', elapsed))
 
 	return SyncGroupResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -411,13 +409,12 @@ fn (mut h Handler) process_sync_group(req SyncGroupRequest, version i16) !SyncGr
 /// Members signal they are active in the group and check rebalance status.
 fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !HeartbeatResponse {
 	_ = version
-	h.logger.trace('Processing heartbeat', observability.field_string('group_id', req.group_id),
-		observability.field_string('member_id', req.member_id), observability.field_int('generation',
-		req.generation_id))
+	h.logger.trace('Processing heartbeat', port.field_string('group_id', req.group_id),
+		port.field_string('member_id', req.member_id), port.field_int('generation', req.generation_id))
 
 	// Validate group existence and generation number
 	group := h.storage.load_group(req.group_id) or {
-		h.logger.debug('Heartbeat failed: group not found', observability.field_string('group_id',
+		h.logger.debug('Heartbeat failed: group not found', port.field_string('group_id',
 			req.group_id))
 		return HeartbeatResponse{
 			throttle_time_ms: default_throttle_time_ms
@@ -427,8 +424,8 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 
 	// Validate generation number
 	if group.generation_id != req.generation_id {
-		h.logger.debug('Heartbeat failed: illegal generation', observability.field_string('group_id',
-			req.group_id), observability.field_int('expected', group.generation_id), observability.field_int('received',
+		h.logger.debug('Heartbeat failed: illegal generation', port.field_string('group_id',
+			req.group_id), port.field_int('expected', group.generation_id), port.field_int('received',
 			req.generation_id))
 		return HeartbeatResponse{
 			throttle_time_ms: default_throttle_time_ms
@@ -446,8 +443,8 @@ fn (mut h Handler) process_heartbeat(req HeartbeatRequest, version i16) !Heartbe
 	}
 
 	if !member_found {
-		h.logger.debug('Heartbeat failed: unknown member', observability.field_string('group_id',
-			req.group_id), observability.field_string('member_id', req.member_id))
+		h.logger.debug('Heartbeat failed: unknown member', port.field_string('group_id',
+			req.group_id), port.field_string('member_id', req.member_id))
 		return HeartbeatResponse{
 			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.unknown_member_id)
@@ -466,13 +463,12 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 	_ = version
 	start_time := time.now()
 
-	h.logger.debug('Processing leave group request', observability.field_string('group_id',
-		req.group_id), observability.field_string('member_id', req.member_id), observability.field_int('members',
-		req.members.len))
+	h.logger.debug('Processing leave group request', port.field_string('group_id', req.group_id),
+		port.field_string('member_id', req.member_id), port.field_int('members', req.members.len))
 
 	// Load group
 	mut group := h.storage.load_group(req.group_id) or {
-		h.logger.warn('Leave group failed: group not found', observability.field_string('group_id',
+		h.logger.warn('Leave group failed: group not found', port.field_string('group_id',
 			req.group_id))
 		return LeaveGroupResponse{
 			throttle_time_ms: default_throttle_time_ms
@@ -522,7 +518,7 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 
 	// Return unknown_member_id error if no members were removed
 	if removed_members.len == 0 {
-		h.logger.warn('Leave group failed: no members removed', observability.field_string('group_id',
+		h.logger.warn('Leave group failed: no members removed', port.field_string('group_id',
 			req.group_id))
 		return LeaveGroupResponse{
 			throttle_time_ms: default_throttle_time_ms
@@ -557,15 +553,15 @@ fn (mut h Handler) process_leave_group(req LeaveGroupRequest, version i16) !Leav
 	}
 
 	h.storage.save_group(new_group) or {
-		h.logger.error('Leave group failed: failed to save group', observability.field_string('group_id',
-			req.group_id), observability.field_string('error', err.str()))
+		h.logger.error('Leave group failed: failed to save group', port.field_string('group_id',
+			req.group_id), port.field_string('error', err.str()))
 		return error('failed to save group: ${err}')
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.info('Members left group', observability.field_string('group_id', req.group_id),
-		observability.field_int('removed', removed_members.len), observability.field_int('remaining',
-		remaining_members.len), observability.field_duration('latency', elapsed))
+	h.logger.info('Members left group', port.field_string('group_id', req.group_id), port.field_int('removed',
+		removed_members.len), port.field_int('remaining', remaining_members.len), port.field_duration('latency',
+		elapsed))
 
 	return LeaveGroupResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -580,8 +576,7 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 	_ = version
 	start_time := time.now()
 
-	h.logger.debug('Processing consumer group describe', observability.field_int('group_ids',
-		req.group_ids.len))
+	h.logger.debug('Processing consumer group describe', port.field_int('group_ids', req.group_ids.len))
 
 	mut groups := []ConsumerGroupDescribeResponseGroup{}
 
@@ -589,7 +584,7 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 		// Attempt to load the group
 		group := h.storage.load_group(group_id) or {
 			// Group not found
-			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
+			h.logger.trace('Group not found', port.field_string('group_id', group_id))
 			groups << ConsumerGroupDescribeResponseGroup{
 				error_code:            i16(ErrorCode.group_id_not_found)
 				error_message:         'Group not found: ${group_id}'
@@ -632,9 +627,8 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 			}
 		}
 
-		h.logger.trace('Describing consumer group', observability.field_string('group_id',
-			group_id), observability.field_string('state', state_str), observability.field_int('members',
-			response_members.len))
+		h.logger.trace('Describing consumer group', port.field_string('group_id', group_id),
+			port.field_string('state', state_str), port.field_int('members', response_members.len))
 
 		groups << ConsumerGroupDescribeResponseGroup{
 			error_code:            0
@@ -650,8 +644,8 @@ fn (mut h Handler) process_consumer_group_describe(req ConsumerGroupDescribeRequ
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Consumer group describe completed', observability.field_int('groups',
-		groups.len), observability.field_duration('latency', elapsed))
+	h.logger.debug('Consumer group describe completed', port.field_int('groups', groups.len),
+		port.field_duration('latency', elapsed))
 
 	return ConsumerGroupDescribeResponse{
 		throttle_time_ms: default_throttle_time_ms

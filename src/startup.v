@@ -147,7 +147,7 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 	}
 
 	mut broker_registry := cluster.new_broker_registry(registry_config, capability, adapter,
-		adapter, adapter)
+		adapter, adapter, adapter)
 	registry_logger := observability.new_logger_adapter(observability.get_named_logger('broker_registry'))
 	broker_registry.set_logger(registry_logger)
 

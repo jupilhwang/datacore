@@ -28,7 +28,7 @@ pub:
 }
 
 /// ConnectionPool.new creates a pool with the given per-host limit and idle timeout.
-pub fn ConnectionPool.new(max_per_host int, max_idle_time_ms i64) &ConnectionPool {
+fn ConnectionPool.new(max_per_host int, max_idle_time_ms i64) &ConnectionPool {
 	return &ConnectionPool{
 		max_per_host:     max_per_host
 		max_idle_time_ms: max_idle_time_ms
@@ -38,7 +38,7 @@ pub fn ConnectionPool.new(max_per_host int, max_idle_time_ms i64) &ConnectionPoo
 
 /// acquire returns an idle connection for the address, or creates a new one.
 /// Returns error if the pool is closed or the per-host limit has been reached.
-pub fn (mut p ConnectionPool) acquire(addr string) !&PooledConnection {
+fn (mut p ConnectionPool) acquire(addr string) !&PooledConnection {
 	p.mtx.@lock()
 	if p.closed {
 		p.mtx.unlock()
@@ -102,7 +102,7 @@ pub fn (mut p ConnectionPool) acquire(addr string) !&PooledConnection {
 
 /// remove_connection removes a specific connection from the pool.
 /// Used to evict broken connections that should not be reused.
-pub fn (mut p ConnectionPool) remove_connection(pc &PooledConnection) {
+fn (mut p ConnectionPool) remove_connection(pc &PooledConnection) {
 	p.mtx.@lock()
 	if pc.addr in p.connections {
 		mut kept := []&PooledConnection{}
@@ -118,7 +118,7 @@ pub fn (mut p ConnectionPool) remove_connection(pc &PooledConnection) {
 }
 
 /// release marks a pooled connection as idle for reuse.
-pub fn (mut p ConnectionPool) release(mut pc PooledConnection) {
+fn (mut p ConnectionPool) release(mut pc PooledConnection) {
 	p.mtx.@lock()
 	pc.in_use = false
 	pc.last_used_at = time.now().unix_milli()
@@ -128,7 +128,7 @@ pub fn (mut p ConnectionPool) release(mut pc PooledConnection) {
 /// close_all shuts down every connection and marks the pool as closed.
 /// Collects connections under lock, then closes them outside the lock
 /// to avoid blocking on TCP close while holding the mutex.
-pub fn (mut p ConnectionPool) close_all() {
+fn (mut p ConnectionPool) close_all() {
 	mut to_close := []&PooledConnection{}
 
 	p.mtx.@lock()
@@ -151,7 +151,7 @@ pub fn (mut p ConnectionPool) close_all() {
 
 /// cleanup_idle removes idle connections that exceeded max_idle_time_ms.
 /// Returns the number of connections removed.
-pub fn (mut p ConnectionPool) cleanup_idle() int {
+fn (mut p ConnectionPool) cleanup_idle() int {
 	mut to_close := []&PooledConnection{}
 
 	p.mtx.@lock()
@@ -181,7 +181,7 @@ pub fn (mut p ConnectionPool) cleanup_idle() int {
 }
 
 /// pool_size returns the total number of connections across all hosts.
-pub fn (mut p ConnectionPool) pool_size() int {
+fn (mut p ConnectionPool) pool_size() int {
 	p.mtx.@lock()
 	mut total := 0
 	addrs := p.connections.keys()

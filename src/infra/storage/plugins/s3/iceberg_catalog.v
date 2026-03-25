@@ -305,7 +305,7 @@ pub fn (mut c HadoopCatalog) load_metadata_at(metadata_location string) !Iceberg
 
 /// commit_metadata writes the given metadata as a new versioned metadata JSON file to S3
 /// and updates the version-hint.text pointer.
-pub fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
+fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
 	table_path := c.table_path(identifier)
 
 	// Derive next version number from existing snapshot count (same convention as update_table)

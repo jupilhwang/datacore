@@ -6,7 +6,7 @@ module encoding
 // Format: 4-byte LE length prefix + rle_data.
 // RLE header uses varint encoding: (count << 1 | mode) where mode=0 is RLE, mode=1 is bit-packed.
 // max_def_level is the maximum definition level for this column.
-pub fn decode_rle_definition_levels(data []u8, max_def_level int) ![]i32 {
+fn decode_rle_definition_levels(data []u8, max_def_level int) ![]i32 {
 	if data.len < 4 {
 		return error('invalid RLE data: too short')
 	}
@@ -29,7 +29,7 @@ pub fn decode_rle_definition_levels(data []u8, max_def_level int) ![]i32 {
 // data starts with the varint header followed by the packed bytes.
 // bit_width is the number of bits per value.
 // num_values is the number of values to decode.
-pub fn decode_rle_bit_packed(data []u8, bit_width int, num_values int) ![]i32 {
+fn decode_rle_bit_packed(data []u8, bit_width int, num_values int) ![]i32 {
 	if data.len == 0 {
 		return error('invalid bit-packed data: empty')
 	}

@@ -15,7 +15,7 @@ pub struct GzipCompressor {
 
 /// new_gzip_compressor creates a new GzipCompressor.
 /// The default compression level is 6 (balanced).
-pub fn new_gzip_compressor() &GzipCompressor {
+fn new_gzip_compressor() &GzipCompressor {
 	return &GzipCompressor{
 		level: 6
 	}
@@ -23,7 +23,7 @@ pub fn new_gzip_compressor() &GzipCompressor {
 
 /// new_gzip_compressor_with_level creates a GzipCompressor with the specified compression level.
 /// Level: 1-9 (1=fastest, 9=best compression)
-pub fn new_gzip_compressor_with_level(level int) &GzipCompressor {
+fn new_gzip_compressor_with_level(level int) &GzipCompressor {
 	mut lvl := level
 	if lvl < 1 {
 		lvl = 1

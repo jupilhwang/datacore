@@ -62,7 +62,7 @@ pub struct CompressorError {
 }
 
 /// new_compressor_error creates a new CompressorError.
-pub fn new_compressor_error(message string, typ string) CompressorError {
+fn new_compressor_error(message string, typ string) CompressorError {
 	return CompressorError{
 		message: message
 		typ:     typ

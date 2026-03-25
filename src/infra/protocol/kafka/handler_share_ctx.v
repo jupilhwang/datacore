@@ -1,16 +1,10 @@
-// ShareGroupSubHandler owns the dependencies specific to share group operations (KIP-932).
+// ShareGroupSubHandler is the sub-handler type for share group operations (KIP-932).
 //
-// Holds a reference to HandlerContext for shared state, plus the
-// share group coordinator needed by ShareGroupHeartbeat, ShareFetch,
-// ShareAcknowledge, and share group state management.
+// Dependencies live on the main Handler struct; this type exists only
+// as a grouping marker referenced by Handler.
 module kafka
 
-import service.group
-
-/// ShareGroupSubHandler groups the dependencies needed for share group request handling.
-/// The main Handler delegates share-group-related work through this sub-handler.
+/// ShareGroupSubHandler is the sub-handler type for share group request handling.
+/// All dependencies are accessed through the parent Handler struct.
 pub struct ShareGroupSubHandler {
-pub mut:
-	ctx                     &HandlerContext
-	share_group_coordinator ?&group.ShareGroupCoordinator
 }

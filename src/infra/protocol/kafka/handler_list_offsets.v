@@ -5,7 +5,7 @@
 // Supports latest offset (-1), earliest offset (-2), and timestamp-based offset lookup.
 module kafka
 
-import infra.observability
+import service.port
 import time
 
 /// ListOffsetsRequest holds the request data for ListOffsets.
@@ -166,8 +166,8 @@ fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !Li
 	_ = version
 	start_time := time.now()
 
-	h.logger.debug('Processing list offsets', observability.field_int('topics', req.topics.len),
-		observability.field_int('isolation_level', req.isolation_level))
+	h.logger.debug('Processing list offsets', port.field_int('topics', req.topics.len),
+		port.field_int('isolation_level', req.isolation_level))
 
 	mut topics := []ListOffsetsResponseTopic{}
 	for t in req.topics {
@@ -211,8 +211,8 @@ fn (mut h Handler) process_list_offsets(req ListOffsetsRequest, version i16) !Li
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('List offsets completed', observability.field_int('topics', topics.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('List offsets completed', port.field_int('topics', topics.len), port.field_duration('latency',
+		elapsed))
 
 	return ListOffsetsResponse{
 		throttle_time_ms: default_throttle_time_ms

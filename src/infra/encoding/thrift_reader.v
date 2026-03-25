@@ -10,7 +10,7 @@ mut:
 	pos int
 }
 
-pub fn new_thrift_reader(data []u8) ThriftReader {
+fn new_thrift_reader(data []u8) ThriftReader {
 	return ThriftReader{
 		buf: data
 		pos: 0
@@ -29,7 +29,7 @@ fn unzigzag64(n u64) i64 {
 
 // read_varint32 reads a varint from the buffer.
 // Returns an error if more than 5 bytes are consumed (varint32 max).
-pub fn (mut r ThriftReader) read_varint32() !u32 {
+fn (mut r ThriftReader) read_varint32() !u32 {
 	mut result := u32(0)
 	mut shift := 0
 	mut bytes_read := 0
@@ -51,7 +51,7 @@ pub fn (mut r ThriftReader) read_varint32() !u32 {
 
 // read_varint64 reads a varint from the buffer.
 // Returns an error if more than 10 bytes are consumed (varint64 max).
-pub fn (mut r ThriftReader) read_varint64() !u64 {
+fn (mut r ThriftReader) read_varint64() !u64 {
 	mut result := u64(0)
 	mut shift := 0
 	mut bytes_read := 0
@@ -73,7 +73,7 @@ pub fn (mut r ThriftReader) read_varint64() !u64 {
 
 // skip_raw_bytes advances the position by n bytes without decoding.
 // Returns an error if there are not enough bytes remaining.
-pub fn (mut r ThriftReader) skip_raw_bytes(n int) ! {
+fn (mut r ThriftReader) skip_raw_bytes(n int) ! {
 	if r.pos + n > r.buf.len {
 		return error('skip_raw_bytes: not enough data (need ${n}, have ${r.buf.len - r.pos})')
 	}
@@ -81,17 +81,17 @@ pub fn (mut r ThriftReader) skip_raw_bytes(n int) ! {
 }
 
 // read_struct_begin starts reading a struct (saves field context).
-pub fn (mut r ThriftReader) read_struct_begin() {}
+fn (mut r ThriftReader) read_struct_begin() {}
 
 // read_struct_end ends reading a struct (expects stop byte).
-pub fn (mut r ThriftReader) read_struct_end() ! {
+fn (mut r ThriftReader) read_struct_end() ! {
 	if r.pos < r.buf.len && r.buf[r.pos] == thrift_stop {
 		r.pos++
 	}
 }
 
 // read_field_header reads a field header byte(s).
-pub fn (mut r ThriftReader) read_field_header() !(u8, i16) {
+fn (mut r ThriftReader) read_field_header() !(u8, i16) {
 	if r.pos >= r.buf.len {
 		return error('unexpected EOF reading field header')
 	}
@@ -113,19 +113,19 @@ pub fn (mut r ThriftReader) read_field_header() !(u8, i16) {
 }
 
 // read_i32 reads a zigzag-encoded i32.
-pub fn (mut r ThriftReader) read_i32() !i32 {
+fn (mut r ThriftReader) read_i32() !i32 {
 	n := r.read_varint32()!
 	return unzigzag32(n)
 }
 
 // read_i64 reads a zigzag-encoded i64.
-pub fn (mut r ThriftReader) read_i64() !i64 {
+fn (mut r ThriftReader) read_i64() !i64 {
 	n := r.read_varint64()!
 	return unzigzag64(n)
 }
 
 // read_string reads a length-prefixed string.
-pub fn (mut r ThriftReader) read_string() !string {
+fn (mut r ThriftReader) read_string() !string {
 	len := r.read_varint32()!
 	if r.pos + int(len) > r.buf.len {
 		return error('unexpected EOF reading string')
@@ -136,7 +136,7 @@ pub fn (mut r ThriftReader) read_string() !string {
 }
 
 // read_binary reads a length-prefixed binary blob.
-pub fn (mut r ThriftReader) read_binary() ![]u8 {
+fn (mut r ThriftReader) read_binary() ![]u8 {
 	len := r.read_varint32()!
 	if r.pos + int(len) > r.buf.len {
 		return error('unexpected EOF reading binary')
@@ -147,7 +147,7 @@ pub fn (mut r ThriftReader) read_binary() ![]u8 {
 }
 
 // read_list_begin reads list header (element type and count).
-pub fn (mut r ThriftReader) read_list_begin() !(u8, int) {
+fn (mut r ThriftReader) read_list_begin() !(u8, int) {
 	if r.pos >= r.buf.len {
 		return error('unexpected EOF reading list')
 	}
@@ -165,13 +165,13 @@ pub fn (mut r ThriftReader) read_list_begin() !(u8, int) {
 }
 
 // read_raw_i32 reads a raw i32 value (no field header).
-pub fn (mut r ThriftReader) read_raw_i32() !i32 {
+fn (mut r ThriftReader) read_raw_i32() !i32 {
 	n := r.read_varint32()!
 	return unzigzag32(n)
 }
 
 // read_raw_i64 reads a raw i64 value (no field header).
-pub fn (mut r ThriftReader) read_raw_i64() !i64 {
+fn (mut r ThriftReader) read_raw_i64() !i64 {
 	n := r.read_varint64()!
 	return unzigzag64(n)
 }

@@ -59,7 +59,7 @@ fn calculate_record_size(timestamp_delta i64, offset_delta i32, record &domain.R
 /// - Base Sequence: i32
 /// - Records Count: i32
 /// - Records: variable
-pub fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []u8 {
+fn encode_record_batch_zerocopy(records []domain.Record, base_offset i64) []u8 {
 	if records.len == 0 {
 		return []u8{}
 	}
@@ -187,6 +187,6 @@ fn estimate_batch_size(records []domain.Record) int {
 /// Delegates to the crc32c module which uses an optimized Slicing-by-8 algorithm.
 /// data: byte array to compute the checksum over
 /// Returns: 32-bit CRC32-C checksum value
-pub fn calculate_crc32c(data []u8) u32 {
+fn calculate_crc32c(data []u8) u32 {
 	return crc32c.calculate(data)
 }

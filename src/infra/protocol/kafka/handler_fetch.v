@@ -6,7 +6,7 @@
 module kafka
 
 import infra.compression
-import infra.observability
+import service.port
 import time
 import domain
 
@@ -337,14 +337,14 @@ pub:
 fn (mut h Handler) apply_fetch_schema_decoding(topic_name string, records []domain.Record, first_offset i64) []u8 {
 	schema := h.get_topic_schema(topic_name) or { return []u8{} }
 
-	h.logger.debug('Decoding records with schema', observability.field_string('topic',
-		topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
+	h.logger.debug('Decoding records with schema', port.field_string('topic', topic_name),
+		port.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
 
 	mut decoded_records := []domain.Record{}
 	for record in records {
 		decoded_value := h.decode_record_with_schema(record.value, &schema) or {
-			h.logger.warn('Failed to decode record with schema, returning raw data', observability.field_string('topic',
-				topic_name), observability.field_err_str(err.str()))
+			h.logger.warn('Failed to decode record with schema, returning raw data', port.field_string('topic',
+				topic_name), port.field_err_str(err.str()))
 			decoded_records << record
 			continue
 		}
@@ -369,9 +369,8 @@ fn (mut h Handler) fetch_partition_data(topic_name string, p FetchRequestPartiti
 			i16(ErrorCode.unknown_server_error)
 		}
 
-		h.logger.debug('Fetch partition error', observability.field_string('topic', topic_name),
-			observability.field_int('partition', p.partition), observability.field_int('error_code',
-			error_code))
+		h.logger.debug('Fetch partition error', port.field_string('topic', topic_name),
+			port.field_int('partition', p.partition), port.field_int('error_code', error_code))
 
 		return FetchPartitionResult{
 			response: FetchResponsePartition{
@@ -398,9 +397,9 @@ fn (mut h Handler) fetch_partition_data(topic_name string, p FetchRequestPartiti
 		topic_name, p.partition)
 	final_records_data := compressed_result.data
 
-	h.logger.trace('Fetch partition success', observability.field_string('topic', topic_name),
-		observability.field_int('partition', p.partition), observability.field_int('records',
-		result.records.len), observability.field_bytes('response_size', final_records_data.len))
+	h.logger.trace('Fetch partition success', port.field_string('topic', topic_name),
+		port.field_int('partition', p.partition), port.field_int('records', result.records.len),
+		port.field_bytes('response_size', final_records_data.len))
 
 	return FetchPartitionResult{
 		response:     FetchResponsePartition{
@@ -423,9 +422,9 @@ fn (mut h Handler) fetch_partition_data(topic_name string, p FetchRequestPartiti
 fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	start_time := time.now()
 
-	h.logger.debug('Processing fetch request', observability.field_int('version', version),
-		observability.field_int('topics', req.topics.len), observability.field_int('max_wait_ms',
-		req.max_wait_ms), observability.field_int('max_bytes', req.max_bytes))
+	h.logger.debug('Processing fetch request', port.field_int('version', version), port.field_int('topics',
+		req.topics.len), port.field_int('max_wait_ms', req.max_wait_ms), port.field_int('max_bytes',
+		req.max_bytes))
 
 	mut topics := []FetchResponseTopic{}
 	mut total_records := 0
@@ -463,10 +462,9 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Fetch request completed', observability.field_int('topics', topics.len),
-		observability.field_int('total_records', total_records), observability.field_bytes('total_bytes',
-		total_bytes), observability.field_bytes('bytes_saved', total_bytes_saved), observability.field_duration('latency',
-		elapsed))
+	h.logger.debug('Fetch request completed', port.field_int('topics', topics.len), port.field_int('total_records',
+		total_records), port.field_bytes('total_bytes', total_bytes), port.field_bytes('bytes_saved',
+		total_bytes_saved), port.field_duration('latency', elapsed))
 
 	return FetchResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -524,10 +522,10 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 	}
 
 	// Perform compression
-	compressed := h.compression_service.compress(records_data, compression_type) or {
-		h.logger.warn('Compression failed, returning uncompressed data', observability.field_string('topic',
-			topic_name), observability.field_int('partition', partition), observability.field_string('compression_type',
-			compression_type.str()), observability.field_err_str(err.str()))
+	compressed := h.compression_service.compress(records_data, i16(compression_type)) or {
+		h.logger.warn('Compression failed, returning uncompressed data', port.field_string('topic',
+			topic_name), port.field_int('partition', partition), port.field_string('compression_type',
+			compression_type.str()), port.field_err_str(err.str()))
 		return CompressionResult{
 			data:        records_data
 			bytes_saved: 0
@@ -536,9 +534,9 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 
 	// Return original data if compression increased the size
 	if compressed.len >= records_data.len {
-		h.logger.debug('Compression increased size, using uncompressed data', observability.field_string('topic',
-			topic_name), observability.field_int('partition', partition), observability.field_int('original_size',
-			records_data.len), observability.field_int('compressed_size', compressed.len))
+		h.logger.debug('Compression increased size, using uncompressed data', port.field_string('topic',
+			topic_name), port.field_int('partition', partition), port.field_int('original_size',
+			records_data.len), port.field_int('compressed_size', compressed.len))
 		return CompressionResult{
 			data:        records_data
 			bytes_saved: 0
@@ -548,11 +546,10 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 	// Compression successful — compute bytes saved
 	bytes_saved := records_data.len - compressed.len
 
-	h.logger.debug('Records compressed for fetch', observability.field_string('topic',
-		topic_name), observability.field_int('partition', partition), observability.field_string('compression_type',
-		compression_type.str()), observability.field_int('original_size', records_data.len),
-		observability.field_int('compressed_size', compressed.len), observability.field_int('bytes_saved',
-		bytes_saved))
+	h.logger.debug('Records compressed for fetch', port.field_string('topic', topic_name),
+		port.field_int('partition', partition), port.field_string('compression_type',
+		compression_type.str()), port.field_int('original_size', records_data.len), port.field_int('compressed_size',
+		compressed.len), port.field_int('bytes_saved', bytes_saved))
 
 	return CompressionResult{
 		data:        compressed

@@ -6,8 +6,6 @@
 // domain-specific dependencies it requires.
 module kafka
 
-import infra.compression
-import infra.observability
 import service.port
 
 /// HandlerContext holds the shared dependencies that most or all sub-handlers need.
@@ -19,7 +17,7 @@ pub mut:
 	port                i32
 	cluster_id          string
 	storage             port.StoragePort
-	logger              &observability.Logger
-	metrics             &observability.ProtocolMetrics
-	compression_service &compression.CompressionService
+	logger              port.LoggerPort
+	metrics             port.ProtocolMetricsPort
+	compression_service port.CompressionPort
 }

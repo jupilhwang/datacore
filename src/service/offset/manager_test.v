@@ -4,6 +4,7 @@ module offset
 import domain
 import infra.observability
 import infra.storage.plugins.memory
+import service.port
 
 // Helper: Create test storage
 fn create_test_storage() &memory.MemoryStorageAdapter {
@@ -50,7 +51,7 @@ fn test_commit_offsets_success() {
 		},
 	]
 
-	req := OffsetCommitRequest{
+	req := port.OffsetCommitRequest{
 		group_id: 'test-group'
 		offsets:  offsets
 	}
@@ -70,7 +71,7 @@ fn test_commit_offsets_success() {
 fn test_commit_offsets_empty_group_id() {
 	mut manager := create_test_manager()
 
-	req := OffsetCommitRequest{
+	req := port.OffsetCommitRequest{
 		group_id: ''
 		offsets:  []
 	}
@@ -87,7 +88,7 @@ fn test_commit_offsets_empty_group_id() {
 fn test_commit_offsets_empty_offsets() {
 	mut manager := create_test_manager()
 
-	req := OffsetCommitRequest{
+	req := port.OffsetCommitRequest{
 		group_id: 'test-group'
 		offsets:  []
 	}
@@ -112,7 +113,7 @@ fn test_fetch_offsets_success() {
 	mut manager := create_test_manager_with_storage(storage)
 
 	// First, commit some offsets
-	commit_req := OffsetCommitRequest{
+	commit_req := port.OffsetCommitRequest{
 		group_id: 'test-group'
 		offsets:  [
 			domain.PartitionOffset{
@@ -132,7 +133,7 @@ fn test_fetch_offsets_success() {
 	manager.commit_offsets(commit_req) or { panic('commit failed: ${err}') }
 
 	// Now fetch them
-	fetch_req := OffsetFetchRequest{
+	fetch_req := port.OffsetFetchRequest{
 		group_id:       'test-group'
 		partitions:     [
 			domain.TopicPartition{
@@ -166,7 +167,7 @@ fn test_fetch_offsets_not_committed() {
 	mut manager := create_test_manager()
 
 	// Fetch offsets that were never committed
-	fetch_req := OffsetFetchRequest{
+	fetch_req := port.OffsetFetchRequest{
 		group_id:       'test-group'
 		partitions:     [
 			domain.TopicPartition{
@@ -188,7 +189,7 @@ fn test_fetch_offsets_not_committed() {
 fn test_fetch_offsets_empty_group_id() {
 	mut manager := create_test_manager()
 
-	req := OffsetFetchRequest{
+	req := port.OffsetFetchRequest{
 		group_id:       ''
 		partitions:     []
 		require_stable: false
@@ -204,7 +205,7 @@ fn test_fetch_offsets_empty_group_id() {
 fn test_fetch_offsets_empty_partitions() {
 	mut manager := create_test_manager()
 
-	req := OffsetFetchRequest{
+	req := port.OffsetFetchRequest{
 		group_id:       'test-group'
 		partitions:     []
 		require_stable: false
@@ -224,7 +225,7 @@ fn test_commit_and_fetch_multiple_groups() {
 	mut manager := create_test_manager()
 
 	// Commit offsets for group1
-	manager.commit_offsets(OffsetCommitRequest{
+	manager.commit_offsets(port.OffsetCommitRequest{
 		group_id: 'group1'
 		offsets:  [
 			domain.PartitionOffset{
@@ -236,7 +237,7 @@ fn test_commit_and_fetch_multiple_groups() {
 	}) or { panic(err) }
 
 	// Commit offsets for group2
-	manager.commit_offsets(OffsetCommitRequest{
+	manager.commit_offsets(port.OffsetCommitRequest{
 		group_id: 'group2'
 		offsets:  [
 			domain.PartitionOffset{
@@ -248,7 +249,7 @@ fn test_commit_and_fetch_multiple_groups() {
 	}) or { panic(err) }
 
 	// Fetch group1 offsets
-	resp1 := manager.fetch_offsets(OffsetFetchRequest{
+	resp1 := manager.fetch_offsets(port.OffsetFetchRequest{
 		group_id:   'group1'
 		partitions: [domain.TopicPartition{
 			topic:     'topic1'
@@ -257,7 +258,7 @@ fn test_commit_and_fetch_multiple_groups() {
 	}) or { panic(err) }
 
 	// Fetch group2 offsets
-	resp2 := manager.fetch_offsets(OffsetFetchRequest{
+	resp2 := manager.fetch_offsets(port.OffsetFetchRequest{
 		group_id:   'group2'
 		partitions: [domain.TopicPartition{
 			topic:     'topic1'
@@ -274,7 +275,7 @@ fn test_commit_overwrites_previous_offset() {
 	mut manager := create_test_manager()
 
 	// First commit
-	manager.commit_offsets(OffsetCommitRequest{
+	manager.commit_offsets(port.OffsetCommitRequest{
 		group_id: 'test-group'
 		offsets:  [
 			domain.PartitionOffset{
@@ -286,7 +287,7 @@ fn test_commit_overwrites_previous_offset() {
 	}) or { panic(err) }
 
 	// Second commit (overwrite)
-	manager.commit_offsets(OffsetCommitRequest{
+	manager.commit_offsets(port.OffsetCommitRequest{
 		group_id: 'test-group'
 		offsets:  [
 			domain.PartitionOffset{
@@ -298,7 +299,7 @@ fn test_commit_overwrites_previous_offset() {
 	}) or { panic(err) }
 
 	// Fetch
-	resp := manager.fetch_offsets(OffsetFetchRequest{
+	resp := manager.fetch_offsets(port.OffsetFetchRequest{
 		group_id:   'test-group'
 		partitions: [domain.TopicPartition{
 			topic:     'test-topic'

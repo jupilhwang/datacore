@@ -2,7 +2,7 @@
 // Request/response types, parsing, encoding, and handlers
 module kafka
 
-import infra.observability
+import service.port
 import time
 
 // DescribeTopicPartitions (API Key 75, flexible version 0+)
@@ -187,14 +187,14 @@ fn (mut h Handler) handle_describe_topic_partitions(body []u8, version i16) ![]u
 	mut reader := new_reader(body)
 	req := parse_describe_topic_partitions_request(mut reader, version)!
 
-	h.logger.debug('Processing describe topic partitions', observability.field_int('topics',
-		req.topics.len), observability.field_int('limit', req.response_partition_limit))
+	h.logger.debug('Processing describe topic partitions', port.field_int('topics', req.topics.len),
+		port.field_int('limit', req.response_partition_limit))
 
 	resp := h.process_describe_topic_partitions(req, version)!
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Describe topic partitions completed', observability.field_int('topics',
-		resp.topics.len), observability.field_duration('latency', elapsed))
+	h.logger.debug('Describe topic partitions completed', port.field_int('topics', resp.topics.len),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

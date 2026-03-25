@@ -7,7 +7,7 @@ pub struct NoopCompressor {
 }
 
 /// new_noop_compressor creates a new NoopCompressor.
-pub fn new_noop_compressor() &NoopCompressor {
+fn new_noop_compressor() &NoopCompressor {
 	return &NoopCompressor{}
 }
 

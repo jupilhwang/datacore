@@ -49,7 +49,7 @@ mut:
 
 /// new_scram_sha256_authenticator - creates a new SCRAM-SHA-256 authenticator
 /// new_scram_sha256_authenticator - creates a new SCRAM-SHA-256 authenticator
-pub fn new_scram_sha256_authenticator(user_store port.UserStore) &ScramSha256Authenticator {
+fn new_scram_sha256_authenticator(user_store port.UserStore) &ScramSha256Authenticator {
 	return &ScramSha256Authenticator{
 		user_store: user_store
 		state:      .initial
@@ -441,7 +441,7 @@ mut:
 }
 
 /// new_scram_sha512_authenticator creates a new SCRAM-SHA-512 authenticator.
-pub fn new_scram_sha512_authenticator(user_store port.UserStore) &ScramSha512Authenticator {
+fn new_scram_sha512_authenticator(user_store port.UserStore) &ScramSha512Authenticator {
 	return &ScramSha512Authenticator{
 		user_store: user_store
 		state:      .initial

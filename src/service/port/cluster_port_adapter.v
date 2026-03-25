@@ -22,18 +22,6 @@ pub fn new_cluster_port_adapter(cp ClusterMetadataPort) &ClusterPortAdapter {
 
 // --- BrokerRegistryPort delegation ---
 
-pub fn (mut a ClusterPortAdapter) register_broker(info domain.BrokerInfo) !domain.BrokerInfo {
-	return a.inner.register_broker(info)
-}
-
-pub fn (mut a ClusterPortAdapter) deregister_broker(broker_id i32) ! {
-	a.inner.deregister_broker(broker_id)!
-}
-
-pub fn (mut a ClusterPortAdapter) update_broker_heartbeat(heartbeat domain.BrokerHeartbeat) ! {
-	a.inner.update_broker_heartbeat(heartbeat)!
-}
-
 pub fn (mut a ClusterPortAdapter) get_broker(broker_id i32) !domain.BrokerInfo {
 	return a.inner.get_broker(broker_id)
 }
@@ -44,6 +32,20 @@ pub fn (mut a ClusterPortAdapter) list_brokers() ![]domain.BrokerInfo {
 
 pub fn (mut a ClusterPortAdapter) list_active_brokers() ![]domain.BrokerInfo {
 	return a.inner.list_active_brokers()
+}
+
+// --- BrokerLifecyclePort delegation ---
+
+pub fn (mut a ClusterPortAdapter) register_broker(info domain.BrokerInfo) !domain.BrokerInfo {
+	return a.inner.register_broker(info)
+}
+
+pub fn (mut a ClusterPortAdapter) deregister_broker(broker_id i32) ! {
+	a.inner.deregister_broker(broker_id)!
+}
+
+pub fn (mut a ClusterPortAdapter) update_broker_heartbeat(heartbeat domain.BrokerHeartbeat) ! {
+	a.inner.update_broker_heartbeat(heartbeat)!
 }
 
 // --- ClusterStatePort delegation ---

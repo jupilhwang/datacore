@@ -41,7 +41,7 @@ mut:
 }
 
 /// new_telemetry_provider creates a TelemetryProvider from the given TelemetryConfig.
-pub fn new_telemetry_provider(cfg TelemetryConfig) &TelemetryProvider {
+fn new_telemetry_provider(cfg TelemetryConfig) &TelemetryProvider {
 	mut p := &TelemetryProvider{
 		config: cfg
 	}
@@ -50,12 +50,12 @@ pub fn new_telemetry_provider(cfg TelemetryConfig) &TelemetryProvider {
 }
 
 /// new_telemetry_provider_default returns a TelemetryProvider initialized with default settings.
-pub fn new_telemetry_provider_default() &TelemetryProvider {
+fn new_telemetry_provider_default() &TelemetryProvider {
 	return new_telemetry_provider(TelemetryConfig{})
 }
 
 /// init sets up all telemetry subsystems (tracer, OTLP exporter) according to configuration.
-pub fn (mut p TelemetryProvider) init() {
+fn (mut p TelemetryProvider) init() {
 	if !p.config.enabled {
 		return
 	}
@@ -65,7 +65,7 @@ pub fn (mut p TelemetryProvider) init() {
 }
 
 /// shutdown stops all background goroutines and flushes buffered telemetry data.
-pub fn (mut p TelemetryProvider) shutdown() {
+fn (mut p TelemetryProvider) shutdown() {
 	p.metrics_export_running = false
 	if p.otlp_exporter != unsafe { nil } {
 		p.otlp_exporter.stop()
@@ -74,7 +74,7 @@ pub fn (mut p TelemetryProvider) shutdown() {
 
 /// start_metrics_export launches a background goroutine that periodically exports metrics via OTLP.
 /// Only active when metrics_exporter == 'otlp'.
-pub fn (mut p TelemetryProvider) start_metrics_export() {
+fn (mut p TelemetryProvider) start_metrics_export() {
 	if !p.config.metrics_enabled {
 		return
 	}

@@ -5,7 +5,7 @@ module kafka
 // JoinGroup response encoder (API Key 11)
 
 /// encode encodes the JoinGroup response (API Key 11).
-pub fn (r JoinGroupResponse) encode(version i16) []u8 {
+fn (r JoinGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 6
 	mut writer := new_writer()
 
@@ -76,7 +76,7 @@ pub fn (r JoinGroupResponse) encode(version i16) []u8 {
 // SyncGroup response encoder (API Key 14)
 
 /// encode encodes the SyncGroup response (API Key 14).
-pub fn (r SyncGroupResponse) encode(version i16) []u8 {
+fn (r SyncGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
 
@@ -108,7 +108,7 @@ pub fn (r SyncGroupResponse) encode(version i16) []u8 {
 // Heartbeat response encoder (API Key 12)
 
 /// encode encodes the Heartbeat response (API Key 12).
-pub fn (r HeartbeatResponse) encode(version i16) []u8 {
+fn (r HeartbeatResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
 
@@ -126,7 +126,7 @@ pub fn (r HeartbeatResponse) encode(version i16) []u8 {
 // LeaveGroup response encoder (API Key 13)
 
 /// encode encodes the LeaveGroup response (API Key 13).
-pub fn (r LeaveGroupResponse) encode(version i16) []u8 {
+fn (r LeaveGroupResponse) encode(version i16) []u8 {
 	is_flexible := version >= 4
 	mut writer := new_writer()
 
@@ -224,7 +224,7 @@ pub fn (r ConsumerGroupHeartbeatResponse) encode(version i16) []u8 {
 // ConsumerGroupDescribe response encoder (API Key 69) - KIP-848
 
 /// encode encodes the ConsumerGroupDescribe response (API Key 69) - KIP-848.
-pub fn (r ConsumerGroupDescribeResponse) encode(version i16) []u8 {
+fn (r ConsumerGroupDescribeResponse) encode(version i16) []u8 {
 	// ConsumerGroupDescribe is always flexible (v0+)
 	mut writer := new_writer()
 

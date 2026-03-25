@@ -12,13 +12,13 @@ pub struct Protocol {}
 
 // Protocol.new creates a new Protocol instance for encoding/decoding replication messages.
 /// Protocol.
-pub fn Protocol.new() Protocol {
+fn Protocol.new() Protocol {
 	return Protocol{}
 }
 
 // encode converts ReplicationMessage to wire format
 /// encode converts a ReplicationMessage to wire format.
-pub fn (p Protocol) encode(msg domain.ReplicationMessage) ![]u8 {
+fn (p Protocol) encode(msg domain.ReplicationMessage) ![]u8 {
 	// Convert message to JSON
 	json_str := serialize_replication_message(msg)
 	json_bytes := json_str.bytes()
@@ -37,7 +37,7 @@ pub fn (p Protocol) encode(msg domain.ReplicationMessage) ![]u8 {
 
 // decode parses wire format to ReplicationMessage
 /// decode parses wire format into a ReplicationMessage.
-pub fn (p Protocol) decode(data []u8) !domain.ReplicationMessage {
+fn (p Protocol) decode(data []u8) !domain.ReplicationMessage {
 	if data.len < 4 {
 		return error('invalid data: too short (${data.len} bytes)')
 	}
@@ -102,7 +102,7 @@ fn parse_message(json_str string) !domain.ReplicationMessage {
 
 // read_message reads a complete message from TCP connection
 /// read_message reads a complete message from a TCP connection.
-pub fn (p Protocol) read_message(mut conn net.TcpConn) !domain.ReplicationMessage {
+fn (p Protocol) read_message(mut conn net.TcpConn) !domain.ReplicationMessage {
 	// Read 4-byte length header
 	mut len_buf := []u8{len: 4}
 	bytes_read := conn.read(mut len_buf)!
@@ -143,7 +143,7 @@ fn (p Protocol) decode_payload(data []u8) !domain.ReplicationMessage {
 
 // write_message writes a complete message to TCP connection
 /// write_message writes a complete message to a TCP connection.
-pub fn (p Protocol) write_message(mut conn net.TcpConn, msg domain.ReplicationMessage) ! {
+fn (p Protocol) write_message(mut conn net.TcpConn, msg domain.ReplicationMessage) ! {
 	wire_data := p.encode(msg)!
 	conn.write(wire_data)!
 }

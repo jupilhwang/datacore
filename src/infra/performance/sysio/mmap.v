@@ -359,7 +359,7 @@ mut:
 }
 
 /// new creates a new MmapBenchmark.
-pub fn MmapBenchmark.new(iterations u64, data_size int) MmapBenchmark {
+fn MmapBenchmark.new(iterations u64, data_size int) MmapBenchmark {
 	return MmapBenchmark{
 		iterations: iterations
 		data_size:  data_size
@@ -368,12 +368,12 @@ pub fn MmapBenchmark.new(iterations u64, data_size int) MmapBenchmark {
 }
 
 /// cleanup removes temporary files.
-pub fn (mut b MmapBenchmark) cleanup() {
+fn (mut b MmapBenchmark) cleanup() {
 	os.rmdir_all(b.temp_dir) or {}
 }
 
 /// benchmark_write benchmarks mmap writes vs regular writes.
-pub fn (mut b MmapBenchmark) benchmark_write() !(i64, i64) {
+fn (mut b MmapBenchmark) benchmark_write() !(i64, i64) {
 	os.mkdir_all(b.temp_dir) or { return error('failed to create temp dir') }
 
 	// Generate test data
@@ -421,7 +421,7 @@ pub fn (mut b MmapBenchmark) benchmark_write() !(i64, i64) {
 }
 
 /// benchmark_read benchmarks mmap reads vs regular reads.
-pub fn (mut b MmapBenchmark) benchmark_read() !(i64, i64) {
+fn (mut b MmapBenchmark) benchmark_read() !(i64, i64) {
 	os.mkdir_all(b.temp_dir) or { return error('failed to create temp dir') }
 
 	// Create test file

@@ -5,7 +5,7 @@ import domain
 import time
 
 /// get_local_broker returns local broker information.
-pub fn (r &BrokerRegistry) get_local_broker() domain.BrokerInfo {
+fn (r &BrokerRegistry) get_local_broker() domain.BrokerInfo {
 	return r.local_broker
 }
 
@@ -68,7 +68,7 @@ pub fn (mut r BrokerRegistry) list_active_brokers() ![]domain.BrokerInfo {
 }
 
 /// get_cluster_metadata returns the current cluster metadata.
-pub fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
+fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
 	// Try distributed storage first
 	if r.capability.supports_multi_broker {
 		if mut mp := r.state_port {
@@ -89,12 +89,12 @@ pub fn (mut r BrokerRegistry) get_cluster_metadata() !domain.ClusterMetadata {
 }
 
 /// is_multi_broker_enabled returns whether multi-broker mode is enabled.
-pub fn (r &BrokerRegistry) is_multi_broker_enabled() bool {
+fn (r &BrokerRegistry) is_multi_broker_enabled() bool {
 	return r.capability.supports_multi_broker
 }
 
 /// get_capability returns storage capability information.
-pub fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
+fn (r &BrokerRegistry) get_capability() domain.StorageCapability {
 	return r.capability
 }
 

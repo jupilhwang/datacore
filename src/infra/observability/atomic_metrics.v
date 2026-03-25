@@ -23,7 +23,7 @@ pub mut:
 }
 
 /// new_sharded_counter creates a new ShardedCounter.
-pub fn new_sharded_counter() ShardedCounter {
+fn new_sharded_counter() ShardedCounter {
 	mut sc := ShardedCounter{}
 	return sc
 }
@@ -34,7 +34,7 @@ fn get_shard_index() int {
 }
 
 /// inc increments the counter by 1.
-pub fn (mut sc ShardedCounter) inc() {
+fn (mut sc ShardedCounter) inc() {
 	idx := get_shard_index()
 	mut shard := &sc.shards[idx]
 	shard.lock.@lock()
@@ -43,7 +43,7 @@ pub fn (mut sc ShardedCounter) inc() {
 }
 
 /// inc_by increments the counter by the specified value.
-pub fn (mut sc ShardedCounter) inc_by(delta i64) {
+fn (mut sc ShardedCounter) inc_by(delta i64) {
 	if delta <= 0 {
 		return
 	}
@@ -55,7 +55,7 @@ pub fn (mut sc ShardedCounter) inc_by(delta i64) {
 }
 
 /// dec decrements the counter by 1.
-pub fn (mut sc ShardedCounter) dec() {
+fn (mut sc ShardedCounter) dec() {
 	idx := get_shard_index()
 	mut shard := &sc.shards[idx]
 	shard.lock.@lock()
@@ -64,7 +64,7 @@ pub fn (mut sc ShardedCounter) dec() {
 }
 
 /// dec_by decrements the counter by the specified value.
-pub fn (mut sc ShardedCounter) dec_by(delta i64) {
+fn (mut sc ShardedCounter) dec_by(delta i64) {
 	if delta <= 0 {
 		return
 	}
@@ -76,7 +76,7 @@ pub fn (mut sc ShardedCounter) dec_by(delta i64) {
 }
 
 /// get returns the sum of all shards.
-pub fn (sc &ShardedCounter) get() i64 {
+fn (sc &ShardedCounter) get() i64 {
 	mut total := i64(0)
 	for i := 0; i < shard_count; i++ {
 		mut shard := &sc.shards[i]
@@ -88,7 +88,7 @@ pub fn (sc &ShardedCounter) get() i64 {
 }
 
 /// set sets all shards to the specified value (distributed).
-pub fn (mut sc ShardedCounter) set(val i64) {
+fn (mut sc ShardedCounter) set(val i64) {
 	per_shard := val / shard_count
 	remainder := val % shard_count
 	for i := 0; i < shard_count; i++ {
@@ -103,7 +103,7 @@ pub fn (mut sc ShardedCounter) set(val i64) {
 }
 
 /// reset resets all shards to 0.
-pub fn (mut sc ShardedCounter) reset() {
+fn (mut sc ShardedCounter) reset() {
 	for i := 0; i < shard_count; i++ {
 		mut shard := &sc.shards[i]
 		shard.lock.@lock()
@@ -138,7 +138,7 @@ pub mut:
 }
 
 /// new_sharded_metrics creates a new ShardedMetrics.
-pub fn new_sharded_metrics() ShardedMetrics {
+fn new_sharded_metrics() ShardedMetrics {
 	return ShardedMetrics{
 		topic_create_count:   new_sharded_counter()
 		topic_delete_count:   new_sharded_counter()
@@ -162,7 +162,7 @@ pub fn new_sharded_metrics() ShardedMetrics {
 }
 
 /// record_append records an append operation.
-pub fn (mut m ShardedMetrics) record_append(record_count int, bytes i64, latency_us i64) {
+fn (mut m ShardedMetrics) record_append(record_count int, bytes i64, latency_us i64) {
 	m.append_count.inc()
 	m.append_record_count.inc_by(i64(record_count))
 	m.append_bytes.inc_by(bytes)
@@ -170,7 +170,7 @@ pub fn (mut m ShardedMetrics) record_append(record_count int, bytes i64, latency
 }
 
 /// record_fetch records a fetch operation.
-pub fn (mut m ShardedMetrics) record_fetch(record_count int, bytes i64, latency_us i64) {
+fn (mut m ShardedMetrics) record_fetch(record_count int, bytes i64, latency_us i64) {
 	m.fetch_count.inc()
 	m.fetch_record_count.inc_by(i64(record_count))
 	m.fetch_bytes.inc_by(bytes)
@@ -178,57 +178,57 @@ pub fn (mut m ShardedMetrics) record_fetch(record_count int, bytes i64, latency_
 }
 
 /// record_topic_create records a topic creation.
-pub fn (mut m ShardedMetrics) record_topic_create() {
+fn (mut m ShardedMetrics) record_topic_create() {
 	m.topic_create_count.inc()
 }
 
 /// record_topic_delete records a topic deletion.
-pub fn (mut m ShardedMetrics) record_topic_delete() {
+fn (mut m ShardedMetrics) record_topic_delete() {
 	m.topic_delete_count.inc()
 }
 
 /// record_topic_lookup records a topic lookup.
-pub fn (mut m ShardedMetrics) record_topic_lookup() {
+fn (mut m ShardedMetrics) record_topic_lookup() {
 	m.topic_lookup_count.inc()
 }
 
 /// record_offset_commit records an offset commit.
-pub fn (mut m ShardedMetrics) record_offset_commit(count int) {
+fn (mut m ShardedMetrics) record_offset_commit(count int) {
 	m.offset_commit_count.inc_by(i64(count))
 }
 
 /// record_offset_fetch records an offset fetch.
-pub fn (mut m ShardedMetrics) record_offset_fetch(count int) {
+fn (mut m ShardedMetrics) record_offset_fetch(count int) {
 	m.offset_fetch_count.inc_by(i64(count))
 }
 
 /// record_group_save records a group save.
-pub fn (mut m ShardedMetrics) record_group_save() {
+fn (mut m ShardedMetrics) record_group_save() {
 	m.group_save_count.inc()
 }
 
 /// record_group_load records a group load.
-pub fn (mut m ShardedMetrics) record_group_load() {
+fn (mut m ShardedMetrics) record_group_load() {
 	m.group_load_count.inc()
 }
 
 /// record_group_delete records a group deletion.
-pub fn (mut m ShardedMetrics) record_group_delete() {
+fn (mut m ShardedMetrics) record_group_delete() {
 	m.group_delete_count.inc()
 }
 
 /// record_error records an error.
-pub fn (mut m ShardedMetrics) record_error() {
+fn (mut m ShardedMetrics) record_error() {
 	m.error_count.inc()
 }
 
 /// record_delete_records records a record deletion.
-pub fn (mut m ShardedMetrics) record_delete_records() {
+fn (mut m ShardedMetrics) record_delete_records() {
 	m.delete_records_count.inc()
 }
 
 /// get_summary returns a metrics summary.
-pub fn (m &ShardedMetrics) get_summary() ShardedMetricsSnapshot {
+fn (m &ShardedMetrics) get_summary() ShardedMetricsSnapshot {
 	return ShardedMetricsSnapshot{
 		topic_create_count:   m.topic_create_count.get()
 		topic_delete_count:   m.topic_delete_count.get()
@@ -252,7 +252,7 @@ pub fn (m &ShardedMetrics) get_summary() ShardedMetricsSnapshot {
 }
 
 /// reset resets all metrics to 0.
-pub fn (mut m ShardedMetrics) reset() {
+fn (mut m ShardedMetrics) reset() {
 	m.topic_create_count.reset()
 	m.topic_delete_count.reset()
 	m.topic_lookup_count.reset()
@@ -299,7 +299,7 @@ pub:
 }
 
 /// get_append_latency_avg_ms returns the average append latency in milliseconds.
-pub fn (s &ShardedMetricsSnapshot) get_append_latency_avg_ms() f64 {
+fn (s &ShardedMetricsSnapshot) get_append_latency_avg_ms() f64 {
 	if s.append_count == 0 {
 		return 0.0
 	}
@@ -307,7 +307,7 @@ pub fn (s &ShardedMetricsSnapshot) get_append_latency_avg_ms() f64 {
 }
 
 /// get_fetch_latency_avg_ms returns the average fetch latency in milliseconds.
-pub fn (s &ShardedMetricsSnapshot) get_fetch_latency_avg_ms() f64 {
+fn (s &ShardedMetricsSnapshot) get_fetch_latency_avg_ms() f64 {
 	if s.fetch_count == 0 {
 		return 0.0
 	}
@@ -315,7 +315,7 @@ pub fn (s &ShardedMetricsSnapshot) get_fetch_latency_avg_ms() f64 {
 }
 
 /// to_string returns a string representation of the metrics summary.
-pub fn (s &ShardedMetricsSnapshot) to_string() string {
+fn (s &ShardedMetricsSnapshot) to_string() string {
 	return '[ShardedMetrics]
   Topics: create=${s.topic_create_count}, delete=${s.topic_delete_count}, lookup=${s.topic_lookup_count}
   Records: append=${s.append_count} (${s.append_record_count} records, ${s.append_bytes} bytes, avg_latency=${s.get_append_latency_avg_ms():.2f}ms), 
@@ -337,11 +337,11 @@ pub type AtomicMetrics = ShardedMetrics
 pub type AtomicMetricsSnapshot = ShardedMetricsSnapshot
 
 /// new_atomic_counter creates a new atomic counter.
-pub fn new_atomic_counter() ShardedCounter {
+fn new_atomic_counter() ShardedCounter {
 	return new_sharded_counter()
 }
 
 /// new_atomic_metrics creates new atomic metrics.
-pub fn new_atomic_metrics() ShardedMetrics {
+fn new_atomic_metrics() ShardedMetrics {
 	return new_sharded_metrics()
 }

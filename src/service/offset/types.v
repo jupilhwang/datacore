@@ -1,55 +1,8 @@
+// Offset-specific error types.
+// Request/response types are defined in service/port/offset_port.v.
 module offset
 
 import domain
-
-/// OffsetCommitRequest represents an offset commit request.
-pub struct OffsetCommitRequest {
-pub:
-	group_id string
-	offsets  []domain.PartitionOffset
-}
-
-/// OffsetCommitResult represents the result of an offset commit.
-pub struct OffsetCommitResult {
-pub:
-	topic         string
-	partition     int
-	error_code    i16
-	error_message string
-}
-
-/// OffsetCommitResponse represents an offset commit response.
-pub struct OffsetCommitResponse {
-pub:
-	results []OffsetCommitResult
-}
-
-/// OffsetFetchRequest represents an offset fetch request.
-pub struct OffsetFetchRequest {
-pub:
-	group_id       string
-	partitions     []domain.TopicPartition
-	require_stable bool
-}
-
-/// OffsetFetchResult represents the result of an offset fetch.
-pub struct OffsetFetchResult {
-pub:
-	topic                  string
-	topic_id               ?[]u8 // Topic ID (v10+, UUID)
-	partition              int
-	committed_offset       i64
-	committed_leader_epoch i32
-	metadata               string
-	error_code             i16
-}
-
-/// OffsetFetchResponse represents an offset fetch response.
-pub struct OffsetFetchResponse {
-pub:
-	results    []OffsetFetchResult
-	error_code i16
-}
 
 /// OffsetError represents errors that occur during offset operations.
 pub enum OffsetError {
@@ -64,7 +17,7 @@ pub enum OffsetError {
 }
 
 /// to_error_code converts an OffsetError to a Kafka error code.
-pub fn (e OffsetError) to_error_code() i16 {
+fn (e OffsetError) to_error_code() i16 {
 	return match e {
 		.none { 0 }
 		.invalid_group_id { i16(domain.ErrorCode.invalid_group_id) }

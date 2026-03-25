@@ -13,7 +13,7 @@ pub struct MetricsServer {
 
 // new_metrics_server creates a new metrics server
 /// new_metrics_server creates a new metrics server.
-pub fn new_metrics_server(host string, port int) MetricsServer {
+fn new_metrics_server(host string, port int) MetricsServer {
 	return MetricsServer{
 		host: host
 		port: port
@@ -22,7 +22,7 @@ pub fn new_metrics_server(host string, port int) MetricsServer {
 
 // start starts the metrics HTTP server (blocking)
 /// start starts the metrics HTTP server (blocking).
-pub fn (s MetricsServer) start() ! {
+fn (s MetricsServer) start() ! {
 	mut listener := net.listen_tcp(.ip, '${s.host}:${s.port}')!
 	eprintln('[Metrics] Starting Prometheus exporter on http://${s.host}:${s.port}/metrics')
 
@@ -34,7 +34,7 @@ pub fn (s MetricsServer) start() ! {
 
 // start_background starts the metrics HTTP server in background
 /// start_background starts the metrics HTTP server in background.
-pub fn (s MetricsServer) start_background() {
+fn (s MetricsServer) start_background() {
 	spawn fn [s] () {
 		s.start() or { eprintln('[Metrics] Failed to start metrics server: ${err}') }
 	}()

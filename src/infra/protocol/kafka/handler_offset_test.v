@@ -5,7 +5,6 @@ module kafka
 
 import domain
 import infra.compression
-import service.offset
 import service.port
 
 // -- 오프셋 추적 가능한 테스트용 스토리지 --
@@ -151,13 +150,13 @@ fn (s OffsetTrackingStorage) load_all_share_partition_states(group_id string) []
 
 fn test_build_commit_response_from_results_success() {
 	results := [
-		offset.OffsetCommitResult{
+		port.OffsetCommitResult{
 			topic:         'topic-a'
 			partition:     0
 			error_code:    0
 			error_message: ''
 		},
-		offset.OffsetCommitResult{
+		port.OffsetCommitResult{
 			topic:         'topic-a'
 			partition:     1
 			error_code:    0
@@ -178,13 +177,13 @@ fn test_build_commit_response_from_results_success() {
 
 fn test_build_commit_response_from_results_multiple_topics() {
 	results := [
-		offset.OffsetCommitResult{
+		port.OffsetCommitResult{
 			topic:         'topic-a'
 			partition:     0
 			error_code:    0
 			error_message: ''
 		},
-		offset.OffsetCommitResult{
+		port.OffsetCommitResult{
 			topic:         'topic-b'
 			partition:     0
 			error_code:    0
@@ -199,7 +198,7 @@ fn test_build_commit_response_from_results_multiple_topics() {
 
 fn test_build_commit_response_from_results_with_errors() {
 	results := [
-		offset.OffsetCommitResult{
+		port.OffsetCommitResult{
 			topic:         'topic-a'
 			partition:     0
 			error_code:    i16(ErrorCode.unknown_server_error)
@@ -214,14 +213,14 @@ fn test_build_commit_response_from_results_with_errors() {
 }
 
 fn test_build_commit_response_from_results_empty() {
-	results := []offset.OffsetCommitResult{}
+	results := []port.OffsetCommitResult{}
 	topics := build_commit_response_from_results(results)
 	assert topics.len == 0
 }
 
 fn test_build_fetch_response_from_results_success() {
 	results := [
-		offset.OffsetFetchResult{
+		port.OffsetFetchResult{
 			topic:                  'topic-a'
 			partition:              0
 			committed_offset:       100
@@ -243,7 +242,7 @@ fn test_build_fetch_response_from_results_success() {
 
 fn test_build_fetch_response_from_results_empty_metadata() {
 	results := [
-		offset.OffsetFetchResult{
+		port.OffsetFetchResult{
 			topic:                  'topic-a'
 			partition:              0
 			committed_offset:       50
@@ -262,7 +261,7 @@ fn test_build_fetch_response_from_results_empty_metadata() {
 
 fn test_group_fetch_partitions_by_topic_single() {
 	results := [
-		offset.OffsetFetchResult{
+		port.OffsetFetchResult{
 			topic:                  'topic-a'
 			partition:              0
 			committed_offset:       10
@@ -270,7 +269,7 @@ fn test_group_fetch_partitions_by_topic_single() {
 			metadata:               ''
 			error_code:             0
 		},
-		offset.OffsetFetchResult{
+		port.OffsetFetchResult{
 			topic:                  'topic-a'
 			partition:              1
 			committed_offset:       20
@@ -291,7 +290,7 @@ fn test_group_fetch_partitions_by_topic_single() {
 
 fn test_group_fetch_partitions_by_topic_multiple() {
 	results := [
-		offset.OffsetFetchResult{
+		port.OffsetFetchResult{
 			topic:                  'topic-a'
 			partition:              0
 			committed_offset:       10
@@ -299,7 +298,7 @@ fn test_group_fetch_partitions_by_topic_multiple() {
 			metadata:               ''
 			error_code:             0
 		},
-		offset.OffsetFetchResult{
+		port.OffsetFetchResult{
 			topic:                  'topic-b'
 			partition:              0
 			committed_offset:       30
@@ -307,7 +306,7 @@ fn test_group_fetch_partitions_by_topic_multiple() {
 			metadata:               ''
 			error_code:             0
 		},
-		offset.OffsetFetchResult{
+		port.OffsetFetchResult{
 			topic:                  'topic-a'
 			partition:              1
 			committed_offset:       20
@@ -325,7 +324,7 @@ fn test_group_fetch_partitions_by_topic_multiple() {
 }
 
 fn test_group_fetch_partitions_by_topic_empty() {
-	results := []offset.OffsetFetchResult{}
+	results := []port.OffsetFetchResult{}
 	topics_map := group_fetch_partitions_by_topic(results)
 	assert topics_map.len == 0
 }

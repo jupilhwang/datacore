@@ -7,8 +7,8 @@ BUILD_DIR = bin
 SRC_DIR = src
 
 # Build flags
-V_FLAGS = -prod -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib" -ldflags "-lsnappy" -ldflags "-llz4" -ldflags "-lzstd"
-V_FLAGS_DEV = -enable-globals -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib" -ldflags "-lsnappy" -ldflags "-llz4" -ldflags "-lzstd"
+V_FLAGS = -prod -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib" -ldflags "-lsnappy" -ldflags "-llz4" -ldflags "-lzstd"
+V_FLAGS_DEV = -d use_openssl -cflags "-I/opt/homebrew/include" -ldflags "-L/opt/homebrew/lib" -ldflags "-lsnappy" -ldflags "-llz4" -ldflags "-lzstd"
 
 # Platforms
 PLATFORMS = linux-amd64 linux-arm64 darwin-amd64 darwin-arm64
@@ -37,13 +37,13 @@ test:
 	@echo "Running tests..."
 	cd $(SRC_DIR) && v $(V_FLAGS_DEV) test domain/ config/ service/auth/ infra/auth/ infra/protocol/kafka/ infra/observability/ infra/storage/
 
-## Run performance module tests (requires -enable-globals)
+## Run performance module tests
 ## Note: benchmarks/ is excluded as it contains performance benchmark tools, not unit tests
 test-perf:
 	@echo "Running performance tests..."
 	cd $(SRC_DIR) && v $(V_FLAGS_DEV) test infra/performance/core/ infra/performance/engines/ infra/performance/io/
 
-## Run benchmark tests (requires -enable-globals)
+## Run benchmark tests
 test-bench:
 	@echo "Running benchmark tests..."
 	cd $(SRC_DIR) && v $(V_FLAGS_DEV) test infra/performance/benchmarks/
@@ -205,8 +205,8 @@ help:
 	@echo ""
 	@echo "Test Targets:"
 	@echo "  test            Run unit tests"
-	@echo "  test-perf       Run performance tests (requires -enable-globals)"
-	@echo "  test-bench      Run benchmark tests (requires -enable-globals)"
+	@echo "  test-perf       Run performance tests"
+	@echo "  test-bench      Run benchmark tests"
 	@echo "  test-compat     Run compatibility tests (requires Kafka CLI)"
 	@echo "  test-replication-compat Run replication CLI tests (2+ brokers)"
 	@echo "  test-storage    Run storage engine tests (Memory, PostgreSQL, S3)"

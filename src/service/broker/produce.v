@@ -14,7 +14,7 @@ mut:
 }
 
 /// new_produce_usecase creates a new ProduceUseCase.
-pub fn new_produce_usecase(topic_storage port.TopicStoragePort, record_storage port.RecordStoragePort) &ProduceUseCase {
+fn new_produce_usecase(topic_storage port.TopicStoragePort, record_storage port.RecordStoragePort) &ProduceUseCase {
 	return &ProduceUseCase{
 		topic_storage:  topic_storage
 		record_storage: record_storage
@@ -42,7 +42,7 @@ pub:
 }
 
 /// execute processes a produce request.
-pub fn (mut u ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
+fn (mut u ProduceUseCase) execute(req ProduceRequest) !ProduceResponse {
 	// Validation
 	if req.topic.len == 0 {
 		return ProduceResponse{

@@ -29,3 +29,7 @@ pub fn (mut la LoggerAdapter) warn(msg string, fields ...port.LogField) {
 pub fn (mut la LoggerAdapter) error(msg string, fields ...port.LogField) {
 	la.logger.error(msg, ...fields)
 }
+
+pub fn (mut la LoggerAdapter) trace(msg string, fields ...port.LogField) {
+	la.logger.trace(msg, ...fields)
+}
