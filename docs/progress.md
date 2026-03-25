@@ -1,5 +1,14 @@
 # Progress Log
 
+## v0.52.1 -- DIP Cleanup + Auth Warning (2026-03-25)
+- handler 18파일 observability.field_* -> port.field_* 통일 (309건 교체, 18 import 제거)
+- port.field_duration/bytes/float 포맷 수정 (observability 동작과 일치)
+- 7 SubHandler struct에서 미사용 필드 18개 제거 (net -64줄)
+- startup auth 미설정 시 WARN 로그 추가
+- .gitignore에 *.dSYM 추가, 커밋된 dSYM 제거
+
+---
+
 ## v0.52.0 -- Handler DIP + API Surface Reduction (2026-03-25)
 
 - Handler DIP: 10 concrete deps -> 0 (8 new Port interfaces, 4 imports remaining)

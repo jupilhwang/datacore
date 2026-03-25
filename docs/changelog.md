@@ -1,5 +1,14 @@
 # DataCore Changelog
 
+## [v0.52.1] -- 2026-03-25
+
+### Fixed
+- handler 파일 DIP 일관성: observability.field_* -> port.field_* 통일 (309건)
+- port.field_duration/field_bytes/field_float 포맷을 observability 버전과 동일하게 수정
+- Sub-handler 미사용 필드 18개 제거 (7 SubHandler struct 정리, net -64줄)
+- startup 시 인증 미설정 경고 로그 추가
+- handler_offset_test.dSYM macOS 디버그 심볼 git에서 제거
+
 ## [v0.52.0] -- 2026-03-25
 
 ### Added
