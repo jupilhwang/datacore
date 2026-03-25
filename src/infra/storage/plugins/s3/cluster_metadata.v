@@ -116,12 +116,26 @@ pub fn (mut a S3ClusterMetadataAdapter) deregister_broker(broker_id i32) ! {
 	key := a.broker_key(broker_id)
 
 	// Fetch existing broker
-	existing, _ := a.adapter.get_object(key, 0, -1) or { return }
+	existing, _ := a.adapter.get_object(key, 0, -1) or {
+		observability.log_with_context('s3', .warn, 'ClusterMetadata', 'failed to fetch broker for deregister',
+			{
+			'broker_id': broker_id.str()
+			'error':     err.str()
+		})
+		return
+	}
 	if existing.len == 0 {
 		return
 	}
 
-	mut broker := json.decode(domain.BrokerInfo, existing.bytestr()) or { return }
+	mut broker := json.decode(domain.BrokerInfo, existing.bytestr()) or {
+		observability.log_with_context('s3', .warn, 'ClusterMetadata', 'failed to decode broker info for deregister',
+			{
+			'broker_id': broker_id.str()
+			'error':     err.str()
+		})
+		return
+	}
 	broker.status = .shutdown
 
 	data := json.encode(broker).bytes()
@@ -546,12 +560,28 @@ pub fn (mut a S3ClusterMetadataAdapter) release_lock(lock_name string, holder_id
 	key := a.lock_key(lock_name)
 
 	// Check if lock is held
-	existing, _ := a.adapter.get_object(key, 0, -1) or { return }
+	existing, _ := a.adapter.get_object(key, 0, -1) or {
+		observability.log_with_context('s3', .warn, 'ClusterMetadata', 'failed to fetch lock info for release',
+			{
+			'lock_name': lock_name
+			'holder_id': holder_id
+			'error':     err.str()
+		})
+		return
+	}
 	if existing.len == 0 {
 		return
 	}
 
-	lock_info := json.decode(LockInfo, existing.bytestr()) or { return }
+	lock_info := json.decode(LockInfo, existing.bytestr()) or {
+		observability.log_with_context('s3', .warn, 'ClusterMetadata', 'failed to decode lock info for release',
+			{
+			'lock_name': lock_name
+			'holder_id': holder_id
+			'error':     err.str()
+		})
+		return
+	}
 	if lock_info.holder_id != holder_id {
 		return error('lock not held by this holder')
 	}

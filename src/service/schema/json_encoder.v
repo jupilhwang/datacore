@@ -323,12 +323,12 @@ fn parse_json_schema(schema_str string) !&JsonSchema {
 	}
 
 	// Extract numeric constraints
-	result.min_length = extract_json_number(schema_str, 'minLength') or { 0 }
-	result.max_length = extract_json_number(schema_str, 'maxLength') or { 0 }
-	result.min_items = extract_json_number(schema_str, 'minItems') or { 0 }
-	result.max_items = extract_json_number(schema_str, 'maxItems') or { 0 }
-	result.min_properties = extract_json_number(schema_str, 'minProperties') or { 0 }
-	result.max_properties = extract_json_number(schema_str, 'maxProperties') or { 0 }
+	result.min_length = extract_json_int(schema_str, 'minLength') or { 0 }
+	result.max_length = extract_json_int(schema_str, 'maxLength') or { 0 }
+	result.min_items = extract_json_int(schema_str, 'minItems') or { 0 }
+	result.max_items = extract_json_int(schema_str, 'maxItems') or { 0 }
+	result.min_properties = extract_json_int(schema_str, 'minProperties') or { 0 }
+	result.max_properties = extract_json_int(schema_str, 'maxProperties') or { 0 }
 
 	if min_val := extract_json_float(schema_str, 'minimum') {
 		result.minimum = min_val

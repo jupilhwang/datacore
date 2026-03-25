@@ -205,29 +205,5 @@ pub fn (mut r BrokerRegistry) on_broker_change(changes BrokerChanges) ! {
 		spawn cb(changes)
 	}
 
-	// TODO(jira#XXX): Perform rebalancing for all topics
-
 	return
-}
-
-/// trigger_rebalance_for_topic performs rebalancing for a specific topic.
-pub fn (mut r BrokerRegistry) trigger_rebalance_for_topic(topic_name string) ! {
-	r.lock.@lock()
-	defer { r.lock.unlock() }
-
-	if mut assigner := r.partition_assigner {
-		active_brokers := r.list_active_brokers_internal() or { []domain.BrokerInfo{} }
-
-		if active_brokers.len == 0 {
-			return error('no active brokers available for rebalance')
-		}
-
-		assigner.rebalance_partitions(topic_name, active_brokers) or {
-			return error('rebalance failed: ${err}')
-		}
-
-		r.logger.info('Rebalance completed for topic topic=${topic_name}')
-	} else {
-		return error('partition assigner not configured')
-	}
 }

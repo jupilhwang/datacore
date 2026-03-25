@@ -20,7 +20,7 @@ pub fn Protocol.new() Protocol {
 /// encode converts a ReplicationMessage to wire format.
 pub fn (p Protocol) encode(msg domain.ReplicationMessage) ![]u8 {
 	// Convert message to JSON
-	json_str := msg.to_json()
+	json_str := serialize_replication_message(msg)
 	json_bytes := json_str.bytes()
 
 	// Create buffer: 4 bytes for length + JSON payload
@@ -146,4 +146,29 @@ fn (p Protocol) decode_payload(data []u8) !domain.ReplicationMessage {
 pub fn (p Protocol) write_message(mut conn net.TcpConn, msg domain.ReplicationMessage) ! {
 	wire_data := p.encode(msg)!
 	conn.write(wire_data)!
+}
+
+// serialize_replication_message converts a ReplicationMessage to a JSON string.
+// This is the infra-layer serialization, replacing the former domain-level to_json() method.
+fn serialize_replication_message(msg domain.ReplicationMessage) string {
+	msg_type_str := match msg.msg_type {
+		.replicate { 'replicate' }
+		.replicate_ack { 'replicate_ack' }
+		.flush_ack { 'flush_ack' }
+		.heartbeat { 'heartbeat' }
+		.recover { 'recover' }
+	}
+
+	m := {
+		'msg_type':       msg_type_str
+		'correlation_id': msg.correlation_id
+		'sender_id':      msg.sender_id
+		'timestamp':      msg.timestamp.str()
+		'topic':          msg.topic
+		'partition':      msg.partition.str()
+		'offset':         msg.offset.str()
+		'success':        msg.success.str()
+		'error_msg':      msg.error_msg
+	}
+	return json.encode(m)
 }

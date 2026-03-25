@@ -242,7 +242,7 @@ fn new_auth_metrics() AuthenticationMetrics {
 	}
 }
 
-/// new_storage_metrics registers DataCore StorageMetrics for S3/SQLite/Memory plugins.
+/// new_storage_metrics registers DataCore StorageMetrics for S3/Memory plugins.
 fn new_storage_metrics() StorageMetrics {
 	mut reg := get_registry()
 	return StorageMetrics{

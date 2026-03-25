@@ -9,6 +9,8 @@
 // - Delete ACL bindings
 module cli
 
+import common
+
 /// AclOptions holds ACL command options.
 pub struct AclOptions {
 pub:
@@ -497,7 +499,7 @@ fn parse_describe_acls_response(response []u8) []AclEntry {
 	if pos + 2 > response.len {
 		return acls
 	}
-	error_code := read_i16_be(response, pos)
+	error_code := common.read_i16_be(response[pos..]) or { i16(0) }
 	pos += 2
 
 	if error_code != 0 {

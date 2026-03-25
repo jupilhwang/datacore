@@ -112,12 +112,6 @@ fn extract_json_float(json_str string, key string) ?f64 {
 	return num_str.f64()
 }
 
-// extract_json_number extracts an integer number value for a given key from JSON
-// Returns the value if found, none otherwise
-fn extract_json_number(json_str string, key string) ?int {
-	return extract_json_int(json_str, key)
-}
-
 // parse_json_string_array extracts a string array value for a given key from JSON
 // Returns the array if found, none otherwise
 fn parse_json_string_array(json_str string, key string) ?[]string {

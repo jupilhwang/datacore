@@ -4,7 +4,7 @@ import domain
 import sync
 import sync.stdatomic
 import time
-import log
+import infra.observability
 import rand
 
 // Manager coordinates all replication operations.
@@ -48,7 +48,7 @@ pub mut:
 	cluster_broker_refs      []domain.BrokerRef
 	cluster_broker_refs_lock sync.Mutex
 	// State
-	logger       log.Logger
+	logger       &observability.Logger = unsafe { nil }
 	running_flag i64
 }
 
@@ -69,7 +69,7 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 		metrics:             domain.new_replication_metrics()
 		partition_metrics:   map[string]domain.PartitionMetrics{}
 		cluster_broker_refs: cluster_broker_refs
-		logger:              log.Log{}
+		logger:              observability.get_named_logger('replication.manager')
 		running_flag:        0
 	}
 

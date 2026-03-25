@@ -199,10 +199,6 @@ fn parse_storage_config(cli_args map[string]string, doc toml.Doc) !StorageConfig
 			segment_size_bytes: get_int(doc, 'storage.memory.segment_size_bytes', 1073741824)
 		}
 		s3:       parse_s3_config(cli_args, doc)!
-		sqlite:   SqliteStorageConfig{
-			path:         get_string(doc, 'storage.sqlite.path', 'datacore.db')
-			journal_mode: get_string(doc, 'storage.sqlite.journal_mode', 'WAL')
-		}
 		postgres: PostgresStorageConfig{
 			host:      src.get_string('postgres-host', 'DATACORE_POSTGRES_HOST', 'storage.postgres.host',
 				'localhost')
@@ -232,16 +228,14 @@ fn parse_schema_registry_config(doc toml.Doc) SchemaRegistryConfig {
 fn parse_observability_config(doc toml.Doc) ObservabilityConfig {
 	return ObservabilityConfig{
 		otel:    OtelConfig{
-			enabled:             get_bool(doc, 'observability.otel.enabled', true)
-			service_name:        get_string(doc, 'observability.otel.service_name', 'datacore')
-			service_version:     get_string(doc, 'observability.otel.service_version',
+			enabled:            get_bool(doc, 'observability.otel.enabled', true)
+			service_name:       get_string(doc, 'observability.otel.service_name', 'datacore')
+			service_version:    get_string(doc, 'observability.otel.service_version',
 				'0.44.4')
-			instance_id:         get_string(doc, 'observability.otel.instance_id', '')
-			environment:         get_string(doc, 'observability.otel.environment', 'development')
-			otlp_endpoint:       get_string(doc, 'observability.otel.otlp_endpoint', 'http://localhost:4317')
-			otlp_http_endpoint:  get_string(doc, 'observability.otel.otlp_http_endpoint',
-				'')
-			resource_attributes: get_string(doc, 'observability.otel.resource_attributes',
+			instance_id:        get_string(doc, 'observability.otel.instance_id', '')
+			environment:        get_string(doc, 'observability.otel.environment', 'development')
+			otlp_endpoint:      get_string(doc, 'observability.otel.otlp_endpoint', 'http://localhost:4317')
+			otlp_http_endpoint: get_string(doc, 'observability.otel.otlp_http_endpoint',
 				'')
 		}
 		metrics: parse_metrics_config(doc)

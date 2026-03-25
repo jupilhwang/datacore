@@ -49,28 +49,6 @@ pub:
 	connections_closed  i64
 }
 
-// Message consumer port (for message retrieval)
-
-/// MessageConsumerPort defines message consumption operations.
-/// Used by the streaming service to fetch messages from storage.
-pub interface MessageConsumerPort {
-mut:
-	/// Fetches messages from a topic/partition starting at the specified offset.
-	consume(topic string, partition i32, offset i64, max_messages int) ![]domain.Record
-
-	/// Returns the earliest available offset.
-	get_earliest_offset(topic string, partition i32) !i64
-
-	/// Returns the latest offset (the next offset to be written).
-	get_latest_offset(topic string, partition i32) !i64
-
-	/// Commits offsets for a consumer group.
-	commit_offset(group_id string, topic string, partition i32, offset i64) !
-
-	/// Retrieves the committed offset for a consumer group.
-	get_committed_offset(group_id string, topic string, partition i32) !i64
-}
-
 // SSE writer port
 
 /// SSEWriterPort is an interface for writing SSE events to an HTTP response.

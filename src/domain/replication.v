@@ -1,8 +1,6 @@
 module domain
 
 import time
-import json
-import sync
 
 /// BrokerRef holds a broker's stable ID and its current network address.
 /// Used by the ReplicationManager to identify brokers independently of address changes.
@@ -83,10 +81,9 @@ pub mut:
 const rolling_window_size = 1024
 
 /// ReplicationMetrics provides comprehensive observability for the replication subsystem.
-/// All fields are protected by an internal lock; use the provided methods for thread-safe access.
+/// Thread-safety is NOT provided at this layer; callers (infra) must synchronize access.
 pub struct ReplicationMetrics {
 pub mut:
-	lock sync.Mutex
 	// --- Throughput ---
 	bytes_in_per_sec     f64 // Incoming bytes per second (rolling rate)
 	bytes_out_per_sec    f64 // Outgoing bytes per second (rolling rate)
@@ -128,37 +125,30 @@ pub fn new_replication_metrics() ReplicationMetrics {
 /// record_bytes_in records incoming bytes and increments the message-in counter.
 /// Call once per received message batch.
 pub fn (mut m ReplicationMetrics) record_bytes_in(bytes i64) {
-	m.lock.@lock()
 	m.window_bytes_in += bytes
 	m.window_messages_in++
-	m.lock.unlock()
 }
 
 /// record_bytes_out records outgoing bytes and increments the message-out counter.
 /// Call once per successfully replicated message batch.
 pub fn (mut m ReplicationMetrics) record_bytes_out(bytes i64) {
-	m.lock.@lock()
 	m.window_bytes_out += bytes
 	m.window_messages_out++
-	m.lock.unlock()
 }
 
 /// record_lag_sample adds a single replication lag observation (in milliseconds)
 /// to the rolling window. Percentile statistics are recalculated lazily on snapshot().
 pub fn (mut m ReplicationMetrics) record_lag_sample(lag_ms f64) {
-	m.lock.@lock()
 	// Write into circular buffer
 	m.lag_samples[m.lag_sample_head] = lag_ms
 	m.lag_sample_head = (m.lag_sample_head + 1) % rolling_window_size
 	if !m.lag_sample_full && m.lag_sample_head == 0 {
 		m.lag_sample_full = true
 	}
-	m.lock.unlock()
 }
 
-/// recalculate_lag_stats_locked recomputes avg/max/p95/p99 from the current sample
-/// buffer. Must be called with m.lock held.
-fn (mut m ReplicationMetrics) recalculate_lag_stats_locked() {
+/// recalculate_lag_stats recomputes avg/max/p95/p99 from the current sample buffer.
+fn (mut m ReplicationMetrics) recalculate_lag_stats() {
 	n := if m.lag_sample_full { rolling_window_size } else { m.lag_sample_head }
 	if n == 0 {
 		m.avg_replication_lag_ms = 0.0
@@ -212,53 +202,39 @@ fn percentile_from_sorted(sorted []f64, p f64) f64 {
 
 /// increment_pending increments the pending request counter.
 pub fn (mut m ReplicationMetrics) increment_pending() {
-	m.lock.@lock()
 	m.pending_requests++
-	m.lock.unlock()
 }
 
 /// decrement_pending decrements the pending request counter (floor: 0).
 pub fn (mut m ReplicationMetrics) decrement_pending() {
-	m.lock.@lock()
 	if m.pending_requests > 0 {
 		m.pending_requests--
 	}
-	m.lock.unlock()
 }
 
 /// record_failed_request increments the failed request counter.
 pub fn (mut m ReplicationMetrics) record_failed_request() {
-	m.lock.@lock()
 	m.failed_requests++
-	m.lock.unlock()
 }
 
 /// record_retried_request increments the retried request counter.
 pub fn (mut m ReplicationMetrics) record_retried_request() {
-	m.lock.@lock()
 	m.retried_requests++
-	m.lock.unlock()
 }
 
 /// set_active_connections updates the active connection gauge.
 pub fn (mut m ReplicationMetrics) set_active_connections(count i64) {
-	m.lock.@lock()
 	m.active_connections = count
-	m.lock.unlock()
 }
 
 /// record_connection_error increments the connection error counter.
 pub fn (mut m ReplicationMetrics) record_connection_error() {
-	m.lock.@lock()
 	m.connection_errors++
-	m.lock.unlock()
 }
 
 /// record_reconnection increments the reconnection counter.
 pub fn (mut m ReplicationMetrics) record_reconnection() {
-	m.lock.@lock()
 	m.reconnection_count++
-	m.lock.unlock()
 }
 
 /// flush_rates computes throughput rates for the elapsed window, updates the
@@ -266,7 +242,6 @@ pub fn (mut m ReplicationMetrics) record_reconnection() {
 /// Call this periodically (e.g., every second) from a background goroutine.
 pub fn (mut m ReplicationMetrics) flush_rates() {
 	now := time.now().unix_milli()
-	m.lock.@lock()
 	elapsed_ms := now - m.window_start_time
 	if elapsed_ms > 0 {
 		elapsed_sec := f64(elapsed_ms) / 1000.0
@@ -281,14 +256,12 @@ pub fn (mut m ReplicationMetrics) flush_rates() {
 	m.window_bytes_out = 0
 	m.window_messages_in = 0
 	m.window_messages_out = 0
-	m.lock.unlock()
 }
 
 /// snapshot returns a read-only copy of the current metrics state.
 /// Lag percentile statistics are computed lazily inside this call.
 pub fn (mut m ReplicationMetrics) snapshot() ReplicationMetricsSnapshot {
-	m.lock.@lock()
-	m.recalculate_lag_stats_locked()
+	m.recalculate_lag_stats()
 	s := ReplicationMetricsSnapshot{
 		bytes_in_per_sec:       m.bytes_in_per_sec
 		bytes_out_per_sec:      m.bytes_out_per_sec
@@ -305,7 +278,6 @@ pub fn (mut m ReplicationMetrics) snapshot() ReplicationMetricsSnapshot {
 		connection_errors:      m.connection_errors
 		reconnection_count:     m.reconnection_count
 	}
-	m.lock.unlock()
 	return s
 }
 
@@ -313,7 +285,6 @@ pub fn (mut m ReplicationMetrics) snapshot() ReplicationMetricsSnapshot {
 /// while preserving the current lag percentile state.
 pub fn (mut m ReplicationMetrics) reset_counters() {
 	now := time.now().unix_milli()
-	m.lock.@lock()
 	m.bytes_in_per_sec = 0.0
 	m.bytes_out_per_sec = 0.0
 	m.messages_in_per_sec = 0.0
@@ -327,7 +298,6 @@ pub fn (mut m ReplicationMetrics) reset_counters() {
 	m.window_bytes_out = 0
 	m.window_messages_in = 0
 	m.window_messages_out = 0
-	m.lock.unlock()
 }
 
 /// ReplicationMetricsSnapshot is a point-in-time, immutable view of ReplicationMetrics.
@@ -356,7 +326,6 @@ pub:
 /// PartitionMetrics tracks per-partition replication statistics.
 pub struct PartitionMetrics {
 pub mut:
-	lock             sync.Mutex
 	topic            string
 	partition        i32
 	bytes_replicated i64 // Total bytes sent to replicas
@@ -378,43 +347,34 @@ pub fn new_partition_metrics(topic string, partition i32) PartitionMetrics {
 
 /// record_sent records a sent message batch with its byte size.
 pub fn (mut pm PartitionMetrics) record_sent(bytes i64) {
-	pm.lock.@lock()
 	pm.bytes_replicated += bytes
 	pm.messages_sent++
-	pm.lock.unlock()
 }
 
 /// record_acked records an acknowledgement for a sent message.
 pub fn (mut pm PartitionMetrics) record_acked() {
-	pm.lock.@lock()
 	pm.messages_acked++
-	pm.lock.unlock()
 }
 
 /// record_lag records a lag observation (ms) for this partition.
 pub fn (mut pm PartitionMetrics) record_lag(lag_ms f64) {
-	pm.lock.@lock()
 	pm.lag_samples[pm.lag_sample_head] = lag_ms
 	pm.lag_sample_head = (pm.lag_sample_head + 1) % rolling_window_size
 	if !pm.lag_sample_full && pm.lag_sample_head == 0 {
 		pm.lag_sample_full = true
 	}
-	pm.lock.unlock()
 }
 
 /// avg_lag_ms returns the mean lag over all retained samples.
 pub fn (mut pm PartitionMetrics) avg_lag_ms() f64 {
-	pm.lock.@lock()
 	n := if pm.lag_sample_full { rolling_window_size } else { pm.lag_sample_head }
 	if n == 0 {
-		pm.lock.unlock()
 		return 0.0
 	}
 	mut sum := f64(0)
 	for i in 0 .. n {
 		sum += pm.lag_samples[i]
 	}
-	pm.lock.unlock()
 	return sum / f64(n)
 }
 
@@ -436,33 +396,6 @@ pub mut:
 	last_heartbeat i64
 	lag_ms         i64
 	pending_count  int
-}
-
-// to_json converts a ReplicationMessage to a JSON string for logging and debugging.
-//
-// Returns: JSON string representation of the message (excludes records_data for brevity)
-/// to_json returns the JSON representation.
-pub fn (msg ReplicationMessage) to_json() string {
-	msg_type_str := match msg.msg_type {
-		.replicate { 'replicate' }
-		.replicate_ack { 'replicate_ack' }
-		.flush_ack { 'flush_ack' }
-		.heartbeat { 'heartbeat' }
-		.recover { 'recover' }
-	}
-
-	m := {
-		'msg_type':       msg_type_str
-		'correlation_id': msg.correlation_id
-		'sender_id':      msg.sender_id
-		'timestamp':      msg.timestamp.str()
-		'topic':          msg.topic
-		'partition':      msg.partition.str()
-		'offset':         msg.offset.str()
-		'success':        msg.success.str()
-		'error_msg':      msg.error_msg
-	}
-	return json.encode(m)
 }
 
 // default returns a ReplicationConfig with sensible default values.

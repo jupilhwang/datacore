@@ -415,7 +415,7 @@ pub fn (c &KIP848GroupCoordinator) list_groups() []&KIP848ConsumerGroup {
 }
 
 /// expire_members removes members that have not sent a heartbeat.
-pub fn (mut c KIP848GroupCoordinator) expire_members() {
+pub fn (mut c KIP848GroupCoordinator) expire_members() ! {
 	now := time.now().unix_milli()
 
 	for group_id, mut group in c.groups {
@@ -439,7 +439,9 @@ pub fn (mut c KIP848GroupCoordinator) expire_members() {
 			} else {
 				group.group_epoch++
 				group.state = .assigning
-				c.compute_assignment(mut group) or {}
+				c.compute_assignment(mut group) or {
+					return error('failed to compute assignment for group ${group_id}: ${err}')
+				}
 			}
 		}
 

@@ -188,7 +188,7 @@ pub fn (mut m MmapFile) extend(new_size i64) ! {
 /// close closes the memory-mapped file.
 pub fn (mut m MmapFile) close() ! {
 	// Sync all dirty regions
-	m.sync_all() or {}
+	m.sync_all()!
 
 	// Clean up regions
 	m.regions.clear()
@@ -400,8 +400,8 @@ pub fn (mut b MmapBenchmark) benchmark_write() !(i64, i64) {
 		}
 		region.dirty = true
 	}
-	mmap_file.sync_all() or {}
-	mmap_file.close() or {}
+	mmap_file.sync_all()!
+	mmap_file.close()!
 	mmap_time := sw1.elapsed().nanoseconds()
 
 	// Regular write benchmark
@@ -434,7 +434,7 @@ pub fn (mut b MmapBenchmark) benchmark_read() !(i64, i64) {
 	// Write test data
 	mut write_file := os.create(test_path) or { return error('failed to create test file') }
 	for _ in 0 .. b.iterations {
-		write_file.write(data) or {}
+		write_file.write(data)!
 	}
 	write_file.close()
 

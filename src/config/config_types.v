@@ -51,8 +51,6 @@ const default_index_cache_ttl_ms = 60000 // 1 minute
 
 const default_tracing_batch_timeout_ms = 5000 // 5 seconds
 
-const default_telemetry_export_timeout = 30000 // 30 seconds
-
 // -- Iceberg --
 const default_iceberg_max_rows_per_file = 1000000 // 1 million rows
 
@@ -68,7 +66,6 @@ const default_tracing_max_per_span = 128 // max attributes, events, and links pe
 /// storage: storage configuration
 /// schema_registry: schema registry configuration
 /// observability: observability configuration (metrics, logging, tracing)
-/// telemetry: simplified telemetry configuration (Task #15, mirrors [telemetry] in config.toml)
 pub struct Config {
 pub:
 	broker          BrokerConfig
@@ -77,43 +74,6 @@ pub:
 	storage         StorageConfig
 	schema_registry SchemaRegistryConfig
 	observability   ObservabilityConfig
-	telemetry       TelemetryRootConfig
-}
-
-/// TelemetryRootConfig mirrors the [telemetry] section in config.toml (Task #15).
-pub struct TelemetryRootConfig {
-pub:
-	enabled      bool   = true
-	service_name string = 'datacore'
-	otlp         TelemetryOtlpConfig
-	metrics      TelemetryMetricsConfig
-	traces       TelemetryTracesConfig
-}
-
-/// TelemetryOtlpConfig holds OTLP endpoint settings.
-pub struct TelemetryOtlpConfig {
-pub:
-	// gRPC OTLP endpoint (default port 4317)
-	endpoint string = 'http://localhost:4317'
-	// HTTP OTLP endpoint (optional)
-	http_endpoint string
-	insecure      bool = true
-}
-
-/// TelemetryMetricsConfig holds metrics export settings.
-pub struct TelemetryMetricsConfig {
-pub:
-	// Export interval in seconds
-	interval int = 10
-	// Export timeout in milliseconds
-	export_timeout int = default_telemetry_export_timeout
-}
-
-/// TelemetryTracesConfig holds tracing settings.
-pub struct TelemetryTracesConfig {
-pub:
-	// Sampling ratio (1.0 = 100%)
-	sample_rate f64 = 1.0
 }
 
 /// BrokerConfig represents the Kafka broker configuration.
@@ -199,17 +159,15 @@ pub:
 }
 
 /// StorageConfig represents the storage engine configuration.
-/// engine: storage engine type ('memory', 's3', 'sqlite', 'postgres')
+/// engine: storage engine type ('memory', 's3', 'postgres')
 /// memory: memory storage configuration
 /// s3: S3 storage configuration
-/// sqlite: SQLite storage configuration
 /// postgres: PostgreSQL storage configuration
 pub struct StorageConfig {
 pub:
 	engine   string = 'memory'
 	memory   MemoryStorageConfig
 	s3       S3StorageConfig
-	sqlite   SqliteStorageConfig
 	postgres PostgresStorageConfig
 }
 
@@ -288,15 +246,6 @@ pub mut:
 	iceberg_format_version    int      = 2
 }
 
-/// SqliteStorageConfig represents the SQLite storage configuration.
-/// path: database file path
-/// journal_mode: journal mode ('WAL' recommended)
-pub struct SqliteStorageConfig {
-pub:
-	path         string = 'datacore.db'
-	journal_mode string = 'WAL'
-}
-
 /// PostgresStorageConfig represents the PostgreSQL storage configuration.
 /// host: database host
 /// port: database port
@@ -346,17 +295,15 @@ pub:
 /// environment: environment (development, staging, production)
 /// otlp_endpoint: OTLP gRPC endpoint
 /// otlp_http_endpoint: OTLP HTTP endpoint
-/// resource_attributes: additional resource attributes
 pub struct OtelConfig {
 pub:
-	enabled             bool   = true
-	service_name        string = 'datacore'
-	service_version     string = '0.44.4'
-	instance_id         string
-	environment         string = 'development'
-	otlp_endpoint       string = 'http://localhost:4317'
-	otlp_http_endpoint  string
-	resource_attributes string
+	enabled            bool   = true
+	service_name       string = 'datacore'
+	service_version    string = '0.44.4'
+	instance_id        string
+	environment        string = 'development'
+	otlp_endpoint      string = 'http://localhost:4317'
+	otlp_http_endpoint string
 }
 
 /// MetricsConfig represents the metrics configuration.

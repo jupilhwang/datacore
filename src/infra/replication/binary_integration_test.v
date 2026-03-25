@@ -3,7 +3,6 @@ module replication
 import domain
 import net
 import time
-import log
 
 // --- Binary protocol integration tests ---
 // Verify that manager/client/server use BinaryProtocol for wire communication.

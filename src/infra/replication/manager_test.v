@@ -3,7 +3,7 @@ module replication
 import domain
 import sync
 import sync.stdatomic
-import log
+import infra.observability
 import time
 
 /// create_test_config returns a ReplicationConfig for testing
@@ -49,7 +49,7 @@ fn create_test_manager() &Manager {
 				addr:      'localhost:19095'
 			},
 		]
-		logger:              log.Log{}
+		logger:              observability.get_named_logger('replication.manager.test')
 		running_flag:        0
 	}
 	return m
@@ -390,7 +390,7 @@ fn test_manager_worker_lifecycle() {
 		broker_health:       map[string]domain.ReplicationHealth{}
 		stats:               domain.ReplicationStats{}
 		cluster_broker_refs: []domain.BrokerRef{}
-		logger:              log.Log{}
+		logger:              observability.get_named_logger('replication.manager.test')
 		running_flag:        1
 	}
 
@@ -551,7 +551,7 @@ fn test_assign_replicas_excludes_self_by_broker_id() {
 				addr:      '10.0.0.3:19093'
 			},
 		]
-		logger:              log.Log{}
+		logger:              observability.get_named_logger('replication.manager.test')
 		running_flag:        0
 	}
 
@@ -604,7 +604,7 @@ fn test_assign_replicas_legacy_addr_fallback() {
 				addr:      'peer-a:19094'
 			},
 		]
-		logger:              log.Log{}
+		logger:              observability.get_named_logger('replication.manager.test')
 		running_flag:        0
 	}
 

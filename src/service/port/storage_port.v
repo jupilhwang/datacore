@@ -106,16 +106,3 @@ pub enum HealthStatus {
 	degraded
 	unhealthy
 }
-
-/// Lock is an interface for partition-level locking.
-pub interface Lock {
-	/// Releases the lock.
-	release() !
-}
-
-/// LockableStorage is a StoragePort with added locking capability.
-/// Used when concurrency control is required.
-pub interface LockableStorage {
-	StoragePort /// Acquires a lock for a specific topic/partition.
-	acquire_lock(topic string, partition int) !Lock
-}

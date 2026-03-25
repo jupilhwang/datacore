@@ -5,7 +5,6 @@ import domain
 import service.port
 import sync
 import time
-import rand
 
 // Partition Assignment Service
 
@@ -451,36 +450,6 @@ pub fn (mut a PartitionAssigner) list_partition_assignments(topic_name string) !
 	}
 
 	return []domain.PartitionAssignment{}
-}
-
-// Reassignment Plan
-
-/// generate_reassignment_plan generates a reassignment plan based on broker changes.
-/// changes: broker change information (added/removed brokers)
-pub fn (mut a PartitionAssigner) generate_reassignment_plan(changes BrokerChanges) !domain.ReassignmentPlan {
-	a.lock.rlock()
-	defer { a.lock.runlock() }
-
-	plan_id := rand.uuid_v4()
-	now := time.now().unix_milli()
-
-	mut plan := domain.ReassignmentPlan{
-		plan_id:        plan_id
-		cluster_id:     a.cluster_id
-		trigger_reason: changes.reason
-		changes:        []domain.PartitionAssignmentChange{}
-		created_at:     now
-		executed_at:    0
-		status:         .pending
-	}
-
-	// Inspect assignments for all topics to identify partitions needing change
-	// TODO(jira#XXX): Need method to get topic list
-	// Currently returning empty plan
-
-	a.logger.info('Generated reassignment plan plan_id=${plan_id} reason=${changes.reason} added_brokers=${changes.added.len} removed_brokers=${changes.removed.len}')
-
-	return plan
 }
 
 /// BrokerChanges holds broker change information.

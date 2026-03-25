@@ -3,7 +3,6 @@ module replication
 import domain
 import time
 import net
-import log
 
 // --- Server 단위 테스트 ---
 

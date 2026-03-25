@@ -407,3 +407,28 @@ docs/reports/2026-03-06-s3-put-cost-optimization.md
 - QA: 123/123 test files pass, build SUCCESS, lint CLEAN
 - Zero test modifications required
 
+## v0.50.9 -- Codebase Health Refactoring (2026-03-25)
+
+### Phase 1: CRITICAL Error Fixes
+- 17개 `or {}` 에러 삼키기 패턴 수정 (service/infra/interface 전 계층)
+- Stateless 설계에 불필요한 리밸런싱 dead code 삭제 (broker_registry.v, partition_assigner.v)
+
+### Phase 2: Duplicate Code Removal (~300 lines)
+- `infra/performance/core/utils.v`: 14개 중복 함수 -> `common` 위임 thin wrapper (-110줄)
+- CLI 로컬 바이너리/CRC32C 함수 -> `common.*` import (~120줄 삭제)
+- JSON escape/extract 중복 함수 정리
+
+### Phase 3: Architecture Cleanup
+- Domain 계층 외부 의존성 완전 제거: `import common`, `import sync`, `import json` 모두 0건
+- infra/replication: stdlib log -> Logger Port 주입
+
+### Phase 4: Dead Code + Config Cleanup (-289 lines)
+- SQLiteStorageConfig 완전 제거, TelemetryRootConfig 트리 제거
+- 미사용 인터페이스/함수/config 섹션 제거
+
+### Impact
+- 총 ~600줄 코드 제거/통합
+- 124/124 테스트 통과
+- Architecture violation 0건
+- CHECK Grade: B (87.8/100)
+

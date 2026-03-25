@@ -39,7 +39,6 @@ pub fn load_config_with_args(path string, cli_args map[string]string) !Config {
 		storage:         parse_storage_config(cli_args, doc)!
 		schema_registry: parse_schema_registry_config(doc)
 		observability:   parse_observability_config(doc)
-		telemetry:       parse_telemetry_config(doc)
 	}
 
 	cfg.validate()!
@@ -62,7 +61,6 @@ fn load_default_config_with_overrides(cli_args map[string]string) !Config {
 		storage:         parse_storage_config(cli_args, empty_doc)!
 		schema_registry: parse_schema_registry_config(empty_doc)
 		observability:   parse_observability_config(empty_doc)
-		telemetry:       parse_telemetry_config(empty_doc)
 	}
 	cfg.validate()!
 	return cfg
@@ -174,25 +172,6 @@ fn (s &ConfigSource) get_bool(cli_key string, env_key string, toml_key string, d
 
 	// priority 4: default value
 	return default_val
-}
-
-fn parse_telemetry_config(doc toml.Doc) TelemetryRootConfig {
-	return TelemetryRootConfig{
-		enabled:      get_bool(doc, 'telemetry.enabled', true)
-		service_name: get_string(doc, 'telemetry.service_name', 'datacore')
-		otlp:         TelemetryOtlpConfig{
-			endpoint:      get_string(doc, 'telemetry.otlp.endpoint', 'http://localhost:4317')
-			http_endpoint: get_string(doc, 'telemetry.otlp.http_endpoint', '')
-			insecure:      get_bool(doc, 'telemetry.otlp.insecure', true)
-		}
-		metrics:      TelemetryMetricsConfig{
-			interval:       get_int(doc, 'telemetry.metrics.interval', 10)
-			export_timeout: get_int(doc, 'telemetry.metrics.export_timeout', 30000)
-		}
-		traces:       TelemetryTracesConfig{
-			sample_rate: get_f64(doc, 'telemetry.traces.sample_rate', 1.0)
-		}
-	}
 }
 
 // Config accessor methods

@@ -422,7 +422,14 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 				client_ip := extract_ip(client_addr)
 				if !rl.allow_request_with_bytes(client_ip, i64(request_size)) {
 					throttle_resp := build_throttle_response(correlation_id)
-					conn.write(throttle_resp) or {}
+					conn.write(throttle_resp) or {
+						observability.log_with_context('tcp', .warn, 'RateLimit', 'failed to write throttle response',
+							{
+							'client':         client_addr
+							'correlation_id': correlation_id.str()
+							'error':          err.str()
+						})
+					}
 					continue
 				}
 			}
@@ -509,7 +516,14 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 			})
 
 			// Mark request as completed
-			pipeline.complete(correlation_id, response) or {}
+			pipeline.complete(correlation_id, response) or {
+				observability.log_with_context('tcp', .error, 'Pipeline', 'failed to complete pipeline request',
+					{
+					'correlation_id': correlation_id.str()
+					'client':         client_addr
+					'error':          err.str()
+				})
+			}
 
 			// Send ready responses in order
 			ready := pipeline.get_ready_responses()

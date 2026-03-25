@@ -98,28 +98,7 @@ fn hex_to_int(s string) int {
 	return result
 }
 
-// JSON Field Extraction
-
-fn extract_json_field(json_str string, field_name string) ?string {
-	// Find "field_name": value
-	pattern := '"${field_name}"'
-	idx := json_str.index(pattern) or { return none }
-
-	mut pos := idx + pattern.len
-
-	// Skip whitespace and colon
-	for pos < json_str.len && (json_str[pos] == `:` || json_str[pos] == ` `
-		|| json_str[pos] == `\t` || json_str[pos] == `\n`) {
-		pos += 1
-	}
-
-	if pos >= json_str.len {
-		return none
-	}
-
-	// Read value
-	return read_json_value(json_str, pos)
-}
+// JSON Value Reading
 
 fn read_json_value(s string, start int) ?string {
 	if start >= s.len {
