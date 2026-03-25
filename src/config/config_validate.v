@@ -36,11 +36,6 @@ pub fn (c Config) validate() ! {
 				return error('S3 secret_key is required (set DATACORE_S3_SECRET_KEY env var)')
 			}
 		}
-		'sqlite' {
-			if c.storage.sqlite.path == '' {
-				return error('SQLite path is required')
-			}
-		}
 		'postgres' {
 			if c.storage.postgres.database == '' {
 				return error('PostgreSQL database is required')

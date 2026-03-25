@@ -10,6 +10,7 @@
 module cli
 
 import net.http
+import common
 
 /// ClusterOptions holds cluster command options.
 pub struct ClusterOptions {
@@ -205,7 +206,7 @@ fn parse_cluster_metadata_response(response []u8) ClusterInfo {
 		if pos + 4 > response.len {
 			break
 		}
-		broker_id := int(read_i32_be(response, pos))
+		broker_id := int(common.read_i32_be(response[pos..]) or { i32(0) })
 		pos += 4
 
 		// Host (compact string)
@@ -224,7 +225,7 @@ fn parse_cluster_metadata_response(response []u8) ClusterInfo {
 		if pos + 4 > response.len {
 			break
 		}
-		port := int(read_i32_be(response, pos))
+		port := int(common.read_i32_be(response[pos..]) or { i32(0) })
 		pos += 4
 
 		// Rack (compact nullable string)
@@ -264,7 +265,7 @@ fn parse_cluster_metadata_response(response []u8) ClusterInfo {
 
 	// Controller ID (4 bytes)
 	if pos + 4 <= response.len {
-		controller_id = int(read_i32_be(response, pos))
+		controller_id = int(common.read_i32_be(response[pos..]) or { i32(0) })
 	}
 
 	return ClusterInfo{

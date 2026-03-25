@@ -4,12 +4,13 @@ import domain
 import sync
 import sync.stdatomic
 import time
-import log
+import infra.observability
 import rand
 
 // Manager coordinates all replication operations.
 // Concurrency: all shared mutable state is protected by dedicated sync.Mutex locks.
 // Lock ordering (to prevent deadlocks): assignments_lock -> broker_health_lock -> replica_buffers_lock -> stats_lock
+// metrics_lock is a leaf lock (never held while another lock is held).
 //
 // Organized into focused files:
 //   manager.v            - struct definition, constructor, lifecycle, core replication orchestration
@@ -39,6 +40,7 @@ pub mut:
 	assignments_lock     sync.Mutex
 	broker_health_lock   sync.Mutex
 	stats_lock           sync.Mutex
+	metrics_lock         sync.Mutex
 	// Per-partition metrics (keyed by "topic:partition")
 	partition_metrics      map[string]domain.PartitionMetrics
 	partition_metrics_lock sync.Mutex
@@ -48,7 +50,7 @@ pub mut:
 	cluster_broker_refs      []domain.BrokerRef
 	cluster_broker_refs_lock sync.Mutex
 	// State
-	logger       log.Logger
+	logger       &observability.Logger = unsafe { nil }
 	running_flag i64
 }
 
@@ -69,7 +71,7 @@ pub fn Manager.new(broker_id string, config domain.ReplicationConfig, cluster_br
 		metrics:             domain.new_replication_metrics()
 		partition_metrics:   map[string]domain.PartitionMetrics{}
 		cluster_broker_refs: cluster_broker_refs
-		logger:              log.Log{}
+		logger:              observability.get_named_logger('replication.manager')
 		running_flag:        0
 	}
 
@@ -147,7 +149,9 @@ pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, r
 	}
 
 	// Record incoming bytes and per-partition metrics
+	m.metrics_lock.@lock()
 	m.metrics.record_bytes_in(i64(records_data.len))
+	m.metrics_lock.unlock()
 	m.record_partition_sent(key, topic, partition, i64(records_data.len))
 	m.record_stats_replicate()
 }
@@ -158,9 +162,13 @@ pub fn (mut m Manager) send_replicate(topic string, partition i32, offset i64, r
 fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.ReplicationMessage) {
 	max_attempts := if m.config.retry_count > 0 { m.config.retry_count } else { 1 }
 
+	m.metrics_lock.@lock()
 	m.metrics.increment_pending()
+	m.metrics_lock.unlock()
 	defer {
+		m.metrics_lock.@lock()
 		m.metrics.decrement_pending()
+		m.metrics_lock.unlock()
 	}
 
 	send_start := time.now()
@@ -171,12 +179,16 @@ fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.Replicati
 				backoff_ms := i64(100) * i64(u64(1) << u64(attempt))
 				sleep_ms := if backoff_ms > 5000 { i64(5000) } else { backoff_ms }
 				m.logger.warn('Replication to ${broker_addr} failed (attempt ${attempt + 1}/${max_attempts}): ${err}; retrying in ${sleep_ms}ms')
+				m.metrics_lock.@lock()
 				m.metrics.record_retried_request()
+				m.metrics_lock.unlock()
 				time.sleep(time.Duration(sleep_ms * time.millisecond))
 				continue
 			}
 			m.logger.error('Replication to ${broker_addr} failed after ${max_attempts} attempt(s): ${err}')
+			m.metrics_lock.@lock()
 			m.metrics.record_failed_request()
+			m.metrics_lock.unlock()
 			m.record_stats_retry_exhausted()
 			return
 		}
@@ -186,19 +198,25 @@ fn (mut m Manager) send_replicate_async(broker_addr string, msg domain.Replicati
 				backoff_ms := i64(100) * i64(u64(1) << u64(attempt))
 				sleep_ms := if backoff_ms > 5000 { i64(5000) } else { backoff_ms }
 				m.logger.warn('Replication to ${broker_addr} returned failure (attempt ${attempt + 1}/${max_attempts}): ${response.error_msg}; retrying in ${sleep_ms}ms')
+				m.metrics_lock.@lock()
 				m.metrics.record_retried_request()
+				m.metrics_lock.unlock()
 				time.sleep(time.Duration(sleep_ms * time.millisecond))
 				continue
 			}
 			m.logger.error('Replication to ${broker_addr} failed after ${max_attempts} attempt(s): ${response.error_msg}')
+			m.metrics_lock.@lock()
 			m.metrics.record_failed_request()
+			m.metrics_lock.unlock()
 			m.record_stats_retry_exhausted()
 			return
 		}
 
 		lag_ms := f64(time.since(send_start).milliseconds())
+		m.metrics_lock.@lock()
 		m.metrics.record_lag_sample(lag_ms)
 		m.metrics.record_bytes_out(i64(msg.records_data.len))
+		m.metrics_lock.unlock()
 
 		key := '${msg.topic}:${msg.partition}'
 		m.record_partition_acked(key, msg.topic, msg.partition, lag_ms)

@@ -9,6 +9,8 @@
 // - Delete a share group
 module cli
 
+import common
+
 /// ShareGroupOptions holds share group command options.
 pub struct ShareGroupOptions {
 pub:
@@ -217,7 +219,7 @@ fn parse_list_groups_response(response []u8) []GroupSummary {
 	if pos + 2 > response.len {
 		return groups
 	}
-	error_code := read_i16_be(response, pos)
+	error_code := common.read_i16_be(response[pos..]) or { i16(0) }
 	pos += 2
 
 	if error_code != 0 {

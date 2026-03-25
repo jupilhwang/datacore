@@ -21,6 +21,8 @@ mut:
 	share_storage port.SharePartitionPort
 	// Thread safety
 	lock sync.RwMutex
+	// Logger for operational warnings and errors
+	logger port.LoggerPort
 }
 
 /// new_share_partition_manager creates a new share partition manager.
@@ -29,7 +31,13 @@ pub fn new_share_partition_manager(record_storage port.RecordStoragePort, share_
 		partitions:     map[string]&domain.SharePartition{}
 		record_storage: record_storage
 		share_storage:  share_storage
+		logger:         port.new_noop_logger()
 	}
+}
+
+/// set_logger sets the logger for the share partition manager.
+pub fn (mut m SharePartitionManager) set_logger(logger port.LoggerPort) {
+	m.logger = logger
 }
 
 // Partition management
@@ -150,7 +158,9 @@ pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id 
 
 	// Auto-save: persist state after acquisition
 	if acquired.len > 0 {
-		m.persist_state(sp)
+		m.persist_state(sp) or {
+			m.logger.warn('Failed to persist share partition state error=${err}')
+		}
 	}
 
 	return acquired
@@ -212,7 +222,7 @@ pub fn (mut m SharePartitionManager) acknowledge_records(group_id string, member
 	m.advance_spso_internal(mut sp)
 
 	// Auto-save: persist state after acknowledgement
-	m.persist_state(sp)
+	m.persist_state(sp) or { m.logger.warn('Failed to persist share partition state error=${err}') }
 
 	return domain.ShareAcknowledgeResult{
 		topic_name: batch.topic_name
@@ -333,9 +343,9 @@ fn (mut m SharePartitionManager) advance_spso_internal(mut sp domain.SharePartit
 // Persistence operations
 
 /// persist_state persists a partition state to storage.
-fn (mut m SharePartitionManager) persist_state(sp &domain.SharePartition) {
+fn (mut m SharePartitionManager) persist_state(sp &domain.SharePartition) ! {
 	state := sp.to_state()
-	m.share_storage.save_share_partition_state(state) or {}
+	m.share_storage.save_share_partition_state(state)!
 }
 
 /// load_state loads a partition state from storage.
@@ -345,13 +355,15 @@ fn (mut m SharePartitionManager) load_state(group_id string, topic_name string, 
 }
 
 /// persist_all_states persists all partition states to storage.
-pub fn (mut m SharePartitionManager) persist_all_states() {
+pub fn (mut m SharePartitionManager) persist_all_states() ! {
 	m.lock.rlock()
 	defer { m.lock.runlock() }
 
 	for _, sp in m.partitions {
 		state := sp.to_state()
-		m.share_storage.save_share_partition_state(state) or {}
+		m.share_storage.save_share_partition_state(state) or {
+			return error('failed to save share partition state: ${err}')
+		}
 	}
 }
 

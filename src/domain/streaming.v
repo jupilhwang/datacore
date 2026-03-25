@@ -339,10 +339,10 @@ pub fn (r &WebSocketResponse) to_json() string {
 	json += ',"timestamp":${r.timestamp}'
 
 	if key := r.key {
-		json += ',"key":"${escape_json_str(key)}"'
+		json += ',"key":"${streaming_escape_json(key)}"'
 	}
 	if r.value.len > 0 {
-		json += ',"value":"${escape_json_str(r.value)}"'
+		json += ',"value":"${streaming_escape_json(r.value)}"'
 	}
 	if r.headers.len > 0 {
 		json += ',"headers":{'
@@ -351,7 +351,7 @@ pub fn (r &WebSocketResponse) to_json() string {
 			if !first {
 				json += ','
 			}
-			json += '"${escape_json_str(k)}":"${escape_json_str(v)}"'
+			json += '"${streaming_escape_json(k)}":"${streaming_escape_json(v)}"'
 			first = false
 		}
 		json += '}'
@@ -360,27 +360,11 @@ pub fn (r &WebSocketResponse) to_json() string {
 		json += ',"code":"${code}"'
 	}
 	if msg := r.error_message {
-		json += ',"message":"${escape_json_str(msg)}"'
+		json += ',"message":"${streaming_escape_json(msg)}"'
 	}
 
 	json += '}'
 	return json
-}
-
-/// escape_json_str escapes special characters for JSON.
-fn escape_json_str(s string) string {
-	mut result := ''
-	for c in s {
-		result += match c {
-			`"` { '\\"' }
-			`\\` { '\\\\' }
-			`\n` { '\\n' }
-			`\r` { '\\r' }
-			`\t` { '\\t' }
-			else { c.ascii_str() }
-		}
-	}
-	return result
 }
 
 // WebSocket connection state
@@ -448,4 +432,33 @@ pub:
 /// default_ws_config returns the default WebSocket configuration.
 pub fn default_ws_config() WebSocketConfig {
 	return WebSocketConfig{}
+}
+
+// JSON escape helper (domain-private, replacing common module dependency)
+
+fn streaming_escape_json(s string) string {
+	mut result := []u8{cap: s.len + 10}
+	for c in s.bytes() {
+		match c {
+			`"` {
+				result << [u8(`\\`), u8(`"`)]
+			}
+			`\\` {
+				result << [u8(`\\`), u8(`\\`)]
+			}
+			`\n` {
+				result << [u8(`\\`), u8(`n`)]
+			}
+			`\r` {
+				result << [u8(`\\`), u8(`r`)]
+			}
+			`\t` {
+				result << [u8(`\\`), u8(`t`)]
+			}
+			else {
+				result << c
+			}
+		}
+	}
+	return result.bytestr()
 }

@@ -30,37 +30,6 @@ pub mut:
 	created_by  i32
 }
 
-/// ReassignmentPlan represents a partition reassignment plan.
-pub struct ReassignmentPlan {
-pub mut:
-	plan_id        string
-	cluster_id     string
-	trigger_reason string
-	changes        []PartitionAssignmentChange
-	created_at     i64
-	executed_at    i64
-	status         ReassignmentStatus
-}
-
-/// PartitionAssignmentChange represents an assignment change for a single partition.
-pub struct PartitionAssignmentChange {
-pub mut:
-	topic_name   string
-	partition_id int
-	old_leader   i32
-	new_leader   i32
-	reason       string
-}
-
-/// ReassignmentStatus represents the status of a reassignment plan.
-pub enum ReassignmentStatus {
-	pending
-	executing
-	completed
-	failed
-	cancelled
-}
-
 /// PartitionAssignerConfig represents partition assignment configuration.
 pub struct PartitionAssignerConfig {
 pub mut:

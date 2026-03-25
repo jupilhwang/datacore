@@ -12,6 +12,7 @@ module cli
 
 import net
 import time
+import common
 
 /// ConsumeOptions is a struct holding consume command options.
 pub struct ConsumeOptions {
@@ -342,7 +343,7 @@ fn parse_list_offsets_response(response []u8) !i64 {
 	// Response header v1 (flexible): correlation_id(4) + tagged_fields(varuint)
 	pos += 4
 
-	_, tag_n := read_uvarint_at(response, pos)
+	_, tag_n := common.decode_uvarint(response[pos..])
 	if tag_n == 0 {
 		return error('Invalid ListOffsets response: cannot read header tag buffer')
 	}
@@ -355,7 +356,7 @@ fn parse_list_offsets_response(response []u8) !i64 {
 	pos += 4
 
 	// Topics compact array: varuint(N + 1), so value 2 means 1 topic
-	topics_raw, topics_n := read_uvarint_at(response, pos)
+	topics_raw, topics_n := common.decode_uvarint(response[pos..])
 	if topics_n == 0 {
 		return error('Invalid ListOffsets response: cannot read topics array length')
 	}
@@ -366,7 +367,7 @@ fn parse_list_offsets_response(response []u8) !i64 {
 	}
 
 	// Topic name (compact string: varuint(len + 1) + bytes)
-	name_raw, name_n := read_uvarint_at(response, pos)
+	name_raw, name_n := common.decode_uvarint(response[pos..])
 	if name_n == 0 || name_raw < 1 {
 		return error('Invalid ListOffsets response: cannot read topic name')
 	}
@@ -378,7 +379,7 @@ fn parse_list_offsets_response(response []u8) !i64 {
 	pos += topic_name_len
 
 	// Partitions compact array: varuint(N + 1)
-	parts_raw, parts_n := read_uvarint_at(response, pos)
+	parts_raw, parts_n := common.decode_uvarint(response[pos..])
 	if parts_n == 0 {
 		return error('Invalid ListOffsets response: cannot read partitions array length')
 	}
@@ -395,7 +396,7 @@ fn parse_list_offsets_response(response []u8) !i64 {
 
 	pos += 4 // partition_index
 
-	error_code := read_i16_be(response, pos)
+	error_code := common.read_i16_be(response[pos..])!
 	pos += 2
 
 	if error_code != 0 {
@@ -404,27 +405,8 @@ fn parse_list_offsets_response(response []u8) !i64 {
 
 	pos += 8 // timestamp
 
-	offset := read_i64_be(response, pos)
+	offset := common.read_i64_be(response[pos..])!
 	return offset
-}
-
-// Byte writing helpers for build_fetch_request
-fn write_i32_be(mut body []u8, val int) {
-	body << u8(val >> 24)
-	body << u8((val >> 16) & 0xff)
-	body << u8((val >> 8) & 0xff)
-	body << u8(val & 0xff)
-}
-
-fn write_i64_be(mut body []u8, val i64) {
-	body << u8(val >> 56)
-	body << u8((val >> 48) & 0xff)
-	body << u8((val >> 40) & 0xff)
-	body << u8((val >> 32) & 0xff)
-	body << u8((val >> 24) & 0xff)
-	body << u8((val >> 16) & 0xff)
-	body << u8((val >> 8) & 0xff)
-	body << u8(val & 0xff)
 }
 
 fn write_negative_i32(mut body []u8) {
@@ -440,41 +422,6 @@ fn write_zeroes(mut body []u8, count int) {
 	}
 }
 
-// read_i64_be reads a big-endian i64 from data at position
-fn read_i64_be(data []u8, pos int) i64 {
-	return i64(u64(data[pos]) << 56 | u64(data[pos + 1]) << 48 | u64(data[pos + 2]) << 40 | u64(data[
-		pos + 3]) << 32 | u64(data[pos + 4]) << 24 | u64(data[pos + 5]) << 16 | u64(data[pos + 6]) << 8 | u64(data[
-		pos + 7]))
-}
-
-// read_uvarint_at reads an unsigned varint from data at pos.
-// Returns (value, bytes_consumed). bytes_consumed == 0 indicates failure.
-fn read_uvarint_at(data []u8, pos int) (u64, int) {
-	mut result := u64(0)
-	mut shift := u32(0)
-	mut i := pos
-	for i < data.len && shift < 64 {
-		b := data[i]
-		result |= u64(b & 0x7f) << shift
-		i++
-		if b & 0x80 == 0 {
-			return result, i - pos
-		}
-		shift += 7
-	}
-	return 0, 0
-}
-
-// read_varint_at reads a signed zigzag varint from data at pos.
-// Returns (value, bytes_consumed). bytes_consumed == 0 indicates failure.
-fn read_varint_at(data []u8, pos int) (i64, int) {
-	uval, n := read_uvarint_at(data, pos)
-	if n == 0 {
-		return 0, 0
-	}
-	return i64((uval >> 1) ^ (-(uval & 1))), n
-}
-
 fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, timeout_ms int) []u8 {
 	mut body := []u8{}
 
@@ -485,13 +432,13 @@ fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, t
 	write_negative_i32(mut body)
 
 	// Max wait ms (4 bytes)
-	write_i32_be(mut body, timeout_ms)
+	common.write_i32_be(mut body, timeout_ms)
 
 	// Min bytes (4 bytes)
-	write_i32_be(mut body, 1)
+	common.write_i32_be(mut body, 1)
 
 	// Max bytes (4 bytes)
-	write_i32_be(mut body, max_bytes)
+	common.write_i32_be(mut body, max_bytes)
 
 	// Isolation level (1 byte)
 	body << u8(0)
@@ -512,13 +459,13 @@ fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, t
 	body << u8(2)
 
 	// Partition index (4 bytes)
-	write_i32_be(mut body, partition)
+	common.write_i32_be(mut body, partition)
 
 	// Current leader epoch (4 bytes) - -1
 	write_negative_i32(mut body)
 
 	// Fetch offset (8 bytes)
-	write_i64_be(mut body, offset)
+	common.write_i64_be(mut body, offset)
 
 	// Last fetched epoch (4 bytes) - -1
 	write_negative_i32(mut body)
@@ -527,7 +474,7 @@ fn build_fetch_request(topic string, partition int, offset i64, max_bytes int, t
 	write_zeroes(mut body, 8)
 
 	// Partition max bytes (4 bytes)
-	write_i32_be(mut body, max_bytes)
+	common.write_i32_be(mut body, max_bytes)
 
 	// Tagged fields for partition
 	body << u8(0)
@@ -594,13 +541,13 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 		return [] // Need at least 61 bytes for batch header
 	}
 
-	base_offset := read_i64_be(data, start)
-	batch_length := i64(read_i32_be(data, start + 8))
+	base_offset := common.read_i64_be(data[start..]) or { return [] }
+	batch_length := i64(common.read_i32_be(data[start + 8..]) or { return [] })
 	if batch_length <= 0 || i64(start) + 12 + batch_length > i64(data.len) {
 		return [] // batch_length exceeds available data
 	}
-	first_timestamp := read_i64_be(data, start + 27)
-	records_count := read_i32_be(data, start + 57)
+	first_timestamp := common.read_i64_be(data[start + 27..]) or { return [] }
+	records_count := common.read_i32_be(data[start + 57..]) or { return [] }
 
 	if records_count <= 0 || records_count > 10000 {
 		return records
@@ -615,7 +562,7 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 		}
 
 		// Record: length(varint) followed by record body
-		record_len, len_n := read_varint_at(data, pos)
+		record_len, len_n := common.decode_varint(data[pos..])
 		if len_n == 0 || record_len <= 0 {
 			break
 		}
@@ -632,21 +579,21 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 		pos += 1
 
 		// timestamp_delta(varint)
-		ts_delta, ts_n := read_varint_at(data, pos)
+		ts_delta, ts_n := common.decode_varint(data[pos..])
 		if ts_n == 0 {
 			break
 		}
 		pos += ts_n
 
 		// offset_delta(varint)
-		off_delta, off_n := read_varint_at(data, pos)
+		off_delta, off_n := common.decode_varint(data[pos..])
 		if off_n == 0 {
 			break
 		}
 		pos += off_n
 
 		// key_length(varint), -1 means null key
-		key_length, kl_n := read_varint_at(data, pos)
+		key_length, kl_n := common.decode_varint(data[pos..])
 		if kl_n == 0 {
 			break
 		}
@@ -663,7 +610,7 @@ fn try_parse_record_batch(data []u8, start int) []ConsumedRecord {
 		}
 
 		// value_length(varint), -1 means null value
-		val_length, vl_n := read_varint_at(data, pos)
+		val_length, vl_n := common.decode_varint(data[pos..])
 		if vl_n == 0 {
 			break
 		}

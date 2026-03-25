@@ -5,7 +5,7 @@ import domain
 import sync
 import sync.stdatomic
 import time
-import log
+import infra.observability
 
 // Server handles incoming replication connections
 /// Server handles incoming replication connections.
@@ -18,7 +18,7 @@ mut:
 	running_flag    i64
 	read_timeout_ms i64
 	mtx             sync.Mutex
-	logger          log.Logger
+	logger          &observability.Logger = unsafe { nil }
 }
 
 // MessageHandler is a callback interface for handling messages
@@ -34,7 +34,7 @@ pub fn Server.new(port int, handler MessageHandler) &Server {
 		handler:         handler
 		running_flag:    0
 		read_timeout_ms: 30000
-		logger:          log.Log{}
+		logger:          observability.get_named_logger('replication.server')
 	}
 }
 

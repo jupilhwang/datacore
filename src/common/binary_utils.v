@@ -146,6 +146,26 @@ pub fn decode_uvarint(data []u8) (u64, int) {
 	return 0, 0
 }
 
+// Varint size calculation
+
+/// varint_size returns the encoded size of a signed varint value.
+pub fn varint_size(value i64) int {
+	shift_v := if value < 0 { u64(0xffffffffffffffff) } else { u64(0) }
+	zigzag := (u64(value) << 1) ^ shift_v
+	return uvarint_size(zigzag)
+}
+
+/// uvarint_size returns the encoded size of an unsigned varint value.
+pub fn uvarint_size(value u64) int {
+	mut size := 1
+	mut v := value
+	for v >= 0x80 {
+		size += 1
+		v >>= 7
+	}
+	return size
+}
+
 // String utility functions
 
 /// escape_json_string escapes a string for use in a JSON value.

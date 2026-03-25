@@ -2,6 +2,7 @@
 module s3
 
 import domain
+import infra.observability
 import time
 import json
 
@@ -135,7 +136,15 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 	// Phase 2: S3 I/O outside all locks.
 	// On failure, caches are already cleared — accept eventual consistency.
 	prefix := '${a.config.prefix}topics/${name}/'
-	a.delete_objects_with_prefix(prefix) or { return }
+	a.delete_objects_with_prefix(prefix) or {
+		observability.log_with_context('s3', .error, 'TopicAdapter', 'failed to delete topic objects from S3',
+			{
+			'topic':  name
+			'prefix': prefix
+			'error':  err.str()
+		})
+		return
+	}
 }
 
 /// list_topics retrieves all topics from S3.

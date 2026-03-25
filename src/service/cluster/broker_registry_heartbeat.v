@@ -49,7 +49,9 @@ pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 					expired << broker.broker_id
 					expired_brokers << broker
 					if mut hp := r.health_port {
-						hp.mark_broker_dead(broker.broker_id) or {}
+						hp.mark_broker_dead(broker.broker_id) or {
+							r.logger.warn('Failed to mark broker dead broker_id=${broker.broker_id} error=${err.str()}')
+						}
 					}
 				}
 			}

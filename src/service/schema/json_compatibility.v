@@ -183,10 +183,10 @@ fn parse_json_schema_info(schema_str string) JsonSchemaInfo {
 	}
 
 	// Extract string/array constraints
-	info.min_length = extract_json_number(schema_str, 'minLength') or { 0 }
-	info.max_length = extract_json_number(schema_str, 'maxLength') or { 0 }
-	info.min_items = extract_json_number(schema_str, 'minItems') or { 0 }
-	info.max_items = extract_json_number(schema_str, 'maxItems') or { 0 }
+	info.min_length = extract_json_int(schema_str, 'minLength') or { 0 }
+	info.max_length = extract_json_int(schema_str, 'maxLength') or { 0 }
+	info.min_items = extract_json_int(schema_str, 'minItems') or { 0 }
+	info.max_items = extract_json_int(schema_str, 'maxItems') or { 0 }
 
 	// Extract enum
 	info.enum_values = parse_json_string_array(schema_str, 'enum') or { []string{} }

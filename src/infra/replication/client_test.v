@@ -2,7 +2,6 @@ module replication
 
 import domain
 import time
-import log
 
 // --- Client 단위 테스트 ---
 

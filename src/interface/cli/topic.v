@@ -12,6 +12,7 @@ module cli
 
 import net
 import time
+import common
 
 /// TopicOptions is a struct holding topic command options.
 pub struct TopicOptions {
@@ -491,23 +492,12 @@ fn build_delete_topic_request(name string, timeout_ms int) []u8 {
 	return body
 }
 
-// read_i16_be reads a big-endian i16 from response at position
-fn read_i16_be(response []u8, pos int) i16 {
-	return i16(u16(response[pos]) << 8 | u16(response[pos + 1]))
-}
-
-// read_i32_be reads a big-endian i32 from response at position
-fn read_i32_be(response []u8, pos int) i32 {
-	return i32(u32(response[pos]) << 24 | u32(response[pos + 1]) << 16 | u32(response[pos + 2]) << 8 | u32(response[
-		pos + 3]))
-}
-
 // read_string extracts a string from response at position, returns string and new position
 fn read_string_at(response []u8, pos int) !(string, int) {
 	if pos + 2 > response.len {
 		return error('Invalid response: cannot read string length')
 	}
-	name_len := read_i16_be(response, pos)
+	name_len := common.read_i16_be(response[pos..])!
 	new_pos := pos + 2
 
 	if new_pos + int(name_len) > response.len {
@@ -522,7 +512,7 @@ fn read_error_message_at(response []u8, pos int) (string, int) {
 	mut error_message := 'Unknown error'
 	mut new_pos := pos
 	if pos + 2 <= response.len {
-		msg_len := read_i16_be(response, pos)
+		msg_len := common.read_i16_be(response[pos..]) or { i16(0) }
 		new_pos = pos + 2
 		if msg_len > 0 && new_pos + int(msg_len) <= response.len {
 			error_message = response[new_pos..new_pos + int(msg_len)].bytestr()
@@ -543,7 +533,7 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 	if pos + 4 > response.len {
 		return error('Invalid response: cannot read topics array length')
 	}
-	topics_len := read_i32_be(response, pos)
+	topics_len := common.read_i32_be(response[pos..])!
 	pos += 4
 
 	if topics_len != 1 {
@@ -558,7 +548,7 @@ fn check_create_topic_response(response []u8, expected_topic string) ! {
 	if pos + 2 > response.len {
 		return error('Invalid response: cannot read error code')
 	}
-	error_code := read_i16_be(response, pos)
+	error_code := common.read_i16_be(response[pos..])!
 	pos += 2
 
 	if error_code != 0 {

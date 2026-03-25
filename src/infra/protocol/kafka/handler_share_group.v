@@ -215,7 +215,9 @@ fn (mut h Handler) handle_share_fetch(body []u8, version i16) ![]u8 {
 			}
 		}
 		coordinator.update_session(req.group_id, req.member_id, req.share_session_epoch,
-			[], parts_to_remove) or {}
+			[], parts_to_remove) or {
+			h.logger.warn('Failed to update share session for forgotten topic group_id=${req.group_id} member_id=${req.member_id} error=${err.str()}')
+		}
 	}
 
 	resp := ShareFetchResponse{

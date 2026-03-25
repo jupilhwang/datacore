@@ -49,7 +49,6 @@ pub fn (c Config) save(path string) ! {
 	c.save_postgres_section(mut b)
 	c.save_schema_registry_section(mut b)
 	c.save_observability_section(mut b)
-	c.save_telemetry_section(mut b)
 	os.write_file(path, b.str())!
 	// Restrict permissions: config may contain credentials (S3 keys, DB password)
 	os.chmod(path, 0o600)!
@@ -107,7 +106,7 @@ fn (c Config) save_grpc_section(mut b strings.Builder) {
 	b.write_string('\n')
 }
 
-/// save_storage_section writes [storage], [storage.memory], and [storage.sqlite] TOML sections.
+/// save_storage_section writes [storage] and [storage.memory] TOML sections.
 fn (c Config) save_storage_section(mut b strings.Builder) {
 	b.write_string('[storage]\n')
 	b.write_string('engine = "${escape_toml_string(c.storage.engine)}"\n')
@@ -115,10 +114,6 @@ fn (c Config) save_storage_section(mut b strings.Builder) {
 	b.write_string('[storage.memory]\n')
 	b.write_string('max_memory_mb = ${c.storage.memory.max_memory_mb}\n')
 	b.write_string('segment_size_bytes = ${c.storage.memory.segment_size_bytes}\n')
-	b.write_string('\n')
-	b.write_string('[storage.sqlite]\n')
-	b.write_string('path = "${escape_toml_string(c.storage.sqlite.path)}"\n')
-	b.write_string('journal_mode = "${escape_toml_string(c.storage.sqlite.journal_mode)}"\n')
 	b.write_string('\n')
 }
 
@@ -203,7 +198,6 @@ fn (c Config) save_observability_section(mut b strings.Builder) {
 	b.write_string('environment = "${escape_toml_string(o.otel.environment)}"\n')
 	b.write_string('otlp_endpoint = "${escape_toml_string(o.otel.otlp_endpoint)}"\n')
 	b.write_string('otlp_http_endpoint = "${escape_toml_string(o.otel.otlp_http_endpoint)}"\n')
-	b.write_string('resource_attributes = "${escape_toml_string(o.otel.resource_attributes)}"\n')
 	b.write_string('\n')
 	// [observability.metrics]
 	b.write_string('[observability.metrics]\n')
@@ -238,24 +232,4 @@ fn (c Config) save_observability_section(mut b strings.Builder) {
 	b.write_string('max_events_per_span = ${o.tracing.max_events_per_span}\n')
 	b.write_string('max_links_per_span = ${o.tracing.max_links_per_span}\n')
 	b.write_string('\n')
-}
-
-/// save_telemetry_section writes all [telemetry.*] TOML sections.
-fn (c Config) save_telemetry_section(mut b strings.Builder) {
-	t := c.telemetry
-	b.write_string('[telemetry]\n')
-	b.write_string('enabled = ${t.enabled}\n')
-	b.write_string('service_name = "${escape_toml_string(t.service_name)}"\n')
-	b.write_string('\n')
-	b.write_string('[telemetry.otlp]\n')
-	b.write_string('endpoint = "${escape_toml_string(t.otlp.endpoint)}"\n')
-	b.write_string('http_endpoint = "${escape_toml_string(t.otlp.http_endpoint)}"\n')
-	b.write_string('insecure = ${t.otlp.insecure}\n')
-	b.write_string('\n')
-	b.write_string('[telemetry.metrics]\n')
-	b.write_string('interval = ${t.metrics.interval}\n')
-	b.write_string('export_timeout = ${t.metrics.export_timeout}\n')
-	b.write_string('\n')
-	b.write_string('[telemetry.traces]\n')
-	b.write_string('sample_rate = ${t.traces.sample_rate}\n')
 }

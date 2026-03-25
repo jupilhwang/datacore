@@ -1,7 +1,6 @@
 module domain
 
 import time
-import common
 
 /// GrpcProduceRequest represents a gRPC produce request.
 pub struct GrpcProduceRequest {
@@ -341,21 +340,21 @@ pub fn grpc_error_message(code i32) string {
 pub fn (r &GrpcRecord) encode() []u8 {
 	mut buf := []u8{cap: 64 + r.key.len + r.value.len}
 
-	common.write_i32_be(mut buf, i32(r.key.len))
+	grpc_write_i32_be(mut buf, i32(r.key.len))
 	buf << r.key
 
-	common.write_i32_be(mut buf, i32(r.value.len))
+	grpc_write_i32_be(mut buf, i32(r.value.len))
 	buf << r.value
 
-	common.write_i64_be(mut buf, r.timestamp)
+	grpc_write_i64_be(mut buf, r.timestamp)
 
-	common.write_i32_be(mut buf, i32(r.headers.len))
+	grpc_write_i32_be(mut buf, i32(r.headers.len))
 
 	for k, v in r.headers {
-		common.write_i16_be(mut buf, i16(k.len))
+		grpc_write_i16_be(mut buf, i16(k.len))
 		buf << k.bytes()
 
-		common.write_i16_be(mut buf, i16(v.len))
+		grpc_write_i16_be(mut buf, i16(v.len))
 		buf << v
 	}
 
@@ -370,7 +369,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 
 	mut pos := 0
 
-	key_len := int(common.read_i32_be(data[pos..pos + 4])!)
+	key_len := int(grpc_read_i32_be(data[pos..pos + 4])!)
 	pos += 4
 	if pos + key_len > data.len {
 		return error('Invalid key length')
@@ -381,7 +380,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	if pos + 4 > data.len {
 		return error('Data too short for value length')
 	}
-	val_len := int(common.read_i32_be(data[pos..pos + 4])!)
+	val_len := int(grpc_read_i32_be(data[pos..pos + 4])!)
 	pos += 4
 	if pos + val_len > data.len {
 		return error('Invalid value length')
@@ -392,13 +391,13 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 	if pos + 8 > data.len {
 		return error('Data too short for timestamp')
 	}
-	timestamp := common.read_i64_be(data[pos..pos + 8])!
+	timestamp := grpc_read_i64_be(data[pos..pos + 8])!
 	pos += 8
 
 	if pos + 4 > data.len {
 		return error('Data too short for header count')
 	}
-	header_count := int(common.read_i32_be(data[pos..pos + 4])!)
+	header_count := int(grpc_read_i32_be(data[pos..pos + 4])!)
 	pos += 4
 
 	mut headers := map[string][]u8{}
@@ -406,7 +405,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 		if pos + 2 > data.len {
 			return error('Data too short for header key length')
 		}
-		hk_len := int(common.read_i16_be(data[pos..pos + 2])!)
+		hk_len := int(grpc_read_i16_be(data[pos..pos + 2])!)
 		pos += 2
 		if pos + hk_len > data.len {
 			return error('Invalid header key length')
@@ -417,7 +416,7 @@ pub fn decode_grpc_record(data []u8) !GrpcRecord {
 		if pos + 2 > data.len {
 			return error('Data too short for header value length')
 		}
-		hv_len := int(common.read_i16_be(data[pos..pos + 2])!)
+		hv_len := int(grpc_read_i16_be(data[pos..pos + 2])!)
 		pos += 2
 		if pos + hv_len > data.len {
 			return error('Invalid header value length')
@@ -454,4 +453,48 @@ pub fn grpc_record_from_domain(r &Record) GrpcRecord {
 		headers:   r.headers
 		timestamp: r.timestamp.unix_milli()
 	}
+}
+
+// Big-endian byte helpers (domain-private, replacing common module dependency)
+
+fn grpc_write_i16_be(mut buf []u8, val i16) {
+	buf << [u8(val >> 8), u8(val)]
+}
+
+fn grpc_write_i32_be(mut buf []u8, val i32) {
+	buf << [u8(val >> 24), u8(val >> 16), u8(val >> 8), u8(val)]
+}
+
+fn grpc_write_i64_be(mut buf []u8, val i64) {
+	buf << [
+		u8(val >> 56),
+		u8(val >> 48),
+		u8(val >> 40),
+		u8(val >> 32),
+		u8(val >> 24),
+		u8(val >> 16),
+		u8(val >> 8),
+		u8(val),
+	]
+}
+
+fn grpc_read_i16_be(data []u8) !i16 {
+	if data.len < 2 {
+		return error('insufficient data: need 2 bytes, have ${data.len}')
+	}
+	return i16(u16(data[0]) << 8 | u16(data[1]))
+}
+
+fn grpc_read_i32_be(data []u8) !i32 {
+	if data.len < 4 {
+		return error('insufficient data: need 4 bytes, have ${data.len}')
+	}
+	return i32(u32(data[0]) << 24 | u32(data[1]) << 16 | u32(data[2]) << 8 | u32(data[3]))
+}
+
+fn grpc_read_i64_be(data []u8) !i64 {
+	if data.len < 8 {
+		return error('insufficient data: need 8 bytes, have ${data.len}')
+	}
+	return i64(u64(data[0]) << 56 | u64(data[1]) << 48 | u64(data[2]) << 40 | u64(data[3]) << 32 | u64(data[4]) << 24 | u64(data[5]) << 16 | u64(data[6]) << 8 | u64(data[7]))
 }

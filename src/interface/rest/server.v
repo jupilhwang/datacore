@@ -206,7 +206,13 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 	content_length := content_length_str.int()
 	if content_length > 0 && content_length <= 1024 * 1024 {
 		mut body_buf := []u8{len: content_length}
-		reader.read(mut body_buf) or {}
+		reader.read(mut body_buf) or {
+			observability.log_with_context('rest', .warn, 'Server', 'failed to read request body',
+				{
+				'content_length': content_length.str()
+				'error':          err.str()
+			})
+		}
 		body = body_buf.bytestr()
 	}
 

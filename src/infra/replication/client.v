@@ -3,7 +3,7 @@ module replication
 import net
 import domain
 import time
-import log
+import infra.observability
 
 // Client sends replication messages to remote brokers
 /// Client sends replication messages to remote brokers.
@@ -11,8 +11,8 @@ pub struct Client {
 mut:
 	binary_protocol BinaryProtocol
 	timeout_ms      int
-	logger          log.Logger
-	pool            &ConnectionPool = unsafe { nil }
+	logger          &observability.Logger = unsafe { nil }
+	pool            &ConnectionPool       = unsafe { nil }
 }
 
 // Client.new creates a new replication Client with the given timeout in milliseconds.
@@ -21,7 +21,7 @@ pub fn Client.new(timeout_ms int) &Client {
 	return &Client{
 		binary_protocol: BinaryProtocol.new()
 		timeout_ms:      timeout_ms
-		logger:          log.Log{}
+		logger:          observability.get_named_logger('replication.client')
 	}
 }
 
@@ -31,7 +31,7 @@ pub fn Client.new_with_pool(timeout_ms int, pool &ConnectionPool) &Client {
 	return &Client{
 		binary_protocol: BinaryProtocol.new()
 		timeout_ms:      timeout_ms
-		logger:          log.Log{}
+		logger:          observability.get_named_logger('replication.client')
 		pool:            pool
 	}
 }

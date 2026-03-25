@@ -244,3 +244,34 @@ fn test_default_ws_config() {
 	assert config.max_subscriptions == 100
 	assert config.max_message_size == 1048576
 }
+
+// streaming_escape_json domain-private helper tests
+
+fn test_streaming_escape_json_passthrough() {
+	assert streaming_escape_json('hello') == 'hello'
+	assert streaming_escape_json('') == ''
+	assert streaming_escape_json('simple text 123') == 'simple text 123'
+}
+
+fn test_streaming_escape_json_special_chars() {
+	assert streaming_escape_json('say "hello"') == 'say \\"hello\\"'
+	assert streaming_escape_json('back\\slash') == 'back\\\\slash'
+	assert streaming_escape_json('line1\nline2') == 'line1\\nline2'
+	assert streaming_escape_json('col1\tcol2') == 'col1\\tcol2'
+	assert streaming_escape_json('return\rhere') == 'return\\rhere'
+}
+
+fn test_streaming_escape_json_combined() {
+	assert streaming_escape_json('"quoted\nnewline"') == '\\"quoted\\nnewline\\"'
+	assert streaming_escape_json('a\\b\nc\td\r"e"') == 'a\\\\b\\nc\\td\\r\\"e\\"'
+}
+
+fn test_ws_response_to_json_escapes_special_chars() {
+	resp := new_ws_message_response('test', 0, 1, 100, 'key"special', 'val\twith\\slash',
+		{})
+
+	json_str := resp.to_json()
+
+	assert json_str.contains('"key\\"special"')
+	assert json_str.contains('"val\\twith\\\\slash"')
+}

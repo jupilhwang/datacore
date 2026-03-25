@@ -1,5 +1,27 @@
 # DataCore Changelog
 
+## [Unreleased]
+
+### Fixed
+- Service 계층 CRITICAL `or {}` 에러 삼키기 17건 수정 (share_partition, kip848_coordinator, controller_election, broker_registry_heartbeat, tcp, rest/server, mmap, s3/cluster_metadata, s3/adapter_topic, handler_share_group)
+- Domain 계층 Clean Architecture 위반 해소: grpc.v (`import common` 제거), replication.v (`import sync`/`import json` 제거), streaming.v (`import common` 제거)
+- infra/replication/*.v: stdlib `import log` -> Logger Port 주입으로 교체
+
+### Removed
+- Stateless 설계에 불필요한 dead code 삭제: `trigger_rebalance_for_topic`, `generate_reassignment_plan`
+- `SqliteStorageConfig` 완전 제거 (struct, parse, validate, save, config.toml)
+- `TelemetryRootConfig` 트리 4개 구조체 + 파싱/저장 로직 제거
+- 미구현 인터페이스 제거: `LockableStorage`, `Lock`, `MessageConsumerPort`
+- Dead code 함수: `extract_json_field`, `extract_json_number`
+- config.toml: `[profiles.*]` 3개 섹션, `resource_attributes` 필드
+
+### Refactored
+- 중복 코드 ~600줄 제거/통합: binary I/O, varint, escape_json, CRC32C, hex utilities
+- `infra/performance/core/utils.v` 14개 함수를 `common` 위임 thin wrapper로 전환 (-110줄)
+- CLI 로컬 함수 -> `common.*` import로 통합 (~120줄)
+- `domain/replication.v`에서 `sync.Mutex` 제거, 스레드 안전성을 infra 계층으로 위임
+- `domain/replication.v`의 `to_json()` -> `infra/replication/protocol.v`의 `serialize_replication_message()`로 이동
+
 ## v0.50.8 - 2026-03-23
 
 ### Refactoring (God Class Decomposition)

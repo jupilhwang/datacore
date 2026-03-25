@@ -212,7 +212,9 @@ pub fn (mut e ControllerElector) start() {
 /// stop stops the controller election worker and releases the lock
 pub fn (mut e ControllerElector) stop() {
 	e.running = false
-	e.resign_controller() or {}
+	e.resign_controller() or {
+		e.logger.error('ControllerElection: Failed to resign controller error=${err.str()}')
+	}
 }
 
 fn (mut e ControllerElector) election_loop() {
@@ -235,7 +237,9 @@ fn (mut e ControllerElector) election_loop() {
 			e.refresh_controller_lock() or {
 				e.logger.error('ControllerElection: Lock refresh failed error=${err.str()}')
 				// Attempt to reacquire
-				e.try_become_controller() or {}
+				e.try_become_controller() or {
+					e.logger.error('ControllerElection: Failed to reacquire controller error=${err.str()}')
+				}
 			}
 		} else {
 			// Attempt to become controller
