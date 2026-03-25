@@ -188,11 +188,182 @@ fn test_dma_result_helpers() {
 	assert err.error_msg == 'test error'
 }
 
-fn test_sendfile_fallback() {
-	// Test fallback behavior
+fn test_sendfile_fallback_invalid_fd() {
+	// Invalid file descriptors should return an error
 	result := sendfile_fallback(-1, -1, 0, 1024)
-	assert result.success == true
+	assert result.success == false
 	assert result.used_zero_copy == false
+}
+
+fn test_sendfile_fallback_transfers_data() {
+	temp_dir := '/tmp/dma_fallback_test_${time.now().unix()}'
+	os.mkdir_all(temp_dir) or { return }
+	defer {
+		os.rmdir_all(temp_dir) or {}
+	}
+
+	// Write source file with known data
+	src_path := '${temp_dir}/src.dat'
+	mut test_data := []u8{len: 256}
+	for i in 0 .. 256 {
+		test_data[i] = u8(i)
+	}
+	mut wf := os.create(src_path) or { return }
+	wf.write(test_data) or { return }
+	wf.close()
+
+	// Open source for reading, create destination for writing
+	dst_path := '${temp_dir}/dst.dat'
+	mut src_file := os.open(src_path) or { return }
+	mut dst_file := os.create(dst_path) or {
+		src_file.close()
+		return
+	}
+
+	result := sendfile_fallback(dst_file.fd, src_file.fd, 0, 256)
+
+	src_file.close()
+	dst_file.close()
+
+	assert result.success == true
+	assert result.bytes_transferred == 256
+	assert result.used_zero_copy == false
+
+	// Verify destination file content matches source
+	content := os.read_bytes(dst_path) or { return }
+	assert content.len == 256
+	assert content[0] == 0
+	assert content[127] == 127
+	assert content[255] == 255
+}
+
+fn test_sendfile_fallback_with_offset() {
+	temp_dir := '/tmp/dma_fallback_test_${time.now().unix()}'
+	os.mkdir_all(temp_dir) or { return }
+	defer {
+		os.rmdir_all(temp_dir) or {}
+	}
+
+	// Write source file: 200 bytes (0..199)
+	src_path := '${temp_dir}/src_offset.dat'
+	mut test_data := []u8{len: 200}
+	for i in 0 .. 200 {
+		test_data[i] = u8(i)
+	}
+	mut wf := os.create(src_path) or { return }
+	wf.write(test_data) or { return }
+	wf.close()
+
+	// Copy from offset 50, count 100
+	dst_path := '${temp_dir}/dst_offset.dat'
+	mut src_file := os.open(src_path) or { return }
+	mut dst_file := os.create(dst_path) or {
+		src_file.close()
+		return
+	}
+
+	result := sendfile_fallback(dst_file.fd, src_file.fd, 50, 100)
+
+	src_file.close()
+	dst_file.close()
+
+	assert result.success == true
+	assert result.bytes_transferred == 100
+	assert result.new_offset == 150
+
+	// Verify only bytes 50..149 were copied
+	content := os.read_bytes(dst_path) or { return }
+	assert content.len == 100
+	assert content[0] == 50
+	assert content[49] == 99
+	assert content[99] == 149
+}
+
+fn test_scatter_read_fallback_reads_data() {
+	temp_dir := '/tmp/dma_fallback_test_${time.now().unix()}'
+	os.mkdir_all(temp_dir) or { return }
+	defer {
+		os.rmdir_all(temp_dir) or {}
+	}
+
+	// Write test file with known data
+	test_path := '${temp_dir}/scatter_fb.dat'
+	mut test_data := []u8{len: 100}
+	for i in 0 .. 100 {
+		test_data[i] = u8(i)
+	}
+	mut wf := os.create(test_path) or { return }
+	wf.write(test_data) or { return }
+	wf.close()
+
+	// Open for reading and use fallback
+	mut rf := os.open(test_path) or { return }
+	defer {
+		rf.close()
+	}
+
+	mut buffers := [
+		new_sg_buffer(30),
+		new_sg_buffer(30),
+		new_sg_buffer(40),
+	]
+
+	result := scatter_read_fallback(rf.fd, mut buffers)
+
+	assert result.success == true
+	assert result.bytes_transferred == 100
+
+	// Verify each buffer received correct data
+	assert buffers[0].len == 30
+	assert buffers[0].data[0] == 0
+	assert buffers[0].data[29] == 29
+
+	assert buffers[1].len == 30
+	assert buffers[1].data[0] == 30
+
+	assert buffers[2].len == 40
+	assert buffers[2].data[0] == 60
+	assert buffers[2].data[39] == 99
+}
+
+fn test_gather_write_fallback_writes_data() {
+	temp_dir := '/tmp/dma_fallback_test_${time.now().unix()}'
+	os.mkdir_all(temp_dir) or { return }
+	defer {
+		os.rmdir_all(temp_dir) or {}
+	}
+
+	// Prepare buffers with known data
+	mut buf1 := new_sg_buffer(10)
+	for i in 0 .. 10 {
+		buf1.data[i] = u8(i)
+	}
+	buf1.len = 10
+
+	mut buf2 := new_sg_buffer(20)
+	for i in 0 .. 20 {
+		buf2.data[i] = u8(100 + i)
+	}
+	buf2.len = 20
+
+	// Write buffers to file via fallback
+	test_path := '${temp_dir}/gather_fb.dat'
+	mut wf := os.create(test_path) or { return }
+
+	buffers := [buf1, buf2]
+	result := gather_write_fallback(wf.fd, buffers)
+	wf.close()
+
+	assert result.success == true
+	assert result.bytes_transferred == 30
+
+	// Verify file contains the exact buffer data
+	content := os.read_bytes(test_path) or { return }
+	assert content.len == 30
+	assert content[0] == 0
+	assert content[9] == 9
+	assert content[10] == 100
+	assert content[29] == 119
 }
 
 fn test_splice_on_non_linux() {

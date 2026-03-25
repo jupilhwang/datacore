@@ -1,5 +1,34 @@
 # DataCore Changelog
 
+## [v0.53.0] -- 2026-03-25
+
+### Added
+- S3TransactionStore and PostgresTransactionStore implementations
+- S3 key path traversal validation (validate_identifier at 25+ entry points)
+- S3 signing key daily caching (CachedSigningKey)
+- IoUring resource cleanup (close/munmap/fd_close)
+- OTLP HTTP actual implementation (POST with retry)
+- DMA fallback real POSIX I/O (sendfile/scatter/gather)
+- CLI topic partition details display
+- Glob pattern matching for subscriptions (*, ?, [abc], [a-z], [!abc])
+- client_ip propagation to audit logs via AuthConnection.remote_addr
+- PerformanceEngine.close() interface method
+- CRC32-IEEE in common module
+- Compression port constants and utilities
+
+### Fixed
+- S3 append() TOCTOU race condition in partition_index
+- S3 compaction merge order (channel -> indexed array)
+- S3 atomic flags (worker_start_mu, is_flushing_flag)
+- TOML injection (escape \b, \f)
+- WebSocket JSON parsing (manual -> json.decode)
+- handler compression DIP bypass (infra.compression import removed)
+
+### Removed
+- 8 dead SubHandler files + HandlerContext (-125 lines)
+- 4 duplicate code groups consolidated
+- simple_match() replaced by glob_match()
+
 ## [v0.52.1] -- 2026-03-25
 
 ### Fixed

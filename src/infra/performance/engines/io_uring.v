@@ -283,7 +283,7 @@ pub fn new_io_uring(config IoUringConfig) !IoUring {
 	}
 }
 
-/// close releases io_uring resources.
+/// close releases io_uring resources and resets state to prevent double-close.
 pub fn (mut r IoUring) close() {
 	$if linux {
 		if r.sq_ring_ptr != unsafe { nil } {
@@ -299,6 +299,10 @@ pub fn (mut r IoUring) close() {
 			os.fd_close(r.ring_fd)
 		}
 	}
+	r.sq_ring_ptr = unsafe { nil }
+	r.cq_ring_ptr = unsafe { nil }
+	r.sqes = unsafe { nil }
+	r.ring_fd = -1
 }
 
 /// get_sqe retrieves an empty submission queue entry.

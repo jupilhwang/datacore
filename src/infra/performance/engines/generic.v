@@ -115,3 +115,7 @@ pub fn (mut e GenericPerformanceEngine) get_stats() core.PerformanceStats {
 		ops_count:     u64(stdatomic.load_i64(&e.ops_count))
 	}
 }
+
+/// close is a no-op for the generic engine (no platform-specific resources).
+pub fn (mut e GenericPerformanceEngine) close() {
+}

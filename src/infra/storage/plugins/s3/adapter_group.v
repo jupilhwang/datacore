@@ -246,20 +246,12 @@ fn (mut a S3StorageAdapter) fetch_single_offset(group_id string, part domain.Top
 	}
 }
 
-/// fetch_offsets retrieves committed offsets.
-/// Cache hits are resolved immediately; S3 GETs are issued in parallel.
-pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
-	validate_identifier(group_id, 'group_id')!
-	for part in partitions {
-		validate_identifier(part.topic, 'topic')!
-	}
-
+/// resolve_cached_offsets separates partitions into cache hits and S3 misses.
+fn (mut a S3StorageAdapter) resolve_cached_offsets(group_id string, partitions []domain.TopicPartition) ([]domain.OffsetFetchResult, []domain.TopicPartition) {
 	mut results := []domain.OffsetFetchResult{}
-
-	// Separate cache hits from partitions that require S3 GETs
 	mut s3_partitions := []domain.TopicPartition{}
+
 	for part in partitions {
-		// Try cache first
 		a.cache.offset_lock.rlock()
 		cache_key := '${part.topic}:${part.partition}'
 		cached_offset := if group_id in a.cache.offset_cache {
@@ -281,29 +273,48 @@ pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []doma
 			s3_partitions << part
 		}
 	}
+	return results, s3_partitions
+}
 
-	// Fetch remaining partitions from S3 in parallel (bounded concurrency)
-	if s3_partitions.len > 0 {
-		ch := chan OffsetFetchItem{cap: s3_partitions.len}
-		mut active := 0
-
-		for part in s3_partitions {
-			// Wait for a slot when concurrency limit is reached
-			for active >= max_fetch_concurrent {
-				item := <-ch
-				results << item.result
-				active--
-			}
-			active++
-			spawn a.fetch_single_offset(group_id, part, ch)
-		}
-
-		// Collect remaining results
-		for _ in 0 .. active {
-			item := <-ch
-			results << item.result
-		}
+/// fetch_offsets_from_s3 retrieves offsets from S3 in parallel with bounded concurrency.
+fn (mut a S3StorageAdapter) fetch_offsets_from_s3(group_id string, s3_partitions []domain.TopicPartition) []domain.OffsetFetchResult {
+	mut results := []domain.OffsetFetchResult{}
+	if s3_partitions.len == 0 {
+		return results
 	}
 
+	ch := chan OffsetFetchItem{cap: s3_partitions.len}
+	mut active := 0
+
+	for part in s3_partitions {
+		for active >= max_fetch_concurrent {
+			item := <-ch
+			results << item.result
+			active--
+		}
+		active++
+		spawn a.fetch_single_offset(group_id, part, ch)
+	}
+
+	for _ in 0 .. active {
+		item := <-ch
+		results << item.result
+	}
+	return results
+}
+
+/// fetch_offsets retrieves committed offsets.
+/// Cache hits are resolved immediately; S3 GETs are issued in parallel.
+pub fn (mut a S3StorageAdapter) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
+	validate_identifier(group_id, 'group_id')!
+	for part in partitions {
+		validate_identifier(part.topic, 'topic')!
+	}
+
+	cached_results, s3_partitions := a.resolve_cached_offsets(group_id, partitions)
+	s3_results := a.fetch_offsets_from_s3(group_id, s3_partitions)
+
+	mut results := cached_results.clone()
+	results << s3_results
 	return results
 }

@@ -4,8 +4,8 @@ module http
 import crypto.sha1
 import encoding.base64
 import domain
+import json
 import net
-import service.schema
 import service.streaming
 import service.port
 import time
@@ -475,41 +475,43 @@ fn (mut h WebSocketHandler) handle_close(conn_id string, mut conn net.TcpConn, p
 
 // JSON parsing
 
+/// WsMessageJson is the intermediate struct for JSON decoding of WebSocket messages.
+/// Bridges the gap between raw JSON string fields and the domain WebSocketMessage enum types.
+struct WsMessageJson {
+pub:
+	action    string            @[json: 'action']
+	topic     string            @[json: 'topic']
+	partition ?i32              @[json: 'partition']
+	offset    ?string           @[json: 'offset']
+	key       ?string           @[json: 'key']
+	value     ?string           @[json: 'value']
+	headers   map[string]string @[json: 'headers']
+	group_id  ?string           @[json: 'group_id']
+}
+
 /// parse_ws_message parses a WebSocket message from JSON.
 fn parse_ws_message(json_str string) !domain.WebSocketMessage {
-	// TODO(jira#XXX): replace with a proper JSON library
-	action_str := schema.extract_json_string(json_str, 'action') or {
+	raw := json.decode(WsMessageJson, json_str) or { return error('Invalid JSON: ${err}') }
+	return ws_message_from_json(raw)
+}
+
+/// ws_message_from_json converts a decoded JSON struct to a domain WebSocketMessage.
+fn ws_message_from_json(raw WsMessageJson) !domain.WebSocketMessage {
+	if raw.action.len == 0 {
 		return error('Missing action')
 	}
-	action := domain.websocket_action_from_str(action_str) or {
-		return error('Invalid action: ${action_str}')
+	action := domain.websocket_action_from_str(raw.action) or {
+		return error('Invalid action: ${raw.action}')
 	}
-
-	topic := schema.extract_json_string(json_str, 'topic') or { '' }
-
-	partition := if p := schema.extract_json_int(json_str, 'partition') {
-		i32(p)
-	} else {
-		none
-	}
-
-	offset := schema.extract_json_string(json_str, 'offset')
-	key := schema.extract_json_string(json_str, 'key')
-	value := schema.extract_json_string(json_str, 'value')
-	group_id := schema.extract_json_string(json_str, 'group_id')
-
-	// header parsing (simplified)
-	headers := schema.extract_json_object(json_str, 'headers')
-
 	return domain.WebSocketMessage{
 		action:    action
-		topic:     topic
-		partition: partition
-		offset:    offset
-		key:       key
-		value:     value
-		headers:   headers
-		group_id:  group_id
+		topic:     raw.topic
+		partition: raw.partition
+		offset:    raw.offset
+		key:       raw.key
+		value:     raw.value
+		headers:   raw.headers
+		group_id:  raw.group_id
 	}
 }
 

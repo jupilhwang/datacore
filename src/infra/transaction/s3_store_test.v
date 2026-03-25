@@ -1,0 +1,194 @@
+module transaction
+
+import domain
+
+/// MockS3TransactionClient is a test double for S3TransactionClient.
+/// Stores objects in an in-memory map for unit testing without S3.
+struct MockS3TransactionClient {
+mut:
+	objects map[string][]u8
+}
+
+fn (mut c MockS3TransactionClient) get_object(key string) ![]u8 {
+	if data := c.objects[key] {
+		return data.clone()
+	}
+	return error('Object not found: ${key}')
+}
+
+fn (mut c MockS3TransactionClient) put_object(key string, data []u8) ! {
+	c.objects[key] = data.clone()
+}
+
+fn (mut c MockS3TransactionClient) delete_object(key string) ! {
+	if key !in c.objects {
+		return error('Object not found: ${key}')
+	}
+	c.objects.delete(key)
+}
+
+fn (mut c MockS3TransactionClient) list_objects(prefix string) ![]string {
+	mut keys := []string{}
+	for k, _ in c.objects {
+		if k.starts_with(prefix) {
+			keys << k
+		}
+	}
+	return keys
+}
+
+fn create_test_s3_store() &S3TransactionStore {
+	return new_s3_transaction_store(&MockS3TransactionClient{}, S3TransactionConfig{})
+}
+
+fn create_test_metadata(id string) domain.TransactionMetadata {
+	return domain.TransactionMetadata{
+		transactional_id:          id
+		producer_id:               1000
+		producer_epoch:            1
+		txn_timeout_ms:            60000
+		state:                     .ongoing
+		topic_partitions:          [
+			domain.TopicPartition{
+				topic:     'test-topic'
+				partition: 0
+			},
+		]
+		txn_start_timestamp:       1000000
+		txn_last_update_timestamp: 1000001
+	}
+}
+
+fn test_s3_store_save_and_get_transaction() {
+	mut store := create_test_s3_store()
+	metadata := create_test_metadata('txn-1')
+
+	store.save_transaction(metadata) or {
+		assert false, 'save_transaction failed: ${err}'
+		return
+	}
+
+	result := store.get_transaction('txn-1') or {
+		assert false, 'get_transaction failed: ${err}'
+		return
+	}
+
+	assert result.transactional_id == 'txn-1'
+	assert result.producer_id == 1000
+	assert result.producer_epoch == 1
+	assert result.txn_timeout_ms == 60000
+	assert result.state == .ongoing
+	assert result.topic_partitions.len == 1
+	assert result.topic_partitions[0].topic == 'test-topic'
+	assert result.topic_partitions[0].partition == 0
+	assert result.txn_start_timestamp == 1000000
+	assert result.txn_last_update_timestamp == 1000001
+}
+
+fn test_s3_store_get_nonexistent_transaction() {
+	mut store := create_test_s3_store()
+
+	store.get_transaction('nonexistent') or {
+		assert err.msg().contains('not found') || err.msg().contains('Object not found')
+		return
+	}
+	assert false, 'expected error for nonexistent transaction'
+}
+
+fn test_s3_store_delete_transaction() {
+	mut store := create_test_s3_store()
+	metadata := create_test_metadata('txn-del')
+
+	store.save_transaction(metadata) or {
+		assert false, 'save failed: ${err}'
+		return
+	}
+
+	store.delete_transaction('txn-del') or {
+		assert false, 'delete failed: ${err}'
+		return
+	}
+
+	store.get_transaction('txn-del') or {
+		assert true
+		return
+	}
+	assert false, 'expected error after delete'
+}
+
+fn test_s3_store_delete_nonexistent() {
+	mut store := create_test_s3_store()
+
+	store.delete_transaction('nonexistent') or {
+		assert err.msg().contains('not found')
+		return
+	}
+	assert false, 'expected error for deleting nonexistent transaction'
+}
+
+fn test_s3_store_list_transactions() {
+	mut store := create_test_s3_store()
+
+	store.save_transaction(create_test_metadata('txn-a')) or {
+		assert false, 'save txn-a failed: ${err}'
+		return
+	}
+	store.save_transaction(create_test_metadata('txn-b')) or {
+		assert false, 'save txn-b failed: ${err}'
+		return
+	}
+
+	result := store.list_transactions() or {
+		assert false, 'list failed: ${err}'
+		return
+	}
+
+	assert result.len == 2
+	ids := result.map(it.transactional_id)
+	assert 'txn-a' in ids
+	assert 'txn-b' in ids
+}
+
+fn test_s3_store_list_empty() {
+	mut store := create_test_s3_store()
+
+	result := store.list_transactions() or {
+		assert false, 'list failed: ${err}'
+		return
+	}
+
+	assert result.len == 0
+}
+
+fn test_s3_store_update_transaction_state() {
+	mut store := create_test_s3_store()
+	initial := create_test_metadata('txn-state')
+
+	store.save_transaction(initial) or {
+		assert false, 'save failed: ${err}'
+		return
+	}
+
+	updated := domain.TransactionMetadata{
+		transactional_id:          initial.transactional_id
+		producer_id:               initial.producer_id
+		producer_epoch:            initial.producer_epoch
+		txn_timeout_ms:            initial.txn_timeout_ms
+		state:                     .prepare_commit
+		topic_partitions:          initial.topic_partitions
+		txn_start_timestamp:       initial.txn_start_timestamp
+		txn_last_update_timestamp: 2000000
+	}
+	store.save_transaction(updated) or {
+		assert false, 'update failed: ${err}'
+		return
+	}
+
+	result := store.get_transaction('txn-state') or {
+		assert false, 'get failed: ${err}'
+		return
+	}
+
+	assert result.state == .prepare_commit
+	assert result.txn_last_update_timestamp == 2000000
+}

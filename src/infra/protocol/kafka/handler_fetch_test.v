@@ -5,6 +5,7 @@ module kafka
 import domain
 import infra.compression
 import infra.storage.plugins.memory
+import service.port
 import time
 
 // -- 테스트 헬퍼 --
@@ -306,8 +307,8 @@ fn test_compress_records_no_compression() {
 	_, mut handler := create_fetch_test_handler()
 
 	data := []u8{len: 100, init: u8(0x41)}
-	result := handler.compress_records_for_fetch(data, compression.CompressionType.none,
-		'topic', 0)
+	result := handler.compress_records_for_fetch(data, port.compression_none, 'topic',
+		0)
 
 	assert result.data == data, '비압축 시 원본 데이터가 반환되어야 한다'
 	assert result.bytes_saved == 0
@@ -316,8 +317,8 @@ fn test_compress_records_no_compression() {
 fn test_compress_records_empty_data() {
 	_, mut handler := create_fetch_test_handler()
 
-	result := handler.compress_records_for_fetch([]u8{}, compression.CompressionType.gzip,
-		'topic', 0)
+	result := handler.compress_records_for_fetch([]u8{}, port.compression_gzip, 'topic',
+		0)
 
 	assert result.data.len == 0, '빈 데이터는 그대로 반환되어야 한다'
 	assert result.bytes_saved == 0
@@ -328,8 +329,8 @@ fn test_compress_records_small_payload_skip() {
 
 	// 256 바이트 미만인 경우 압축 건너뛰기
 	small_data := []u8{len: 100, init: u8(0x42)}
-	result := handler.compress_records_for_fetch(small_data, compression.CompressionType.gzip,
-		'topic', 0)
+	result := handler.compress_records_for_fetch(small_data, port.compression_gzip, 'topic',
+		0)
 
 	assert result.data == small_data, '256 바이트 미만은 압축을 건너뛰어야 한다'
 	assert result.bytes_saved == 0

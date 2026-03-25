@@ -2,6 +2,7 @@
 /// Supports JSON format logging, context propagation, and OTLP export
 module observability
 
+import net.http
 import sync
 import time
 import infra.performance.core
@@ -734,19 +735,46 @@ fn build_otlp_log_record(entry LogEntry) string {
 	return sb.bytestr()
 }
 
-/// OTLP HTTP transport function
-fn send_otlp_http(endpoint string, payload string) {
-	// Simple HTTP POST using V's net.http
-	// Consider connection pooling and retry in production
-	$if !windows {
-		// Using curl for simplicity (V's cross-platform HTTP client has limitations)
-		// This is a fire-and-forget async call
-		_ := $env('PATH')
+/// try_http_post sends a single HTTP POST request and returns true on 2xx status.
+fn try_http_post(endpoint string, payload string, timeout_ms int) bool {
+	if endpoint == '' {
+		return false
 	}
 
-	// Note: using simple approach; TODO(jira#XXX): implement proper HTTP client with retry
-	_ = endpoint
-	_ = payload
+	timeout_ns := i64(timeout_ms) * i64(time.millisecond)
+	mut req := http.Request{
+		method:        .post
+		url:           endpoint
+		data:          payload
+		read_timeout:  timeout_ns
+		write_timeout: timeout_ns
+	}
+	req.add_header(.content_type, 'application/json')
+
+	resp := req.do() or { return false }
+
+	return resp.status_code >= 200 && resp.status_code < 300
+}
+
+/// send_otlp_http sends OTLP telemetry via HTTP POST with retry.
+/// Fire-and-forget: logs a warning on failure but never propagates errors.
+fn send_otlp_http(endpoint string, payload string) {
+	if endpoint == '' {
+		return
+	}
+
+	backoff_ms := [100, 500]
+
+	for attempt in 0 .. 3 {
+		if attempt > 0 {
+			time.sleep(time.millisecond * backoff_ms[attempt - 1])
+		}
+		if try_http_post(endpoint, payload, 5000) {
+			return
+		}
+	}
+
+	eprint('{"level":"WARN","msg":"OTLP HTTP export failed","endpoint":"${endpoint}"}\n')
 }
 
 // Utility: log level severity mapping

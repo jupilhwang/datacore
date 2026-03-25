@@ -211,7 +211,7 @@ pub fn run_topic_describe(opts TopicOptions) ! {
 	println('\x1b[33mTopic:\x1b[0m ${topic.name}')
 	println('  Internal:    ${topic.is_internal}')
 	println('  Partitions:  ${topic.partitions}')
-	// TODO(jira#XXX): Add partition details (leader, replicas, ISR)
+	print_partition_details(topic.partition_details)
 }
 
 /// run_topic_delete deletes a topic.
@@ -269,9 +269,18 @@ pub fn run_topic_alter(opts TopicOptions) ! {
 }
 
 struct TopicInfo {
-	name        string
-	partitions  int
-	is_internal bool
+	name              string
+	partitions        int
+	is_internal       bool
+	partition_details []PartitionDetail
+}
+
+/// PartitionDetail holds per-partition metadata for CLI display.
+struct PartitionDetail {
+	id       i32
+	leader   i32
+	replicas []i32
+	isr      []i32
 }
 
 // ParseResult holds the result of parsing a single topic
@@ -663,14 +672,22 @@ fn parse_single_topic(response []u8, pos int) ?ParseResult {
 	partition_count := int(response[new_pos]) - 1
 	new_pos += 1
 
-	// Skip partition details + tagged fields
-	new_pos += partition_count * 30 + 10
+	mut details := []PartitionDetail{}
+	for _ in 0 .. partition_count {
+		detail, next := parse_partition_detail(response, new_pos) or { break }
+		details << detail
+		new_pos = next
+	}
+
+	// Skip topic_authorized_ops (4 bytes) + tagged fields (1 byte)
+	new_pos += 5
 
 	return ParseResult{
 		topic: TopicInfo{
-			name:        topic_name
-			partitions:  partition_count
-			is_internal: is_internal
+			name:              topic_name
+			partitions:        partition_count
+			is_internal:       is_internal
+			partition_details: details
 		}
 		pos:   new_pos
 	}
@@ -718,4 +735,72 @@ fn parse_metadata_response_topics(response []u8) []TopicInfo {
 	}
 
 	return topics
+}
+
+// read_compact_i32_array reads a compact-encoded array of i32 values from the buffer at pos.
+fn read_compact_i32_array(data []u8, pos int) !([]i32, int) {
+	if pos >= data.len {
+		return error('position out of bounds')
+	}
+	count := int(data[pos]) - 1
+	mut cur := pos + 1
+	mut result := []i32{}
+	for _ in 0 .. count {
+		if cur + 4 > data.len {
+			return error('insufficient data for i32 array element')
+		}
+		val := common.read_i32_be(data[cur..])!
+		result << val
+		cur += 4
+	}
+	return result, cur
+}
+
+// parse_partition_detail parses a single partition's metadata from a Metadata V12 response.
+fn parse_partition_detail(response []u8, pos int) !(PartitionDetail, int) {
+	mut cur := pos
+	if cur + 14 > response.len {
+		return error('insufficient data for partition detail')
+	}
+
+	cur += 2 // skip error_code
+	partition_id := common.read_i32_be(response[cur..])!
+	cur += 4
+	leader_id := common.read_i32_be(response[cur..])!
+	cur += 4
+	cur += 4 // skip leader_epoch
+
+	replicas, after_replicas := read_compact_i32_array(response, cur)!
+	cur = after_replicas
+	isr, after_isr := read_compact_i32_array(response, cur)!
+	cur = after_isr
+	_, after_offline := read_compact_i32_array(response, cur)!
+	cur = after_offline
+
+	if cur < response.len {
+		cur += 1 // skip tagged_fields
+	}
+
+	return PartitionDetail{
+		id:       partition_id
+		leader:   leader_id
+		replicas: replicas
+		isr:      isr
+	}, cur
+}
+
+// print_partition_details displays partition details as a formatted table.
+fn print_partition_details(details []PartitionDetail) {
+	if details.len == 0 {
+		return
+	}
+	println('')
+	println('  \x1b[33mPartition Details:\x1b[0m')
+	println('  Partition  Leader  Replicas  ISR')
+	println('  ---------  ------  --------  ---')
+	for d in details {
+		replicas_str := '[' + d.replicas.map(it.str()).join(',') + ']'
+		isr_str := '[' + d.isr.map(it.str()).join(',') + ']'
+		println('  ${d.id:-9}  ${d.leader:-6}  ${replicas_str:-8}  ${isr_str}')
+	}
 }

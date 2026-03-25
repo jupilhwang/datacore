@@ -17,6 +17,15 @@ import os
 
 // C interop - syscall definitions
 
+/// POSIX standard I/O for fallback implementations
+#include <unistd.h>
+
+// C.read and C.write are already declared by V's standard library (returning int)
+fn C.lseek(fd int, offset i64, whence int) i64
+
+const seek_set = 0
+const fallback_buf_size = 65536
+
 /// POSIX iovec struct for scatter-gather I/O
 #include <sys/uio.h>
 
@@ -217,16 +226,21 @@ pub fn scatter_read_native(fd int, mut buffers []ScatterGatherBuffer) DmaResult 
 	}
 }
 
-/// scatter_read_fallback provides a fallback implementation for unsupported platforms.
+/// scatter_read_fallback reads from a file descriptor into each buffer sequentially.
 fn scatter_read_fallback(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 	mut total := i64(0)
 
 	for mut buf in buffers {
-		// read using the os module
-		// Note: this is a simplified fallback - a real implementation would
-		// require proper file descriptor handling
-		buf.len = 0
-		total += i64(buf.len)
+		bytes_read := C.read(fd, buf.data.data, usize(buf.data.len))
+		if bytes_read < 0 {
+			return dma_error('scatter_read fallback: read failed')
+		}
+		if bytes_read == 0 {
+			buf.len = 0
+			break
+		}
+		buf.len = int(bytes_read)
+		total += i64(bytes_read)
 	}
 
 	return DmaResult{
@@ -265,15 +279,23 @@ pub fn gather_write_native(fd int, buffers []ScatterGatherBuffer) DmaResult {
 	}
 }
 
-/// gather_write_fallback provides a fallback implementation for unsupported platforms.
+/// gather_write_fallback writes each buffer to a file descriptor sequentially.
 fn gather_write_fallback(fd int, buffers []ScatterGatherBuffer) DmaResult {
 	mut total := i64(0)
 
 	for buf in buffers {
-		if buf.len > 0 {
-			// simplified fallback
-			total += i64(buf.len)
+		if buf.len <= 0 {
+			continue
 		}
+		mut written := int(0)
+		for written < buf.len {
+			w := C.write(fd, unsafe { &u8(buf.data.data) + written }, usize(buf.len - written))
+			if w < 0 {
+				return dma_error('gather_write fallback: write failed')
+			}
+			written += w
+		}
+		total += i64(buf.len)
 	}
 
 	return DmaResult{
@@ -308,16 +330,45 @@ fn sendfile_native(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 	}
 }
 
-/// sendfile_fallback provides a buffered-copy fallback.
+/// sendfile_fallback provides a buffered-copy fallback using POSIX read/write.
 fn sendfile_fallback(out_fd int, in_fd int, offset i64, count i64) DmaResult {
-	// Real file descriptor I/O implementation needed
-	// For now, return a result indicating fallback was used
-	return DmaResult{
-		bytes_transferred: 0
-		success:           true
-		error_msg:         'sendfile not available, use buffered copy'
-		used_zero_copy:    false
+	seek_result := C.lseek(in_fd, offset, seek_set)
+	if seek_result < 0 {
+		return dma_error('sendfile fallback: lseek failed')
 	}
+
+	mut remaining := count
+	mut total := i64(0)
+	mut buf := []u8{len: fallback_buf_size}
+
+	for remaining > 0 {
+		to_read := if remaining < i64(fallback_buf_size) {
+			int(remaining)
+		} else {
+			fallback_buf_size
+		}
+		bytes_read := C.read(in_fd, buf.data, usize(to_read))
+		if bytes_read < 0 {
+			return dma_error('sendfile fallback: read failed')
+		}
+		if bytes_read == 0 {
+			break
+		}
+
+		mut written := int(0)
+		for written < bytes_read {
+			w := C.write(out_fd, unsafe { &u8(buf.data) + written }, usize(bytes_read - written))
+			if w < 0 {
+				return dma_error('sendfile fallback: write failed')
+			}
+			written += w
+		}
+
+		total += i64(bytes_read)
+		remaining -= i64(bytes_read)
+	}
+
+	return dma_success_with_offset(total, false, offset + total)
 }
 
 // Splice - Linux-only zero-copy pipe transfer

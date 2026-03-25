@@ -83,68 +83,56 @@ fn calculate_snapshot_size(snapshot OffsetSnapshot) int {
 	return size
 }
 
+// encode_snapshot_header writes the snapshot header (magic, version, broker_id, timestamp, entry_count).
+fn encode_snapshot_header(mut buf []u8, snapshot OffsetSnapshot) {
+	buf << u8(offset_snapshot_magic >> 8)
+	buf << u8(offset_snapshot_magic)
+	core.write_i32_be(mut buf, snapshot.version)
+	core.write_i32_be(mut buf, snapshot.broker_id)
+	core.write_i64_be(mut buf, snapshot.timestamp)
+	core.write_i32_be(mut buf, i32(snapshot.offsets.len))
+}
+
+// parse_snapshot_composite_key splits a composite key into topic name and partition.
+fn parse_snapshot_composite_key(composite_key string) (string, int) {
+	parts := composite_key.split(':')
+	topic_name := if parts.len >= 2 {
+		parts[0..parts.len - 1].join(':')
+	} else {
+		composite_key
+	}
+	partition := if parts.len >= 2 { parts[parts.len - 1].int() } else { 0 }
+	return topic_name, partition
+}
+
+// encode_snapshot_entry writes a single offset entry to the buffer.
+fn encode_snapshot_entry(mut buf []u8, composite_key string, entry OffsetEntry) {
+	topic_name, partition := parse_snapshot_composite_key(composite_key)
+	topic_bytes := topic_name.bytes()
+	core.write_i16_be(mut buf, i16(topic_bytes.len))
+	buf << topic_bytes
+	core.write_i32_be(mut buf, i32(partition))
+	core.write_i64_be(mut buf, entry.offset)
+	core.write_i32_be(mut buf, entry.leader_epoch)
+	metadata_bytes := entry.metadata.bytes()
+	core.write_i16_be(mut buf, i16(metadata_bytes.len))
+	buf << metadata_bytes
+	core.write_i64_be(mut buf, entry.committed_at)
+}
+
 // encode_offset_snapshot encodes an OffsetSnapshot to binary format.
 fn encode_offset_snapshot(snapshot OffsetSnapshot) []u8 {
 	exact_size := calculate_snapshot_size(snapshot)
 	mut buf := []u8{cap: exact_size}
 
-	// magic (2 bytes)
-	buf << u8(offset_snapshot_magic >> 8)
-	buf << u8(offset_snapshot_magic)
+	encode_snapshot_header(mut buf, snapshot)
 
-	// version (4 bytes)
-	core.write_i32_be(mut buf, snapshot.version)
-
-	// broker_id (4 bytes)
-	core.write_i32_be(mut buf, snapshot.broker_id)
-
-	// timestamp (8 bytes)
-	core.write_i64_be(mut buf, snapshot.timestamp)
-
-	// entry_count (4 bytes)
-	core.write_i32_be(mut buf, i32(snapshot.offsets.len))
-
-	// Encode each entry
 	for composite_key, entry in snapshot.offsets {
-		parts := composite_key.split(':')
-		topic_name := if parts.len >= 2 {
-			parts[0..parts.len - 1].join(':')
-		} else {
-			composite_key
-		}
-		partition := if parts.len >= 2 {
-			parts[parts.len - 1].int()
-		} else {
-			0
-		}
-
-		// topic_len (2 bytes) + topic (N bytes)
-		topic_bytes := topic_name.bytes()
-		core.write_i16_be(mut buf, i16(topic_bytes.len))
-		buf << topic_bytes
-
-		// partition (4 bytes)
-		core.write_i32_be(mut buf, i32(partition))
-
-		// offset (8 bytes)
-		core.write_i64_be(mut buf, entry.offset)
-
-		// leader_epoch (4 bytes)
-		core.write_i32_be(mut buf, entry.leader_epoch)
-
-		// metadata_len (2 bytes) + metadata (N bytes)
-		metadata_bytes := entry.metadata.bytes()
-		core.write_i16_be(mut buf, i16(metadata_bytes.len))
-		buf << metadata_bytes
-
-		// committed_at (8 bytes)
-		core.write_i64_be(mut buf, entry.committed_at)
+		encode_snapshot_entry(mut buf, composite_key, entry)
 	}
 
-	// CRC32 checksum (from magic through the last entry)
 	checksum := core.crc32_ieee(buf)
 	core.write_u32_be(mut buf, checksum)
-
 	return buf
 }
 
@@ -185,71 +173,60 @@ fn decode_snapshot_header(data []u8) !(i32, i32, i64, i32, int) {
 	return version, broker_id, timestamp, entry_count, pos
 }
 
+// read_length_prefixed_string reads a 2-byte length-prefixed string from data.
+// Returns the string and the new position.
+fn read_length_prefixed_string(data []u8, start_pos int, payload_len int, field_name string) !(string, int) {
+	mut pos := start_pos
+	if pos + 2 > payload_len {
+		return error('unexpected end of data while reading ${field_name} length at pos ${pos}')
+	}
+	str_len := int(core.read_i16_be(data[pos..]))
+	pos += 2
+	if str_len < 0 || pos + str_len > payload_len {
+		return error('invalid ${field_name} length: ${str_len} at pos ${pos}')
+	}
+	result := data[pos..pos + str_len].bytestr()
+	pos += str_len
+	return result, pos
+}
+
+// read_fixed_field reads a fixed-size integer field with bounds checking.
+fn read_fixed_field_i32(data []u8, pos int, payload_len int, field_name string) !(i32, int) {
+	if pos + 4 > payload_len {
+		return error('unexpected end of data while reading ${field_name} at pos ${pos}')
+	}
+	return core.read_i32_be(data[pos..]), pos + 4
+}
+
+// read_fixed_field_i64 reads a fixed-size i64 field with bounds checking.
+fn read_fixed_field_i64(data []u8, pos int, payload_len int, field_name string) !(i64, int) {
+	if pos + 8 > payload_len {
+		return error('unexpected end of data while reading ${field_name} at pos ${pos}')
+	}
+	return core.read_i64_be(data[pos..]), pos + 8
+}
+
 // decode_snapshot_entry decodes a single offset entry at the specified position.
 // Returns: (composite_key, entry, next read position)
 fn decode_snapshot_entry(data []u8, start_pos int, payload_len int) !(string, OffsetEntry, int) {
-	mut pos := start_pos
+	topic_name, mut pos := read_length_prefixed_string(data, start_pos, payload_len, 'topic')!
+	partition, pos2 := read_fixed_field_i32(data, pos, payload_len, 'partition')!
+	pos = pos2
+	offset, pos3 := read_fixed_field_i64(data, pos, payload_len, 'offset')!
+	pos = pos3
+	leader_epoch, pos4 := read_fixed_field_i32(data, pos, payload_len, 'leader_epoch')!
+	pos = pos4
+	metadata, pos5 := read_length_prefixed_string(data, pos, payload_len, 'metadata')!
+	pos = pos5
+	committed_at, pos6 := read_fixed_field_i64(data, pos, payload_len, 'committed_at')!
+	pos = pos6
 
-	// topic_len (2 bytes) + topic (N bytes)
-	if pos + 2 > payload_len {
-		return error('unexpected end of data while reading topic length at pos ${pos}')
-	}
-	topic_len := int(core.read_i16_be(data[pos..]))
-	pos += 2
-	if topic_len < 0 || pos + topic_len > payload_len {
-		return error('invalid topic length: ${topic_len} at pos ${pos}')
-	}
-	topic_name := data[pos..pos + topic_len].bytestr()
-	pos += topic_len
-
-	// partition (4 bytes)
-	if pos + 4 > payload_len {
-		return error('unexpected end of data while reading partition at pos ${pos}')
-	}
-	partition := core.read_i32_be(data[pos..])
-	pos += 4
-
-	// offset (8 bytes)
-	if pos + 8 > payload_len {
-		return error('unexpected end of data while reading offset at pos ${pos}')
-	}
-	offset := core.read_i64_be(data[pos..])
-	pos += 8
-
-	// leader_epoch (4 bytes)
-	if pos + 4 > payload_len {
-		return error('unexpected end of data while reading leader_epoch at pos ${pos}')
-	}
-	leader_epoch := core.read_i32_be(data[pos..])
-	pos += 4
-
-	// metadata_len (2 bytes) + metadata (N bytes)
-	if pos + 2 > payload_len {
-		return error('unexpected end of data while reading metadata length at pos ${pos}')
-	}
-	metadata_len := int(core.read_i16_be(data[pos..]))
-	pos += 2
-	if metadata_len < 0 || pos + metadata_len > payload_len {
-		return error('invalid metadata length: ${metadata_len} at pos ${pos}')
-	}
-	metadata := data[pos..pos + metadata_len].bytestr()
-	pos += metadata_len
-
-	// committed_at (8 bytes)
-	if pos + 8 > payload_len {
-		return error('unexpected end of data while reading committed_at at pos ${pos}')
-	}
-	committed_at := core.read_i64_be(data[pos..])
-	pos += 8
-
-	composite_key := '${topic_name}:${partition}'
-	entry := OffsetEntry{
+	return '${topic_name}:${partition}', OffsetEntry{
 		offset:       offset
 		leader_epoch: leader_epoch
 		metadata:     metadata
 		committed_at: committed_at
-	}
-	return composite_key, entry, pos
+	}, pos
 }
 
 // decode_offset_snapshot decodes binary data into an OffsetSnapshot.

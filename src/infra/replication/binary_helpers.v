@@ -1,35 +1,24 @@
 module replication
 
+import common
 import domain
-import encoding.binary
 import net
 
-// --- Write primitives ---
+// --- Write primitives (delegate to common/binary_utils.v) ---
 
 // write_i16 appends a big-endian i16 to the buffer.
 fn write_i16(mut buf []u8, val i16) {
-	buf << u8(val >> 8)
-	buf << u8(val)
+	common.write_i16_be(mut buf, val)
 }
 
 // write_i32 appends a big-endian i32 to the buffer.
 fn write_i32(mut buf []u8, val i32) {
-	buf << u8(val >> 24)
-	buf << u8(val >> 16)
-	buf << u8(val >> 8)
-	buf << u8(val)
+	common.write_i32_be(mut buf, val)
 }
 
 // write_i64 appends a big-endian i64 to the buffer.
 fn write_i64(mut buf []u8, val i64) {
-	buf << u8(val >> 56)
-	buf << u8(val >> 48)
-	buf << u8(val >> 40)
-	buf << u8(val >> 32)
-	buf << u8(val >> 24)
-	buf << u8(val >> 16)
-	buf << u8(val >> 8)
-	buf << u8(val)
+	common.write_i64_be(mut buf, val)
 }
 
 // write_string appends a 2-byte length-prefixed UTF-8 string to the buffer.
@@ -52,7 +41,7 @@ fn write_bytes(mut buf []u8, data []u8) {
 	}
 }
 
-// --- Read primitives ---
+// --- Read primitives (thin wrappers over common/binary_utils.v) ---
 
 // read_i16 reads a big-endian i16 at the given offset.
 // Returns error if insufficient data remains.
@@ -60,7 +49,7 @@ fn read_i16(data []u8, offset int) !i16 {
 	if offset + 2 > data.len {
 		return error('insufficient data: need 2 bytes at offset ${offset}, have ${data.len}')
 	}
-	return i16(binary.big_endian_u16(data[offset..offset + 2]))
+	return common.read_i16_be(data[offset..offset + 2])!
 }
 
 // read_i32 reads a big-endian i32 at the given offset.
@@ -69,7 +58,7 @@ fn read_i32(data []u8, offset int) !i32 {
 	if offset + 4 > data.len {
 		return error('insufficient data: need 4 bytes at offset ${offset}, have ${data.len}')
 	}
-	return i32(binary.big_endian_u32(data[offset..offset + 4]))
+	return common.read_i32_be(data[offset..offset + 4])!
 }
 
 // read_i64 reads a big-endian i64 at the given offset.
@@ -78,7 +67,7 @@ fn read_i64(data []u8, offset int) !i64 {
 	if offset + 8 > data.len {
 		return error('insufficient data: need 8 bytes at offset ${offset}, have ${data.len}')
 	}
-	return i64(binary.big_endian_u64(data[offset..offset + 8]))
+	return common.read_i64_be(data[offset..offset + 8])!
 }
 
 // read_string reads a 2-byte length-prefixed string at the given offset.

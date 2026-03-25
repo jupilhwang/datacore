@@ -2,6 +2,7 @@
 // Segment compaction and merge processing for S3 storage
 module s3
 
+import domain
 import json
 import time
 import sync.stdatomic
@@ -71,148 +72,143 @@ fn (mut a S3StorageAdapter) compaction_worker() {
 /// Optimizes performance through parallel processing.
 fn (mut a S3StorageAdapter) compact_all_partitions() ! {
 	topics := a.list_topics()!
+	partition_keys := a.collect_partition_keys(topics)
 
-	// Collect list of partitions to compact
-	mut partition_keys := []string{}
+	if partition_keys.len <= compaction_sequential_threshold {
+		a.compact_partitions_sequential(partition_keys)
+	} else {
+		a.compact_partitions_parallel(partition_keys)
+	}
+}
+
+/// collect_partition_keys builds a list of "topic:partition" keys from topics.
+fn (a &S3StorageAdapter) collect_partition_keys(topics []domain.TopicMetadata) []string {
+	mut keys := []string{}
 	for t in topics {
 		for p in 0 .. t.partition_count {
-			partition_keys << '${t.name}:${p}'
+			keys << '${t.name}:${p}'
 		}
 	}
+	return keys
+}
 
-	// Parallel compaction (max 10 concurrent)
-	if partition_keys.len <= compaction_sequential_threshold {
-		// Small batch: sequential processing
-		for key in partition_keys {
-			parts := key.split(':')
-			if parts.len == 2 {
-				topic := parts[0]
-				partition := parts[1].int()
-				a.compact_partition(topic, partition) or {
-					observability.log_with_context('s3', .error, 'Compaction', 'Partition compaction failed',
-						{
-						'partition_key': key
-						'error':         err.msg()
-					})
-				}
-			}
-		}
-	} else {
-		// Large batch: parallel processing (using channels)
-		// Limit channel buffer size to max_concurrent to control memory usage
-		max_concurrent := max_compaction_concurrent
-		ch := chan bool{cap: max_concurrent}
-		mut active := 0
-
-		for key in partition_keys {
-			// Limit concurrent execution
-			for active >= max_concurrent {
-				_ = <-ch
-				active--
-			}
-
-			active++
-			spawn fn [mut a, key, ch] () {
-				parts := key.split(':')
-				if parts.len == 2 {
-					topic := parts[0]
-					partition := parts[1].int()
-					a.compact_partition(topic, partition) or {
-						observability.log_with_context('s3', .error, 'Compaction', 'Partition compaction failed',
-							{
-							'partition_key': key
-							'error':         err.msg()
-						})
-					}
-				}
-				ch <- true
-			}()
-		}
-
-		// Wait for all tasks to complete
-		for _ in 0 .. active {
-			_ = <-ch
+/// compact_partitions_sequential compacts partitions one at a time.
+fn (mut a S3StorageAdapter) compact_partitions_sequential(partition_keys []string) {
+	for key in partition_keys {
+		topic, partition := parse_partition_key(key) or { continue }
+		a.compact_partition(topic, partition) or {
+			observability.log_with_context('s3', .error, 'Compaction', 'Partition compaction failed',
+				{
+				'partition_key': key
+				'error':         err.msg()
+			})
 		}
 	}
 }
 
-/// compact_partition compacts segments of a specific partition.
-fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
-	start_time := time.now()
+/// compact_partitions_parallel compacts partitions concurrently with bounded parallelism.
+fn (mut a S3StorageAdapter) compact_partitions_parallel(partition_keys []string) {
+	max_concurrent := max_compaction_concurrent
+	ch := chan bool{cap: max_concurrent}
+	mut active := 0
 
-	// Metric: compaction start
-	a.metrics_collector.mu.@lock()
-	a.metrics_collector.data.compaction_count++
-	a.metrics_collector.mu.unlock()
+	for key in partition_keys {
+		for active >= max_concurrent {
+			_ = <-ch
+			active--
+		}
+		active++
+		spawn fn [mut a, key, ch] () {
+			topic, partition := parse_partition_key(key) or {
+				ch <- true
+				return
+			}
+			a.compact_partition(topic, partition) or {
+				observability.log_with_context('s3', .error, 'Compaction', 'Partition compaction failed',
+					{
+					'partition_key': key
+					'error':         err.msg()
+				})
+			}
+			ch <- true
+		}()
+	}
 
-	// 1. Fetch current index
-	mut index := a.get_partition_index(topic, partition)!
+	for _ in 0 .. active {
+		_ = <-ch
+	}
+}
 
-	// 2. Identify segments to compact
-	mut segments_to_compact := []LogSegment{}
+/// identify_segments_to_compact finds segments eligible for merging.
+/// Returns compactable segments and their total size, or empty list
+/// if not enough segments qualify.
+fn (a &S3StorageAdapter) identify_segments_to_compact(index PartitionIndex) ([]LogSegment, i64) {
+	mut segments := []LogSegment{}
 	mut total_size := i64(0)
 
 	for seg in index.log_segments {
 		if total_size >= a.config.target_segment_bytes {
 			break
 		}
-
-		// Only consider segments smaller than target size
 		if seg.size_bytes < a.config.target_segment_bytes {
-			segments_to_compact << seg
+			segments << seg
 			total_size += seg.size_bytes
 		}
 	}
 
-	// Check if there are enough small segments
-	if segments_to_compact.len < a.min_segment_count_to_compact
+	if segments.len < a.min_segment_count_to_compact
 		|| total_size < a.config.target_segment_bytes / compaction_size_threshold_divisor {
+		return []LogSegment{}, i64(0)
+	}
+	return segments, total_size
+}
+
+/// try_compact_with_server_side performs server-side compaction with fallback to traditional merge.
+fn (mut a S3StorageAdapter) try_compact_with_server_side(topic string, partition int, mut index PartitionIndex, segments []LogSegment) ! {
+	a.merge_segments_server_side(topic, partition, mut index, segments) or {
+		err_msg := err.msg()
+		if err_msg.contains('server_side_copy_unsupported') {
+			observability.log_with_context('s3', .debug, 'Compaction', 'Server-side copy unsupported, using traditional merge',
+				{
+				'topic':     topic
+				'partition': partition.str()
+			})
+		} else {
+			observability.log_with_context('s3', .warn, 'Compaction', 'Server-side copy failed, falling back to traditional merge',
+				{
+				'topic':     topic
+				'partition': partition.str()
+				'error':     err_msg
+			})
+		}
+		a.merge_segments(topic, partition, mut index, segments)!
+	}
+}
+
+/// compact_partition compacts segments of a specific partition.
+fn (mut a S3StorageAdapter) compact_partition(topic string, partition int) ! {
+	start_time := time.now()
+	a.record_compaction_start()
+
+	mut index := a.get_partition_index(topic, partition)!
+	segments_to_compact, total_size := a.identify_segments_to_compact(index)
+	if segments_to_compact.len == 0 {
 		return
 	}
 
-	// 3. Perform compaction
-	// Try server-side copy first if enabled, fall back to download-reupload
 	if a.config.use_server_side_copy {
-		a.merge_segments_server_side(topic, partition, mut index, segments_to_compact) or {
-			err_msg := err.msg()
-			if err_msg.contains('server_side_copy_unsupported') {
-				observability.log_with_context('s3', .debug, 'Compaction', 'Server-side copy unsupported, using traditional merge',
-					{
-					'topic':     topic
-					'partition': partition.str()
-				})
-			} else {
-				observability.log_with_context('s3', .warn, 'Compaction', 'Server-side copy failed, falling back to traditional merge',
-					{
-					'topic':     topic
-					'partition': partition.str()
-					'error':     err_msg
-				})
-			}
-			// Fallback to traditional download-reupload merge
-			a.merge_segments(topic, partition, mut index, segments_to_compact) or {
-				a.metrics_collector.mu.@lock()
-				a.metrics_collector.data.compaction_error_count++
-				a.metrics_collector.mu.unlock()
-				return err
-			}
+		a.try_compact_with_server_side(topic, partition, mut index, segments_to_compact) or {
+			a.record_compaction_error()
+			return err
 		}
 	} else {
 		a.merge_segments(topic, partition, mut index, segments_to_compact) or {
-			a.metrics_collector.mu.@lock()
-			a.metrics_collector.data.compaction_error_count++
-			a.metrics_collector.mu.unlock()
+			a.record_compaction_error()
 			return err
 		}
 	}
 
-	// Metric: compaction success
-	elapsed_ms := time.since(start_time).milliseconds()
-	a.metrics_collector.mu.@lock()
-	a.metrics_collector.data.compaction_success_count++
-	a.metrics_collector.data.compaction_total_ms += elapsed_ms
-	a.metrics_collector.data.compaction_bytes_merged += total_size
-	a.metrics_collector.mu.unlock()
+	a.record_compaction_success(start_time, total_size)
 }
 
 /// merge_segments merges multiple segments into a single large segment.
@@ -236,8 +232,8 @@ fn (mut a S3StorageAdapter) merge_segments(topic string, partition int, mut inde
 }
 
 /// download_segments_parallel downloads multiple segments in parallel.
-/// Uses indexed results to preserve original segment order regardless of
-/// goroutine completion order.
+/// Uses a pre-allocated indexed results array so that each goroutine writes
+/// to its own slot, preserving the original segment order without sorting.
 fn (mut a S3StorageAdapter) download_segments_parallel(segments []LogSegment) ![]u8 {
 	ch := chan SegmentDownloadResult{cap: segments.len}
 
@@ -263,8 +259,8 @@ fn (mut a S3StorageAdapter) download_segments_parallel(segments []LogSegment) ![
 		}()
 	}
 
-	// Collect all download results
-	mut results := []SegmentDownloadResult{cap: segments.len}
+	// Collect results into pre-allocated indexed array for order preservation
+	mut results := [][]u8{len: segments.len}
 	mut download_errors := []string{}
 
 	for _ in 0 .. segments.len {
@@ -272,22 +268,18 @@ fn (mut a S3StorageAdapter) download_segments_parallel(segments []LogSegment) ![
 		if result.error_msg.len > 0 {
 			download_errors << result.error_msg
 		} else {
-			results << result
+			results[result.index] = result.data
 		}
 	}
 
-	// Return error on download failure
 	if download_errors.len > 0 {
 		return error('Failed to download ${download_errors.len} segments')
 	}
 
-	// Sort by original segment index to preserve order
-	results.sort(a.index < b.index)
-
-	// Concatenate data in correct segment order
+	// Merge in original segment order (index 0, 1, 2, ...)
 	mut merged_data := []u8{}
-	for result in results {
-		merged_data << result.data
+	for segment_data in results {
+		merged_data << segment_data
 	}
 
 	return merged_data

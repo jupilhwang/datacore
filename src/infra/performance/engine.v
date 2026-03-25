@@ -44,4 +44,7 @@ mut:
 
 	/// get_stats returns performance statistics.
 	get_stats() core.PerformanceStats
+
+	/// close releases engine resources (io_uring mappings, cached fds, etc.).
+	close()
 }

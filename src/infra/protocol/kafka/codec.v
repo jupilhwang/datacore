@@ -71,6 +71,11 @@ fn (v ByteView) is_empty() bool {
 }
 
 /// BinaryReader - Reader for parsing the Kafka binary protocol
+/// Note: shares the `data []u8, pos int` layout with ProtoReader and AvroReader
+/// in service/schema. The duplication is intentional -- each reader carries
+/// protocol-specific methods (compact strings, tagged fields, ByteView, etc.)
+/// that do not overlap, and extracting a common ByteReader base would add
+/// cross-layer coupling without meaningful code reuse.
 pub struct BinaryReader {
 pub mut:
 	data []u8

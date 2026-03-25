@@ -29,6 +29,12 @@ fn escape_toml_string(s string) string {
 		} else if ch == 0x09 {
 			// tab
 			sb.write_string('\\t')
+		} else if ch == 0x08 {
+			// backspace
+			sb.write_string('\\b')
+		} else if ch == 0x0C {
+			// form feed
+			sb.write_string('\\f')
 		} else {
 			sb.write_u8(ch)
 		}

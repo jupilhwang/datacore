@@ -8,6 +8,7 @@
 /// - OS page cache utilization
 module memory
 
+import common
 import os
 import time
 import infra.performance.sysio
@@ -216,7 +217,7 @@ pub fn (mut s MmapPartitionStore) read(offset i64, max_records int) ![][]u8 {
 				break
 			}
 
-			record_len := int(u32(frame[0]) << 24 | u32(frame[1]) << 16 | u32(frame[2]) << 8 | u32(frame[3]))
+			record_len := int(common.read_i32_be(frame) or { break })
 			if record_len <= 0 || record_len > 104857600 {
 				// More than 100MB is abnormal
 				break
@@ -274,7 +275,7 @@ fn (s &MmapPartitionStore) find_position(offset i64) (int, i64) {
 				break
 			}
 
-			record_len := int(u32(frame[0]) << 24 | u32(frame[1]) << 16 | u32(frame[2]) << 8 | u32(frame[3]))
+			record_len := int(common.read_i32_be(frame) or { break })
 			if record_len <= 0 {
 				break
 			}
@@ -334,29 +335,16 @@ pub fn (mut s MmapPartitionStore) close() ! {
 /// encode_record_frame encodes a record into a frame.
 /// Format: length(4) + timestamp(8) + data
 fn encode_record_frame(data []u8, timestamp_ms i64) []u8 {
-	total_len := data.len
-	mut frame := []u8{len: 12 + total_len}
+	mut frame := []u8{cap: 12 + data.len}
 
 	// length (4 bytes, big-endian)
-	frame[0] = u8(total_len >> 24)
-	frame[1] = u8(total_len >> 16)
-	frame[2] = u8(total_len >> 8)
-	frame[3] = u8(total_len)
+	common.write_i32_be(mut frame, i32(data.len))
 
 	// timestamp (8 bytes, big-endian)
-	frame[4] = u8(timestamp_ms >> 56)
-	frame[5] = u8(timestamp_ms >> 48)
-	frame[6] = u8(timestamp_ms >> 40)
-	frame[7] = u8(timestamp_ms >> 32)
-	frame[8] = u8(timestamp_ms >> 24)
-	frame[9] = u8(timestamp_ms >> 16)
-	frame[10] = u8(timestamp_ms >> 8)
-	frame[11] = u8(timestamp_ms)
+	common.write_i64_be(mut frame, timestamp_ms)
 
 	// data
-	for i, b in data {
-		frame[12 + i] = b
-	}
+	frame << data
 
 	return frame
 }

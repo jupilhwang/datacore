@@ -8,6 +8,16 @@ module s3
 /// used in S3 key construction. Consistent with max_topic_name_length.
 const max_identifier_length = 255
 
+/// parse_partition_key splits a "topic:partition" key into topic name and partition number.
+fn parse_partition_key(partition_key string) !(string, int) {
+	parts := partition_key.split(':')
+	if parts.len != 2 {
+		return error('Invalid partition key: ${partition_key}')
+	}
+	partition := parts[1].int()
+	return parts[0], partition
+}
+
 /// validate_identifier validates a string used in S3 key construction.
 /// Rejects empty strings, path traversal sequences, null bytes,
 /// non-printable characters, and characters outside the allowed set.

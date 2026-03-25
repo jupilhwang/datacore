@@ -154,6 +154,8 @@ fn (m IntegrationMockStorage) load_all_share_partition_states(group_id string) [
 
 // MockAuthConnection implements domain.AuthConnection for testing
 struct MockAuthConnection {
+pub:
+	remote_addr string
 mut:
 	authenticated bool
 	principal     domain.Principal

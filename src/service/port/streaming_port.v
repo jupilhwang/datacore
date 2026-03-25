@@ -84,8 +84,7 @@ pub fn (f &SubscriptionFilter) matches(record domain.Record) bool {
 		if record.key.len == 0 {
 			return false
 		}
-		// TODO(jira#XXX): implement proper glob/regex
-		if !simple_match(pattern, record.key.bytestr()) {
+		if !glob_match(pattern, record.key.bytestr()) {
 			return false
 		}
 	}
@@ -109,23 +108,6 @@ pub fn (f &SubscriptionFilter) matches(record domain.Record) bool {
 	}
 
 	return true
-}
-
-/// simple_match performs simple wildcard matching.
-fn simple_match(pattern string, value string) bool {
-	if pattern == '*' {
-		return true
-	}
-	if pattern.starts_with('*') && pattern.ends_with('*') {
-		return value.contains(pattern[1..pattern.len - 1])
-	}
-	if pattern.starts_with('*') {
-		return value.ends_with(pattern[1..])
-	}
-	if pattern.ends_with('*') {
-		return value.starts_with(pattern[..pattern.len - 1])
-	}
-	return pattern == value
 }
 
 // Streaming errors

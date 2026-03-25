@@ -81,10 +81,21 @@ fn test_escape_toml_string_escapes_special_characters() {
 	assert escape_toml_string('line1\rline2') == 'line1\\rline2'
 	// tab must be escaped
 	assert escape_toml_string('col1\tcol2') == 'col1\\tcol2'
+	// backspace must be escaped
+	assert escape_toml_string('before\bafter') == 'before\\bafter'
+	// form feed must be escaped
+	assert escape_toml_string('before\fafter') == 'before\\fafter'
 	// empty string passes through unchanged
 	assert escape_toml_string('') == ''
 	// normal string passes through unchanged
 	assert escape_toml_string('normal_value') == 'normal_value'
+}
+
+fn test_escape_toml_string_combined_special_characters() {
+	// multiple special characters in one string must all be escaped
+	input := 'line1\nline2\ttab\b\f"quoted"\\backslash'
+	expected := 'line1\\nline2\\ttab\\b\\f\\"quoted\\"\\\\backslash'
+	assert escape_toml_string(input) == expected
 }
 
 fn test_validate_rejects_invalid_storage_engine() {
