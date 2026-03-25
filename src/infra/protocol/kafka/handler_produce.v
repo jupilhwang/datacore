@@ -220,7 +220,7 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 	mut total_records := 0
 	mut total_bytes := i64(0)
 
-	// Count records and bytes for logging
+	// Count bytes for logging
 	for t in req.topic_data {
 		for p in t.partition_data {
 			total_bytes += p.records.len
@@ -231,59 +231,9 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 		observability.field_int('acks', req.acks), observability.field_bytes('total_size',
 		total_bytes))
 
-	// Validate if this is a transactional producer
-	if txn_id := req.transactional_id {
-		if txn_id.len > 0 {
-			h.logger.debug('Validating transaction', observability.field_string('txn_id',
-				txn_id))
-
-			if mut txn_coord := h.txn_coordinator {
-				// Look up transaction metadata
-				meta := txn_coord.get_transaction(txn_id) or {
-					h.logger.warn('Transaction not found', observability.field_string('txn_id',
-						txn_id))
-					return h.build_produce_error_response_typed(req, ErrorCode.transactional_id_not_found)
-				}
-
-				// Validate transaction state
-				if meta.state != .ongoing {
-					h.logger.warn('Invalid transaction state', observability.field_string('txn_id',
-						txn_id), observability.field_string('state', meta.state.str()))
-					return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
-				}
-
-				// Build partition lookup map for O(1) access
-				mut partition_set := map[string]bool{}
-				for tp in meta.topic_partitions {
-					key := '${tp.topic}:${tp.partition}'
-					partition_set[key] = true
-				}
-
-				// Verify that requested partitions are registered in the transaction
-				for t in req.topic_data {
-					topic_name := if t.name.len > 0 {
-						t.name
-					} else {
-						if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
-							topic_meta.name
-						} else {
-							continue
-						}
-					}
-
-					// Use O(1) lookup instead of O(n) nested loop
-					for p in t.partition_data {
-						key := '${topic_name}:${int(p.index)}'
-						if key !in partition_set {
-							return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
-						}
-					}
-				}
-			} else {
-				// No transaction coordinator available
-				return h.build_produce_error_response_typed(req, ErrorCode.coordinator_not_available)
-			}
-		}
+	// Validate transaction if transactional producer
+	if error_resp := h.validate_produce_transaction(req) {
+		return error_resp
 	}
 
 	// Store messages to each topic/partition
@@ -307,84 +257,8 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 
 		mut partitions := []ProduceResponsePartition{}
 		for p in t.partition_data {
-			// Decompress and parse RecordBatch
-			parse_result := h.decompress_and_parse_partition(topic_name, int(p.index),
-				p.records) or {
-				partitions << new_error_partition(p.index, .corrupt_message)
-				continue
-			}
-			parsed := parse_result.parsed
-			original_compression_type := parse_result.original_compression_type
-
-			total_records += parsed.records.len
-
-			// Apply schema encoding if configured for this topic
-			mut records_to_store := parsed.records.clone()
-			if schema := h.get_topic_schema(topic_name) {
-				h.logger.debug('Encoding records with schema', observability.field_string('topic',
-					topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
-
-				mut encoded_records := []domain.Record{}
-				for record in parsed.records {
-					encoded_value := h.encode_record_with_schema(&record, &schema) or {
-						h.logger.error('Failed to encode record with schema', observability.field_string('topic',
-							topic_name), observability.field_err_str(err.str()))
-						partitions << new_error_partition(p.index, .corrupt_message)
-						continue
-					}
-					encoded_records << domain.Record{
-						key:              record.key
-						value:            encoded_value
-						timestamp:        record.timestamp
-						headers:          record.headers
-						compression_type: record.compression_type
-					}
-				}
-				records_to_store = encoded_records.clone()
-			}
-
-			// Preserve original compression type on each record (supports cross-broker fetch)
-			if original_compression_type > 0 {
-				for idx in 0 .. records_to_store.len {
-					records_to_store[idx] = domain.Record{
-						...records_to_store[idx]
-						compression_type: original_compression_type
-					}
-				}
-			}
-
-			// Handle empty record batch
-			if records_to_store.len == 0 {
-				partitions << ProduceResponsePartition{
-					index:            p.index
-					error_code:       0
-					base_offset:      0
-					log_append_time:  -1
-					log_start_offset: 0
-				}
-				continue
-			}
-
-			// Store records to storage (auto-creates topic if not found)
-			result := h.store_with_auto_create(topic_name, p.index, records_to_store,
-				req.acks) or {
-				error_code := if err.str().contains('out of range') {
-					ErrorCode.unknown_topic_or_partition
-				} else {
-					ErrorCode.unknown_server_error
-				}
-				partitions << new_error_partition(p.index, error_code)
-				continue
-			}
-
-			// Success response
-			partitions << ProduceResponsePartition{
-				index:            p.index
-				error_code:       0
-				base_offset:      result.base_offset
-				log_append_time:  result.log_append_time
-				log_start_offset: result.log_start_offset
-			}
+			total_records += h.process_produce_partition(topic_name, p, req.acks, mut
+				partitions)
 		}
 		topics << ProduceResponseTopic{
 			name:       topic_name
@@ -402,6 +276,140 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 		topics:           topics
 		throttle_time_ms: default_throttle_time_ms
 	}
+}
+
+// validate_produce_transaction validates transaction state for a produce request.
+// Returns a ProduceResponse if the transaction is invalid, or none if validation passes.
+fn (mut h Handler) validate_produce_transaction(req ProduceRequest) ?ProduceResponse {
+	txn_id := req.transactional_id or { return none }
+	if txn_id.len == 0 {
+		return none
+	}
+
+	h.logger.debug('Validating transaction', observability.field_string('txn_id', txn_id))
+	mut txn_coord := h.txn_coordinator or {
+		return h.build_produce_error_response_typed(req, ErrorCode.coordinator_not_available)
+	}
+
+	meta := txn_coord.get_transaction(txn_id) or {
+		h.logger.warn('Transaction not found', observability.field_string('txn_id', txn_id))
+		return h.build_produce_error_response_typed(req, ErrorCode.transactional_id_not_found)
+	}
+	if meta.state != .ongoing {
+		h.logger.warn('Invalid transaction state', observability.field_string('txn_id',
+			txn_id), observability.field_string('state', meta.state.str()))
+		return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
+	}
+
+	// Build partition lookup map for O(1) access
+	mut partition_set := map[string]bool{}
+	for tp in meta.topic_partitions {
+		key := '${tp.topic}:${tp.partition}'
+		partition_set[key] = true
+	}
+	// Verify that requested partitions are registered in the transaction
+	for t in req.topic_data {
+		topic_name := if t.name.len > 0 {
+			t.name
+		} else {
+			if topic_meta := h.storage.get_topic_by_id(t.topic_id) {
+				topic_meta.name
+			} else {
+				continue
+			}
+		}
+
+		// Use O(1) lookup instead of O(n) nested loop
+		for p in t.partition_data {
+			key := '${topic_name}:${int(p.index)}'
+			if key !in partition_set {
+				return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
+			}
+		}
+	}
+
+	return none
+}
+
+// process_produce_partition processes a single partition in a produce request.
+// Decompresses, applies schema encoding, preserves compression, and stores records.
+// Returns the number of records processed. Results are appended to partitions.
+fn (mut h Handler) process_produce_partition(topic_name string, p ProduceRequestPartition, acks i16, mut partitions []ProduceResponsePartition) int {
+	parse_result := h.decompress_and_parse_partition(topic_name, int(p.index), p.records) or {
+		partitions << new_error_partition(p.index, .corrupt_message)
+		return 0
+	}
+	parsed := parse_result.parsed
+	original_compression_type := parse_result.original_compression_type
+	record_count := parsed.records.len
+	// Apply schema encoding if configured for this topic
+	mut records_to_store := h.apply_produce_schema_encoding(topic_name, p.index, parsed.records, mut
+		partitions)
+	// Preserve original compression type on each record (supports cross-broker fetch)
+	if original_compression_type > 0 {
+		for idx in 0 .. records_to_store.len {
+			records_to_store[idx] = domain.Record{
+				...records_to_store[idx]
+				compression_type: original_compression_type
+			}
+		}
+	}
+	// Handle empty record batch
+	if records_to_store.len == 0 {
+		partitions << ProduceResponsePartition{
+			index:            p.index
+			error_code:       0
+			base_offset:      0
+			log_append_time:  -1
+			log_start_offset: 0
+		}
+		return record_count
+	}
+	// Store records to storage (auto-creates topic if not found)
+	result := h.store_with_auto_create(topic_name, p.index, records_to_store, acks) or {
+		error_code := if err.str().contains('out of range') {
+			ErrorCode.unknown_topic_or_partition
+		} else {
+			ErrorCode.unknown_server_error
+		}
+		partitions << new_error_partition(p.index, error_code)
+		return record_count
+	}
+	partitions << ProduceResponsePartition{
+		index:            p.index
+		error_code:       0
+		base_offset:      result.base_offset
+		log_append_time:  result.log_append_time
+		log_start_offset: result.log_start_offset
+	}
+	return record_count
+}
+
+// apply_produce_schema_encoding encodes records with the topic's schema if configured.
+// Returns the original records if no schema is configured, or encoded records otherwise.
+fn (mut h Handler) apply_produce_schema_encoding(topic_name string, partition_index i32, records []domain.Record, mut partitions []ProduceResponsePartition) []domain.Record {
+	schema := h.get_topic_schema(topic_name) or { return records }
+
+	h.logger.debug('Encoding records with schema', observability.field_string('topic',
+		topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
+
+	mut encoded_records := []domain.Record{}
+	for record in records {
+		encoded_value := h.encode_record_with_schema(&record, &schema) or {
+			h.logger.error('Failed to encode record with schema', observability.field_string('topic',
+				topic_name), observability.field_err_str(err.str()))
+			partitions << new_error_partition(partition_index, .corrupt_message)
+			continue
+		}
+		encoded_records << domain.Record{
+			key:              record.key
+			value:            encoded_value
+			timestamp:        record.timestamp
+			headers:          record.headers
+			compression_type: record.compression_type
+		}
+	}
+	return encoded_records
 }
 
 // Legacy handler — delegates to process_produce.

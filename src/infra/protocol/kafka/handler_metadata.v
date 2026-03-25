@@ -146,33 +146,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 		writer.write_i32(r.throttle_time_ms)
 	}
 
-	// Encode broker array
-	if is_flexible {
-		writer.write_compact_array_len(r.brokers.len)
-	} else {
-		writer.write_array_len(r.brokers.len)
-	}
-
-	for b in r.brokers {
-		writer.write_i32(b.node_id)
-		if is_flexible {
-			writer.write_compact_string(b.host)
-		} else {
-			writer.write_string(b.host)
-		}
-		writer.write_i32(b.port)
-		// rack field added in v1+
-		if version >= 1 {
-			if is_flexible {
-				writer.write_compact_nullable_string(b.rack)
-			} else {
-				writer.write_nullable_string(b.rack)
-			}
-		}
-		if is_flexible {
-			writer.write_tagged_fields()
-		}
-	}
+	encode_brokers(r.brokers, version, is_flexible, mut writer)
 
 	// cluster_id field added in v2+
 	if version >= 2 {
@@ -196,87 +170,10 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 	}
 
 	for t in r.topics {
-		writer.write_i16(t.error_code)
-		if is_flexible {
-			writer.write_compact_string(t.name)
-		} else {
-			writer.write_string(t.name)
-		}
-
-		// topic_id (UUID) field added in v10+
-		if version >= 10 {
-			writer.write_uuid(t.topic_id)
-		}
-
-		// is_internal field added in v1+
-		if version >= 1 {
-			writer.write_i8(if t.is_internal { i8(1) } else { i8(0) })
-		}
-
-		// Encode partition array
-		if is_flexible {
-			writer.write_compact_array_len(t.partitions.len)
-		} else {
-			writer.write_array_len(t.partitions.len)
-		}
-
-		for p in t.partitions {
-			writer.write_i16(p.error_code)
-			writer.write_i32(p.partition_index)
-			writer.write_i32(p.leader_id)
-			// leader_epoch field added in v7+
-			if version >= 7 {
-				writer.write_i32(p.leader_epoch)
-			}
-
-			// Encode replica nodes array
-			if is_flexible {
-				writer.write_compact_array_len(p.replica_nodes.len)
-			} else {
-				writer.write_array_len(p.replica_nodes.len)
-			}
-			for n in p.replica_nodes {
-				writer.write_i32(n)
-			}
-
-			// Encode ISR nodes array
-			if is_flexible {
-				writer.write_compact_array_len(p.isr_nodes.len)
-			} else {
-				writer.write_array_len(p.isr_nodes.len)
-			}
-			for n in p.isr_nodes {
-				writer.write_i32(n)
-			}
-
-			// offline_replicas array added in v5+
-			if version >= 5 {
-				if is_flexible {
-					writer.write_compact_array_len(p.offline_replicas.len)
-				} else {
-					writer.write_array_len(p.offline_replicas.len)
-				}
-				for n in p.offline_replicas {
-					writer.write_i32(n)
-				}
-			}
-
-			if is_flexible {
-				writer.write_tagged_fields()
-			}
-		}
-
-		// topic_authorized_ops field added in v8+
-		if version >= 8 {
-			writer.write_i32(t.topic_authorized_ops)
-		}
-
-		if is_flexible {
-			writer.write_tagged_fields()
-		}
+		encode_topic(t, version, is_flexible, mut writer)
 	}
 
-	// cluster_authorized_ops field added in v8–10
+	// cluster_authorized_ops field added in v8-10
 	if version >= 8 && version <= 10 {
 		writer.write_i32(r.cluster_authorized_ops)
 	}
@@ -285,8 +182,7 @@ pub fn (r MetadataResponse) encode(version i16) []u8 {
 		writer.write_tagged_fields()
 	}
 
-	resp_bytes := writer.bytes()
-	return resp_bytes
+	return writer.bytes()
 }
 
 // Legacy handler — byte-array based request processing.
@@ -307,14 +203,66 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 	h.logger.debug('Processing metadata request', observability.field_int('topics', req.topics.len),
 		observability.field_bool('allow_auto_create', req.allow_auto_topic_creation))
 
-	mut resp_topics := []MetadataResponseTopic{}
-
-	// Retrieve active broker list in multi-broker mode
 	mut brokers := []MetadataResponseBroker{}
 	mut active_broker_ids := []i32{}
+	h.build_broker_list(mut brokers, mut active_broker_ids)
 
+	// Pre-compute replica/isr lists once to avoid per-partition clone overhead
+	replica_nodes := active_broker_ids.clone()
+	isr_nodes := active_broker_ids.clone()
+
+	mut resp_topics := []MetadataResponseTopic{}
+
+	if req.topics.len > 0 {
+		for req_topic in req.topics {
+			topic_name := req_topic.name or { '' }
+			if topic_name.len == 0 {
+				continue
+			}
+
+			topic := h.resolve_or_create_topic(topic_name, req.allow_auto_topic_creation) or {
+				resp_topics << MetadataResponseTopic{
+					error_code:           i16(ErrorCode.unknown_topic_or_partition)
+					name:                 topic_name
+					topic_id:             []u8{len: 16}
+					is_internal:          false
+					partitions:           []
+					topic_authorized_ops: -2147483648
+				}
+				continue
+			}
+
+			resp_topics << h.build_topic_metadata(topic, active_broker_ids, replica_nodes,
+				isr_nodes)
+		}
+	} else {
+		topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
+		for topic in topic_list {
+			resp_topics << h.build_topic_metadata(topic, active_broker_ids, replica_nodes,
+				isr_nodes)
+		}
+	}
+
+	controller_id := if active_broker_ids.len > 0 { active_broker_ids[0] } else { h.broker_id }
+
+	elapsed := time.since(start_time)
+	h.logger.debug('Metadata request completed', observability.field_int('brokers', brokers.len),
+		observability.field_int('topics', resp_topics.len), observability.field_duration('latency',
+		elapsed))
+
+	return MetadataResponse{
+		throttle_time_ms:       0
+		brokers:                brokers
+		cluster_id:             h.cluster_id
+		controller_id:          controller_id
+		topics:                 resp_topics
+		cluster_authorized_ops: -2147483648
+	}
+}
+
+// build_broker_list populates broker metadata from the registry or falls back to local broker.
+fn (mut h Handler) build_broker_list(mut brokers []MetadataResponseBroker, mut active_broker_ids []i32) {
 	if mut registry := h.broker_registry {
-		// Multi-broker mode: retrieve all active brokers from the registry
 		active_brokers := registry.list_active_brokers() or { []domain.BrokerInfo{} }
 		for broker in active_brokers {
 			brokers << MetadataResponseBroker{
@@ -327,7 +275,6 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		}
 	}
 
-	// If no brokers found or in single-broker mode, add self as broker
 	if brokers.len == 0 {
 		if h.broker_registry == none {
 			h.logger.debug('Metadata response: broker_registry not available, returning local broker only',
@@ -345,151 +292,160 @@ fn (mut h Handler) process_metadata(req MetadataRequest, version i16) !MetadataR
 		}
 		active_broker_ids << h.broker_id
 	}
+}
 
-	// Pre-compute replica/isr lists once to avoid per-partition clone overhead
-	// Optimization note: clone-once here prevents active_broker_ids from being
-	// recalculated on every partition iteration, but a per-partition clone of
-	// replica_nodes/isr_nodes is still required because MetadataResponsePartition
-	// holds []i32 by value (ownership), making a shared reference impossible.
-	replica_nodes := active_broker_ids.clone()
-	isr_nodes := active_broker_ids.clone()
-
-	// Specific topics requested
-	if req.topics.len > 0 {
-		for req_topic in req.topics {
-			topic_name := req_topic.name or { '' }
-			if topic_name.len == 0 {
-				continue
+// resolve_or_create_topic looks up a topic by name, optionally auto-creating it.
+fn (mut h Handler) resolve_or_create_topic(topic_name string, allow_auto_create bool) !domain.TopicMetadata {
+	return h.storage.get_topic(topic_name) or {
+		if allow_auto_create {
+			h.storage.create_topic(topic_name, 1, domain.TopicConfig{}) or {
+				return error('failed to auto-create topic ${topic_name}')
 			}
-
-			// Look up topic or auto-create
-			topic := h.storage.get_topic(topic_name) or {
-				if req.allow_auto_topic_creation {
-					// Attempt auto-creation of the topic
-					h.storage.create_topic(topic_name, 1, domain.TopicConfig{}) or {
-						resp_topics << MetadataResponseTopic{
-							error_code:           i16(ErrorCode.unknown_topic_or_partition)
-							name:                 topic_name
-							topic_id:             []u8{len: 16}
-							is_internal:          false
-							partitions:           []
-							topic_authorized_ops: -2147483648
-						}
-						continue
-					}
-					h.storage.get_topic(topic_name) or {
-						resp_topics << MetadataResponseTopic{
-							error_code:           i16(ErrorCode.unknown_topic_or_partition)
-							name:                 topic_name
-							topic_id:             []u8{len: 16}
-							is_internal:          false
-							partitions:           []
-							topic_authorized_ops: -2147483648
-						}
-						continue
-					}
-				} else {
-					// Topic does not exist and auto-creation is disabled
-					resp_topics << MetadataResponseTopic{
-						error_code:           i16(ErrorCode.unknown_topic_or_partition)
-						name:                 topic_name
-						topic_id:             []u8{len: 16}
-						is_internal:          false
-						partitions:           []
-						topic_authorized_ops: -2147483648
-					}
-					continue
-				}
+			new_topic := h.storage.get_topic(topic_name) or {
+				return error('topic ${topic_name} not found after auto-create')
 			}
+			return new_topic
+		}
+		return error('topic ${topic_name} not found')
+	}
+}
 
-			// Build partition metadata
-			mut partitions := []MetadataResponsePartition{}
-			for p in 0 .. topic.partition_count {
-				// Look up partition leader from partition assigner service (dynamic assignment)
-				mut leader_id := h.broker_id
-				if mut assigner := h.partition_assigner {
-					// Query partition leader from assignment service
-					assigned_leader := assigner.get_partition_leader(topic.name, i32(p)) or {
-						h.broker_id
-					}
-					leader_id = assigned_leader
-				} else if active_broker_ids.len > 1 {
-					// Fall back to round-robin when no assigner is available (backward compatibility)
-					leader_id = active_broker_ids[p % active_broker_ids.len]
-				}
-				partitions << MetadataResponsePartition{
-					error_code:       0
-					partition_index:  i32(p)
-					leader_id:        leader_id
-					leader_epoch:     0
-					replica_nodes:    replica_nodes.clone()
-					isr_nodes:        isr_nodes.clone()
-					offline_replicas: []
-				}
-			}
-			resp_topics << MetadataResponseTopic{
-				error_code:           0
-				name:                 topic.name
-				topic_id:             topic.topic_id
-				is_internal:          topic.is_internal
-				partitions:           partitions
-				topic_authorized_ops: -2147483648
+// build_topic_metadata constructs MetadataResponseTopic with partition info for a single topic.
+fn (mut h Handler) build_topic_metadata(topic domain.TopicMetadata, active_broker_ids []i32, replica_nodes []i32, isr_nodes []i32) MetadataResponseTopic {
+	mut partitions := []MetadataResponsePartition{}
+	for p in 0 .. topic.partition_count {
+		mut leader_id := h.broker_id
+		if mut assigner := h.partition_assigner {
+			assigned_leader := assigner.get_partition_leader(topic.name, i32(p)) or { h.broker_id }
+			leader_id = assigned_leader
+		} else if active_broker_ids.len > 1 {
+			leader_id = active_broker_ids[p % active_broker_ids.len]
+		}
+		partitions << MetadataResponsePartition{
+			error_code:       0
+			partition_index:  i32(p)
+			leader_id:        leader_id
+			leader_epoch:     0
+			replica_nodes:    replica_nodes.clone()
+			isr_nodes:        isr_nodes.clone()
+			offline_replicas: []
+		}
+	}
+	return MetadataResponseTopic{
+		error_code:           0
+		name:                 topic.name
+		topic_id:             topic.topic_id
+		is_internal:          topic.is_internal
+		partitions:           partitions
+		topic_authorized_ops: -2147483648
+	}
+}
+
+// encode_brokers writes broker metadata to the writer.
+fn encode_brokers(brokers []MetadataResponseBroker, version i16, is_flexible bool, mut writer BinaryWriter) {
+	if is_flexible {
+		writer.write_compact_array_len(brokers.len)
+	} else {
+		writer.write_array_len(brokers.len)
+	}
+
+	for b in brokers {
+		writer.write_i32(b.node_id)
+		if is_flexible {
+			writer.write_compact_string(b.host)
+		} else {
+			writer.write_string(b.host)
+		}
+		writer.write_i32(b.port)
+		if version >= 1 {
+			if is_flexible {
+				writer.write_compact_nullable_string(b.rack)
+			} else {
+				writer.write_nullable_string(b.rack)
 			}
 		}
-	} else {
-		// Query all topics
-		topic_list := h.storage.list_topics() or { []domain.TopicMetadata{} }
+		if is_flexible {
+			writer.write_tagged_fields()
+		}
+	}
+}
 
-		for topic in topic_list {
-			mut partitions := []MetadataResponsePartition{}
-			for p in 0 .. topic.partition_count {
-				// Look up partition leader from partition assigner service (dynamic assignment)
-				mut leader_id := h.broker_id
-				if mut assigner := h.partition_assigner {
-					// Query partition leader from assignment service
-					assigned_leader := assigner.get_partition_leader(topic.name, i32(p)) or {
-						h.broker_id
-					}
-					leader_id = assigned_leader
-				} else if active_broker_ids.len > 1 {
-					// Fall back to round-robin when no assigner is available (backward compatibility)
-					leader_id = active_broker_ids[p % active_broker_ids.len]
-				}
-				partitions << MetadataResponsePartition{
-					error_code:       0
-					partition_index:  i32(p)
-					leader_id:        leader_id
-					leader_epoch:     0
-					replica_nodes:    replica_nodes.clone()
-					isr_nodes:        isr_nodes.clone()
-					offline_replicas: []
-				}
-			}
-			resp_topics << MetadataResponseTopic{
-				error_code:           0
-				name:                 topic.name
-				topic_id:             topic.topic_id
-				is_internal:          topic.is_internal
-				partitions:           partitions
-				topic_authorized_ops: -2147483648
-			}
+// encode_topic writes a single topic's metadata (including its partitions) to the writer.
+fn encode_topic(t MetadataResponseTopic, version i16, is_flexible bool, mut writer BinaryWriter) {
+	writer.write_i16(t.error_code)
+	if is_flexible {
+		writer.write_compact_string(t.name)
+	} else {
+		writer.write_string(t.name)
+	}
+
+	if version >= 10 {
+		writer.write_uuid(t.topic_id)
+	}
+
+	if version >= 1 {
+		writer.write_i8(if t.is_internal { i8(1) } else { i8(0) })
+	}
+
+	if is_flexible {
+		writer.write_compact_array_len(t.partitions.len)
+	} else {
+		writer.write_array_len(t.partitions.len)
+	}
+
+	for p in t.partitions {
+		encode_partition(p, version, is_flexible, mut writer)
+	}
+
+	if version >= 8 {
+		writer.write_i32(t.topic_authorized_ops)
+	}
+
+	if is_flexible {
+		writer.write_tagged_fields()
+	}
+}
+
+// encode_partition writes a single partition's metadata to the writer.
+fn encode_partition(p MetadataResponsePartition, version i16, is_flexible bool, mut writer BinaryWriter) {
+	writer.write_i16(p.error_code)
+	writer.write_i32(p.partition_index)
+	writer.write_i32(p.leader_id)
+
+	if version >= 7 {
+		writer.write_i32(p.leader_epoch)
+	}
+
+	if is_flexible {
+		writer.write_compact_array_len(p.replica_nodes.len)
+	} else {
+		writer.write_array_len(p.replica_nodes.len)
+	}
+	for n in p.replica_nodes {
+		writer.write_i32(n)
+	}
+
+	if is_flexible {
+		writer.write_compact_array_len(p.isr_nodes.len)
+	} else {
+		writer.write_array_len(p.isr_nodes.len)
+	}
+	for n in p.isr_nodes {
+		writer.write_i32(n)
+	}
+
+	if version >= 5 {
+		if is_flexible {
+			writer.write_compact_array_len(p.offline_replicas.len)
+		} else {
+			writer.write_array_len(p.offline_replicas.len)
+		}
+		for n in p.offline_replicas {
+			writer.write_i32(n)
 		}
 	}
 
-	// In multi-broker mode, controller is the first active broker; in single-broker mode, it is self
-	controller_id := if active_broker_ids.len > 0 { active_broker_ids[0] } else { h.broker_id }
-
-	elapsed := time.since(start_time)
-	h.logger.debug('Metadata request completed', observability.field_int('brokers', brokers.len),
-		observability.field_int('topics', resp_topics.len), observability.field_duration('latency',
-		elapsed))
-
-	return MetadataResponse{
-		throttle_time_ms:       0
-		brokers:                brokers
-		cluster_id:             h.cluster_id
-		controller_id:          controller_id
-		topics:                 resp_topics
-		cluster_authorized_ops: -2147483648
+	if is_flexible {
+		writer.write_tagged_fields()
 	}
 }

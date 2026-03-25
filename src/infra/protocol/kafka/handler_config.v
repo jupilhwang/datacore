@@ -226,171 +226,12 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 	mut results := []DescribeConfigsResult{}
 
 	for res in req.resources {
-		// Helper to check if a specific config key was requested
-		is_requested := fn (key string, names ?[]string) bool {
-			if names == none {
-				return true
-			}
-			for n in names {
-				if n == key {
-					return true
-				}
-			}
-			return false
-		}
-
 		// resource_type: 2 = TOPIC, 4 = BROKER
 		if res.resource_type == 2 {
-			// TOPIC config
-			topic_name := res.resource_name
-
-			// Try to find topic
-			topic := h.storage.get_topic(topic_name) or {
-				results << DescribeConfigsResult{
-					error_code:    i16(ErrorCode.unknown_topic_or_partition)
-					error_message: 'Topic ${topic_name} not found'
-					resource_type: res.resource_type
-					resource_name: topic_name
-					configs:       []
-				}
-				continue
-			}
-
-			// Prepare configs
-			mut configs := []DescribeConfigsEntry{}
-
-			if is_requested('retention.ms', res.config_names) {
-				configs << DescribeConfigsEntry{
-					name:          'retention.ms'
-					value:         topic.config['retention.ms'] or { '604800000' }
-					read_only:     false
-					is_default:    true
-					config_source: 4
-					is_sensitive:  false
-					synonyms:      []
-					config_type:   0
-					documentation: 'The maximum time to retain a log before discarding it'
-				}
-			}
-
-			if is_requested('cleanup.policy', res.config_names) {
-				configs << DescribeConfigsEntry{
-					name:          'cleanup.policy'
-					value:         topic.config['cleanup.policy'] or { 'delete' }
-					read_only:     false
-					is_default:    true
-					config_source: 4
-					is_sensitive:  false
-					synonyms:      []
-					config_type:   0
-					documentation: 'The cleanup policy for the topic'
-				}
-			}
-
-			results << DescribeConfigsResult{
-				error_code:    0
-				error_message: none
-				resource_type: res.resource_type
-				resource_name: topic_name
-				configs:       configs
-			}
+			results << h.describe_topic_configs(res)
 		} else if res.resource_type == 4 {
-			// BROKER config
-			// Return broker configs
-			broker_id_str := res.resource_name
-
-			// Check if it matches our broker ID
-			if broker_id_str == '${h.broker_id}' {
-				mut configs := []DescribeConfigsEntry{}
-
-				if is_requested('log.retention.ms', res.config_names) {
-					configs << DescribeConfigsEntry{
-						name:          'log.retention.ms'
-						value:         '604800000'
-						read_only:     false
-						is_default:    true
-						config_source: 4
-						is_sensitive:  false
-						synonyms:      []
-						config_type:   0
-						documentation: 'The number of milliseconds to keep a log segment before deletion'
-					}
-				}
-
-				if is_requested('num.partitions', res.config_names) {
-					configs << DescribeConfigsEntry{
-						name:          'num.partitions'
-						value:         '1'
-						read_only:     false
-						is_default:    true
-						config_source: 4
-						is_sensitive:  false
-						synonyms:      []
-						config_type:   0
-						documentation: 'The default number of partitions per topic'
-					}
-				}
-
-				if is_requested('default.replication.factor', res.config_names) {
-					configs << DescribeConfigsEntry{
-						name:          'default.replication.factor'
-						value:         '1'
-						read_only:     false
-						is_default:    true
-						config_source: 4
-						is_sensitive:  false
-						synonyms:      []
-						config_type:   0
-						documentation: 'The default replication factor for automatically created topics'
-					}
-				}
-
-				if is_requested('max.message.bytes', res.config_names) {
-					configs << DescribeConfigsEntry{
-						name:          'max.message.bytes'
-						value:         '1048576'
-						read_only:     false
-						is_default:    true
-						config_source: 4
-						is_sensitive:  false
-						synonyms:      []
-						config_type:   0
-						documentation: 'The largest record batch size allowed by the broker'
-					}
-				}
-
-				if is_requested('log.segment.bytes', res.config_names) {
-					configs << DescribeConfigsEntry{
-						name:          'log.segment.bytes'
-						value:         '1073741824'
-						read_only:     false
-						is_default:    true
-						config_source: 4
-						is_sensitive:  false
-						synonyms:      []
-						config_type:   0
-						documentation: 'The maximum size of a single log segment file'
-					}
-				}
-
-				results << DescribeConfigsResult{
-					error_code:    0
-					error_message: none
-					resource_type: res.resource_type
-					resource_name: broker_id_str
-					configs:       configs
-				}
-			} else {
-				results << DescribeConfigsResult{
-					error_code:    i16(ErrorCode.resource_not_found)
-					error_message: 'Broker ${broker_id_str} not found'
-					resource_type: res.resource_type
-					resource_name: broker_id_str
-					configs:       []
-				}
-			}
+			results << h.describe_broker_configs(res)
 		} else {
-			// Unsupported resource type
 			results << DescribeConfigsResult{
 				error_code:    i16(ErrorCode.invalid_request)
 				error_message: 'Unsupported resource type ${res.resource_type}'
@@ -405,4 +246,119 @@ fn (mut h Handler) process_describe_configs(req DescribeConfigsRequest, version 
 		throttle_time_ms: default_throttle_time_ms
 		results:          results
 	}
+}
+
+// describe_topic_configs builds config entries for a single topic resource.
+fn (mut h Handler) describe_topic_configs(res DescribeConfigsResource) DescribeConfigsResult {
+	topic_name := res.resource_name
+
+	topic := h.storage.get_topic(topic_name) or {
+		return DescribeConfigsResult{
+			error_code:    i16(ErrorCode.unknown_topic_or_partition)
+			error_message: 'Topic ${topic_name} not found'
+			resource_type: res.resource_type
+			resource_name: topic_name
+			configs:       []
+		}
+	}
+
+	mut configs := []DescribeConfigsEntry{}
+
+	if is_config_requested('retention.ms', res.config_names) {
+		configs << build_config_entry('retention.ms', topic.config['retention.ms'] or {
+			'604800000'
+		}, 'The maximum time to retain a log before discarding it', 4)
+	}
+
+	if is_config_requested('cleanup.policy', res.config_names) {
+		configs << build_config_entry('cleanup.policy', topic.config['cleanup.policy'] or {
+			'delete'
+		}, 'The cleanup policy for the topic', 4)
+	}
+
+	return DescribeConfigsResult{
+		error_code:    0
+		error_message: none
+		resource_type: res.resource_type
+		resource_name: topic_name
+		configs:       configs
+	}
+}
+
+// describe_broker_configs builds config entries for a single broker resource.
+fn (h Handler) describe_broker_configs(res DescribeConfigsResource) DescribeConfigsResult {
+	broker_id_str := res.resource_name
+
+	if broker_id_str != '${h.broker_id}' {
+		return DescribeConfigsResult{
+			error_code:    i16(ErrorCode.resource_not_found)
+			error_message: 'Broker ${broker_id_str} not found'
+			resource_type: res.resource_type
+			resource_name: broker_id_str
+			configs:       []
+		}
+	}
+
+	mut configs := []DescribeConfigsEntry{}
+
+	if is_config_requested('log.retention.ms', res.config_names) {
+		configs << build_config_entry('log.retention.ms', '604800000', 'The number of milliseconds to keep a log segment before deletion',
+			4)
+	}
+
+	if is_config_requested('num.partitions', res.config_names) {
+		configs << build_config_entry('num.partitions', '1', 'The default number of partitions per topic',
+			4)
+	}
+
+	if is_config_requested('default.replication.factor', res.config_names) {
+		configs << build_config_entry('default.replication.factor', '1', 'The default replication factor for automatically created topics',
+			4)
+	}
+
+	if is_config_requested('max.message.bytes', res.config_names) {
+		configs << build_config_entry('max.message.bytes', '1048576', 'The largest record batch size allowed by the broker',
+			4)
+	}
+
+	if is_config_requested('log.segment.bytes', res.config_names) {
+		configs << build_config_entry('log.segment.bytes', '1073741824', 'The maximum size of a single log segment file',
+			4)
+	}
+
+	return DescribeConfigsResult{
+		error_code:    0
+		error_message: none
+		resource_type: res.resource_type
+		resource_name: broker_id_str
+		configs:       configs
+	}
+}
+
+// build_config_entry creates a DescribeConfigsEntry with common defaults.
+fn build_config_entry(name string, value string, documentation string, source i8) DescribeConfigsEntry {
+	return DescribeConfigsEntry{
+		name:          name
+		value:         value
+		read_only:     false
+		is_default:    true
+		config_source: source
+		is_sensitive:  false
+		synonyms:      []
+		config_type:   0
+		documentation: documentation
+	}
+}
+
+// is_config_requested checks whether a specific config key was requested.
+fn is_config_requested(key string, names ?[]string) bool {
+	if names == none {
+		return true
+	}
+	for n in names {
+		if n == key {
+			return true
+		}
+	}
+	return false
 }

@@ -1,5 +1,16 @@
 # Progress Log
 
+## v0.51.0 -- God Function Splits (2026-03-25)
+
+- 8 God Functions split across 6 files: tcp.v, handler_metadata.v, handler_produce.v, handler_config.v, handler_fetch.v, handler_offset.v
+- ~25 private helper functions extracted, all <= 60 lines
+- 4 dead functions deleted (telemetry + compression)
+- DRY fixes: metadata partition 2x, config entry 7x consolidated
+- Net: -120 lines across changed files
+- CHECK: APPROVE (89.1/100, Grade B+)
+
+---
+
 ## v0.50.9 -- Codebase Health Refactoring (2026-03-25)
 
 ### Phase 1: CRITICAL Error Fixes

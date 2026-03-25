@@ -34,19 +34,6 @@ pub fn compression_type_from_string(s string) !CompressionType {
 	}
 }
 
-/// Converts a u8 value to a CompressionType with validation.
-/// Returns an error for values outside the valid range (0-4).
-pub fn compression_type_from_u8(val u8) !CompressionType {
-	return match val {
-		0 { CompressionType.none }
-		1 { CompressionType.gzip }
-		2 { CompressionType.snappy }
-		3 { CompressionType.lz4 }
-		4 { CompressionType.zstd }
-		else { error('unknown compression type value: ${val}') }
-	}
-}
-
 /// Converts an i16 value to a CompressionType with validation.
 /// Used when parsing Kafka RecordBatch attributes (lower 3 bits).
 /// Returns an error for values outside the valid range (0-4).

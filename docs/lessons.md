@@ -8,6 +8,24 @@
 - **Project**: Project name or 'global'
 -->
 
+## ErrorPattern_2026-03-25_god-function-extract-pattern
+
+**Category**: Refactoring  
+**Problem**: Extracting helpers from God Functions in V language requires careful handling of `mut` parameters, `!` Result type propagation, and V's struct method receiver semantics.  
+**Pattern**: When splitting a V method `fn (h Handler) process_x(...)`, extracted helpers must receive the Handler reference explicitly: `fn (h Handler) helper(...)` or be standalone `fn helper(h Handler, ...)`. Use `mut` parameters only when mutation is needed. Propagate `!` with `result_fn()!` call syntax.  
+**Prevention**: Before extracting, catalog all local variables the block reads/writes. Pass reads as parameters, writes as `mut` parameters or return values. Never change function behavior -- pure structural extraction.
+
+---
+
+## ErrorPattern_2026-03-25_dry-consolidation-with-tests
+
+**Category**: Refactoring  
+**Problem**: Consolidating duplicated code (metadata partition generation 2x, config entry 7x) risks changing behavior if the duplicates had subtle differences.  
+**Pattern**: Before consolidating, diff the duplicated blocks character-by-character. Create the shared helper, then replace ONE call site first and run tests. Only then replace remaining call sites. If tests break, the duplicates were NOT identical.  
+**Prevention**: Always verify duplicate equivalence before consolidation. Use tests as safety net for each replacement.
+
+---
+
 ## ErrorPattern_2026-03-25_domain-import-contamination
 
 - **Trigger**: 아키텍처 경계를 넘는 중복 코드를 제거할 때

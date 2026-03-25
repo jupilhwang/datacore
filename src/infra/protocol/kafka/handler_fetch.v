@@ -87,6 +87,97 @@ pub:
 	rack    string
 }
 
+// parse_fetch_partition reads a single partition from a Fetch request.
+fn parse_fetch_partition(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequestPartition {
+	partition := reader.read_i32()!
+
+	// current_leader_epoch field added in v9+ (ignored)
+	if version >= 9 {
+		_ = reader.read_i32()!
+	}
+
+	fetch_offset := reader.read_i64()!
+
+	// log_start_offset field added in v5+ (ignored)
+	if version >= 5 {
+		_ = reader.read_i64()!
+	}
+
+	partition_max_bytes := reader.read_i32()!
+
+	reader.skip_flex_tagged_fields(is_flexible)!
+
+	return FetchRequestPartition{
+		partition:           partition
+		fetch_offset:        fetch_offset
+		partition_max_bytes: partition_max_bytes
+	}
+}
+
+// parse_fetch_topic reads a single topic entry from a Fetch request.
+fn parse_fetch_topic(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequestTopic {
+	mut name := ''
+	mut topic_id := []u8{}
+
+	// v13+ uses topic UUID instead of topic name
+	if version >= 13 {
+		topic_id = reader.read_uuid()!
+	} else if is_flexible {
+		name = reader.read_compact_string()!
+	} else {
+		name = reader.read_string()!
+	}
+
+	partition_count := reader.read_flex_array_len(is_flexible)!
+
+	mut partitions := []FetchRequestPartition{}
+	for _ in 0 .. partition_count {
+		partitions << parse_fetch_partition(mut reader, version, is_flexible)!
+	}
+
+	reader.skip_flex_tagged_fields(is_flexible)!
+
+	return FetchRequestTopic{
+		name:       name
+		topic_id:   topic_id
+		partitions: partitions
+	}
+}
+
+// parse_fetch_forgotten_topics reads the forgotten topics array from a Fetch request.
+fn parse_fetch_forgotten_topics(mut reader BinaryReader, version i16, is_flexible bool) ![]FetchRequestForgottenTopic {
+	mut forgotten_topics_data := []FetchRequestForgottenTopic{}
+	if version < 7 {
+		return forgotten_topics_data
+	}
+
+	forgotten_count := reader.read_flex_array_len(is_flexible)!
+	for _ in 0 .. forgotten_count {
+		mut fname := ''
+		mut ftopic_id := []u8{}
+		if version >= 13 {
+			ftopic_id = reader.read_uuid()!
+		} else if is_flexible {
+			fname = reader.read_compact_string()!
+		} else {
+			fname = reader.read_string()!
+		}
+		fpartition_count := reader.read_flex_array_len(is_flexible)!
+		mut fpartitions := []i32{}
+		for _ in 0 .. fpartition_count {
+			fpartitions << reader.read_i32()!
+		}
+		forgotten_topics_data << FetchRequestForgottenTopic{
+			name:       fname
+			topic_id:   ftopic_id
+			partitions: fpartitions
+		}
+		reader.skip_flex_tagged_fields(is_flexible)!
+	}
+
+	return forgotten_topics_data
+}
+
 // parse_fetch_request parses a Fetch request.
 // Reads different fields depending on the version to build the FetchRequest struct.
 fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !FetchRequest {
@@ -117,89 +208,14 @@ fn parse_fetch_request(mut reader BinaryReader, version i16, is_flexible bool) !
 		_ = reader.read_i32()!
 	}
 
-	// Parse topic array
 	topic_count := reader.read_flex_array_len(is_flexible)!
 
 	mut topics := []FetchRequestTopic{}
 	for _ in 0 .. topic_count {
-		mut name := ''
-		mut topic_id := []u8{}
-
-		// v13+ uses topic UUID instead of topic name
-		if version >= 13 {
-			topic_id = reader.read_uuid()!
-		} else if is_flexible {
-			name = reader.read_compact_string()!
-		} else {
-			name = reader.read_string()!
-		}
-
-		// Parse partition array
-		partition_count := reader.read_flex_array_len(is_flexible)!
-
-		mut partitions := []FetchRequestPartition{}
-		for _ in 0 .. partition_count {
-			partition := reader.read_i32()!
-
-			// current_leader_epoch field added in v9+ (ignored)
-			if version >= 9 {
-				_ = reader.read_i32()!
-			}
-
-			fetch_offset := reader.read_i64()!
-
-			// log_start_offset field added in v5+ (ignored)
-			if version >= 5 {
-				_ = reader.read_i64()!
-			}
-
-			partition_max_bytes := reader.read_i32()!
-
-			partitions << FetchRequestPartition{
-				partition:           partition
-				fetch_offset:        fetch_offset
-				partition_max_bytes: partition_max_bytes
-			}
-
-			reader.skip_flex_tagged_fields(is_flexible)!
-		}
-
-		topics << FetchRequestTopic{
-			name:       name
-			topic_id:   topic_id
-			partitions: partitions
-		}
-
-		reader.skip_flex_tagged_fields(is_flexible)!
+		topics << parse_fetch_topic(mut reader, version, is_flexible)!
 	}
 
-	// Parse forgotten topics data in v7+ (for session-based fetch)
-	mut forgotten_topics_data := []FetchRequestForgottenTopic{}
-	if version >= 7 {
-		forgotten_count := reader.read_flex_array_len(is_flexible)!
-		for _ in 0 .. forgotten_count {
-			mut fname := ''
-			mut ftopic_id := []u8{}
-			if version >= 13 {
-				ftopic_id = reader.read_uuid()!
-			} else if is_flexible {
-				fname = reader.read_compact_string()!
-			} else {
-				fname = reader.read_string()!
-			}
-			fpartition_count := reader.read_flex_array_len(is_flexible)!
-			mut fpartitions := []i32{}
-			for _ in 0 .. fpartition_count {
-				fpartitions << reader.read_i32()!
-			}
-			forgotten_topics_data << FetchRequestForgottenTopic{
-				name:       fname
-				topic_id:   ftopic_id
-				partitions: fpartitions
-			}
-			reader.skip_flex_tagged_fields(is_flexible)!
-		}
-	}
+	forgotten_topics_data := parse_fetch_forgotten_topics(mut reader, version, is_flexible)!
 
 	// rack_id field added in v11+ (ignored)
 	if version >= 11 {
@@ -308,6 +324,99 @@ pub fn (r FetchResponse) encode(version i16) []u8 {
 	return writer.bytes()
 }
 
+// FetchPartitionResult holds the result of processing a single partition fetch.
+struct FetchPartitionResult {
+pub:
+	response     FetchResponsePartition
+	record_count int
+	total_bytes  i64
+	bytes_saved  i64
+}
+
+// apply_fetch_schema_decoding applies schema decoding to fetched records if configured.
+fn (mut h Handler) apply_fetch_schema_decoding(topic_name string, records []domain.Record, first_offset i64) []u8 {
+	schema := h.get_topic_schema(topic_name) or { return []u8{} }
+
+	h.logger.debug('Decoding records with schema', observability.field_string('topic',
+		topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
+
+	mut decoded_records := []domain.Record{}
+	for record in records {
+		decoded_value := h.decode_record_with_schema(record.value, &schema) or {
+			h.logger.warn('Failed to decode record with schema, returning raw data', observability.field_string('topic',
+				topic_name), observability.field_err_str(err.str()))
+			decoded_records << record
+			continue
+		}
+		decoded_records << domain.Record{
+			key:       record.key
+			value:     decoded_value
+			timestamp: record.timestamp
+			headers:   record.headers
+		}
+	}
+	return encode_record_batch_zerocopy(decoded_records, first_offset)
+}
+
+// fetch_partition_data fetches data for a single partition and builds the response.
+fn (mut h Handler) fetch_partition_data(topic_name string, p FetchRequestPartition, preferred_compression compression.CompressionType) FetchPartitionResult {
+	result := h.storage.fetch(topic_name, int(p.partition), p.fetch_offset, p.partition_max_bytes) or {
+		error_code := if err.str().contains('not found') {
+			i16(ErrorCode.unknown_topic_or_partition)
+		} else if err.str().contains('out of range') {
+			i16(ErrorCode.offset_out_of_range)
+		} else {
+			i16(ErrorCode.unknown_server_error)
+		}
+
+		h.logger.debug('Fetch partition error', observability.field_string('topic', topic_name),
+			observability.field_int('partition', p.partition), observability.field_int('error_code',
+			error_code))
+
+		return FetchPartitionResult{
+			response: FetchResponsePartition{
+				partition_index:    p.partition
+				error_code:         error_code
+				high_watermark:     0
+				last_stable_offset: 0
+				log_start_offset:   0
+				records:            []u8{}
+			}
+		}
+	}
+
+	records_data := encode_record_batch_zerocopy(result.records, result.first_offset)
+
+	schema_decoded_data := h.apply_fetch_schema_decoding(topic_name, result.records, result.first_offset)
+	records_for_compression := if schema_decoded_data.len > 0 {
+		schema_decoded_data
+	} else {
+		records_data
+	}
+
+	compressed_result := h.compress_records_for_fetch(records_for_compression, preferred_compression,
+		topic_name, p.partition)
+	final_records_data := compressed_result.data
+
+	h.logger.trace('Fetch partition success', observability.field_string('topic', topic_name),
+		observability.field_int('partition', p.partition), observability.field_int('records',
+		result.records.len), observability.field_bytes('response_size', final_records_data.len))
+
+	return FetchPartitionResult{
+		response:     FetchResponsePartition{
+			partition_index:    p.partition
+			error_code:         0
+			high_watermark:     result.high_watermark
+			last_stable_offset: result.last_stable_offset
+			log_start_offset:   result.log_start_offset
+			records:            final_records_data
+		}
+		record_count: result.records.len
+		total_bytes:  final_records_data.len
+		bytes_saved:  compressed_result.bytes_saved
+	}
+}
+
 // process_fetch handles a Fetch request (frame-based).
 // Retrieves messages from the requested topic/partition and builds the response.
 // Compression support: compresses records according to topic configuration before sending.
@@ -334,98 +443,17 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 			}
 		}
 
-		// Kafka 프로토콜 호환성: RecordBatch 헤더는 비압축 상태여야 Consumer가 파싱 가능하므로
-		// Fetch 경로에서는 재압축을 수행하지 않는다.
+		// Kafka protocol compatibility: RecordBatch headers must be uncompressed
+		// for Consumer parsing, so no re-compression is performed in the Fetch path.
 		preferred_compression := compression.CompressionType.none
 
-		// Fetch data from each partition
 		mut partitions := []FetchResponsePartition{}
 		for p in t.partitions {
-			// Fetch messages from storage
-			result := h.storage.fetch(topic_name, int(p.partition), p.fetch_offset, p.partition_max_bytes) or {
-				// Map storage error to an appropriate error code
-				error_code := if err.str().contains('not found') {
-					i16(ErrorCode.unknown_topic_or_partition)
-				} else if err.str().contains('out of range') {
-					i16(ErrorCode.offset_out_of_range)
-				} else {
-					i16(ErrorCode.unknown_server_error)
-				}
-
-				h.logger.debug('Fetch partition error', observability.field_string('topic',
-					topic_name), observability.field_int('partition', p.partition), observability.field_int('error_code',
-					error_code))
-
-				partitions << FetchResponsePartition{
-					partition_index:    p.partition
-					error_code:         error_code
-					high_watermark:     0
-					last_stable_offset: 0
-					log_start_offset:   0
-					records:            []u8{}
-				}
-				continue
-			}
-
-			// Encode fetched records into RecordBatch format.
-			// first_offset: use the actual offset of the first record returned.
-			records_data := encode_record_batch_zerocopy(result.records, result.first_offset)
-			total_records += result.records.len
-
-			// Apply schema decoding if configured for this topic.
-			// Clone is deferred: only performed when schema decoding is needed.
-			schema_decoded_data := if schema := h.get_topic_schema(topic_name) {
-				h.logger.debug('Decoding records with schema', observability.field_string('topic',
-					topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
-
-				mut decoded_records := []domain.Record{}
-				for record in result.records {
-					decoded_value := h.decode_record_with_schema(record.value, &schema) or {
-						h.logger.warn('Failed to decode record with schema, returning raw data',
-							observability.field_string('topic', topic_name), observability.field_err_str(err.str()))
-						// Return raw data on decode failure
-						decoded_records << record
-						continue
-					}
-					decoded_records << domain.Record{
-						key:       record.key
-						value:     decoded_value
-						timestamp: record.timestamp
-						headers:   record.headers
-					}
-				}
-				// Re-encode decoded records as RecordBatch
-				encode_record_batch_zerocopy(decoded_records, result.first_offset)
-			} else {
-				[]u8{}
-			}
-			// Use schema-decoded data if available, otherwise use records_data directly (no clone)
-			records_for_compression := if schema_decoded_data.len > 0 {
-				schema_decoded_data
-			} else {
-				records_data
-			}
-
-			// Apply compression
-			compressed_result := h.compress_records_for_fetch(records_for_compression,
-				preferred_compression, topic_name, p.partition)
-			final_records_data := compressed_result.data
-			total_bytes_saved += compressed_result.bytes_saved
-
-			total_bytes += final_records_data.len
-
-			h.logger.trace('Fetch partition success', observability.field_string('topic',
-				topic_name), observability.field_int('partition', p.partition), observability.field_int('records',
-				result.records.len), observability.field_bytes('response_size', final_records_data.len))
-
-			partitions << FetchResponsePartition{
-				partition_index:    p.partition
-				error_code:         0
-				high_watermark:     result.high_watermark
-				last_stable_offset: result.last_stable_offset
-				log_start_offset:   result.log_start_offset
-				records:            final_records_data
-			}
+			part_result := h.fetch_partition_data(topic_name, p, preferred_compression)
+			total_records += part_result.record_count
+			total_bytes += part_result.total_bytes
+			total_bytes_saved += part_result.bytes_saved
+			partitions << part_result.response
 		}
 		topics << FetchResponseTopic{
 			name:       topic_name
@@ -630,13 +658,117 @@ pub:
 	partitions []i32
 }
 
+// parse_simple_fetch_partition reads a single partition from a SimpleFetch request.
+fn parse_simple_fetch_partition(mut reader BinaryReader, version i16, flexible bool) !SimpleFetchPartition {
+	partition := reader.read_i32()!
+	current_leader_epoch := if version >= 9 { reader.read_i32()! } else { i32(-1) }
+	fetch_offset := reader.read_i64()!
+	last_fetched_epoch := if version >= 12 { reader.read_i32()! } else { i32(-1) }
+	log_start_offset := if version >= 5 { reader.read_i64()! } else { i64(-1) }
+	partition_max_bytes := reader.read_i32()!
+
+	if flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return SimpleFetchPartition{
+		partition:            partition
+		current_leader_epoch: current_leader_epoch
+		fetch_offset:         fetch_offset
+		last_fetched_epoch:   last_fetched_epoch
+		log_start_offset:     log_start_offset
+		partition_max_bytes:  partition_max_bytes
+	}
+}
+
+// parse_simple_fetch_topic reads a single topic entry from a SimpleFetch request.
+fn parse_simple_fetch_topic(mut reader BinaryReader, version i16, flexible bool) !SimpleFetchTopic {
+	mut topic_id := []u8{}
+	mut topic_name := ''
+
+	if version >= 13 {
+		topic_id = reader.read_uuid()!
+	}
+	if version < 13 || !flexible {
+		topic_name = if flexible { reader.read_compact_string()! } else { reader.read_string()! }
+	}
+
+	mut partitions := []SimpleFetchPartition{}
+	partition_count := if flexible {
+		reader.read_compact_array_len()!
+	} else {
+		reader.read_array_len()!
+	}
+
+	for _ in 0 .. partition_count {
+		partitions << parse_simple_fetch_partition(mut reader, version, flexible)!
+	}
+
+	if flexible {
+		reader.skip_tagged_fields()!
+	}
+
+	return SimpleFetchTopic{
+		topic_id:   topic_id
+		name:       topic_name
+		partitions: partitions
+	}
+}
+
+// parse_simple_forgotten_topics reads the forgotten topics array from a SimpleFetch request.
+fn parse_simple_forgotten_topics(mut reader BinaryReader, version i16, flexible bool) ![]ForgottenTopic {
+	mut forgotten_topics := []ForgottenTopic{}
+	if version < 7 {
+		return forgotten_topics
+	}
+
+	forgotten_count := if flexible {
+		reader.read_compact_array_len()!
+	} else {
+		reader.read_array_len()!
+	}
+
+	for _ in 0 .. forgotten_count {
+		mut f_topic_id := []u8{}
+		mut f_name := ''
+
+		if version >= 13 {
+			f_topic_id = reader.read_uuid()!
+		}
+		if version < 13 || !flexible {
+			f_name = if flexible { reader.read_compact_string()! } else { reader.read_string()! }
+		}
+
+		mut f_partitions := []i32{}
+		f_partition_count := if flexible {
+			reader.read_compact_array_len()!
+		} else {
+			reader.read_array_len()!
+		}
+
+		for _ in 0 .. f_partition_count {
+			f_partitions << reader.read_i32()!
+		}
+
+		if flexible {
+			reader.skip_tagged_fields()!
+		}
+
+		forgotten_topics << ForgottenTopic{
+			topic_id:   f_topic_id
+			name:       f_name
+			partitions: f_partitions
+		}
+	}
+
+	return forgotten_topics
+}
+
 /// parse_fetch_request_simple is a lightweight Fetch request parser.
 /// Returns the parsed request as a SimpleFetchRequest.
 pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !SimpleFetchRequest {
 	mut reader := new_reader(data)
 
-	// v0–14: replica_id (INT32) is the first field.
-	// v15+: replica_id removed from body; replaced by replica_state in tagged fields.
 	mut replica_id := i32(-1)
 	if version < 15 {
 		replica_id = reader.read_i32()!
@@ -644,130 +776,23 @@ pub fn parse_fetch_request_simple(data []u8, version i16, flexible bool) !Simple
 
 	max_wait_ms := reader.read_i32()!
 	min_bytes := reader.read_i32()!
-
-	// max_bytes field added in v3+
 	max_bytes := if version >= 3 { reader.read_i32()! } else { i32(0x7FFFFFFF) }
-
-	// isolation_level field added in v4+
 	isolation_level := if version >= 4 { reader.read_i8()! } else { i8(0) }
-
-	// session_id and session_epoch fields added in v7+
 	session_id := if version >= 7 { reader.read_i32()! } else { i32(0) }
 	session_epoch := if version >= 7 { reader.read_i32()! } else { i32(-1) }
 
-	// Parse topic array
 	mut topics := []SimpleFetchTopic{}
 	topic_count := if flexible {
 		reader.read_compact_array_len()!
 	} else {
 		reader.read_array_len()!
 	}
-
 	for _ in 0 .. topic_count {
-		// v13+ uses topic UUID
-		mut topic_id := []u8{}
-		mut topic_name := ''
-
-		if version >= 13 {
-			topic_id = reader.read_uuid()!
-		}
-		if version < 13 || !flexible {
-			topic_name = if flexible { reader.read_compact_string()! } else { reader.read_string()! }
-		}
-
-		// Parse partition array
-		mut partitions := []SimpleFetchPartition{}
-		partition_count := if flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
-
-		for _ in 0 .. partition_count {
-			partition := reader.read_i32()!
-
-			// current_leader_epoch field added in v9+
-			current_leader_epoch := if version >= 9 { reader.read_i32()! } else { i32(-1) }
-
-			fetch_offset := reader.read_i64()!
-
-			// last_fetched_epoch field added in v12+
-			last_fetched_epoch := if version >= 12 { reader.read_i32()! } else { i32(-1) }
-
-			// log_start_offset field added in v5+
-			log_start_offset := if version >= 5 { reader.read_i64()! } else { i64(-1) }
-
-			partition_max_bytes := reader.read_i32()!
-
-			if flexible {
-				reader.skip_tagged_fields()!
-			}
-
-			partitions << SimpleFetchPartition{
-				partition:            partition
-				current_leader_epoch: current_leader_epoch
-				fetch_offset:         fetch_offset
-				last_fetched_epoch:   last_fetched_epoch
-				log_start_offset:     log_start_offset
-				partition_max_bytes:  partition_max_bytes
-			}
-		}
-
-		if flexible {
-			reader.skip_tagged_fields()!
-		}
-
-		topics << SimpleFetchTopic{
-			topic_id:   topic_id
-			name:       topic_name
-			partitions: partitions
-		}
+		topics << parse_simple_fetch_topic(mut reader, version, flexible)!
 	}
 
-	// Parse forgotten topics array in v7+
-	mut forgotten_topics := []ForgottenTopic{}
-	if version >= 7 {
-		forgotten_count := if flexible {
-			reader.read_compact_array_len()!
-		} else {
-			reader.read_array_len()!
-		}
+	forgotten_topics := parse_simple_forgotten_topics(mut reader, version, flexible)!
 
-		for _ in 0 .. forgotten_count {
-			mut f_topic_id := []u8{}
-			mut f_name := ''
-
-			if version >= 13 {
-				f_topic_id = reader.read_uuid()!
-			}
-			if version < 13 || !flexible {
-				f_name = if flexible { reader.read_compact_string()! } else { reader.read_string()! }
-			}
-
-			mut f_partitions := []i32{}
-			f_partition_count := if flexible {
-				reader.read_compact_array_len()!
-			} else {
-				reader.read_array_len()!
-			}
-
-			for _ in 0 .. f_partition_count {
-				f_partitions << reader.read_i32()!
-			}
-
-			if flexible {
-				reader.skip_tagged_fields()!
-			}
-
-			forgotten_topics << ForgottenTopic{
-				topic_id:   f_topic_id
-				name:       f_name
-				partitions: f_partitions
-			}
-		}
-	}
-
-	// rack_id field added in v11+
 	rack_id := if version >= 11 {
 		if flexible { reader.read_compact_string()! } else { reader.read_string()! }
 	} else {
