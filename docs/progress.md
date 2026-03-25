@@ -1,5 +1,42 @@
 # Progress Log
 
+## v0.53.0 -- Codebase Health v4: 20 Issues Fixed (2026-03-25)
+
+### P1 -- CRITICAL (3 items)
+- S3 append() TOCTOU race: partition-level exclusive lock, concurrent append test
+- S3 key path traversal: validate_identifier() at 25+ entry points, security tests
+- S3 compaction merge order: channel -> indexed results array, order verification test
+
+### P2 -- HIGH (6 items)
+- SubHandler dead code: 8 _ctx.v files + HandlerContext deleted (-125 lines)
+- client_ip audit: AuthConnection.remote_addr propagation to SASL handler
+- IoUring close(): munmap/fd_close/ring cleanup implemented
+- S3 signing key: CachedSigningKey with date_day caching
+- S3 atomic flags: worker_start_mu + is_flushing_flag with stdatomic
+- TOML injection: escape \b, \f special characters in config_save
+
+### P3 -- MEDIUM (7 items)
+- compression DIP: port.CompressionType constants, infra.compression import removed from handler
+- OTLP HTTP: actual POST with retry (was no-op stub)
+- TransactionStore: S3TransactionStore + PostgresTransactionStore implementations
+- S3 function splits: 16 functions decomposed (append, fetch, parse_s3_config etc.)
+- DMA fallback: real sendfile/scatter_read/gather_write POSIX I/O
+- duplicate groups: CRC32-IEEE to common, Reader consolidation, binary_helpers dedup
+
+### P4 -- LOW (4 items)
+- observability.field_: remaining 89 occurrences unified to port.field_*
+- WebSocket JSON: manual parsing -> json.decode
+- CLI topic: partition details display added
+- streaming glob: glob_match() with *, ?, [abc], [a-z], [!abc] support
+
+### Results
+- 72 files changed, +3443 / -1186 lines
+- 132/132 tests pass, build SUCCESS
+- CHECK APPROVE 87.3/100 (Grade B+)
+- 8 dead files deleted, 12 new files created
+
+---
+
 ## v0.52.1 -- DIP Cleanup + Auth Warning (2026-03-25)
 - handler 18파일 observability.field_* -> port.field_* 통일 (309건 교체, 18 import 제거)
 - port.field_duration/bytes/float 포맷 수정 (observability 동작과 일치)
