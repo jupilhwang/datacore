@@ -145,31 +145,37 @@ pub fn crc32_update(crc u32, data []u8) u32 {
 // Varint encoding - delegates to common module
 
 /// encode_varint encodes a signed integer as a varint.
+@[inline]
 pub fn encode_varint(value i64) []u8 {
 	return common.encode_varint(value)
 }
 
 /// encode_uvarint encodes an unsigned integer as a varint.
+@[inline]
 pub fn encode_uvarint(value u64) []u8 {
 	return common.encode_uvarint(value)
 }
 
 /// decode_varint decodes a signed varint.
+@[inline]
 pub fn decode_varint(data []u8) (i64, int) {
 	return common.decode_varint(data)
 }
 
 /// decode_uvarint decodes an unsigned varint.
+@[inline]
 pub fn decode_uvarint(data []u8) (u64, int) {
 	return common.decode_uvarint(data)
 }
 
 /// varint_size returns the encoded size of a value.
+@[inline]
 pub fn varint_size(value i64) int {
 	return common.varint_size(value)
 }
 
 /// uvarint_size returns the encoded size of an unsigned value.
+@[inline]
 pub fn uvarint_size(value u64) int {
 	return common.uvarint_size(value)
 }
@@ -219,41 +225,46 @@ pub fn read_u32_be(data []u8) u32 {
 // Binary I/O wrappers - delegates to common module
 
 /// write_i16_be writes a 16-bit integer in big-endian order to a buffer.
+@[inline]
 pub fn write_i16_be(mut buf []u8, val i16) {
 	common.write_i16_be(mut buf, val)
 }
 
 /// write_i32_be writes a 32-bit integer in big-endian order to a buffer.
+@[inline]
 pub fn write_i32_be(mut buf []u8, val i32) {
 	common.write_i32_be(mut buf, val)
 }
 
 /// write_i64_be writes a 64-bit integer in big-endian order to a buffer.
+@[inline]
 pub fn write_i64_be(mut buf []u8, val i64) {
 	common.write_i64_be(mut buf, val)
 }
 
 /// read_i16_be reads a 16-bit integer in big-endian order from a buffer.
 pub fn read_i16_be(data []u8) i16 {
-	return common.read_i16_be(data) or { i16(0) }
+	return i16(u16(data[0]) << 8 | u16(data[1]))
 }
 
 /// read_i32_be reads a 32-bit integer in big-endian order from a buffer.
 pub fn read_i32_be(data []u8) i32 {
-	return common.read_i32_be(data) or { i32(0) }
+	return i32(u32(data[0]) << 24 | u32(data[1]) << 16 | u32(data[2]) << 8 | u32(data[3]))
 }
 
 /// read_i64_be reads a 64-bit integer in big-endian order from a buffer.
 pub fn read_i64_be(data []u8) i64 {
-	return common.read_i64_be(data) or { i64(0) }
+	return i64(u64(data[0]) << 56 | u64(data[1]) << 48 | u64(data[2]) << 40 | u64(data[3]) << 32 | u64(data[4]) << 24 | u64(data[5]) << 16 | u64(data[6]) << 8 | u64(data[7]))
 }
 
 /// hex_char_to_nibble converts a hexadecimal character to a 4-bit value.
+@[inline]
 pub fn hex_char_to_nibble(c u8) int {
 	return common.hex_char_to_nibble(c)
 }
 
 /// escape_json_string escapes a string for use in a JSON value.
+@[inline]
 pub fn escape_json_string(s string) string {
 	return common.escape_json_string(s)
 }

@@ -21,6 +21,8 @@ mut:
 	share_storage port.SharePartitionPort
 	// Thread safety
 	lock sync.RwMutex
+	// Logger for operational warnings and errors
+	logger port.LoggerPort
 }
 
 /// new_share_partition_manager creates a new share partition manager.
@@ -29,7 +31,13 @@ pub fn new_share_partition_manager(record_storage port.RecordStoragePort, share_
 		partitions:     map[string]&domain.SharePartition{}
 		record_storage: record_storage
 		share_storage:  share_storage
+		logger:         port.new_noop_logger()
 	}
+}
+
+/// set_logger sets the logger for the share partition manager.
+pub fn (mut m SharePartitionManager) set_logger(logger port.LoggerPort) {
+	m.logger = logger
 }
 
 // Partition management
@@ -150,7 +158,9 @@ pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id 
 
 	// Auto-save: persist state after acquisition
 	if acquired.len > 0 {
-		m.persist_state(sp) or {}
+		m.persist_state(sp) or {
+			m.logger.warn('Failed to persist share partition state error=${err}')
+		}
 	}
 
 	return acquired
@@ -212,7 +222,7 @@ pub fn (mut m SharePartitionManager) acknowledge_records(group_id string, member
 	m.advance_spso_internal(mut sp)
 
 	// Auto-save: persist state after acknowledgement
-	m.persist_state(sp) or {}
+	m.persist_state(sp) or { m.logger.warn('Failed to persist share partition state error=${err}') }
 
 	return domain.ShareAcknowledgeResult{
 		topic_name: batch.topic_name

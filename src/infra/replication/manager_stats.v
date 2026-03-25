@@ -8,7 +8,7 @@ import domain
 // Protected data groups:
 //   - stats + stats_lock (replication counters)
 //   - partition_metrics + partition_metrics_lock (per-partition metrics)
-//   - metrics (ReplicationMetrics with internal lock)
+//   - metrics + metrics_lock (ReplicationMetrics -- caller must hold metrics_lock)
 //
 // Lock ordering position: stats_lock is last (assignments_lock -> broker_health_lock -> replica_buffers_lock -> stats_lock)
 // partition_metrics_lock follows the same ordering as stats_lock (both are leaf locks, never held together).
@@ -24,10 +24,13 @@ pub fn (mut m Manager) get_stats() domain.ReplicationStats {
 }
 
 // get_metrics returns a snapshot of the comprehensive replication metrics.
-// Thread-safe; uses ReplicationMetrics internal lock.
+// Thread-safe; acquires metrics_lock internally.
 /// get_metrics returns a snapshot of the comprehensive replication metrics.
 pub fn (mut m Manager) get_metrics() domain.ReplicationMetricsSnapshot {
-	return m.metrics.snapshot()
+	m.metrics_lock.@lock()
+	result := m.metrics.snapshot()
+	m.metrics_lock.unlock()
+	return result
 }
 
 // get_partition_metrics returns a copy of the per-partition metrics map.
@@ -45,9 +48,12 @@ pub fn (mut m Manager) get_partition_metrics() map[string]domain.PartitionMetric
 
 // flush_metrics_rates recomputes per-second throughput rates.
 // Should be called periodically (e.g., every second) from a background task.
+// Thread-safe; acquires metrics_lock internally.
 /// flush_metrics_rates recomputes per-second throughput rates.
 pub fn (mut m Manager) flush_metrics_rates() {
+	m.metrics_lock.@lock()
 	m.metrics.flush_rates()
+	m.metrics_lock.unlock()
 }
 
 // record_stats_replicate increments the replicated counter.
