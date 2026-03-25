@@ -1,5 +1,22 @@
 # DataCore Changelog
 
+## [v0.51.0] -- 2026-03-25
+
+### Refactored
+- `tcp.v`: `handle_connection` 240 -> 73 lines (6 private helpers extracted)
+- `handler_metadata.v`: `process_metadata` 193 -> 63 lines, `MetadataResponse.encode` 151 -> 47 lines (6 helpers)
+- `handler_produce.v`: `process_produce` 188 -> 62 lines (3 helpers)
+- `handler_config.v`: `process_describe_configs` 185 -> 26 lines (4 helpers, DRY: config entry builder)
+- `handler_fetch.v`: 3 God Functions split into 9 helpers
+- `handler_offset.v`: `handle_offset_fetch` 133 -> 15 lines (3 helpers)
+
+### Removed
+- Dead functions: `init_telemetry`, `get_telemetry`, `shutdown_telemetry`, `compression_type_from_u8`
+
+### Fixed
+- DRY: Partition metadata generation duplicated 2x in process_metadata -> consolidated
+- DRY: DescribeConfigsEntry struct literal repeated 7x -> build_config_entry() helper
+
 ## [Unreleased]
 
 ### Fixed

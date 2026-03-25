@@ -496,79 +496,88 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		req.groups.len))
 
 	if version >= 8 {
-		mut groups := []OffsetFetchResponseGroup{}
+		return h.handle_offset_fetch_v8plus(req, version)
+	}
+	return h.handle_offset_fetch_legacy(req, start_time, version)
+}
 
-		mut req_groups := req.groups.clone()
-		if req_groups.len == 0 && req.group_id.len > 0 {
-			mut gtopics := []OffsetFetchRequestGroupTopic{}
-			for t in req.topics {
-				gtopics << OffsetFetchRequestGroupTopic{
-					name:       t.name
-					partitions: t.partitions
-				}
-			}
-			req_groups << OffsetFetchRequestGroup{
-				group_id:     req.group_id
-				member_id:    none
-				member_epoch: -1
-				topics:       gtopics
+// handle_offset_fetch_v8plus handles OffsetFetch for v8+ (multi-group path).
+// fetch_offsets_for_group fetches committed offsets for a single consumer group.
+fn (mut h Handler) fetch_offsets_for_group(g OffsetFetchRequestGroup, require_stable bool) OffsetFetchResponseGroup {
+	mut partitions_to_fetch := []domain.TopicPartition{cap: g.topics.len * 4}
+	for t in g.topics {
+		for p in t.partitions {
+			partitions_to_fetch << domain.TopicPartition{
+				topic:     t.name
+				partition: int(p)
 			}
 		}
-
-		for g in req_groups {
-			// Convert protocol request to service request
-			mut partitions_to_fetch := []domain.TopicPartition{cap: g.topics.len * 4}
-			for t in g.topics {
-				for p in t.partitions {
-					partitions_to_fetch << domain.TopicPartition{
-						topic:     t.name
-						partition: int(p)
-					}
-				}
-			}
-
-			// Fetch offsets via OffsetManager
-			service_resp := h.offset_manager.fetch_offsets(offset.OffsetFetchRequest{
-				group_id:       g.group_id
-				partitions:     partitions_to_fetch
-				require_stable: req.require_stable
-			}) or {
-				groups << OffsetFetchResponseGroup{
-					group_id:   g.group_id
-					topics:     []
-					error_code: i16(ErrorCode.unknown_server_error)
-				}
-				continue
-			}
-
-			// Convert service response to protocol response
-			topics_map := group_fetch_partitions_by_topic(service_resp.results)
-
-			mut topics := []OffsetFetchResponseGroupTopic{cap: topics_map.len}
-			for name, partitions in topics_map {
-				topics << OffsetFetchResponseGroupTopic{
-					name:       name
-					partitions: partitions
-				}
-			}
-
-			groups << OffsetFetchResponseGroup{
-				group_id:   g.group_id
-				topics:     topics
-				error_code: service_resp.error_code
-			}
-		}
-
-		resp := OffsetFetchResponse{
-			throttle_time_ms: default_throttle_time_ms
-			topics:           []
-			error_code:       0
-			groups:           groups
-		}
-		return resp.encode(version)
 	}
 
-	// v0-7 behavior
+	service_resp := h.offset_manager.fetch_offsets(offset.OffsetFetchRequest{
+		group_id:       g.group_id
+		partitions:     partitions_to_fetch
+		require_stable: require_stable
+	}) or {
+		return OffsetFetchResponseGroup{
+			group_id:   g.group_id
+			topics:     []
+			error_code: i16(ErrorCode.unknown_server_error)
+		}
+	}
+
+	topics_map := group_fetch_partitions_by_topic(service_resp.results)
+
+	mut topics := []OffsetFetchResponseGroupTopic{cap: topics_map.len}
+	for name, partitions in topics_map {
+		topics << OffsetFetchResponseGroupTopic{
+			name:       name
+			partitions: partitions
+		}
+	}
+
+	return OffsetFetchResponseGroup{
+		group_id:   g.group_id
+		topics:     topics
+		error_code: service_resp.error_code
+	}
+}
+
+fn (mut h Handler) handle_offset_fetch_v8plus(req OffsetFetchRequest, version i16) ![]u8 {
+	mut groups := []OffsetFetchResponseGroup{}
+
+	mut req_groups := req.groups.clone()
+	if req_groups.len == 0 && req.group_id.len > 0 {
+		mut gtopics := []OffsetFetchRequestGroupTopic{}
+		for t in req.topics {
+			gtopics << OffsetFetchRequestGroupTopic{
+				name:       t.name
+				partitions: t.partitions
+			}
+		}
+		req_groups << OffsetFetchRequestGroup{
+			group_id:     req.group_id
+			member_id:    none
+			member_epoch: -1
+			topics:       gtopics
+		}
+	}
+
+	for g in req_groups {
+		groups << h.fetch_offsets_for_group(g, req.require_stable)
+	}
+
+	resp := OffsetFetchResponse{
+		throttle_time_ms: default_throttle_time_ms
+		topics:           []
+		error_code:       0
+		groups:           groups
+	}
+	return resp.encode(version)
+}
+
+// handle_offset_fetch_legacy handles OffsetFetch for v0-7 (single group path).
+fn (mut h Handler) handle_offset_fetch_legacy(req OffsetFetchRequest, start_time time.Time, version i16) ![]u8 {
 	mut partitions_to_fetch := []domain.TopicPartition{cap: req.topics.len * 4}
 	for t in req.topics {
 		for p in t.partitions {
@@ -579,7 +588,6 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}
 	}
 
-	// Fetch offsets via OffsetManager
 	service_resp := h.offset_manager.fetch_offsets(offset.OffsetFetchRequest{
 		group_id:       req.group_id
 		partitions:     partitions_to_fetch
@@ -593,7 +601,6 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 		}.encode(version)
 	}
 
-	// Convert service response to protocol response
 	topics_map := group_fetch_partitions_by_topic(service_resp.results)
 
 	mut topics := []OffsetFetchResponseTopic{cap: topics_map.len}

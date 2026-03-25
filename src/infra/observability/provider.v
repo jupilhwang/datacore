@@ -149,48 +149,6 @@ fn (mut p TelemetryProvider) init_otlp_exporter() {
 	}
 }
 
-// Global TelemetryProvider singleton
-
-struct TelemetryProviderHolder {
-mut:
-	provider &TelemetryProvider = unsafe { nil }
-}
-
-// 모듈 수준 싱글톤 홀더 (const holder 패턴)
-const g_telemetry_const_holder = &TelemetryProviderHolder{
-	provider: unsafe { nil }
-}
-
-/// init_telemetry는 글로벌 TelemetryProvider 싱글톤을 생성, 초기화하고 등록한다.
-pub fn init_telemetry(cfg TelemetryConfig) &TelemetryProvider {
-	mut p := new_telemetry_provider(cfg)
-	p.init()
-	p.start_metrics_export()
-	mut holder := unsafe { g_telemetry_const_holder }
-	unsafe {
-		holder.provider = p
-	}
-	return p
-}
-
-/// get_telemetry는 글로벌 TelemetryProvider 싱글톤을 반환한다. 초기화 전이면 none.
-pub fn get_telemetry() ?&TelemetryProvider {
-	holder := unsafe { g_telemetry_const_holder }
-	if holder.provider == unsafe { nil } {
-		return none
-	}
-	return holder.provider
-}
-
-/// shutdown_telemetry는 글로벌 TelemetryProvider 싱글톤을 중지하고 해제한다.
-pub fn shutdown_telemetry() {
-	mut holder := unsafe { g_telemetry_const_holder }
-	if holder.provider != unsafe { nil } {
-		holder.provider.shutdown()
-		holder.provider = &TelemetryProvider(unsafe { nil })
-	}
-}
-
 // new_datacore_metrics_ref is a heap-allocated wrapper used by TelemetryProvider.
 fn new_datacore_metrics_ref() &DataCoreMetrics {
 	m := new_datacore_metrics()

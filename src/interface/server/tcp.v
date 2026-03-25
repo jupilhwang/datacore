@@ -320,12 +320,194 @@ fn (mut s Server) handle_connection_with_pool(mut conn net.TcpConn) {
 	s.handle_connection(mut conn)
 }
 
+/// RequestHeader holds parsed Kafka request header fields.
+struct RequestHeader {
+	api_key        i16
+	api_version    i16
+	correlation_id i32
+}
+
+/// read_request_size reads a 4-byte big-endian request size and validates it.
+fn (s &Server) read_request_size(mut conn net.TcpConn, client_addr string) !int {
+	mut size_buf := []u8{len: 4}
+	bytes_read := conn.read(mut size_buf) or { return err }
+	if bytes_read != 4 {
+		return error('incomplete size header')
+	}
+
+	request_size := int(u32(size_buf[0]) << 24 | u32(size_buf[1]) << 16 | u32(size_buf[2]) << 8 | u32(size_buf[3]))
+
+	if request_size <= 0 {
+		eprintln('[Connection] Invalid request size: ${request_size} from ${client_addr}')
+		return error('invalid request size')
+	}
+
+	if request_size > s.config.max_request_size {
+		eprintln('[Connection] Request too large: ${request_size} > ${s.config.max_request_size} from ${client_addr}')
+		return error('request too large')
+	}
+
+	return request_size
+}
+
+/// read_request_body reads the full request body into the pre-allocated buffer.
+fn (s &Server) read_request_body(mut conn net.TcpConn, mut buf []u8, request_size int, client_addr string) ! {
+	if request_size <= buf.cap {
+		unsafe {
+			buf.len = request_size
+		}
+	} else {
+		buf = []u8{len: request_size}
+	}
+	mut total_read := 0
+	for total_read < request_size {
+		n := conn.read(mut buf[total_read..]) or { break }
+		if n == 0 {
+			break
+		}
+		total_read += n
+	}
+
+	if total_read != request_size {
+		eprintln('[Connection] Incomplete request: expected ${request_size}, got ${total_read} from ${client_addr}')
+		return error('incomplete request')
+	}
+}
+
+/// parse_request_header extracts api_key, api_version, and correlation_id from the first 8 bytes.
+fn (s &Server) parse_request_header(data []u8) ?RequestHeader {
+	if data.len < 8 {
+		return none
+	}
+	return RequestHeader{
+		api_key:        i16(u16(data[0]) << 8 | u16(data[1]))
+		api_version:    i16(u16(data[2]) << 8 | u16(data[3]))
+		correlation_id: i32(u32(data[4]) << 24 | u32(data[5]) << 16 | u32(data[6]) << 8 | u32(data[7]))
+	}
+}
+
+/// check_rate_limit checks the rate limiter and sends a throttle response if needed.
+/// Returns true if the request was throttled (caller should continue to next request).
+fn (mut s Server) check_rate_limit(mut conn net.TcpConn, client_addr string, correlation_id i32, request_size int) bool {
+	if mut rl := s.rate_limiter {
+		client_ip := extract_ip(client_addr)
+		if !rl.allow_request_with_bytes(client_ip, i64(request_size)) {
+			throttle_resp := build_throttle_response(correlation_id)
+			conn.write(throttle_resp) or {
+				observability.log_with_context('tcp', .warn, 'RateLimit', 'failed to write throttle response',
+					{
+					'client':         client_addr
+					'correlation_id': correlation_id.str()
+					'error':          err.str()
+				})
+			}
+			return true
+		}
+	}
+	return false
+}
+
+/// build_error_response builds a minimal error response for the given API key and version.
+fn (s &Server) build_error_response(api_key i16, api_version i16, correlation_id i32) []u8 {
+	is_flexible := (api_key == 1 && api_version >= 12)
+		|| (api_key == 0 && api_version >= 9) || (api_key == 3 && api_version >= 9)
+		|| (api_key == 10 && api_version >= 6)
+
+	if api_key == 1 && is_flexible {
+		// Fetch v12+ error response: size(4) + correlation_id(4) + tagged_fields(1) + body(12) = 21 bytes
+		mut error_resp := []u8{len: 21}
+		error_resp[0] = 0
+		error_resp[1] = 0
+		error_resp[2] = 0
+		error_resp[3] = 17
+		error_resp[4] = u8(correlation_id >> 24)
+		error_resp[5] = u8(correlation_id >> 16)
+		error_resp[6] = u8(correlation_id >> 8)
+		error_resp[7] = u8(correlation_id)
+		error_resp[8] = 0
+		error_resp[9] = 0
+		error_resp[10] = 0
+		error_resp[11] = 0
+		error_resp[12] = 0
+		error_resp[13] = 0
+		error_resp[14] = 0
+		error_resp[15] = 0
+		error_resp[16] = 0
+		error_resp[17] = 0
+		error_resp[18] = 0
+		error_resp[19] = 1
+		error_resp[20] = 0
+		return error_resp
+	} else if is_flexible {
+		// Other flexible responses: size(4) + correlation_id(4) + tagged_fields(1)
+		mut error_resp := []u8{len: 9}
+		error_resp[0] = 0
+		error_resp[1] = 0
+		error_resp[2] = 0
+		error_resp[3] = 5
+		error_resp[4] = u8(correlation_id >> 24)
+		error_resp[5] = u8(correlation_id >> 16)
+		error_resp[6] = u8(correlation_id >> 8)
+		error_resp[7] = u8(correlation_id)
+		error_resp[8] = 0
+		return error_resp
+	} else {
+		// Non-flexible response: size(4) + correlation_id(4)
+		mut error_resp := []u8{len: 8}
+		error_resp[0] = 0
+		error_resp[1] = 0
+		error_resp[2] = 0
+		error_resp[3] = 4
+		error_resp[4] = u8(correlation_id >> 24)
+		error_resp[5] = u8(correlation_id >> 16)
+		error_resp[6] = u8(correlation_id >> 8)
+		error_resp[7] = u8(correlation_id)
+		return error_resp
+	}
+}
+
+/// send_ready_responses sends all ready pipeline responses to the connection in order.
+fn (mut s Server) send_ready_responses(mut conn net.TcpConn, ready []PendingRequest, mut client ClientConnection, api_key i16, client_addr string) {
+	for req in ready {
+		if req.error_msg.len > 0 {
+			observability.log_with_context('tcp', .warn, 'Response', 'Response error',
+				{
+				'correlation_id': req.correlation_id.str()
+				'error':          req.error_msg
+			})
+		}
+
+		$if debug {
+			if api_key == 1 && req.response_data.len < 200 {
+				observability.log_with_context('tcp', .debug, 'Response', 'Fetch response hex',
+					{
+					'size': req.response_data.len.str()
+					'hex':  req.response_data.hex()
+				})
+			}
+		}
+
+		conn.write(req.response_data) or {
+			observability.log_with_context('tcp', .error, 'Connection', 'Error sending response',
+				{
+				'client_addr': client_addr
+				'error':       err.str()
+			})
+			break
+		}
+
+		observability.log_with_context('tcp', .debug, 'Response', 'Sent', {
+			'bytes': req.response_data.len.str()
+		})
+		client.bytes_sent += u64(req.response_data.len)
+	}
+}
+
 /// handle_connection handles a single client connection.
 /// Reads requests and sends responses according to the Kafka protocol.
 /// Supports persistent connections and maintains a request-response loop
 /// until the connection is closed or an error occurs.
 fn (mut s Server) handle_connection(mut conn net.TcpConn) {
-	// Register connection with connection manager
 	mut client := s.conn_mgr.accept(mut conn) or {
 		eprintln('[Connection] Rejected: ${err}')
 		return
@@ -340,229 +522,62 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 		conn.close() or {}
 	}
 
-	// Create request pipeline for this connection
 	mut pipeline := new_pipeline(s.config.max_pending_requests)
-
-	// Pre-allocate request buffer at connection level to avoid per-request allocation.
-	// Reuse across requests; grow only when request_size exceeds current capacity.
-	initial_buf_cap := 65536 // 64 KB initial capacity covers most Kafka requests
+	initial_buf_cap := 65536
 	mut request_buf := []u8{len: initial_buf_cap}
 
-	// Request processing loop (persistent connection)
 	for s.is_running() {
-		// Check request timeout
 		if pipeline.has_timed_out(s.config.request_timeout_ms) {
 			eprintln('[Connection] Request timeout for ${client_addr}')
 			break
 		}
 
-		// Read request size (4 bytes, big-endian)
-		mut size_buf := []u8{len: 4}
-		bytes_read := conn.read(mut size_buf) or { break }
-		if bytes_read != 4 {
-			break
-		}
+		request_size := s.read_request_size(mut conn, client_addr) or { break }
+		s.read_request_body(mut conn, mut request_buf, request_size, client_addr) or { break }
 
-		request_size := int(u32(size_buf[0]) << 24 | u32(size_buf[1]) << 16 | u32(size_buf[2]) << 8 | u32(size_buf[3]))
-
-		// Validate request size
-		if request_size <= 0 {
-			eprintln('[Connection] Invalid request size: ${request_size} from ${client_addr}')
-			break
-		}
-
-		if request_size > s.config.max_request_size {
-			eprintln('[Connection] Request too large: ${request_size} > ${s.config.max_request_size} from ${client_addr}')
-			break
-		}
-
-		// Read request body — reuse connection-level buffer to avoid per-request allocation
-		if request_size <= request_buf.cap {
-			unsafe {
-				request_buf.len = request_size
-			}
-		} else {
-			request_buf = []u8{len: request_size}
-		}
-		mut total_read := 0
-		for total_read < request_size {
-			n := conn.read(mut request_buf[total_read..]) or { break }
-			if n == 0 {
-				break
-			}
-			total_read += n
-		}
-
-		if total_read != request_size {
-			eprintln('[Connection] Incomplete request: expected ${request_size}, got ${total_read} from ${client_addr}')
-			break
-		}
-
-		// Update client activity timestamp
 		client.last_active_at = time.now()
 		client.request_count += 1
 		client.bytes_received += u64(4 + request_size)
 
-		// Parse correlation_id and api_key for pipelining
-		if request_buf.len >= 8 {
-			api_key := i16(u16(request_buf[0]) << 8 | u16(request_buf[1]))
-			api_version := i16(u16(request_buf[2]) << 8 | u16(request_buf[3]))
-			correlation_id := i32(u32(request_buf[4]) << 24 | u32(request_buf[5]) << 16 | u32(request_buf[6]) << 8 | u32(request_buf[7]))
+		header := s.parse_request_header(request_buf) or { continue }
 
-			observability.log_with_context('tcp', .debug, 'Request', 'Incoming request',
-				{
-				'api_key':        api_key.str()
-				'api_version':    api_version.str()
-				'correlation_id': correlation_id.str()
-				'size':           request_size.str()
-			})
+		observability.log_with_context('tcp', .debug, 'Request', 'Incoming request', {
+			'api_key':        header.api_key.str()
+			'api_version':    header.api_version.str()
+			'correlation_id': header.correlation_id.str()
+			'size':           request_size.str()
+		})
 
-			// Rate limit check (if rate limiter is configured)
-			if mut rl := s.rate_limiter {
-				client_ip := extract_ip(client_addr)
-				if !rl.allow_request_with_bytes(client_ip, i64(request_size)) {
-					throttle_resp := build_throttle_response(correlation_id)
-					conn.write(throttle_resp) or {
-						observability.log_with_context('tcp', .warn, 'RateLimit', 'failed to write throttle response',
-							{
-							'client':         client_addr
-							'correlation_id': correlation_id.str()
-							'error':          err.str()
-						})
-					}
-					continue
-				}
-			}
-
-			// Add to pipeline queue (supports pipelining)
-			// Clone request_buf so the pipeline owns an independent copy;
-			// the connection-level buffer is reused for subsequent reads.
-			pipeline.enqueue(correlation_id, api_key, api_version, request_buf[..request_size].clone()) or {
-				eprintln('[Connection] Pipeline full for ${client_addr}: ${err}')
-				break
-			}
-
-			// Process request with connection context for auth verification
-			mut response := s.handler.handle_request(request_buf, mut client) or {
-				eprintln('[Connection] Error handling request from ${client_addr}: ${err}')
-				// Generate minimal error response to prevent client timeout
-				// Check whether this is a flexible response (Fetch v12+, Metadata v9+, etc.)
-				is_flexible := (api_key == 1 && api_version >= 12)
-					|| (api_key == 0 && api_version >= 9)
-					|| (api_key == 3 && api_version >= 9)
-					|| (api_key == 10 && api_version >= 6)
-
-				if api_key == 1 && is_flexible {
-					// Fetch v12+ error response requires proper body structure
-					// Body: throttle_time_ms(4) + error_code(2) + session_id(4) + topics(1) + tagged_fields(1)
-					// Total body: 12 bytes
-					// Response: size(4) + correlation_id(4) + header_tagged_fields(1) + body(12) = 21 bytes
-					mut error_resp := []u8{len: 21}
-					error_resp[0] = 0
-					error_resp[1] = 0
-					error_resp[2] = 0
-					error_resp[3] = 17
-					error_resp[4] = u8(correlation_id >> 24)
-					error_resp[5] = u8(correlation_id >> 16)
-					error_resp[6] = u8(correlation_id >> 8)
-					error_resp[7] = u8(correlation_id)
-					error_resp[8] = 0
-					// Body start (index 9)
-					error_resp[9] = 0
-					error_resp[10] = 0
-					error_resp[11] = 0
-					error_resp[12] = 0
-					error_resp[13] = 0
-					error_resp[14] = 0
-					error_resp[15] = 0
-					error_resp[16] = 0
-					error_resp[17] = 0
-					error_resp[18] = 0
-					error_resp[19] = 1
-					error_resp[20] = 0
-					error_resp
-				} else if is_flexible {
-					// Other flexible responses: size(4) + correlation_id(4) + tagged_fields(1)
-					mut error_resp := []u8{len: 9}
-					error_resp[0] = 0
-					error_resp[1] = 0
-					error_resp[2] = 0
-					error_resp[3] = 5
-					error_resp[4] = u8(correlation_id >> 24)
-					error_resp[5] = u8(correlation_id >> 16)
-					error_resp[6] = u8(correlation_id >> 8)
-					error_resp[7] = u8(correlation_id)
-					error_resp[8] = 0
-					error_resp
-				} else {
-					// Non-flexible response: size(4) + correlation_id(4)
-					mut error_resp := []u8{len: 8}
-					error_resp[0] = 0
-					error_resp[1] = 0
-					error_resp[2] = 0
-					error_resp[3] = 4
-					error_resp[4] = u8(correlation_id >> 24)
-					error_resp[5] = u8(correlation_id >> 16)
-					error_resp[6] = u8(correlation_id >> 8)
-					error_resp[7] = u8(correlation_id)
-					error_resp
-				}
-			}
-
-			observability.log_with_context('tcp', .debug, 'Response', 'Response ready',
-				{
-				'api_key': api_key.str()
-				'size':    response.len.str()
-			})
-
-			// Mark request as completed
-			pipeline.complete(correlation_id, response) or {
-				observability.log_with_context('tcp', .error, 'Pipeline', 'failed to complete pipeline request',
-					{
-					'correlation_id': correlation_id.str()
-					'client':         client_addr
-					'error':          err.str()
-				})
-			}
-
-			// Send ready responses in order
-			ready := pipeline.get_ready_responses()
-			for req in ready {
-				if req.error_msg.len > 0 {
-					observability.log_with_context('tcp', .warn, 'Response', 'Response error',
-						{
-						'correlation_id': req.correlation_id.str()
-						'error':          req.error_msg
-					})
-					// Send response even with error to prevent client timeout
-				}
-
-				// Debug: log Fetch responses
-				$if debug {
-					if api_key == 1 && req.response_data.len < 200 {
-						observability.log_with_context('tcp', .debug, 'Response', 'Fetch response hex',
-							{
-							'size': req.response_data.len.str()
-							'hex':  req.response_data.hex()
-						})
-					}
-				}
-
-				conn.write(req.response_data) or {
-					observability.log_with_context('tcp', .error, 'Connection', 'Error sending response',
-						{
-						'client_addr': client_addr
-						'error':       err.str()
-					})
-					break
-				}
-
-				observability.log_with_context('tcp', .debug, 'Response', 'Sent', {
-					'bytes': req.response_data.len.str()
-				})
-				client.bytes_sent += u64(req.response_data.len)
-			}
+		if s.check_rate_limit(mut conn, client_addr, header.correlation_id, request_size) {
+			continue
 		}
+
+		pipeline.enqueue(header.correlation_id, header.api_key, header.api_version, request_buf[..request_size].clone()) or {
+			eprintln('[Connection] Pipeline full for ${client_addr}: ${err}')
+			break
+		}
+
+		mut response := s.handler.handle_request(request_buf, mut client) or {
+			eprintln('[Connection] Error handling request from ${client_addr}: ${err}')
+			s.build_error_response(header.api_key, header.api_version, header.correlation_id)
+		}
+
+		observability.log_with_context('tcp', .debug, 'Response', 'Response ready', {
+			'api_key': header.api_key.str()
+			'size':    response.len.str()
+		})
+
+		pipeline.complete(header.correlation_id, response) or {
+			observability.log_with_context('tcp', .error, 'Pipeline', 'failed to complete pipeline request',
+				{
+				'correlation_id': header.correlation_id.str()
+				'client':         client_addr
+				'error':          err.str()
+			})
+		}
+
+		ready := pipeline.get_ready_responses()
+		s.send_ready_responses(mut conn, ready, mut client, header.api_key, client_addr)
 	}
 }
 
