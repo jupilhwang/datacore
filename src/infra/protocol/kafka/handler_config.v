@@ -3,7 +3,7 @@
 // Request/response types, parsing, encoding, and handlers
 module kafka
 
-import infra.observability
+import service.port
 import time
 
 // DescribeConfigs (API Key 32)
@@ -209,14 +209,14 @@ fn (mut h Handler) handle_describe_configs(body []u8, version i16) ![]u8 {
 	req := parse_describe_configs_request(mut reader, version, is_flexible_version(.describe_configs,
 		version))!
 
-	h.logger.debug('Processing describe configs', observability.field_int('resources',
-		req.resources.len), observability.field_bool('include_synonyms', req.include_synonyms))
+	h.logger.debug('Processing describe configs', port.field_int('resources', req.resources.len),
+		port.field_bool('include_synonyms', req.include_synonyms))
 
 	resp := h.process_describe_configs(req, version)!
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Describe configs completed', observability.field_int('results', resp.results.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Describe configs completed', port.field_int('results', resp.results.len),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

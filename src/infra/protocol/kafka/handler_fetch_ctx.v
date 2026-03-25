@@ -1,12 +1,10 @@
-// FetchSubHandler owns the dependencies specific to fetch operations.
+// FetchSubHandler is the sub-handler type for fetch operations.
 //
-// Currently only needs the shared HandlerContext, since fetch logic
-// relies on storage and compression from the common context.
+// Dependencies live on the main Handler struct; this type exists only
+// as a grouping marker referenced by Handler.
 module kafka
 
-/// FetchSubHandler groups the dependencies needed for fetch request handling.
-/// The main Handler delegates fetch-related work through this sub-handler.
+/// FetchSubHandler is the sub-handler type for fetch request handling.
+/// All dependencies are accessed through the parent Handler struct.
 pub struct FetchSubHandler {
-pub mut:
-	ctx &HandlerContext
 }

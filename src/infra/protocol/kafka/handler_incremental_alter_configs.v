@@ -2,7 +2,7 @@
 // Request/response types, parsing, encoding, and handlers
 module kafka
 
-import infra.observability
+import service.port
 import time
 
 // IncrementalAlterConfigs (API Key 44)
@@ -135,8 +135,8 @@ pub fn (mut h Handler) handle_incremental_alter_configs(body []u8, version i16) 
 	mut reader := new_reader(body)
 	req := parse_incremental_alter_configs_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing incremental alter configs', observability.field_int('resources',
-		req.resources.len), observability.field_bool('validate_only', req.validate_only))
+	h.logger.debug('Processing incremental alter configs', port.field_int('resources',
+		req.resources.len), port.field_bool('validate_only', req.validate_only))
 
 	mut responses := []IncrementalAlterConfigsResourceResponse{}
 
@@ -208,8 +208,8 @@ pub fn (mut h Handler) handle_incremental_alter_configs(body []u8, version i16) 
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Incremental alter configs completed', observability.field_int('responses',
-		responses.len), observability.field_duration('latency', elapsed))
+	h.logger.debug('Incremental alter configs completed', port.field_int('responses',
+		responses.len), port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

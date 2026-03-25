@@ -12,7 +12,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import time
 
 // FindCoordinator (API Key 10)
@@ -169,15 +169,15 @@ fn (mut h Handler) handle_find_coordinator(body []u8, version i16) ![]u8 {
 		version))!
 
 	key_type_str := coordinator_key_type_str(req.key_type)
-	h.logger.debug('Processing find coordinator', observability.field_string('key', req.key),
-		observability.field_string('key_type', key_type_str), observability.field_int('coordinator_keys',
-		req.coordinator_keys.len), observability.field_int('version', version))
+	h.logger.debug('Processing find coordinator', port.field_string('key', req.key), port.field_string('key_type',
+		key_type_str), port.field_int('coordinator_keys', req.coordinator_keys.len), port.field_int('version',
+		version))
 
 	resp := h.process_find_coordinator(req, version)!
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Find coordinator completed', observability.field_int('node_id', h.broker_id),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Find coordinator completed', port.field_int('node_id', h.broker_id),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }
@@ -261,13 +261,13 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 			}
 
 			// Determine coordinator broker (assignment-based or hash-based)
-			node_id, host, port := h.compute_coordinator_broker(key, req.key_type)
+			node_id, host, broker_port := h.compute_coordinator_broker(key, req.key_type)
 
 			coordinators << FindCoordinatorResponseNode{
 				key:           key
 				node_id:       node_id
 				host:          host
-				port:          port
+				port:          broker_port
 				error_code:    0
 				error_message: none
 			}
@@ -281,7 +281,7 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 
 	// v0-v3: single response
 	// Determine coordinator broker (assignment-based or hash-based)
-	node_id, host, port := h.compute_coordinator_broker(req.key, req.key_type)
+	node_id, host, broker_port := h.compute_coordinator_broker(req.key, req.key_type)
 
 	return FindCoordinatorResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -289,7 +289,7 @@ fn (mut h Handler) process_find_coordinator(req FindCoordinatorRequest, version 
 		error_message:    none
 		node_id:          node_id
 		host:             host
-		port:             port
+		port:             broker_port
 		coordinators:     []FindCoordinatorResponseNode{}
 	}
 }

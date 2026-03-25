@@ -1,16 +1,10 @@
-// GroupSubHandler owns the dependencies specific to consumer group operations.
+// GroupSubHandler is the sub-handler type for consumer group operations.
 //
-// Holds a reference to HandlerContext for shared state, plus the
-// offset manager needed by group coordination, offset commit/fetch,
-// and consumer group management.
+// Dependencies live on the main Handler struct; this type exists only
+// as a grouping marker referenced by Handler.
 module kafka
 
-import service.port
-
-/// GroupSubHandler groups the dependencies needed for consumer group request handling.
-/// The main Handler delegates group-related work through this sub-handler.
+/// GroupSubHandler is the sub-handler type for consumer group request handling.
+/// All dependencies are accessed through the parent Handler struct.
 pub struct GroupSubHandler {
-pub mut:
-	ctx            &HandlerContext
-	offset_manager port.OffsetManagerPort
 }

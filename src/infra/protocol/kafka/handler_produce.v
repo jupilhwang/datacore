@@ -6,7 +6,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import time
 
 /// ProduceRequest is sent by a producer to deliver messages to the broker.
@@ -227,9 +227,8 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 		}
 	}
 
-	h.logger.debug('Processing produce request', observability.field_int('topics', req.topic_data.len),
-		observability.field_int('acks', req.acks), observability.field_bytes('total_size',
-		total_bytes))
+	h.logger.debug('Processing produce request', port.field_int('topics', req.topic_data.len),
+		port.field_int('acks', req.acks), port.field_bytes('total_size', total_bytes))
 
 	// Validate transaction if transactional producer
 	if error_resp := h.validate_produce_transaction(req) {
@@ -268,8 +267,8 @@ fn (mut h Handler) process_produce(req ProduceRequest, version i16) !ProduceResp
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Produce request completed', observability.field_int('topics', topics.len),
-		observability.field_int('total_records', total_records), observability.field_duration('latency',
+	h.logger.debug('Produce request completed', port.field_int('topics', topics.len),
+		port.field_int('total_records', total_records), port.field_duration('latency',
 		elapsed))
 
 	return ProduceResponse{
@@ -286,18 +285,18 @@ fn (mut h Handler) validate_produce_transaction(req ProduceRequest) ?ProduceResp
 		return none
 	}
 
-	h.logger.debug('Validating transaction', observability.field_string('txn_id', txn_id))
+	h.logger.debug('Validating transaction', port.field_string('txn_id', txn_id))
 	mut txn_coord := h.txn_coordinator or {
 		return h.build_produce_error_response_typed(req, ErrorCode.coordinator_not_available)
 	}
 
 	meta := txn_coord.get_transaction(txn_id) or {
-		h.logger.warn('Transaction not found', observability.field_string('txn_id', txn_id))
+		h.logger.warn('Transaction not found', port.field_string('txn_id', txn_id))
 		return h.build_produce_error_response_typed(req, ErrorCode.transactional_id_not_found)
 	}
 	if meta.state != .ongoing {
-		h.logger.warn('Invalid transaction state', observability.field_string('txn_id',
-			txn_id), observability.field_string('state', meta.state.str()))
+		h.logger.warn('Invalid transaction state', port.field_string('txn_id', txn_id),
+			port.field_string('state', meta.state.str()))
 		return h.build_produce_error_response_typed(req, ErrorCode.invalid_txn_state)
 	}
 
@@ -390,14 +389,14 @@ fn (mut h Handler) process_produce_partition(topic_name string, p ProduceRequest
 fn (mut h Handler) apply_produce_schema_encoding(topic_name string, partition_index i32, records []domain.Record, mut partitions []ProduceResponsePartition) []domain.Record {
 	schema := h.get_topic_schema(topic_name) or { return records }
 
-	h.logger.debug('Encoding records with schema', observability.field_string('topic',
-		topic_name), observability.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
+	h.logger.debug('Encoding records with schema', port.field_string('topic', topic_name),
+		port.field_string('schema_type', domain.SchemaType(schema.schema_type).str()))
 
 	mut encoded_records := []domain.Record{}
 	for record in records {
 		encoded_value := h.encode_record_with_schema(&record, &schema) or {
-			h.logger.error('Failed to encode record with schema', observability.field_string('topic',
-				topic_name), observability.field_err_str(err.str()))
+			h.logger.error('Failed to encode record with schema', port.field_string('topic',
+				topic_name), port.field_err_str(err.str()))
 			partitions << new_error_partition(partition_index, .corrupt_message)
 			continue
 		}

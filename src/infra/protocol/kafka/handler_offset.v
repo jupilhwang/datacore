@@ -4,7 +4,6 @@
 module kafka
 
 import domain
-import infra.observability
 import service.port
 import time
 
@@ -420,8 +419,8 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	req := parse_offset_commit_request(mut reader, version, is_flexible_version(.offset_commit,
 		version))!
 
-	h.logger.debug('Processing offset commit', observability.field_string('group_id',
-		req.group_id), observability.field_int('topics', req.topics.len))
+	h.logger.debug('Processing offset commit', port.field_string('group_id', req.group_id),
+		port.field_int('topics', req.topics.len))
 
 	// Convert protocol request to service request
 	mut all_offsets := []domain.PartitionOffset{cap: req.topics.len * 4}
@@ -444,8 +443,8 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 		group_id: req.group_id
 		offsets:  all_offsets
 	}) or {
-		h.logger.error('Offset commit failed', observability.field_string('group_id',
-			req.group_id), observability.field_string('error', err.str()))
+		h.logger.error('Offset commit failed', port.field_string('group_id', req.group_id),
+			port.field_string('error', err.str()))
 
 		// Build error response
 		mut topics := []OffsetCommitResponseTopic{cap: req.topics.len}
@@ -477,8 +476,8 @@ fn (mut h Handler) handle_offset_commit(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Offset commit completed', observability.field_string('group_id', req.group_id),
-		observability.field_int('partitions', total_partitions), observability.field_duration('latency',
+	h.logger.debug('Offset commit completed', port.field_string('group_id', req.group_id),
+		port.field_int('partitions', total_partitions), port.field_duration('latency',
 		elapsed))
 
 	return resp.encode(version)
@@ -491,9 +490,8 @@ fn (mut h Handler) handle_offset_fetch(body []u8, version i16) ![]u8 {
 	req := parse_offset_fetch_request(mut reader, version, is_flexible_version(.offset_fetch,
 		version))!
 
-	h.logger.debug('Processing offset fetch', observability.field_string('group_id', req.group_id),
-		observability.field_int('topics', req.topics.len), observability.field_int('groups',
-		req.groups.len))
+	h.logger.debug('Processing offset fetch', port.field_string('group_id', req.group_id),
+		port.field_int('topics', req.topics.len), port.field_int('groups', req.groups.len))
 
 	if version >= 8 {
 		return h.handle_offset_fetch_v8plus(req, version)
@@ -619,9 +617,8 @@ fn (mut h Handler) handle_offset_fetch_legacy(req OffsetFetchRequest, start_time
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Offset fetch completed', observability.field_string('group_id', req.group_id),
-		observability.field_int('topics', topics.len), observability.field_duration('latency',
-		elapsed))
+	h.logger.debug('Offset fetch completed', port.field_string('group_id', req.group_id),
+		port.field_int('topics', topics.len), port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

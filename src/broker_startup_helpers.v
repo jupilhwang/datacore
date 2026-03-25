@@ -71,6 +71,11 @@ fn init_protocol_services(conf cfg.Config, storage port.StoragePort, mut logger 
 	logger.info('Audit logger initialized', observability.field_int('max_buffer_size',
 		audit_logger.max_buffer_size))
 
+	// auth_manager is not configured in the current startup path;
+	// warn so operators are aware that all requests bypass authentication.
+	observability.log_with_context('startup', .warn, 'Auth', 'Broker running without authentication -- all requests will be accepted without auth checks',
+		{})
+
 	return protocol_handler
 }
 

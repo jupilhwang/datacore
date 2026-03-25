@@ -7,7 +7,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import time
 
 // DescribeLogDirs (API Key 35)
@@ -167,14 +167,13 @@ pub fn (mut h Handler) handle_describe_log_dirs(body []u8, version i16) ![]u8 {
 	mut reader := new_reader(body)
 	req := parse_describe_log_dirs_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing describe log dirs', observability.field_bool('all_topics',
-		req.topics == none))
+	h.logger.debug('Processing describe log dirs', port.field_bool('all_topics', req.topics == none))
 
 	resp := h.process_describe_log_dirs(req, version)!
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Describe log dirs completed', observability.field_int('results', resp.results.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('Describe log dirs completed', port.field_int('results', resp.results.len),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }
@@ -190,7 +189,7 @@ fn (mut h Handler) process_describe_log_dirs(req DescribeLogDirsRequest, version
 		// Specific topics requested
 		for t in requested_topics {
 			topic_meta := h.storage.get_topic(t.topic) or {
-				h.logger.debug('Topic not found in describe log dirs', observability.field_string('topic',
+				h.logger.debug('Topic not found in describe log dirs', port.field_string('topic',
 					t.topic))
 				continue
 			}
@@ -402,7 +401,7 @@ pub fn (mut h Handler) handle_alter_replica_log_dirs(body []u8, version i16) ![]
 	mut reader := new_reader(body)
 	req := parse_alter_replica_log_dirs_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing alter replica log dirs (stateless no-op)', observability.field_int('dirs',
+	h.logger.debug('Processing alter replica log dirs (stateless no-op)', port.field_int('dirs',
 		req.dirs.len))
 
 	// Collect unique topics across all dirs
@@ -462,8 +461,8 @@ pub fn (mut h Handler) handle_alter_replica_log_dirs(body []u8, version i16) ![]
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Alter replica log dirs completed', observability.field_int('results',
-		results.len), observability.field_duration('latency', elapsed))
+	h.logger.debug('Alter replica log dirs completed', port.field_int('results', results.len),
+		port.field_duration('latency', elapsed))
 
 	return resp.encode(version)
 }

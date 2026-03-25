@@ -1,16 +1,10 @@
-// ProduceSubHandler owns the dependencies specific to produce operations.
+// ProduceSubHandler is the sub-handler type for produce operations.
 //
-// Holds a reference to HandlerContext for shared state, plus the
-// transaction coordinator and schema registry needed by the produce path.
+// Dependencies live on the main Handler struct; this type exists only
+// as a grouping marker referenced by Handler.
 module kafka
 
-import service.port
-
-/// ProduceSubHandler groups the dependencies needed for produce request handling.
-/// The main Handler delegates produce-related work through this sub-handler.
+/// ProduceSubHandler is the sub-handler type for produce request handling.
+/// All dependencies are accessed through the parent Handler struct.
 pub struct ProduceSubHandler {
-pub mut:
-	ctx             &HandlerContext
-	txn_coordinator ?port.TransactionCoordinatorPort
-	schema_registry ?port.SchemaRegistryPort
 }

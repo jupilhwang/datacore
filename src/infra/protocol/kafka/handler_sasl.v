@@ -8,7 +8,7 @@
 module kafka
 
 import domain
-import infra.observability
+import service.port
 import time
 
 // SaslHandshake request (API Key 17)
@@ -146,7 +146,7 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 
 	req := parse_sasl_handshake_request(mut reader, version, is_flexible)!
 
-	h.logger.info('SASL handshake request', observability.field_string('mechanism', req.mechanism))
+	h.logger.info('SASL handshake request', port.field_string('mechanism', req.mechanism))
 
 	// Get supported mechanisms from auth manager
 	mut supported_mechanisms := []string{}
@@ -188,9 +188,8 @@ fn (mut h Handler) handle_sasl_handshake(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.info('SASL handshake completed', observability.field_string('mechanism',
-		req.mechanism), observability.field_int('error_code', error_code), observability.field_duration('latency',
-		elapsed))
+	h.logger.info('SASL handshake completed', port.field_string('mechanism', req.mechanism),
+		port.field_int('error_code', error_code), port.field_duration('latency', elapsed))
 
 	return response.encode(version)
 }
@@ -213,8 +212,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 
 	req := parse_sasl_authenticate_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('SASL authenticate request', observability.field_bytes('auth_bytes_len',
-		req.auth_bytes.len))
+	h.logger.debug('SASL authenticate request', port.field_bytes('auth_bytes_len', req.auth_bytes.len))
 
 	// Perform authentication
 	if mut auth_mgr := h.auth_manager {
@@ -222,14 +220,13 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 		// only when no handshake was performed (e.g., legacy clients).
 		mechanism := h.negotiated_mechanism or { detect_sasl_mechanism(req.auth_bytes) }
 
-		h.logger.debug('SASL authenticate mechanism', observability.field_string('mechanism',
-			mechanism.str()))
+		h.logger.debug('SASL authenticate mechanism', port.field_string('mechanism', mechanism.str()))
 
 		result := auth_mgr.authenticate(mechanism, req.auth_bytes) or {
 			// Authentication error
 			elapsed := time.since(start_time)
-			h.logger.warn('SASL authentication error', observability.field_string('mechanism',
-				mechanism.str()), observability.field_err_str(err.msg()), observability.field_duration('latency',
+			h.logger.warn('SASL authentication error', port.field_string('mechanism',
+				mechanism.str()), port.field_err_str(err.msg()), port.field_duration('latency',
 				elapsed))
 
 			if mut al := h.audit_logger {
@@ -252,8 +249,8 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 			elapsed := time.since(start_time)
 
 			if result.complete {
-				h.logger.info('SASL authentication successful', observability.field_string('mechanism',
-					mechanism.str()), observability.field_duration('latency', elapsed))
+				h.logger.info('SASL authentication successful', port.field_string('mechanism',
+					mechanism.str()), port.field_duration('latency', elapsed))
 
 				principal_name := if p := result.principal {
 					p.name
@@ -264,8 +261,8 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 					al.log_auth_success('', principal_name, mechanism.str())
 				}
 			} else {
-				h.logger.debug('SASL authentication step completed', observability.field_string('mechanism',
-					mechanism.str()), observability.field_duration('latency', elapsed))
+				h.logger.debug('SASL authentication step completed', port.field_string('mechanism',
+					mechanism.str()), port.field_duration('latency', elapsed))
 			}
 
 			response := SaslAuthenticateResponse{
@@ -280,9 +277,9 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 			}
 		} else {
 			elapsed := time.since(start_time)
-			h.logger.warn('SASL authentication failed', observability.field_string('mechanism',
-				mechanism.str()), observability.field_string('error', result.error_message),
-				observability.field_duration('latency', elapsed))
+			h.logger.warn('SASL authentication failed', port.field_string('mechanism',
+				mechanism.str()), port.field_string('error', result.error_message), port.field_duration('latency',
+				elapsed))
 
 			if mut al := h.audit_logger {
 				al.log_auth_failure('', result.error_message)
@@ -302,7 +299,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 	} else {
 		// No auth manager - authentication not configured
 		elapsed := time.since(start_time)
-		h.logger.warn('SASL authentication not configured', observability.field_duration('latency',
+		h.logger.warn('SASL authentication not configured', port.field_duration('latency',
 			elapsed))
 
 		response := SaslAuthenticateResponse{

@@ -3,7 +3,7 @@
 // Request/response types, parsing, encoding, and handlers
 module kafka
 
-import infra.observability
+import service.port
 import time
 
 /// ListGroupsRequest holds the filter criteria for ListGroups.
@@ -206,12 +206,11 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	req := parse_list_groups_request(mut reader, version, is_flexible_version(.list_groups,
 		version))!
 
-	h.logger.debug('Processing list groups request', observability.field_int('states_filter',
-		req.states_filter.len))
+	h.logger.debug('Processing list groups request', port.field_int('states_filter', req.states_filter.len))
 
 	// Fetch groups from storage
 	groups_info := h.storage.list_groups() or {
-		h.logger.error('List groups failed', observability.field_string('error', err.str()))
+		h.logger.error('List groups failed', port.field_string('error', err.str()))
 		resp := ListGroupsResponse{
 			throttle_time_ms: default_throttle_time_ms
 			error_code:       i16(ErrorCode.unknown_server_error)
@@ -230,8 +229,8 @@ fn (mut h Handler) handle_list_groups(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('List groups completed', observability.field_int('groups', groups.len),
-		observability.field_duration('latency', elapsed))
+	h.logger.debug('List groups completed', port.field_int('groups', groups.len), port.field_duration('latency',
+		elapsed))
 
 	resp := ListGroupsResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -249,8 +248,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	req := parse_describe_groups_request(mut reader, version, is_flexible_version(.describe_groups,
 		version))!
 
-	h.logger.debug('Processing describe groups request', observability.field_int('groups',
-		req.groups.len))
+	h.logger.debug('Processing describe groups request', port.field_int('groups', req.groups.len))
 
 	mut groups := []DescribeGroupsResponseGroup{}
 	mut found_count := 0
@@ -259,7 +257,7 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	for group_id in req.groups {
 		group := h.storage.load_group(group_id) or {
 			// Group not found
-			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
+			h.logger.trace('Group not found', port.field_string('group_id', group_id))
 			not_found_count += 1
 			groups << DescribeGroupsResponseGroup{
 				error_code:    i16(ErrorCode.group_id_not_found)
@@ -294,9 +292,8 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 			.dead { 'Dead' }
 		}
 
-		h.logger.trace('Describing group', observability.field_string('group_id', group_id),
-			observability.field_string('state', state_str), observability.field_int('members',
-			response_members.len))
+		h.logger.trace('Describing group', port.field_string('group_id', group_id), port.field_string('state',
+			state_str), port.field_int('members', response_members.len))
 
 		groups << DescribeGroupsResponseGroup{
 			error_code:    0
@@ -309,9 +306,8 @@ fn (mut h Handler) handle_describe_groups(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Describe groups completed', observability.field_int('found', found_count),
-		observability.field_int('not_found', not_found_count), observability.field_duration('latency',
-		elapsed))
+	h.logger.debug('Describe groups completed', port.field_int('found', found_count),
+		port.field_int('not_found', not_found_count), port.field_duration('latency', elapsed))
 
 	resp := DescribeGroupsResponse{
 		throttle_time_ms: default_throttle_time_ms
@@ -482,8 +478,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 	is_flexible := version >= 2
 	req := parse_delete_groups_request(mut reader, version, is_flexible)!
 
-	h.logger.debug('Processing delete groups request', observability.field_int('groups',
-		req.groups_names.len))
+	h.logger.debug('Processing delete groups request', port.field_int('groups', req.groups_names.len))
 
 	mut results := []DeletableGroupResult{}
 	mut deleted_count := 0
@@ -492,8 +487,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 	for group_id in req.groups_names {
 		// Validate group ID
 		if group_id.len == 0 {
-			h.logger.trace('Invalid group id (empty)', observability.field_string('group_id',
-				group_id))
+			h.logger.trace('Invalid group id (empty)', port.field_string('group_id', group_id))
 			error_count += 1
 			results << DeletableGroupResult{
 				group_id:   group_id
@@ -504,7 +498,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 
 		// Check if group exists
 		group := h.storage.load_group(group_id) or {
-			h.logger.trace('Group not found', observability.field_string('group_id', group_id))
+			h.logger.trace('Group not found', port.field_string('group_id', group_id))
 			error_count += 1
 			results << DeletableGroupResult{
 				group_id:   group_id
@@ -520,8 +514,8 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 			}
 			else {
 				// Cannot delete a group with active members
-				h.logger.trace('Cannot delete non-empty group', observability.field_string('group_id',
-					group_id), observability.field_int('members', group.members.len))
+				h.logger.trace('Cannot delete non-empty group', port.field_string('group_id',
+					group_id), port.field_int('members', group.members.len))
 				error_count += 1
 				results << DeletableGroupResult{
 					group_id:   group_id
@@ -533,8 +527,8 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 
 		// Delete group
 		h.storage.delete_group(group_id) or {
-			h.logger.error('Failed to delete group', observability.field_string('group_id',
-				group_id), observability.field_string('error', err.str()))
+			h.logger.error('Failed to delete group', port.field_string('group_id', group_id),
+				port.field_string('error', err.str()))
 			error_count += 1
 			results << DeletableGroupResult{
 				group_id:   group_id
@@ -543,7 +537,7 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 			continue
 		}
 
-		h.logger.trace('Group deleted', observability.field_string('group_id', group_id))
+		h.logger.trace('Group deleted', port.field_string('group_id', group_id))
 		deleted_count += 1
 		results << DeletableGroupResult{
 			group_id:   group_id
@@ -552,9 +546,8 @@ fn (mut h Handler) handle_delete_groups(body []u8, version i16) ![]u8 {
 	}
 
 	elapsed := time.since(start_time)
-	h.logger.debug('Delete groups completed', observability.field_int('deleted', deleted_count),
-		observability.field_int('errors', error_count), observability.field_duration('latency',
-		elapsed))
+	h.logger.debug('Delete groups completed', port.field_int('deleted', deleted_count),
+		port.field_int('errors', error_count), port.field_duration('latency', elapsed))
 
 	resp := DeleteGroupsResponse{
 		throttle_time_ms: default_throttle_time_ms

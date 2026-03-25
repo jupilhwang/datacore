@@ -52,7 +52,7 @@ pub fn field_err_str(err_msg string) LogField {
 pub fn field_float(key string, value f64) LogField {
 	return LogField{
 		key:   key
-		value: '${value}'
+		value: '${value:.6}'
 	}
 }
 
@@ -60,7 +60,7 @@ pub fn field_float(key string, value f64) LogField {
 @[inline]
 pub fn field_bytes(key string, size i64) LogField {
 	return LogField{
-		key:   key
+		key:   '${key}_bytes'
 		value: '${size}'
 	}
 }
@@ -68,8 +68,9 @@ pub fn field_bytes(key string, size i64) LogField {
 /// field_duration creates a duration log field.
 @[inline]
 pub fn field_duration(key string, d time.Duration) LogField {
+	ms := f64(d) / f64(time.millisecond)
 	return LogField{
-		key:   key
-		value: '${d}'
+		key:   '${key}_ms'
+		value: '${ms:.3}'
 	}
 }

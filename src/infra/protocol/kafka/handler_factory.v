@@ -102,35 +102,13 @@ pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 		compression_service:     cfg.compression_service
 		audit_logger:            cfg.audit_logger
 		handler_ctx:             ctx
-		produce:                 &ProduceSubHandler{
-			ctx:             ctx
-			txn_coordinator: cfg.txn_coordinator
-			schema_registry: none
-		}
-		fetch_handler:           &FetchSubHandler{
-			ctx: ctx
-		}
-		auth:                    &AuthSubHandler{
-			ctx:          ctx
-			auth_manager: cfg.auth_manager
-			acl_manager:  cfg.acl_manager
-			audit_logger: cfg.audit_logger
-		}
-		txn:                     &TransactionSubHandler{
-			ctx:             ctx
-			txn_coordinator: cfg.txn_coordinator
-		}
-		group_handler:           &GroupSubHandler{
-			ctx:            ctx
-			offset_manager: cfg.offset_manager
-		}
-		admin:                   &AdminSubHandler{
-			ctx: ctx
-		}
-		share:                   &ShareGroupSubHandler{
-			ctx:                     ctx
-			share_group_coordinator: cfg.share_coordinator
-		}
+		produce:                 &ProduceSubHandler{}
+		fetch_handler:           &FetchSubHandler{}
+		auth:                    &AuthSubHandler{}
+		txn:                     &TransactionSubHandler{}
+		group_handler:           &GroupSubHandler{}
+		admin:                   &AdminSubHandler{}
+		share:                   &ShareGroupSubHandler{}
 	}
 }
 

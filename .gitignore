@@ -103,3 +103,4 @@ benchmark_results/
 .taskmaster/*
 .serena/*
 .ruff_cache/*
+*.dSYM
