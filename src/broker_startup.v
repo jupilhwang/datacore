@@ -10,7 +10,7 @@ import net.http
 import config as cfg
 import startup
 import interface.cli
-import infra.observability
+import service.port
 
 fn run_broker(app &cli.App, args []string) ! {
 	if args.len == 0 {
@@ -83,13 +83,12 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	mut broker_registry_opt := cluster_result.registry
 
 	if conf.schema_registry.enabled {
-		logger.info('Schema Registry initialized', observability.field_string('topic',
-			conf.schema_registry.topic))
+		logger.info('Schema Registry initialized', port.field_string('topic', conf.schema_registry.topic))
 	}
 
 	// 4. Write PID file
 	cli.write_pid(opts.pid_path) or {
-		logger.warn('Failed to write PID file', observability.field_string('path', opts.pid_path))
+		logger.warn('Failed to write PID file', port.field_string('path', opts.pid_path))
 	}
 
 	// 5. Start REST API server if enabled
@@ -115,9 +114,8 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	// 8. Create and start TCP server
 	mut tcp_server := create_tcp_server(conf, protocol_handler, mut logger)
 
-	logger.info('Broker started', observability.field_int('broker_id', conf.broker.broker_id),
-		observability.field_string('host', conf.broker.host), observability.field_int('port',
-		conf.broker.port))
+	logger.info('Broker started', port.field_int('broker_id', conf.broker.broker_id),
+		port.field_string('host', conf.broker.host), port.field_int('port', conf.broker.port))
 
 	// Start server (blocking)
 	defer {

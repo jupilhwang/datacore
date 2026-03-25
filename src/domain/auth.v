@@ -71,6 +71,7 @@ pub enum AuthState {
 /// AuthConnection is an interface for connection types that support authentication.
 /// This interface is implemented by connection types in the interface layer.
 pub interface AuthConnection {
+	remote_addr string
 	is_authenticated() bool
 mut:
 	set_authenticated(principal Principal)

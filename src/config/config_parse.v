@@ -96,12 +96,9 @@ fn parse_grpc_config(cli_args map[string]string, doc toml.Doc) GrpcGatewayConfig
 	}
 }
 
-fn parse_s3_config(cli_args map[string]string, doc toml.Doc) !S3StorageConfig {
-	src := ConfigSource{
-		cli_args: cli_args
-		doc:      doc
-	}
-	mut s3 := S3StorageConfig{
+/// parse_s3_base_fields parses core S3 configuration fields from TOML + CLI args.
+fn parse_s3_base_fields(src ConfigSource, doc toml.Doc) S3StorageConfig {
+	return S3StorageConfig{
 		endpoint:                     src.get_string('s3-endpoint', 'DATACORE_S3_ENDPOINT',
 			'storage.s3.endpoint', '')
 		bucket:                       src.get_string('s3-bucket', 'DATACORE_S3_BUCKET',
@@ -137,17 +134,26 @@ fn parse_s3_config(cli_args map[string]string, doc toml.Doc) !S3StorageConfig {
 		access_key:                   ''
 		secret_key:                   ''
 	}
+}
 
-	// validate user-provided endpoint for SSRF before applying default
+/// apply_s3_endpoint_default applies the default AWS S3 endpoint if none is provided.
+fn apply_s3_endpoint_default(mut s3 S3StorageConfig) {
+	if s3.endpoint == '' {
+		s3.endpoint = 'https://${s3.bucket}.s3.${s3.region}.amazonaws.com'
+	}
+}
+
+fn parse_s3_config(cli_args map[string]string, doc toml.Doc) !S3StorageConfig {
+	src := ConfigSource{
+		cli_args: cli_args
+		doc:      doc
+	}
+	mut s3 := parse_s3_base_fields(src, doc)
+
 	if s3.endpoint != '' {
 		validate_s3_endpoint(s3.endpoint) or { return error('invalid S3 endpoint: ${err}') }
 	}
-
-	s3.endpoint = if s3.endpoint == '' {
-		'https://${s3.bucket}.s3.${s3.region}.amazonaws.com'
-	} else {
-		s3.endpoint
-	}
+	apply_s3_endpoint_default(mut s3)
 
 	resolve_s3_credentials(mut s3, cli_args, doc)
 	parse_iceberg_sub_config(mut s3, doc)

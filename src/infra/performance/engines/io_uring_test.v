@@ -255,3 +255,55 @@ fn test_io_uring_basic_creation() {
 		assert stats.errors == 0
 	}
 }
+
+fn test_io_uring_close_resets_fd() {
+	// close() must invalidate ring_fd to -1 to prevent double-close
+	mut ring := IoUring{}
+	ring.ring_fd = 42
+	ring.close()
+	assert ring.ring_fd == -1
+}
+
+fn test_io_uring_close_nullifies_pointers() {
+	// close() must set mapped pointers to nil after unmapping
+	mut ring := IoUring{}
+	ring.ring_fd = -1
+	ring.close()
+	assert ring.sq_ring_ptr == unsafe { nil }
+	assert ring.cq_ring_ptr == unsafe { nil }
+	assert ring.sqes == unsafe { nil }
+}
+
+fn test_io_uring_close_idempotent() {
+	// Calling close() twice must not crash
+	mut ring := IoUring{}
+	ring.ring_fd = -1
+	ring.close()
+	ring.close()
+	assert ring.ring_fd == -1
+}
+
+fn test_fd_cache_close_all_clears_entries() {
+	mut cache := FdCache{
+		max_size: 8
+	}
+	cache.entries['test:0'] = FdCacheEntry{
+		fd:        -1
+		last_used: 0
+	}
+	assert cache.entries.len == 1
+	cache.close_all()
+	assert cache.entries.len == 0
+}
+
+fn test_linux_engine_close_sets_unavailable() {
+	mut engine := LinuxPerformanceEngine{}
+	engine.io_ring_available = true
+	engine.close()
+	assert engine.io_ring_available == false
+}
+
+fn test_generic_engine_close_is_safe() {
+	mut engine := GenericPerformanceEngine{}
+	engine.close()
+}

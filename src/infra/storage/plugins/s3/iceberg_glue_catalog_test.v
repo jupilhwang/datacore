@@ -304,3 +304,46 @@ fn test_export_table_upsert_falls_back_to_warehouse_path() {
 	}
 	assert location == 's3://test-bucket/warehouse/testdb/pageviews'
 }
+
+// test_glue_sigv4_signing_key_cache_populated verifies that sigv4_signing_key
+// populates the signing key cache for subsequent reuse.
+// The signing key depends on (secret_key, date_stamp, region, service) and
+// remains valid for an entire UTC day.
+fn test_glue_sigv4_signing_key_cache_populated() {
+	catalog := build_test_glue_catalog()
+	date_stamp := '20260325'
+
+	key := catalog.sigv4_signing_key(date_stamp, 'glue')
+	assert key.len > 0
+
+	// Verify cache was populated with the computed key
+	assert catalog.signing_key_cache.date_day == date_stamp
+	assert catalog.signing_key_cache.key.len > 0
+	assert catalog.signing_key_cache.key == key
+}
+
+// test_glue_sigv4_signing_key_same_date_returns_identical_key verifies that
+// calling sigv4_signing_key twice with the same date_stamp returns identical
+// bytes, confirming the cache hit path works correctly.
+fn test_glue_sigv4_signing_key_same_date_returns_identical_key() {
+	catalog := build_test_glue_catalog()
+
+	key1 := catalog.sigv4_signing_key('20260325', 'glue')
+	key2 := catalog.sigv4_signing_key('20260325', 'glue')
+
+	assert key1 == key2
+	assert key1.len > 0
+}
+
+// test_glue_sigv4_signing_key_different_date_invalidates_cache verifies that
+// sigv4_signing_key produces a different key when the date_stamp changes
+// and the cache is updated to the new date.
+fn test_glue_sigv4_signing_key_different_date_invalidates_cache() {
+	catalog := build_test_glue_catalog()
+
+	key1 := catalog.sigv4_signing_key('20260325', 'glue')
+	key2 := catalog.sigv4_signing_key('20260326', 'glue')
+
+	assert key1 != key2
+	assert catalog.signing_key_cache.date_day == '20260326'
+}

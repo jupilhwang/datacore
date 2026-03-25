@@ -631,7 +631,10 @@ fn decode_bool(mut reader AvroReader) !bool {
 	return val != 0
 }
 
-// AvroReader provides a reader interface for decoding Avro binary data
+// AvroReader provides a reader interface for decoding Avro binary data.
+// Note: shares the `data []u8, pos int` layout with BinaryReader (kafka/codec.v)
+// and ProtoReader (protobuf_encoder.v). Intentional duplication -- each reader
+// carries protocol-specific decode helpers that do not overlap.
 struct AvroReader {
 mut:
 	data []u8

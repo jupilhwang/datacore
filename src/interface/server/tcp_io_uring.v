@@ -13,6 +13,7 @@ module server
 import domain
 import infra.observability
 import infra.performance.engines
+import service.port
 import sync
 import time
 
@@ -138,10 +139,10 @@ fn (mut s IoUringTcpServer) start_io_uring_mode() ! {
 		s.state = .running
 		s.state_lock.unlock()
 
-		s.logger.info('DataCore Kafka-Compatible Broker started (io_uring)', observability.field_string('host',
-			s.config.host), observability.field_int('port', s.config.port), observability.field_int('broker_id',
-			s.config.broker_id), observability.field_string('mode', 'io_uring (Linux 5.1+)'),
-			observability.field_int('queue_depth', int(s.config.io_uring_queue_depth)))
+		s.logger.info('DataCore Kafka-Compatible Broker started (io_uring)', port.field_string('host',
+			s.config.host), port.field_int('port', s.config.port), port.field_int('broker_id',
+			s.config.broker_id), port.field_string('mode', 'io_uring (Linux 5.1+)'), port.field_int('queue_depth',
+			int(s.config.io_uring_queue_depth)))
 
 		// Run event loop
 		s.io_uring_event_loop()
@@ -157,7 +158,7 @@ fn (mut s IoUringTcpServer) io_uring_event_loop() {
 			// Wait for events
 			events := uring.wait() or {
 				if s.is_running() {
-					s.logger.error('[io_uring] wait error', observability.field_string('error',
+					s.logger.error('[io_uring] wait error', port.field_string('error',
 						err.str()))
 				}
 				continue
@@ -206,7 +207,7 @@ fn (mut s IoUringTcpServer) handle_io_uring_accept(client_fd int) {
 	s.metrics.active_connections = s.conn_info.len
 	s.metrics.total_connections++
 
-	s.logger.info('[io_uring] New connection', observability.field_int('fd', client_fd))
+	s.logger.info('[io_uring] New connection', port.field_int('fd', client_fd))
 }
 
 /// handle_io_uring_recv handles received data.
@@ -254,8 +255,8 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 			conn.expected_size = int(u32(conn.recv_buf[0]) << 24 | u32(conn.recv_buf[1]) << 16 | u32(conn.recv_buf[2]) << 8 | u32(conn.recv_buf[3]))
 
 			if conn.expected_size <= 0 || conn.expected_size > s.config.max_request_size {
-				s.logger.error('[io_uring] Invalid request size', observability.field_int('size',
-					conn.expected_size), observability.field_int('fd', fd))
+				s.logger.error('[io_uring] Invalid request size', port.field_int('size',
+					conn.expected_size), port.field_int('fd', fd))
 				uring.close_connection(fd)
 				s.conn_info.delete(fd)
 				s.metrics.active_connections = s.conn_info.len
@@ -281,8 +282,8 @@ fn (mut s IoUringTcpServer) process_recv_buffer(fd int, mut conn IoUringConnInfo
 		s.metrics.total_requests++
 
 		response := s.handler.handle_request(request_data, mut conn) or {
-			s.logger.error('[io_uring] Error handling request', observability.field_int('fd',
-				fd), observability.field_string('error', err.str()))
+			s.logger.error('[io_uring] Error handling request', port.field_int('fd', fd),
+				port.field_string('error', err.str()))
 			// Generate minimal error response
 			s.create_error_response(request_data)
 		}
@@ -323,7 +324,7 @@ fn (mut s IoUringTcpServer) handle_io_uring_close(fd int) {
 	}
 
 	if _ := s.conn_info[fd] {
-		s.logger.info('[io_uring] Connection closed', observability.field_int('fd', fd))
+		s.logger.info('[io_uring] Connection closed', port.field_int('fd', fd))
 		s.conn_info.delete(fd)
 		s.metrics.active_connections = s.conn_info.len
 	}
@@ -353,11 +354,10 @@ pub fn (mut s IoUringTcpServer) stop() {
 	s.state = .stopped
 	s.state_lock.unlock()
 
-	s.logger.info('[io_uring] Server stopped', observability.field_string('total_connections',
-		s.metrics.total_connections.str()), observability.field_string('total_requests',
-		s.metrics.total_requests.str()), observability.field_string('total_bytes_received',
-		format_bytes(s.metrics.total_bytes_received)), observability.field_string('total_bytes_sent',
-		format_bytes(s.metrics.total_bytes_sent)))
+	s.logger.info('[io_uring] Server stopped', port.field_string('total_connections',
+		s.metrics.total_connections.str()), port.field_string('total_requests', s.metrics.total_requests.str()),
+		port.field_string('total_bytes_received', format_bytes(s.metrics.total_bytes_received)),
+		port.field_string('total_bytes_sent', format_bytes(s.metrics.total_bytes_sent)))
 }
 
 /// is_running returns true if the server is currently running.

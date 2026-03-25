@@ -277,6 +277,99 @@ fn test_detect_sasl_mechanism_empty() {
 	assert result == domain.SaslMechanism.plain
 }
 
+// -- client_ip 전파 검증을 위한 Mock AuthConnection --
+
+struct MockAuthConnection {
+pub mut:
+	remote_addr    string
+	authenticated  bool
+	auth_principal ?domain.Principal
+}
+
+fn (c &MockAuthConnection) is_authenticated() bool {
+	return c.authenticated
+}
+
+fn (mut c MockAuthConnection) set_authenticated(principal domain.Principal) {
+	c.authenticated = true
+	c.auth_principal = principal
+}
+
+// -- client_ip audit log 전파 테스트 --
+
+fn test_sasl_authenticate_audit_log_contains_client_ip_on_success() {
+	mut handler, mut audit_logger := create_sasl_handler_with_audit_logger()
+	auth_bytes := build_plain_auth('', 'admin', 'adminpass')
+	req := build_sasl_authenticate_request(400, 0, auth_bytes)
+
+	// conn에 remote_addr를 설정하여 client_ip가 audit log에 전파되는지 검증
+	mut mock_conn := MockAuthConnection{
+		remote_addr: '192.168.1.100:54321'
+	}
+	mut conn := ?&domain.AuthConnection(&mock_conn)
+	response := handler.handle_request(req, mut conn) or {
+		panic('request processing failed: ${err}')
+	}
+
+	mut reader := kafka.new_reader(response)
+	_ := reader.read_i32()! // size
+	_ := reader.read_i32()! // correlation_id
+	error_code := reader.read_i16()!
+	assert error_code == 0
+
+	events := audit_logger.get_recent_events(10)
+	assert events.len == 1
+	assert events[0].event_type == .authentication_success
+	assert events[0].client_ip == '192.168.1.100:54321'
+}
+
+fn test_sasl_authenticate_audit_log_contains_client_ip_on_failure() {
+	mut handler, mut audit_logger := create_sasl_handler_with_audit_logger()
+	auth_bytes := build_plain_auth('', 'admin', 'wrongpass')
+	req := build_sasl_authenticate_request(401, 0, auth_bytes)
+
+	mut mock_conn := MockAuthConnection{
+		remote_addr: '10.0.0.5:12345'
+	}
+	mut conn := ?&domain.AuthConnection(&mock_conn)
+	response := handler.handle_request(req, mut conn) or {
+		panic('request processing failed: ${err}')
+	}
+
+	mut reader := kafka.new_reader(response)
+	_ := reader.read_i32()!
+	_ := reader.read_i32()!
+	error_code := reader.read_i16()!
+	assert error_code == 58
+
+	events := audit_logger.get_recent_events(10)
+	assert events.len == 1
+	assert events[0].event_type == .authentication_failure
+	assert events[0].client_ip == '10.0.0.5:12345'
+}
+
+fn test_sasl_authenticate_audit_log_empty_client_ip_when_no_conn() {
+	// conn이 none일 때는 빈 문자열이 전달되어야 한다
+	mut handler, mut audit_logger := create_sasl_handler_with_audit_logger()
+	auth_bytes := build_plain_auth('', 'admin', 'adminpass')
+	req := build_sasl_authenticate_request(402, 0, auth_bytes)
+
+	mut conn := ?&domain.AuthConnection(none)
+	response := handler.handle_request(req, mut conn) or {
+		panic('request processing failed: ${err}')
+	}
+
+	mut reader := kafka.new_reader(response)
+	_ := reader.read_i32()!
+	_ := reader.read_i32()!
+	error_code := reader.read_i16()!
+	assert error_code == 0
+
+	events := audit_logger.get_recent_events(10)
+	assert events.len == 1
+	assert events[0].client_ip == ''
+}
+
 // -- 감사 로그 연동 헬퍼 --
 
 fn create_sasl_handler_with_audit_logger() (kafka.Handler, &infra_auth.AuditLogger) {

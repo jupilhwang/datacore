@@ -30,9 +30,8 @@ pub fn init_storage(conf cfg.Config, mut logger observability.Logger) !StorageRe
 	engine := conf.storage.engine.to_lower()
 
 	if engine == 'memory' {
-		logger.info('Initializing Memory storage', observability.field_int('max_memory_mb',
-			conf.storage.memory.max_memory_mb), observability.field_int('segment_size',
-			conf.storage.memory.segment_size_bytes))
+		logger.info('Initializing Memory storage', port.field_int('max_memory_mb', conf.storage.memory.max_memory_mb),
+			port.field_int('segment_size', conf.storage.memory.segment_size_bytes))
 		return StorageResult{
 			storage: port.StoragePort(memory.new_memory_adapter())
 		}
@@ -42,7 +41,7 @@ pub fn init_storage(conf cfg.Config, mut logger observability.Logger) !StorageRe
 		return init_s3_storage(conf, mut logger)!
 	}
 
-	logger.warn('Unknown storage engine, falling back to memory', observability.field_string('engine',
+	logger.warn('Unknown storage engine, falling back to memory', port.field_string('engine',
 		engine))
 	return StorageResult{
 		storage: port.StoragePort(memory.new_memory_adapter())
@@ -58,9 +57,9 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 	} else {
 		'****'
 	}
-	logger.info('Initializing S3 storage', observability.field_string('bucket', conf.storage.s3.bucket),
-		observability.field_string('region', conf.storage.s3.region), observability.field_string('endpoint',
-		conf.storage.s3.endpoint), observability.field_string('access_key', masked_key))
+	logger.info('Initializing S3 storage', port.field_string('bucket', conf.storage.s3.bucket),
+		port.field_string('region', conf.storage.s3.region), port.field_string('endpoint',
+		conf.storage.s3.endpoint), port.field_string('access_key', masked_key))
 
 	if mut s3_adapter := s3.new_s3_adapter_from_storage_config(conf.storage.s3, i32(conf.broker.broker_id),
 		conf.broker.cluster_id)
@@ -83,7 +82,7 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 			s3_adapter: s3_adapter
 		}
 	} else {
-		logger.error('Failed to init S3 storage, falling back to memory storage', observability.field_string('error',
+		logger.error('Failed to init S3 storage, falling back to memory storage', port.field_string('error',
 			err.msg()))
 		return StorageResult{
 			storage: port.StoragePort(memory.new_memory_adapter())
@@ -155,9 +154,9 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 	mut register_success := false
 	for reg_attempt in 0 .. 3 {
 		broker_info = broker_registry.register() or {
-			logger.warn('Broker registration attempt ${reg_attempt + 1}/3 failed', observability.field_int('broker_id',
-				conf.broker.broker_id), observability.field_string('cluster_id', conf.broker.cluster_id),
-				observability.field_string('error', err.msg()))
+			logger.warn('Broker registration attempt ${reg_attempt + 1}/3 failed', port.field_int('broker_id',
+				conf.broker.broker_id), port.field_string('cluster_id', conf.broker.cluster_id),
+				port.field_string('error', err.msg()))
 			if reg_attempt < 2 {
 				wait_secs := 2 * (1 << reg_attempt)
 				logger.info('Waiting ${wait_secs}s before next registration attempt')
@@ -172,14 +171,13 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 	}
 
 	if !register_success {
-		logger.error('Failed to register broker with cluster after 3 attempts', observability.field_int('broker_id',
-			conf.broker.broker_id), observability.field_string('cluster_id', conf.broker.cluster_id))
+		logger.error('Failed to register broker with cluster after 3 attempts', port.field_int('broker_id',
+			conf.broker.broker_id), port.field_string('cluster_id', conf.broker.cluster_id))
 		return ClusterRegistryResult{}
 	}
 
-	logger.info('Broker registered with cluster', observability.field_int('broker_id',
-		broker_info.broker_id), observability.field_string('host', broker_info.host),
-		observability.field_int('port', broker_info.port))
+	logger.info('Broker registered with cluster', port.field_int('broker_id', broker_info.broker_id),
+		port.field_string('host', broker_info.host), port.field_int('port', broker_info.port))
 
 	protocol_handler.set_broker_registry(broker_registry)
 
@@ -206,8 +204,8 @@ pub fn init_cluster_registry(conf cfg.Config, mut storage port.StoragePort, s3_a
 	broker_registry.set_partition_assigner(partition_assigner)
 	protocol_handler.set_partition_assigner(partition_assigner)
 
-	logger.info('Cluster registry initialized', observability.field_int('broker_id', conf.broker.broker_id),
-		observability.field_string('cluster_id', conf.broker.cluster_id))
+	logger.info('Cluster registry initialized', port.field_int('broker_id', conf.broker.broker_id),
+		port.field_string('cluster_id', conf.broker.cluster_id))
 
 	return ClusterRegistryResult{
 		registry:     broker_registry
@@ -238,8 +236,8 @@ pub fn init_grpc_server(conf cfg.Config, storage port.StoragePort, mut logger ob
 	mut srv := iface_grpc.new_grpc_server(server_config, storage, grpc_config)
 	srv.start_background()
 
-	logger.info('gRPC gateway started', observability.field_string('host', conf.grpc.host),
-		observability.field_int('port', conf.grpc.port))
+	logger.info('gRPC gateway started', port.field_string('host', conf.grpc.host), port.field_int('port',
+		conf.grpc.port))
 
 	return srv
 }

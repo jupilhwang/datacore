@@ -41,11 +41,28 @@ fn (mut a S3StorageAdapter) reserve_offsets(partition_key string, count int) i64
 	return base
 }
 
+/// append_to_iceberg_if_enabled conditionally appends records to the Iceberg table.
+fn (mut a S3StorageAdapter) append_to_iceberg_if_enabled(topic string, partition int, records []domain.Record, base_offset i64) {
+	if !a.is_iceberg_enabled() {
+		return
+	}
+	a.append_to_iceberg(topic, partition, records, base_offset) or {
+		observability.log_with_context('s3', .warn, 'IcebergAppend', 'Failed to append to Iceberg',
+			{
+			'topic':     topic
+			'partition': partition.str()
+			'error':     err.str()
+		})
+	}
+}
+
 /// append appends records to a partition.
 /// Selects sync/async path based on required_acks:
 ///   acks=0: appends to in-memory buffer and returns immediately (best-effort)
 ///   acks=1/-1: returns after S3 PUT + index update completes (durability guaranteed)
 pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []domain.Record, required_acks i16) !domain.AppendResult {
+	validate_identifier(topic, 'topic')!
+
 	if records.len == 0 {
 		return domain.AppendResult{
 			base_offset:      0
@@ -54,19 +71,14 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 		}
 	}
 
-	// 1. Fetch current partition index (populates cache, provides earliest_offset)
 	mut index := a.get_partition_index(topic, partition)!
 	partition_key := '${topic}:${partition}'
 
-	// 2. Reserve offsets atomically under per-partition lock.
-	// This prevents concurrent appends from reading the same high_watermark
-	// and producing overlapping offset ranges.
 	mut p_lock := a.get_partition_append_lock(partition_key)
 	p_lock.lock()
 	base_offset := a.reserve_offsets(partition_key, records.len)
 	p_lock.unlock()
 
-	// 3. Create StoredRecords with reserved offsets
 	stored_records, bytes_to_add := a.create_stored_records(records, base_offset)
 
 	if required_acks == 0 {
@@ -75,20 +87,7 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 		a.append_sync(topic, partition, partition_key, stored_records, required_acks)!
 	}
 
-	// Append records to Iceberg table (when Iceberg is enabled)
-	if a.is_iceberg_enabled() {
-		a.append_to_iceberg(topic, partition, records, base_offset) or {
-			observability.log_with_context('s3', .warn, 'IcebergAppend', 'Failed to append to Iceberg',
-				{
-				'topic':     topic
-				'partition': partition.str()
-				'error':     err.str()
-			})
-		}
-	}
-
-	// high_watermark is already advanced by reserve_offsets above;
-	// no duplicate cache update needed here.
+	a.append_to_iceberg_if_enabled(topic, partition, records, base_offset)
 
 	return domain.AppendResult{
 		base_offset:      base_offset
@@ -97,55 +96,51 @@ pub fn (mut a S3StorageAdapter) append(topic string, partition int, records []do
 	}
 }
 
-/// fetch retrieves records from a partition.
-pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
-	partition_key := '${topic}:${partition}'
-
-	// Fetch S3 index for segment information
-	index := a.get_partition_index(topic, partition)!
-
-	if offset < index.earliest_offset {
-		return error('Offset out of range (too old): ${offset} < ${index.earliest_offset}')
-	}
-
-	// 1. Read from S3 segments
-	segment_records := a.fetch_from_segments(index.log_segments, offset, max_bytes)
-
+/// to_domain_records converts StoredRecords to domain Records, tracking bytes and offset.
+fn to_domain_records(stored []StoredRecord) ([]domain.Record, int, i64) {
+	mut records := []domain.Record{}
 	mut bytes_read := 0
-	mut highest_offset_read := offset - 1
-	mut all_records := []domain.Record{}
-	for rec in segment_records {
-		all_records << domain.Record{
+	mut highest_offset := i64(-1)
+	for rec in stored {
+		records << domain.Record{
 			key:       rec.key
 			value:     rec.value
 			headers:   rec.headers
 			timestamp: rec.timestamp
 		}
 		bytes_read += rec.value.len + rec.key.len
-		if rec.offset > highest_offset_read {
-			highest_offset_read = rec.offset
+		if rec.offset > highest_offset {
+			highest_offset = rec.offset
 		}
 	}
+	return records, bytes_read, highest_offset
+}
 
-	// 2. Read from in-memory buffer (data not yet flushed to S3)
+/// fetch retrieves records from a partition.
+pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, max_bytes int) !domain.FetchResult {
+	validate_identifier(topic, 'topic')!
+	partition_key := '${topic}:${partition}'
+	index := a.get_partition_index(topic, partition)!
+
+	if offset < index.earliest_offset {
+		return error('Offset out of range (too old): ${offset} < ${index.earliest_offset}')
+	}
+
+	segment_records := a.fetch_from_segments(index.log_segments, offset, max_bytes)
+	all_records, bytes_read, highest_offset := to_domain_records(segment_records)
+	mut merged_records := all_records.clone()
+
 	if bytes_read < max_bytes {
-		buffer_records := a.fetch_from_buffer(partition_key, highest_offset_read + 1,
-			max_bytes - bytes_read)
-		for rec in buffer_records {
-			all_records << domain.Record{
-				key:       rec.key
-				value:     rec.value
-				headers:   rec.headers
-				timestamp: rec.timestamp
-			}
-		}
+		next_offset := if highest_offset >= 0 { highest_offset + 1 } else { offset }
+		buffer_records := a.fetch_from_buffer(partition_key, next_offset, max_bytes - bytes_read)
+		buf_domain, _, _ := to_domain_records(buffer_records)
+		merged_records << buf_domain
 	}
 
-	// Offset of the first record actually returned
-	actual_first_offset := if all_records.len > 0 { offset } else { index.high_watermark }
+	actual_first_offset := if merged_records.len > 0 { offset } else { index.high_watermark }
 
 	return domain.FetchResult{
-		records:            all_records
+		records:            merged_records
 		first_offset:       actual_first_offset
 		high_watermark:     index.high_watermark
 		last_stable_offset: index.high_watermark
@@ -155,6 +150,7 @@ pub fn (mut a S3StorageAdapter) fetch(topic string, partition int, offset i64, m
 
 /// delete_records deletes records before the specified offset.
 pub fn (mut a S3StorageAdapter) delete_records(topic string, partition int, before_offset i64) ! {
+	validate_identifier(topic, 'topic')!
 	mut index := a.get_partition_index(topic, partition)!
 
 	// Find segments to delete

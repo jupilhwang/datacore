@@ -2,7 +2,6 @@
 // Buffer management and flush operation handling for S3 storage
 module s3
 
-import strconv
 import time
 import sync.stdatomic
 import infra.observability
@@ -60,50 +59,42 @@ fn (mut a S3StorageAdapter) collect_flush_batches() ([]FlushBatch, int) {
 	return flush_batches, skipped
 }
 
-/// async_flush_partition performs S3 put and index update for a single partition batch.
-/// This function is called asynchronously and saves buffered records as an S3 segment.
-/// Note: Currently only called from flush_worker; direct calls are disabled.
-fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
-	parts := partition_key.split(':')
-	if parts.len != 2 {
-		return error('Invalid partition key for flush: ${partition_key}')
-	}
-	topic := parts[0]
-	partition_i64 := strconv.atoi64(parts[1]) or {
-		return error('Invalid partition number in key: ${parts[1]}')
-	}
-	partition := int(partition_i64)
-
-	// 1. Acquire lock, copy buffer, clear in-memory buffer
+/// extract_flush_buffer extracts and clears buffer data for a partition under write lock.
+/// Returns empty slice if partition has no buffered records.
+fn (mut a S3StorageAdapter) extract_flush_buffer(partition_key string) []StoredRecord {
 	a.buffer_lock.@lock()
-
 	mut tp_buffer := a.topic_partition_buffers[partition_key] or {
 		a.buffer_lock.unlock()
-		return
+		return []StoredRecord{}
 	}
-
 	if tp_buffer.records.len == 0 {
 		a.buffer_lock.unlock()
-		return
+		return []StoredRecord{}
 	}
-
 	buffer_data := tp_buffer.records.clone()
 	tp_buffer.records.clear()
 	tp_buffer.current_size_bytes = 0
 	a.topic_partition_buffers[partition_key] = tp_buffer
 	a.buffer_lock.unlock()
+	return buffer_data
+}
 
-	// 2. Calculate offsets for the batch
+/// async_flush_partition performs S3 put and index update for a single partition batch.
+/// This function is called asynchronously and saves buffered records as an S3 segment.
+/// Note: Currently only called from flush_worker; direct calls are disabled.
+fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
+	topic, partition := parse_partition_key(partition_key)!
+	buffer_data := a.extract_flush_buffer(partition_key)
+	if buffer_data.len == 0 {
+		return
+	}
+
 	base_offset := buffer_data[0].offset
 	end_offset := buffer_data[buffer_data.len - 1].offset
-
-	// 3. Encode segment with record index and write to S3
 	segment_data, record_index := encode_stored_records_with_index(buffer_data)
 	segment_key := a.log_segment_key(topic, partition, base_offset, end_offset)
 
-	// Write segment to S3
 	a.put_object(segment_key, segment_data) or {
-		// Without retry on failure, data will be lost. Currently log and return error.
 		observability.log_with_context('s3', .error, 'AsyncFlush', 'Segment put failed',
 			{
 			'partition_key': partition_key
@@ -113,7 +104,6 @@ fn (mut a S3StorageAdapter) async_flush_partition(partition_key string) ! {
 		return error('Segment put failed during async flush: ${err}')
 	}
 
-	// 4. Update partition index with new segment
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
 		end_offset, segment_data.len, record_index) or {
 		observability.log_with_context('s3', .error, 'AsyncFlush', 'Index update failed',
@@ -152,7 +142,20 @@ fn (mut a S3StorageAdapter) flush_worker() {
 
 /// flush_pending_messages flushes the message buffer to S3.
 /// Applies min_flush_bytes threshold to skip small buffers and prevent micro-segments.
+/// Uses is_flushing_flag to prevent overlapping flushes when dispatch exceeds interval.
 fn (mut a S3StorageAdapter) flush_pending_messages() {
+	// Atomic guard: skip if another flush is in progress.
+	// The brief TOCTOU window between load and store is acceptable here
+	// because concurrent flushes are safe (buffer_lock prevents corruption);
+	// this flag only prevents wasteful duplicate dispatches.
+	if stdatomic.load_i64(&a.is_flushing_flag) == 1 {
+		return
+	}
+	stdatomic.store_i64(&a.is_flushing_flag, 1)
+	defer {
+		stdatomic.store_i64(&a.is_flushing_flag, 0)
+	}
+
 	// Collect flush-ready batches while holding the lock
 	a.buffer_lock.@lock()
 	flush_batches, _ := a.collect_flush_batches()
@@ -214,65 +217,32 @@ fn (mut a S3StorageAdapter) restore_failed_message_buffer(key string, buffer_dat
 /// Uses index_update_lock to prevent index corruption from concurrent updates.
 fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data []StoredRecord) ! {
 	start_time := time.now()
+	a.record_flush_start()
 
-	// Metric: flush start
-	a.metrics_collector.mu.@lock()
-	a.metrics_collector.data.flush_count++
-	a.metrics_collector.mu.unlock()
-
-	parts := partition_key.split(':')
-	if parts.len != 2 {
-		// Metric: flush failure
-		a.metrics_collector.mu.@lock()
-		a.metrics_collector.data.flush_error_count++
-		a.metrics_collector.mu.unlock()
-		return error('Invalid partition key for flush: ${partition_key}')
+	topic, partition := parse_partition_key(partition_key) or {
+		a.record_flush_error()
+		return err
 	}
-	topic := parts[0]
-	partition_i64 := strconv.atoi64(parts[1]) or {
-		// Metric: flush failure
-		a.metrics_collector.mu.@lock()
-		a.metrics_collector.data.flush_error_count++
-		a.metrics_collector.mu.unlock()
-		return error('Invalid partition number in key: ${parts[1]}')
-	}
-	partition := int(partition_i64)
 
-	// Calculate offsets for the batch
 	base_offset := buffer_data[0].offset
 	end_offset := buffer_data[buffer_data.len - 1].offset
-
-	// Encode segment with record index for Range Request support
 	segment_data, record_index := encode_stored_records_with_index(buffer_data)
 	segment_key := a.log_segment_key(topic, partition, base_offset, end_offset)
 
-	// Write segment to S3
 	a.put_object(segment_key, segment_data) or {
 		observability.log_with_context('s3', .error, 'Flush', 'Segment put failed', {
 			'partition_key': partition_key
 			'segment_key':   segment_key
 			'error':         err.msg()
 		})
-		// Metric: flush failure
-		a.metrics_collector.mu.@lock()
-		a.metrics_collector.data.flush_error_count++
-		a.metrics_collector.data.s3_error_count++
-		a.metrics_collector.mu.unlock()
+		a.record_flush_s3_error()
 		return error('Segment put failed during flush: ${err}')
 	}
 
-	// Metric: S3 PUT success
-	a.metrics_collector.mu.@lock()
-	a.metrics_collector.data.s3_put_count++
-	a.metrics_collector.mu.unlock()
+	a.record_flush_put()
 
-	// Update partition index with new segment
-	// Use lock to prevent index corruption from concurrent updates
 	a.index_update_lock.lock()
-	defer {
-		a.index_update_lock.unlock()
-	}
-
+	defer { a.index_update_lock.unlock() }
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset,
 		end_offset, segment_data.len, record_index) or {
 		observability.log_with_context('s3', .error, 'Flush', 'Index update failed', {
@@ -280,19 +250,11 @@ fn (mut a S3StorageAdapter) flush_buffer_to_s3(partition_key string, buffer_data
 			'segment_key':   segment_key
 			'error':         err.msg()
 		})
-		// Metric: flush failure
-		a.metrics_collector.mu.@lock()
-		a.metrics_collector.data.flush_error_count++
-		a.metrics_collector.mu.unlock()
+		a.record_flush_error()
 		return error('Index update failed during flush: ${err}')
 	}
 
-	// Metric: flush success
-	elapsed_ms := time.since(start_time).milliseconds()
-	a.metrics_collector.mu.@lock()
-	a.metrics_collector.data.flush_success_count++
-	a.metrics_collector.data.flush_total_ms += elapsed_ms
-	a.metrics_collector.mu.unlock()
+	a.record_flush_success(start_time)
 }
 
 /// update_partition_index_with_segment adds a new segment to the partition index.

@@ -8,6 +8,26 @@
 - **Project**: Project name or 'global'
 -->
 
+## ErrorPattern_2026-03-25_TOCTOU-cache-refresh
+- Pattern: Read cache under rlock, fetch external data, write back stale value under write lock
+- Root cause: Lock downgrade gap allows concurrent writes to be lost
+- Fix: Re-read cache under write lock before merging external data
+- Prevention: Always re-read shared state under exclusive lock before modify-write
+
+## Pattern_2026-03-25_validate-at-boundary
+- Pattern: S3 key path traversal via user-supplied identifiers
+- Root cause: Validation applied at internal functions, not at public API boundary
+- Fix: validate_identifier() at every public entry point (25+ sites)
+- Prevention: Always validate user input at the outermost boundary of storage adapters
+
+## Pattern_2026-03-25_indexed-parallel-results
+- Pattern: Channel-based collection loses ordering in parallel downloads
+- Root cause: Channel receive order != spawn order
+- Fix: Pre-allocated indexed array, each goroutine writes to its index slot
+- Prevention: Never rely on channel ordering for parallel results; use indexed arrays
+
+---
+
 ## ErrorPattern_2026-03-25_pub-removal-external-caller-check
 
 **Category**: Refactoring  

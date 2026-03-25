@@ -8,7 +8,6 @@
 module kafka
 
 import domain
-import infra.compression
 import service.port
 import time
 
@@ -203,17 +202,18 @@ fn (mut h Handler) parse_v2_record_batch_body(topic_name string, partition_index
 // The header (61 bytes) is stripped before decompression.
 // Returns (decompressed_data, original_compression_type).
 fn (mut h Handler) decompress_record_data(topic_name string, partition_index i32, records_to_parse []u8, compression_type_val int) !([]u8, u8) {
-	compression_type := compression.compression_type_from_i16(i16(compression_type_val)) or {
+	compression_type := port.validate_compression_type(i16(compression_type_val)) or {
 		h.logger.error('Invalid compression type value', port.field_string('topic', topic_name),
 			port.field_int('partition', int(partition_index)), port.field_int('compression_type_val',
 			compression_type_val), port.field_string('error', err.msg()))
 		return error('invalid compression type: ${err}')
 	}
+	compression_name := port.compression_type_name(compression_type)
 
 	$if debug {
 		h.logger.debug('Compression type detection', port.field_string('topic', topic_name),
 			port.field_int('partition', int(partition_index)), port.field_int('compression_type_val',
-			compression_type_val), port.field_string('compression_name', compression_type.str()))
+			compression_type_val), port.field_string('compression_name', compression_name))
 	}
 
 	// RecordBatch v2 header layout (61 bytes total):
@@ -233,20 +233,20 @@ fn (mut h Handler) decompress_record_data(topic_name string, partition_index i32
 		compressed_hex := compressed_data[..compressed_preview_len].hex()
 		h.logger.debug('Compressed data details', port.field_string('topic', topic_name),
 			port.field_int('partition', int(partition_index)), port.field_string('compression_type',
-			compression_type.str()), port.field_int('total_record_size', records_to_parse.len),
+			compression_name), port.field_int('total_record_size', records_to_parse.len),
 			port.field_int('header_size', header_size), port.field_int('compressed_data_len',
 			compressed_data.len), port.field_string('compressed_data_start', compressed_hex))
 		h.logger.debug('Starting decompression attempt', port.field_string('topic', topic_name),
 			port.field_int('partition', int(partition_index)), port.field_string('compression_type',
-			compression_type.str()), port.field_int('compressed_bytes', compressed_data.len))
+			compression_name), port.field_int('compressed_bytes', compressed_data.len))
 	}
 
 	decompress_start := time.now()
-	decompressed_data := h.compression_service.decompress(compressed_data, i16(compression_type)) or {
+	decompressed_data := h.compression_service.decompress(compressed_data, compression_type) or {
 		decompress_elapsed := time.since(decompress_start)
 		h.logger.error('Decompression failed with error', port.field_string('topic', topic_name),
 			port.field_int('partition', int(partition_index)), port.field_string('compression_type',
-			compression_type.str()), port.field_int('compressed_bytes', compressed_data.len),
+			compression_name), port.field_int('compressed_bytes', compressed_data.len),
 			port.field_duration('decompress_time', decompress_elapsed), port.field_err_str(err.str()))
 		first_bytes := if compressed_data.len >= 8 {
 			compressed_data[..8].hex()
@@ -275,7 +275,7 @@ fn (mut h Handler) decompress_record_data(topic_name string, partition_index i32
 		decompressed_hex := decompressed_data[..decompressed_preview_len].hex()
 		h.logger.debug('Decompression successful', port.field_string('topic', topic_name),
 			port.field_int('partition', int(partition_index)), port.field_string('compression_type',
-			compression_type.str()), port.field_int('compressed_size', compressed_data.len),
+			compression_name), port.field_int('compressed_size', compressed_data.len),
 			port.field_int('decompressed_size', decompressed_data.len), port.field_string('decompressed_start',
 			decompressed_hex), port.field_duration('decompress_time', decompress_time))
 		if compressed_data.len > 0 {
@@ -283,7 +283,7 @@ fn (mut h Handler) decompress_record_data(topic_name string, partition_index i32
 			savings_pct := (1.0 - (f64(compressed_data.len) / f64(decompressed_data.len))) * 100.0
 			h.logger.debug('Compression ratio metrics', port.field_string('topic', topic_name),
 				port.field_int('partition', int(partition_index)), port.field_string('compression_type',
-				compression_type.str()), port.field_int('compressed_size', compressed_data.len),
+				compression_name), port.field_int('compressed_size', compressed_data.len),
 				port.field_int('decompressed_size', decompressed_data.len), port.field_float('ratio',
 				ratio), port.field_float('savings_percent', savings_pct), port.field_duration('decompress_time',
 				decompress_time))

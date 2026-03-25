@@ -92,75 +92,95 @@ struct CachedPartitionIndex {
 	cached_at time.Time
 }
 
-/// get_partition_index retrieves a partition index from cache or S3.
-fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !PartitionIndex {
-	key := '${topic}:${partition}'
-	// 1. Check cache
+/// get_cached_index_if_valid returns the cached index if TTL is not expired.
+/// Returns the index and true if cache hit; empty index and false if miss or expired.
+fn (mut a S3StorageAdapter) get_cached_index_if_valid(key string) (PartitionIndex, string, bool) {
 	a.cache.topic_lock.rlock()
-	cached_exists := key in a.cache.topic_index_cache
-	mut cached_index := PartitionIndex{}
-	mut cached_etag := ''
-	if cached_exists {
-		cached := a.cache.topic_index_cache[key]
-		cached_index = cached.index
-		cached_etag = cached.etag
+	defer { a.cache.topic_lock.runlock() }
+	if cached := a.cache.topic_index_cache[key] {
 		if time.since(cached.cached_at).milliseconds() < a.config.index_cache_ttl_ms {
-			a.cache.topic_lock.runlock()
-			return cached.index
+			return cached.index, cached.etag, true
 		}
+		return cached.index, cached.etag, false
 	}
-	a.cache.topic_lock.runlock()
+	return PartitionIndex{}, '', false
+}
 
-	// 2. Fetch from S3
-	index_key := a.partition_index_key(topic, partition)
-	data, etag := a.get_object(index_key, -1, -1) or {
-		// Index not found in S3
-		// Prefer stale cached version over creating a new empty index if available
-		if cached_exists {
-			// Refresh cache timestamp while keeping data
-			a.cache.topic_lock.@lock()
-			a.cache.topic_index_cache[key] = CachedPartitionIndex{
-				index:     cached_index
-				etag:      cached_etag
-				cached_at: time.now()
-			}
-			a.cache.topic_lock.unlock()
-			return cached_index
-		}
-		// No cache: create new empty index
-		a.cache.topic_lock.@lock()
-		a.cache.topic_index_cache[key] = CachedPartitionIndex{
-			index:     PartitionIndex{
-				topic:           topic
-				partition:       partition
-				earliest_offset: 0
-				high_watermark:  0
-				log_segments:    []
-			}
-			etag:      ''
-			cached_at: time.now()
-		}
-		a.cache.topic_lock.unlock()
-		return a.cache.topic_index_cache[key].index
-	}
-
-	// 3. Decode S3 index
-	s3_index := json.decode(PartitionIndex, data.bytestr())!
-
-	// 4. Merge with cached index - preserve the higher high_watermark
-	// Handles the case where append updated the cache but flush has not yet written to S3
-	mut final_index := s3_index
-	if cached_exists && cached_index.high_watermark > s3_index.high_watermark {
-		final_index.high_watermark = cached_index.high_watermark
-	}
-
+/// refresh_stale_cache re-reads the current cache under write lock to preserve
+/// concurrent reserve_offsets updates and extends TTL.
+fn (mut a S3StorageAdapter) refresh_stale_cache(key string, stale_index PartitionIndex, etag string) PartitionIndex {
 	a.cache.topic_lock.@lock()
+	defer { a.cache.topic_lock.unlock() }
+	mut refreshed := stale_index
+	if current := a.cache.topic_index_cache[key] {
+		if current.index.high_watermark > refreshed.high_watermark {
+			refreshed = current.index
+		}
+	}
+	a.cache.topic_index_cache[key] = CachedPartitionIndex{
+		index:     refreshed
+		etag:      etag
+		cached_at: time.now()
+	}
+	return refreshed
+}
+
+/// create_empty_partition_index creates and caches a new empty partition index.
+fn (mut a S3StorageAdapter) create_empty_partition_index(key string, topic string, partition int) PartitionIndex {
+	a.cache.topic_lock.@lock()
+	defer { a.cache.topic_lock.unlock() }
+	empty := PartitionIndex{
+		topic:           topic
+		partition:       partition
+		earliest_offset: 0
+		high_watermark:  0
+		log_segments:    []
+	}
+	a.cache.topic_index_cache[key] = CachedPartitionIndex{
+		index:     empty
+		etag:      ''
+		cached_at: time.now()
+	}
+	return empty
+}
+
+/// merge_s3_index_with_cache merges an S3-fetched index with the current cache
+/// to preserve the higher high_watermark.
+fn (mut a S3StorageAdapter) merge_s3_index_with_cache(key string, s3_index PartitionIndex, etag string) PartitionIndex {
+	a.cache.topic_lock.@lock()
+	defer { a.cache.topic_lock.unlock() }
+	mut final_index := s3_index
+	if current := a.cache.topic_index_cache[key] {
+		if current.index.high_watermark > final_index.high_watermark {
+			final_index.high_watermark = current.index.high_watermark
+		}
+	}
 	a.cache.topic_index_cache[key] = CachedPartitionIndex{
 		index:     final_index
 		etag:      etag
 		cached_at: time.now()
 	}
-	a.cache.topic_lock.unlock()
-
 	return final_index
+}
+
+/// get_partition_index retrieves a partition index from cache or S3.
+fn (mut a S3StorageAdapter) get_partition_index(topic string, partition int) !PartitionIndex {
+	key := '${topic}:${partition}'
+
+	cached_index, cached_etag, valid := a.get_cached_index_if_valid(key)
+	if valid {
+		return cached_index
+	}
+	cache_exists := cached_index.topic.len > 0 || cached_etag.len > 0
+
+	index_key := a.partition_index_key(topic, partition)
+	data, etag := a.get_object(index_key, -1, -1) or {
+		if cache_exists {
+			return a.refresh_stale_cache(key, cached_index, cached_etag)
+		}
+		return a.create_empty_partition_index(key, topic, partition)
+	}
+
+	s3_index := json.decode(PartitionIndex, data.bytestr())!
+	return a.merge_s3_index_with_cache(key, s3_index, etag)
 }

@@ -5,7 +5,6 @@
 // Supports offset-based data retrieval per topic/partition.
 module kafka
 
-import infra.compression
 import service.port
 import time
 import domain
@@ -359,7 +358,7 @@ fn (mut h Handler) apply_fetch_schema_decoding(topic_name string, records []doma
 }
 
 // fetch_partition_data fetches data for a single partition and builds the response.
-fn (mut h Handler) fetch_partition_data(topic_name string, p FetchRequestPartition, preferred_compression compression.CompressionType) FetchPartitionResult {
+fn (mut h Handler) fetch_partition_data(topic_name string, p FetchRequestPartition, preferred_compression i16) FetchPartitionResult {
 	result := h.storage.fetch(topic_name, int(p.partition), p.fetch_offset, p.partition_max_bytes) or {
 		error_code := if err.str().contains('not found') {
 			i16(ErrorCode.unknown_topic_or_partition)
@@ -444,7 +443,7 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 
 		// Kafka protocol compatibility: RecordBatch headers must be uncompressed
 		// for Consumer parsing, so no re-compression is performed in the Fetch path.
-		preferred_compression := compression.CompressionType.none
+		preferred_compression := port.compression_none
 
 		mut partitions := []FetchResponsePartition{}
 		for p in t.partitions {
@@ -477,16 +476,13 @@ fn (mut h Handler) process_fetch(req FetchRequest, version i16) !FetchResponse {
 
 // get_topic_compression_type retrieves the compression type for a topic.
 // Reads compression.type from topic configuration and converts it to CompressionType.
-fn (mut h Handler) get_topic_compression_type(topic_name string) compression.CompressionType {
-	// Default is no compression
-	mut compression_type := compression.CompressionType.none
+fn (mut h Handler) get_topic_compression_type(topic_name string) i16 {
+	mut compression_type := port.compression_none
 
-	// Look up configuration from topic metadata (TopicMetadata.config is map[string]string)
 	if topic_meta := h.storage.get_topic(topic_name) {
-		// Standard Kafka configuration key: compression.type
 		compression_str := topic_meta.config['compression.type']
 		if compression_str.len > 0 && compression_str != 'none' {
-			if ct := compression.compression_type_from_string(compression_str) {
+			if ct := port.compression_type_from_string(compression_str) {
 				compression_type = ct
 			}
 		}
@@ -504,9 +500,8 @@ pub:
 
 // compress_records_for_fetch compresses records for a Fetch response.
 // Returns the original data if compression would increase the size.
-fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_type compression.CompressionType, topic_name string, partition i32) CompressionResult {
-	// No compression needed
-	if compression_type == .none || records_data.len == 0 {
+fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_type i16, topic_name string, partition i32) CompressionResult {
+	if compression_type == port.compression_none || records_data.len == 0 {
 		return CompressionResult{
 			data:        records_data
 			bytes_saved: 0
@@ -522,10 +517,10 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 	}
 
 	// Perform compression
-	compressed := h.compression_service.compress(records_data, i16(compression_type)) or {
+	compressed := h.compression_service.compress(records_data, compression_type) or {
 		h.logger.warn('Compression failed, returning uncompressed data', port.field_string('topic',
 			topic_name), port.field_int('partition', partition), port.field_string('compression_type',
-			compression_type.str()), port.field_err_str(err.str()))
+			port.compression_type_name(compression_type)), port.field_err_str(err.str()))
 		return CompressionResult{
 			data:        records_data
 			bytes_saved: 0
@@ -548,8 +543,9 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 
 	h.logger.debug('Records compressed for fetch', port.field_string('topic', topic_name),
 		port.field_int('partition', partition), port.field_string('compression_type',
-		compression_type.str()), port.field_int('original_size', records_data.len), port.field_int('compressed_size',
-		compressed.len), port.field_int('bytes_saved', bytes_saved))
+		port.compression_type_name(compression_type)), port.field_int('original_size',
+		records_data.len), port.field_int('compressed_size', compressed.len), port.field_int('bytes_saved',
+		bytes_saved))
 
 	return CompressionResult{
 		data:        compressed

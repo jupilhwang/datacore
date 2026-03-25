@@ -1,6 +1,8 @@
 module s3
 
 import time
+import crypto.hmac
+import crypto.sha256
 
 // test_sign_request_uses_utc verifies that sign_request uses actual UTC time.
 // Regression test for bug: time.now().as_utc() does not convert to UTC,
@@ -69,4 +71,62 @@ fn test_sign_request_date_format_is_utc() {
 	// Allow for hour rollover at :59->:00 boundary
 	hour_matches := header_hour == before_hour || header_hour == after_hour
 	assert hour_matches, 'x-amz-date hour ${header_hour} must match UTC hour (before=${before_hour}, after=${after_hour}), indicating local timezone is being used instead of UTC'
+}
+
+// test_get_cached_signing_key_same_date_returns_identical_key verifies that calling
+// get_cached_signing_key twice with the same date_stamp returns identical bytes,
+// confirming the cache hit path works correctly.
+fn test_get_cached_signing_key_same_date_returns_identical_key() {
+	adapter := S3StorageAdapter{
+		config: S3Config{
+			region:     'us-east-1'
+			secret_key: 'test-secret'
+		}
+	}
+
+	key1 := adapter.get_cached_signing_key('20260325')
+	key2 := adapter.get_cached_signing_key('20260325')
+
+	assert key1 == key2
+	assert key1.len > 0
+}
+
+// test_get_cached_signing_key_different_date_returns_different_key verifies that
+// get_cached_signing_key produces a different key when the date_stamp changes,
+// confirming the cache invalidation path works.
+fn test_get_cached_signing_key_different_date_returns_different_key() {
+	adapter := S3StorageAdapter{
+		config: S3Config{
+			region:     'us-east-1'
+			secret_key: 'test-secret'
+		}
+	}
+
+	key1 := adapter.get_cached_signing_key('20260325')
+	key2 := adapter.get_cached_signing_key('20260326')
+
+	assert key1 != key2
+	assert key2.len > 0
+}
+
+// test_signing_key_cache_matches_direct_computation verifies the cached signing key
+// matches a freshly computed 4-step HMAC-SHA256 chain (AWS SigV4 key derivation).
+fn test_signing_key_cache_matches_direct_computation() {
+	adapter := S3StorageAdapter{
+		config: S3Config{
+			region:     'us-east-1'
+			secret_key: 'test-secret'
+		}
+	}
+
+	date_day := '20260325'
+	cached := adapter.get_cached_signing_key(date_day)
+
+	k_date := hmac.new(('AWS4' + 'test-secret').bytes(), date_day.bytes(), sha256.sum,
+		hmac_block_size)
+	k_region := hmac.new(k_date, 'us-east-1'.bytes(), sha256.sum, hmac_block_size)
+	k_service := hmac.new(k_region, 's3'.bytes(), sha256.sum, hmac_block_size)
+	expected := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, hmac_block_size)
+
+	assert cached == expected
 }

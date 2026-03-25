@@ -231,3 +231,21 @@ fn test_special_characters_in_json() {
 	assert json.contains('\\"quoted\\"')
 	assert json.contains('\\n')
 }
+
+fn test_try_http_post_returns_false_for_invalid_endpoint() {
+	// An unreachable endpoint should return false without crashing
+	result := try_http_post('http://127.0.0.1:1/v1/logs', '{}', 1000)
+	assert result == false
+}
+
+fn test_send_otlp_http_no_crash_on_invalid_endpoint() {
+	// Fire-and-forget: must never crash even with invalid endpoints
+	send_otlp_http('http://127.0.0.1:1/v1/logs', '{"resourceLogs":[]}')
+	assert true
+}
+
+fn test_send_otlp_http_no_crash_on_empty_endpoint() {
+	// Empty endpoint should return immediately without error
+	send_otlp_http('', '{}')
+	assert true
+}

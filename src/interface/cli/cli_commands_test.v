@@ -266,3 +266,136 @@ fn test_build_describe_cluster_configs_request_not_empty() {
 	req := build_describe_cluster_configs_request()
 	assert req.len > 0
 }
+
+fn test_read_compact_i32_array_single_element() {
+	// Compact array: length byte=2 (1+1=1 element), value=0x00000001
+	data := [u8(2), 0x00, 0x00, 0x00, 0x01]
+	result, new_pos := read_compact_i32_array(data, 0) or {
+		assert false, 'read_compact_i32_array should not fail'
+		return
+	}
+	assert result.len == 1
+	assert result[0] == i32(1)
+	assert new_pos == 5
+}
+
+fn test_read_compact_i32_array_empty() {
+	// Compact array: length byte=1 (0+1=0 elements)
+	data := [u8(1)]
+	result, new_pos := read_compact_i32_array(data, 0) or {
+		assert false, 'read_compact_i32_array should not fail for empty'
+		return
+	}
+	assert result.len == 0
+	assert new_pos == 1
+}
+
+fn test_read_compact_i32_array_multiple_elements() {
+	// Compact array: length byte=3 (2+1=2 elements), values 0x01 and 0x02
+	data := [u8(3), 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02]
+	result, new_pos := read_compact_i32_array(data, 0) or {
+		assert false, 'read_compact_i32_array should not fail'
+		return
+	}
+	assert result.len == 2
+	assert result[0] == i32(1)
+	assert result[1] == i32(2)
+	assert new_pos == 9
+}
+
+fn test_parse_partition_detail_basic() {
+	mut data := []u8{}
+	// error_code: 0
+	data << u8(0x00)
+	data << u8(0x00)
+	// partition_index: 0
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	// leader_id: 1
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x01)
+	// leader_epoch: 0
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	// replica_nodes: [1]
+	data << u8(2)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x01)
+	// isr_nodes: [1]
+	data << u8(2)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x01)
+	// offline_replicas: []
+	data << u8(1)
+	// tagged_fields
+	data << u8(0x00)
+
+	detail, new_pos := parse_partition_detail(data, 0) or {
+		assert false, 'parse_partition_detail should not fail'
+		return
+	}
+	assert detail.id == i32(0)
+	assert detail.leader == i32(1)
+	assert detail.replicas.len == 1
+	assert detail.replicas[0] == i32(1)
+	assert detail.isr.len == 1
+	assert detail.isr[0] == i32(1)
+	assert new_pos == data.len
+}
+
+fn test_parse_partition_detail_partition_2_leader_5() {
+	mut data := []u8{}
+	// error_code: 0
+	data << u8(0x00)
+	data << u8(0x00)
+	// partition_index: 2
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x02)
+	// leader_id: 5
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x05)
+	// leader_epoch: 0
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	// replica_nodes: [5]
+	data << u8(2)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x05)
+	// isr_nodes: [5]
+	data << u8(2)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x00)
+	data << u8(0x05)
+	// offline_replicas: []
+	data << u8(1)
+	// tagged_fields
+	data << u8(0x00)
+
+	detail, _ := parse_partition_detail(data, 0) or {
+		assert false, 'parse_partition_detail should not fail'
+		return
+	}
+	assert detail.id == i32(2)
+	assert detail.leader == i32(5)
+	assert detail.replicas[0] == i32(5)
+	assert detail.isr[0] == i32(5)
+}

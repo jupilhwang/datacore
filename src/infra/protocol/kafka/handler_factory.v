@@ -70,20 +70,7 @@ fn (mut a CompressionPortAdapter) decompress(data []u8, compression_type i16) ![
 
 /// new_handler_from_config creates a Handler from a HandlerConfig.
 /// This is the single initialization path that all constructor helpers delegate to.
-/// It builds the shared HandlerContext and wires each sub-handler with its
-/// domain-specific dependencies.
 pub fn new_handler_from_config(cfg HandlerConfig) Handler {
-	ctx := &HandlerContext{
-		broker_id:           cfg.broker_id
-		host:                cfg.host
-		port:                cfg.broker_port
-		cluster_id:          cfg.cluster_id
-		storage:             cfg.storage
-		logger:              cfg.logger
-		metrics:             cfg.metrics
-		compression_service: cfg.compression_service
-	}
-
 	return Handler{
 		broker_id:               cfg.broker_id
 		host:                    cfg.host
@@ -101,14 +88,6 @@ pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 		metrics:                 cfg.metrics
 		compression_service:     cfg.compression_service
 		audit_logger:            cfg.audit_logger
-		handler_ctx:             ctx
-		produce:                 &ProduceSubHandler{}
-		fetch_handler:           &FetchSubHandler{}
-		auth:                    &AuthSubHandler{}
-		txn:                     &TransactionSubHandler{}
-		group_handler:           &GroupSubHandler{}
-		admin:                   &AdminSubHandler{}
-		share:                   &ShareGroupSubHandler{}
 	}
 }
 

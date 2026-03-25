@@ -205,7 +205,7 @@ struct SaslAuthenticateResult {
 // Handles SASL authentication
 // Supported mechanisms: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER
 // Returns encoded response bytes and an optional principal for connection authentication.
-fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthenticateResult {
+fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16, client_addr string) !SaslAuthenticateResult {
 	start_time := time.now()
 	mut reader := new_reader(body)
 	is_flexible := is_flexible_version(.sasl_authenticate, version)
@@ -230,7 +230,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 				elapsed))
 
 			if mut al := h.audit_logger {
-				al.log_auth_failure('', err.msg())
+				al.log_auth_failure(client_addr, err.msg())
 			}
 
 			response := SaslAuthenticateResponse{
@@ -258,7 +258,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 					'unknown'
 				}
 				if mut al := h.audit_logger {
-					al.log_auth_success('', principal_name, mechanism.str())
+					al.log_auth_success(client_addr, principal_name, mechanism.str())
 				}
 			} else {
 				h.logger.debug('SASL authentication step completed', port.field_string('mechanism',
@@ -282,7 +282,7 @@ fn (mut h Handler) handle_sasl_authenticate(body []u8, version i16) !SaslAuthent
 				elapsed))
 
 			if mut al := h.audit_logger {
-				al.log_auth_failure('', result.error_message)
+				al.log_auth_failure(client_addr, result.error_message)
 			}
 
 			response := SaslAuthenticateResponse{

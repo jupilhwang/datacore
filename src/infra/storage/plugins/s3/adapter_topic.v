@@ -9,17 +9,7 @@ import json
 /// create_topic creates a new topic in S3.
 pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
 	// Input validation
-	if name == '' {
-		return error('Topic name cannot be empty')
-	}
-	if name.len > max_topic_name_length {
-		return error('Topic name too long: ${name.len} > ${max_topic_name_length}')
-	}
-	for ch in name {
-		if !ch.is_alnum() && ch != `_` && ch != `-` && ch != `.` {
-			return error('Invalid character in topic name: ${ch.ascii_str()}')
-		}
-	}
+	validate_identifier(name, 'topic')!
 	if partitions <= 0 {
 		return error('Partition count must be positive: ${partitions}')
 	}
@@ -89,25 +79,21 @@ fn (mut a S3StorageAdapter) initialize_partition_indices(topic_name string, num_
 	}
 }
 
-/// delete_topic deletes a topic from S3.
-pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
-	// Phase 1: Acquire exclusive lock, clean all caches, then release.
+/// clear_topic_caches removes all cache entries for the given topic under exclusive lock.
+fn (mut a S3StorageAdapter) clear_topic_caches(name string) {
 	a.cache.topic_lock.@lock()
 
-	// Collect topic_id hex for reverse cache cleanup
 	mut topic_id_hex := ''
 	if cached := a.cache.topic_cache[name] {
 		topic_id_hex = cached.meta.topic_id.hex()
 	}
 
-	// Remove from topic-related caches
 	a.cache.topic_cache.delete(name)
 	if topic_id_hex.len > 0 {
 		a.cache.topic_id_cache.delete(topic_id_hex)
 		a.cache.topic_id_reverse_cache.delete(topic_id_hex)
 	}
 
-	// Remove matching entries from topic_index_cache (keyed as "topic:partition")
 	mut index_keys_to_delete := []string{}
 	for key, _ in a.cache.topic_index_cache {
 		if key.starts_with('${name}:') {
@@ -119,22 +105,30 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 	}
 
 	a.cache.topic_lock.unlock()
+}
 
-	// Remove matching entries from partition buffers (separate lock)
+/// clear_topic_partition_buffers removes partition buffers for the given topic.
+fn (mut a S3StorageAdapter) clear_topic_partition_buffers(name string) {
 	a.buffer_lock.@lock()
-	mut buffer_keys_to_delete := []string{}
+	defer { a.buffer_lock.unlock() }
+	mut keys_to_delete := []string{}
 	for key, _ in a.topic_partition_buffers {
 		if key.starts_with('${name}:') {
-			buffer_keys_to_delete << key
+			keys_to_delete << key
 		}
 	}
-	for key in buffer_keys_to_delete {
+	for key in keys_to_delete {
 		a.topic_partition_buffers.delete(key)
 	}
-	a.buffer_lock.unlock()
+}
 
-	// Phase 2: S3 I/O outside all locks.
-	// On failure, caches are already cleared — accept eventual consistency.
+/// delete_topic deletes a topic from S3.
+pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
+	validate_identifier(name, 'topic')!
+
+	a.clear_topic_caches(name)
+	a.clear_topic_partition_buffers(name)
+
 	prefix := '${a.config.prefix}topics/${name}/'
 	a.delete_objects_with_prefix(prefix) or {
 		observability.log_with_context('s3', .error, 'TopicAdapter', 'failed to delete topic objects from S3',
@@ -187,6 +181,7 @@ pub fn (mut a S3StorageAdapter) list_topics() ![]domain.TopicMetadata {
 
 /// get_topic retrieves topic metadata from S3.
 pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
+	validate_identifier(name, 'topic')!
 	// Check cache first
 	a.cache.topic_lock.rlock()
 	if cached := a.cache.topic_cache[name] {
@@ -257,6 +252,7 @@ pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMeta
 
 /// add_partitions adds partitions to a topic.
 pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
+	validate_identifier(name, 'topic')!
 	meta := a.get_topic(name)!
 	if new_count <= meta.partition_count {
 		return error('New partition count must be greater than current')
@@ -298,6 +294,7 @@ pub fn (mut a S3StorageAdapter) add_partitions(name string, new_count int) ! {
 
 /// get_partition_info retrieves partition information.
 pub fn (mut a S3StorageAdapter) get_partition_info(topic string, partition int) !domain.PartitionInfo {
+	validate_identifier(topic, 'topic')!
 	index := a.get_partition_index(topic, partition)!
 
 	return domain.PartitionInfo{

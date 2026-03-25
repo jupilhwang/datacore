@@ -68,90 +68,86 @@ pub:
 	etag          string
 }
 
+/// prepare_s3_request creates an HTTP request with standard S3 timeouts.
+fn prepare_s3_request(method http.Method, url string, headers http.Header, data string) !http.Request {
+	mut req := http.prepare(http.FetchConfig{
+		url:    url
+		method: method
+		header: headers
+		data:   data
+	})!
+	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
+	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+	return req
+}
+
+/// calculate_backoff_ms returns the backoff duration in ms for a retry attempt.
+fn calculate_backoff_ms(err IError, attempt int, base_ms int) int {
+	if is_network_error(err) {
+		return dns_backoff_ms * (1 << attempt)
+	}
+	return base_ms * (1 << attempt)
+}
+
 /// get_object retrieves an object from S3.
 /// Supports Range requests via start and end parameters.
 /// Returns: (object data, ETag)
-/// If start is negative, retrieves the entire object.
 /// Retries with exponential backoff on DNS/network errors.
 fn (mut a S3StorageAdapter) get_object(key string, start i64, end i64) !([]u8, string) {
-	// Metric: S3 GET request
 	stdatomic.add_i64(&a.metrics_collector.data.s3_get_count, 1)
-
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
-
-	cfg_max_retries := a.config.max_retries
+	url := a.build_object_url(key)
+	max_retries := a.config.max_retries
 
 	mut last_err := ''
-	for attempt in 0 .. cfg_max_retries {
-		// Prepare headers
+	for attempt in 0 .. max_retries {
 		mut headers := a.sign_request('GET', key, '', []u8{})
-
-		// Add Range header if start is non-negative
 		if start >= 0 {
 			range_val := if end > start { 'bytes=${start}-${end}' } else { 'bytes=${start}-' }
 			headers.add_custom('Range', range_val) or {}
 		}
 
-		mut req := http.prepare(http.FetchConfig{
-			url:    url
-			method: .get
-			header: headers
-		}) or {
+		mut req := prepare_s3_request(.get, url, headers, '') or {
 			last_err = 'S3 GET prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+			a.record_s3_error()
 			return error(last_err)
 		}
-		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 		resp := req.do() or {
 			last_err = 'S3 GET failed: ${err}'
-			err_str := err.msg()
-
-			// Retry on DNS/network errors
-			if is_network_error(err) && attempt < cfg_max_retries - 1 {
+			if is_network_error(err) && attempt < max_retries - 1 {
 				backoff_ms := dns_backoff_ms * (1 << attempt)
 				observability.log_with_context('s3', .warn, 'S3Client', 'GET retry (network error)',
 					{
-					'attempt':    '${attempt + 1}/${cfg_max_retries}'
+					'attempt':    '${attempt + 1}/${max_retries}'
 					'key':        key
-					'error':      err_str
+					'error':      err.msg()
 					'backoff_ms': backoff_ms.str()
 				})
 				time.sleep(time.Duration(backoff_ms) * time.millisecond)
 				continue
 			}
-
-			// Non-network error or last retry: fail immediately
-			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+			a.record_s3_error()
 			return error(last_err)
 		}
 
-		if resp.status_code == 404 {
-			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-			return error('Object not found: ${key}')
-		}
-		// 206 Partial Content is also a success for Range requests
-		if resp.status_code != 200 && resp.status_code != 206 {
-			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-			return error('S3 GET failed with status ${resp.status_code}')
-		}
-
-		etag := resp.header.get(.etag) or { '' }
-		return resp.body.bytes(), etag
+		return a.handle_get_response(resp, key)
 	}
-
-	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+	a.record_s3_error()
 	return error(last_err)
+}
+
+/// handle_get_response processes a successful S3 GET response.
+fn (mut a S3StorageAdapter) handle_get_response(resp http.Response, key string) !([]u8, string) {
+	if resp.status_code == 404 {
+		a.record_s3_error()
+		return error('Object not found: ${key}')
+	}
+	if resp.status_code != 200 && resp.status_code != 206 {
+		a.record_s3_error()
+		return error('S3 GET failed with status ${resp.status_code}')
+	}
+	etag := resp.header.get(.etag) or { '' }
+	return resp.body.bytes(), etag
 }
 
 /// put_object writes an object to S3.
@@ -160,131 +156,89 @@ fn (mut a S3StorageAdapter) put_object(key string, data []u8) ! {
 	a.put_object_with_retry(key, data, a.config.max_retries)!
 }
 
-/// put_object_with_retry attempts to write an object with exponential backoff retries.
-/// Retries with exponential backoff using config.retry_delay_ms on 500 and 503 errors.
-/// Uses longer backoff (1s, 2s, 4s) on DNS/network errors.
-/// Adds jitter to prevent thundering herd on concurrent retries.
-fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries_ int) ! {
-	// Metric: S3 PUT request (counted once, including retries)
-	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
-
-	cfg_retry_delay_ms := a.config.retry_delay_ms
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
+/// handle_put_request_error handles errors from PUT request execution.
+/// Returns false to signal retry, or propagates a terminal error.
+fn (mut a S3StorageAdapter) handle_put_request_error(err IError, key string, attempt int, max_retries int) !bool {
+	if attempt < max_retries - 1 {
+		backoff_ms := calculate_backoff_ms(err, attempt, a.config.retry_delay_ms)
+		observability.log_with_context('s3', .warn, 'S3Client', 'PUT retry', {
+			'attempt':    '${attempt + 1}/${max_retries}'
+			'key':        key
+			'error':      err.msg()
+			'backoff_ms': backoff_ms.str()
+			'endpoint':   a.get_endpoint()
+			'bucket':     a.config.bucket_name
+		})
+		time.sleep(time.Duration(backoff_ms) * time.millisecond)
+		return false
 	}
+	observability.log_with_context('s3', .error, 'S3Client', 'PUT failed after all retries',
+		{
+		'key':      key
+		'error':    err.msg()
+		'endpoint': a.get_endpoint()
+		'bucket':   a.config.bucket_name
+		'retries':  max_retries.str()
+	})
+	a.record_s3_error()
+	return error('S3 PUT failed: ${err}')
+}
+
+/// try_put_request executes a single PUT attempt and handles the response.
+/// Returns true on success, false if should retry, or error on terminal failure.
+fn (mut a S3StorageAdapter) try_put_request(url string, key string, data []u8, attempt int, max_retries int) !bool {
+	headers := a.sign_request('PUT', key, '', data)
+	mut req := prepare_s3_request(.put, url, headers, data.bytestr()) or {
+		a.record_s3_error()
+		return error('S3 PUT prepare failed: ${err}')
+	}
+
+	resp := req.do() or { return a.handle_put_request_error(err, key, attempt, max_retries) }
+
+	if resp.status_code in [200, 201, 204] {
+		return true
+	}
+
+	if resp.status_code in [500, 503] && attempt < max_retries - 1 {
+		backoff_ms := a.config.retry_delay_ms * (1 << attempt) +
+			int(time.now().unix_milli() % max_backoff_jitter_ms)
+		time.sleep(time.Duration(backoff_ms) * time.millisecond)
+		return false
+	}
+
+	a.record_s3_error()
+	return error('S3 PUT failed with status ${resp.status_code}')
+}
+
+/// put_object_with_retry attempts to write an object with exponential backoff retries.
+fn (mut a S3StorageAdapter) put_object_with_retry(key string, data []u8, max_retries_ int) ! {
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
+	url := a.build_object_url(key)
 
 	mut last_err := ''
 	for attempt in 0 .. max_retries_ {
-		headers := a.sign_request('PUT', key, '', data)
-
-		mut req := http.prepare(http.FetchConfig{
-			url:    url
-			method: .put
-			header: headers
-			data:   data.bytestr()
-		}) or {
-			last_err = 'S3 PUT prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-			return error(last_err)
+		succeeded := a.try_put_request(url, key, data, attempt, max_retries_) or {
+			last_err = err.msg()
+			return err
 		}
-		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
-
-		resp := req.do() or {
-			last_err = 'S3 PUT failed: ${err}'
-			err_str := err.msg()
-
-			if attempt < max_retries_ - 1 {
-				// Apply longer backoff for DNS/network errors (1s, 2s, 4s)
-				backoff_ms := if is_network_error(err) {
-					dns_backoff_ms * (1 << attempt)
-				} else {
-					cfg_retry_delay_ms * (1 << attempt)
-				}
-
-				observability.log_with_context('s3', .warn, 'S3Client', 'PUT retry', {
-					'attempt':    '${attempt + 1}/${max_retries_}'
-					'key':        key
-					'error':      err_str
-					'backoff_ms': backoff_ms.str()
-					'endpoint':   endpoint
-					'bucket':     a.config.bucket_name
-				})
-
-				time.sleep(time.Duration(backoff_ms) * time.millisecond)
-				continue
-			}
-			// Final failure: log detailed error
-			observability.log_with_context('s3', .error, 'S3Client', 'PUT failed after all retries',
-				{
-				'key':      key
-				'error':    err_str
-				'endpoint': endpoint
-				'bucket':   a.config.bucket_name
-				'retries':  max_retries_.str()
-			})
-			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-			return error(last_err)
-		}
-
-		if resp.status_code in [200, 201, 204] {
+		if succeeded {
 			return
 		}
-
-		// Retry on 503 (Service Unavailable / throttling) and 500 (Server Error)
-		if resp.status_code in [500, 503] && attempt < max_retries_ - 1 {
-			last_err = 'S3 PUT failed with status ${resp.status_code}'
-			// Exponential backoff with jitter
-			backoff_ms := cfg_retry_delay_ms * (1 << attempt) +
-				int(time.now().unix_milli() % max_backoff_jitter_ms)
-
-			observability.log_with_context('s3', .warn, 'S3Client', 'PUT status error, retrying',
-				{
-				'attempt':     '${attempt + 1}/${max_retries_}'
-				'key':         key
-				'status_code': resp.status_code.str()
-				'backoff_ms':  backoff_ms.str()
-			})
-
-			time.sleep(time.Duration(backoff_ms) * time.millisecond)
-			continue
-		}
-
-		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-		return error('S3 PUT failed with status ${resp.status_code}')
 	}
-	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+	a.record_s3_error()
 	return error(last_err)
 }
 
 /// put_object_if_not_exists writes an object only if it does not already exist (conditional PUT).
 /// Uses If-None-Match: * header to prevent concurrent creation.
-/// Returns an error if the object already exists (412 Precondition Failed).
 fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
-
+	url := a.build_object_url(key)
 	mut headers := a.sign_request('PUT', key, '', data)
 	headers.add_custom('If-None-Match', '*') or {}
 
-	mut req := http.prepare(http.FetchConfig{
-		url:    url
-		method: .put
-		header: headers
-		data:   data.bytestr()
-	}) or { return error('S3 PUT prepare failed: ${err}') }
-	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+	mut req := prepare_s3_request(.put, url, headers, data.bytestr()) or {
+		return error('S3 PUT prepare failed: ${err}')
+	}
 
 	resp := req.do() or { return error('S3 PUT failed: ${err}') }
 
@@ -297,27 +251,14 @@ fn (mut a S3StorageAdapter) put_object_if_not_exists(key string, data []u8) ! {
 }
 
 /// put_object_if_match overwrites an object only when the ETag matches (conditional PUT).
-/// Uses If-Match header to implement optimistic locking.
-/// Returns an 'etag_mismatch' error on 412 Precondition Failed when ETag does not match.
 fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag string) ! {
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
-
+	url := a.build_object_url(key)
 	mut headers := a.sign_request('PUT', key, '', data)
 	headers.add_custom('If-Match', etag) or {}
 
-	mut req := http.prepare(http.FetchConfig{
-		url:    url
-		method: .put
-		header: headers
-		data:   data.bytestr()
-	}) or { return error('S3 PUT prepare failed: ${err}') }
-	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
+	mut req := prepare_s3_request(.put, url, headers, data.bytestr()) or {
+		return error('S3 PUT prepare failed: ${err}')
+	}
 
 	resp := req.do() or { return error('S3 PUT failed: ${err}') }
 
@@ -330,40 +271,23 @@ fn (mut a S3StorageAdapter) put_object_if_match(key string, data []u8, etag stri
 }
 
 /// delete_object deletes an object from S3.
-/// Returns 200 or 204 status code on successful deletion.
 fn (mut a S3StorageAdapter) delete_object(key string) ! {
-	// Metric: S3 DELETE request
 	stdatomic.add_i64(&a.metrics_collector.data.s3_delete_count, 1)
-
-	endpoint := a.get_endpoint()
-	url := if a.config.use_path_style {
-		'${endpoint}/${a.config.bucket_name}/${key}'
-	} else {
-		'${endpoint}/${key}'
-	}
-
+	url := a.build_object_url(key)
 	headers := a.sign_request('DELETE', key, '', []u8{})
 
-	mut req := http.prepare(http.FetchConfig{
-		url:    url
-		method: .delete
-		header: headers
-	}) or {
-		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+	mut req := prepare_s3_request(.delete, url, headers, '') or {
+		a.record_s3_error()
 		return error('S3 DELETE prepare failed: ${err}')
 	}
-	req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-	req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
 
 	resp := req.do() or {
-		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+		a.record_s3_error()
 		return error('S3 DELETE failed: ${err}')
 	}
 
 	if resp.status_code !in [200, 204] {
-		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+		a.record_s3_error()
 		return error('S3 DELETE failed with status ${resp.status_code}')
 	}
 }
@@ -430,107 +354,84 @@ fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
 	return all_objects
 }
 
-/// list_objects_page fetches a single page of S3 objects with the specified prefix.
-/// Uses continuation_token for pagination; pass empty string for the first page.
-/// Includes retry logic for transient network and server errors.
-fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token string) !ListObjectsPage {
-	// Metric: S3 LIST request
-	stdatomic.add_i64(&a.metrics_collector.data.s3_list_count, 1)
-
-	cfg_max_retries := a.config.max_retries
-	cfg_retry_delay_ms := a.config.retry_delay_ms
+/// build_list_objects_url constructs the S3 ListObjectsV2 request URL.
+fn (a &S3StorageAdapter) build_list_objects_url(prefix string, continuation_token string) (string, string) {
 	endpoint := a.get_endpoint()
-
 	mut query := 'list-type=2&prefix=${prefix}'
 	if continuation_token.len > 0 {
 		query += '&continuation-token=${continuation_token}'
 	}
-	url := '${endpoint}/${a.config.bucket_name}?${query}'
+	return '${endpoint}/${a.config.bucket_name}?${query}', query
+}
 
-	mut last_err := ''
-
-	for attempt in 0 .. cfg_max_retries {
-		if attempt > 0 {
-			observability.log_with_context('s3', .debug, 'S3Client', 'LIST retry', {
-				'attempt': (attempt + 1).str()
-				'max':     cfg_max_retries.str()
-				'prefix':  prefix
-			})
-		}
-
-		headers := a.sign_request('GET', '', query, []u8{})
-
-		mut req := http.prepare(http.FetchConfig{
-			url:    url
-			method: .get
-			header: headers
-		}) or {
-			last_err = 'S3 LIST prepare failed: ${err}'
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-			return error(last_err)
-		}
-		req.read_timeout = i64(s3_read_timeout_ms) * i64(time.millisecond)
-		req.write_timeout = i64(s3_write_timeout_ms) * i64(time.millisecond)
-
-		resp := req.do() or {
-			last_err = 'S3 LIST failed: ${err}'
-			err_str := err.msg()
-			observability.log_with_context('s3', .error, 'S3Client', 'LIST error', {
-				'attempt':  (attempt + 1).str()
-				'error':    err_str
-				'prefix':   prefix
-				'endpoint': endpoint
-				'bucket':   a.config.bucket_name
-			})
-
-			if attempt < cfg_max_retries - 1 {
-				// Apply longer backoff for DNS/network errors (1s, 2s, 4s)
-				backoff_ms := if is_network_error(err) {
-					dns_backoff_ms * (1 << attempt)
-				} else {
-					cfg_retry_delay_ms * (1 << attempt)
-				}
-				observability.log_with_context('s3', .warn, 'S3Client', 'LIST retry',
-					{
-					'attempt':    '${attempt + 1}/${cfg_max_retries}'
-					'backoff_ms': backoff_ms.str()
-				})
-				time.sleep(time.Duration(backoff_ms) * time.millisecond)
-				continue
-			}
-			// Metric: S3 error
-			stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-			return error(last_err)
-		}
-
-		if resp.status_code == 200 {
-			// Success - parse XML response with pagination info
-			return parse_list_objects_page(resp.body)
-		}
-
-		// Retry on 503 (Service Unavailable) and 500 (Server Error)
-		if resp.status_code in [500, 503] && attempt < cfg_max_retries - 1 {
-			last_err = 'S3 LIST failed with status ${resp.status_code}'
-			observability.log_with_context('s3', .warn, 'S3Client', 'LIST status error, retrying',
-				{
-				'status_code': resp.status_code.str()
-			})
-
-			// Exponential backoff with jitter
-			backoff_ms := cfg_retry_delay_ms * (1 << attempt) +
-				int(time.now().unix_milli() % max_backoff_jitter_ms)
-			time.sleep(time.Duration(backoff_ms) * time.millisecond)
-			continue
-		}
-
-		// Metric: S3 error
-		stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-		return error('S3 LIST failed with status ${resp.status_code}')
+/// try_list_request executes a single LIST attempt and handles the response.
+/// Returns ListObjectsPage on success, false if should retry, or error on terminal failure.
+fn (mut a S3StorageAdapter) try_list_request(url string, query string, prefix string, attempt int, max_retries int) !(ListObjectsPage, bool) {
+	if attempt > 0 {
+		observability.log_with_context('s3', .debug, 'S3Client', 'LIST retry', {
+			'attempt': (attempt + 1).str()
+			'max':     max_retries.str()
+			'prefix':  prefix
+		})
 	}
 
-	// Metric: S3 error
-	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
-	return error(last_err)
+	headers := a.sign_request('GET', '', query, []u8{})
+	mut req := prepare_s3_request(.get, url, headers, '') or {
+		a.record_s3_error()
+		return error('S3 LIST prepare failed: ${err}')
+	}
+
+	resp := req.do() or { return a.handle_list_request_error(err, prefix, attempt, max_retries) }
+
+	if resp.status_code == 200 {
+		return parse_list_objects_page(resp.body), true
+	}
+
+	if resp.status_code in [500, 503] && attempt < max_retries - 1 {
+		backoff_ms := a.config.retry_delay_ms * (1 << attempt) +
+			int(time.now().unix_milli() % max_backoff_jitter_ms)
+		time.sleep(time.Duration(backoff_ms) * time.millisecond)
+		return ListObjectsPage{}, false
+	}
+
+	a.record_s3_error()
+	return error('S3 LIST failed with status ${resp.status_code}')
+}
+
+/// handle_list_request_error handles network/request errors during LIST operations.
+fn (mut a S3StorageAdapter) handle_list_request_error(err IError, prefix string, attempt int, max_retries int) !(ListObjectsPage, bool) {
+	observability.log_with_context('s3', .error, 'S3Client', 'LIST error', {
+		'attempt':  (attempt + 1).str()
+		'error':    err.msg()
+		'prefix':   prefix
+		'endpoint': a.get_endpoint()
+		'bucket':   a.config.bucket_name
+	})
+
+	if attempt < max_retries - 1 {
+		backoff_ms := calculate_backoff_ms(err, attempt, a.config.retry_delay_ms)
+		time.sleep(time.Duration(backoff_ms) * time.millisecond)
+		return ListObjectsPage{}, false
+	}
+	a.record_s3_error()
+	return error('S3 LIST failed: ${err}')
+}
+
+/// list_objects_page fetches a single page of S3 objects with the specified prefix.
+fn (mut a S3StorageAdapter) list_objects_page(prefix string, continuation_token string) !ListObjectsPage {
+	stdatomic.add_i64(&a.metrics_collector.data.s3_list_count, 1)
+	max_retries := a.config.max_retries
+	url, query := a.build_list_objects_url(prefix, continuation_token)
+
+	for attempt in 0 .. max_retries {
+		page, done := a.try_list_request(url, query, prefix, attempt, max_retries)!
+		if done {
+			return page
+		}
+	}
+
+	a.record_s3_error()
+	return error('S3 LIST failed after ${max_retries} retries')
 }
 
 /// get_endpoint returns the S3 endpoint URL.

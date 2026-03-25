@@ -136,3 +136,9 @@ pub fn get_global_performance() &PerformanceManager {
 pub fn (mut m PerformanceManager) get_stats() core.PerformanceStats {
 	return m.engine.get_stats()
 }
+
+/// close releases engine resources and marks the manager as disabled.
+pub fn (mut m PerformanceManager) close() {
+	m.engine.close()
+	m.enabled = false
+}

@@ -324,6 +324,9 @@ fn skip_field(mut reader ProtoReader, wire_type int) ! {
 
 // Protobuf Decoding Helpers
 
+// Note: shares the `data []u8, pos int` layout with BinaryReader (kafka/codec.v)
+// and AvroReader (avro_encoder.v). Intentional duplication -- each reader carries
+// protocol-specific decode helpers that do not overlap.
 struct ProtoReader {
 mut:
 	data []u8

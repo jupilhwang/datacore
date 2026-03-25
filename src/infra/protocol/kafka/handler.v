@@ -14,8 +14,7 @@ import common
 ///
 /// It handles all Kafka API requests for the broker and integrates with
 /// storage, authentication, ACL, transaction coordinator, and other components.
-/// Sub-handler structs group domain-specific dependencies while the Handler
-/// itself remains the dispatcher that routes requests.
+/// The Handler dispatches requests to the appropriate API handler method.
 pub struct Handler {
 	broker_id   i32
 	host        string
@@ -38,16 +37,6 @@ mut:
 	// negotiated_mechanism stores the mechanism agreed upon during SaslHandshake
 	// so that handle_sasl_authenticate can use it instead of guessing from bytes
 	negotiated_mechanism ?domain.SaslMechanism
-	// Sub-handler structs that group domain-specific dependencies.
-	// These are wired at construction time and hold references to shared context.
-	handler_ctx   &HandlerContext
-	produce       &ProduceSubHandler
-	fetch_handler &FetchSubHandler
-	auth          &AuthSubHandler
-	txn           &TransactionSubHandler
-	group_handler &GroupSubHandler
-	admin         &AdminSubHandler
-	share         &ShareGroupSubHandler
 }
 
 /// HandlerConfig holds all configuration for creating a Kafka protocol handler.
@@ -174,7 +163,8 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 	// sasl_authenticate is handled separately to update conn state directly in this function.
 	// This avoids V interface mutation issues when passing conn through nested function calls.
 	if api_key == .sasl_authenticate {
-		sasl_result := h.handle_sasl_authenticate(req.body, version) or {
+		client_addr := if c := conn { c.remote_addr } else { '' }
+		sasl_result := h.handle_sasl_authenticate(req.body, version, client_addr) or {
 			elapsed := time.since(start_time)
 			h.metrics.record_request(api_key.str(), elapsed.milliseconds(), false, data.len,
 				0)

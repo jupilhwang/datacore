@@ -8,6 +8,7 @@ import net.http
 import crypto.hmac
 import crypto.sha256
 import encoding.base64
+import sync
 
 /// GlueCatalog is an AWS Glue Data Catalog implementation.
 /// Connects to AWS Glue via HTTP API with SigV4 authentication.
@@ -20,6 +21,9 @@ pub mut:
 	secret_key    string
 	session_token string
 	glue_endpoint string
+mut:
+	signing_key_cache CachedSigningKey
+	signing_key_lock  sync.Mutex
 }
 
 /// new_glue_catalog creates a new Glue catalog.
@@ -306,13 +310,39 @@ fn (c &GlueCatalog) sigv4_authorization(method string, uri string, query string,
 	return '${algorithm} Credential=${c.access_key}/${credential_scope}, SignedHeaders=${signed_headers}, Signature=${signature}'
 }
 
-/// sigv4_signing_key derives the SigV4 signing key.
+/// sigv4_signing_key derives the SigV4 signing key with daily caching.
+/// The signing key depends on (secret_key, date_stamp, region, service)
+/// and remains valid for an entire UTC day, eliminating 4 redundant
+/// HMAC-SHA256 computations per request.
+/// Thread-safe: protected by signing_key_lock mutex.
 fn (c &GlueCatalog) sigv4_signing_key(date_stamp string, service string) []u8 {
+	// Check cache (lock scope: read only)
+	unsafe {
+		mut self := c
+		self.signing_key_lock.@lock()
+		if self.signing_key_cache.date_day == date_stamp && self.signing_key_cache.key.len > 0 {
+			cached := self.signing_key_cache.key.clone()
+			self.signing_key_lock.unlock()
+			return cached
+		}
+		self.signing_key_lock.unlock()
+	}
+	// Cache miss: compute new signing key (4-step HMAC-SHA256 chain)
 	k_date := hmac.new(('AWS4' + c.secret_key).bytes(), date_stamp.bytes(), sha256.sum,
 		sha256.block_size)
 	k_region := hmac.new(k_date, c.region.bytes(), sha256.sum, sha256.block_size)
 	k_service := hmac.new(k_region, service.bytes(), sha256.sum, sha256.block_size)
 	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, sha256.block_size)
+	// Update cache (lock scope: write only)
+	unsafe {
+		mut self := c
+		self.signing_key_lock.@lock()
+		self.signing_key_cache = CachedSigningKey{
+			key:      k_signing.clone()
+			date_day: date_stamp
+		}
+		self.signing_key_lock.unlock()
+	}
 	return k_signing
 }
 

@@ -146,6 +146,7 @@ mut:
 	last_index_flush_at   i64
 	// Worker lifecycle
 	is_running_flag              i64
+	worker_start_mu              sync.Mutex
 	worker_wg                    sync.WaitGroup
 	min_segment_count_to_compact int = 5
 	// Partition append
@@ -414,7 +415,12 @@ fn (a &S3StorageAdapter) share_partition_key(group_id string, topic string, part
 
 /// start_workers starts flush, compaction, and sync linger workers.
 pub fn (mut a S3StorageAdapter) start_workers() {
-	// Atomic check-then-set to prevent double-start race
+	// Mutex guard eliminates TOCTOU between load and store.
+	// Workers use atomic load on is_running_flag in their hot loop.
+	a.worker_start_mu.lock()
+	defer {
+		a.worker_start_mu.unlock()
+	}
 	if stdatomic.load_i64(&a.is_running_flag) == 1 {
 		return
 	}
@@ -514,4 +520,64 @@ fn (mut a S3StorageAdapter) record_sync_append_index_error() {
 fn (mut a S3StorageAdapter) record_sync_append_success(elapsed_ms i64) {
 	stdatomic.add_i64(&a.metrics_collector.data.sync_append_success_count, 1)
 	stdatomic.add_i64(&a.metrics_collector.data.sync_append_total_ms, int(elapsed_ms))
+}
+
+/// record_flush_start increments the flush count.
+fn (mut a S3StorageAdapter) record_flush_start() {
+	stdatomic.add_i64(&a.metrics_collector.data.flush_count, 1)
+}
+
+/// record_flush_error increments the flush error count.
+fn (mut a S3StorageAdapter) record_flush_error() {
+	stdatomic.add_i64(&a.metrics_collector.data.flush_error_count, 1)
+}
+
+/// record_flush_s3_error increments both flush error and S3 error counts.
+fn (mut a S3StorageAdapter) record_flush_s3_error() {
+	stdatomic.add_i64(&a.metrics_collector.data.flush_error_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+}
+
+/// record_flush_put increments the S3 PUT count for flush operations.
+fn (mut a S3StorageAdapter) record_flush_put() {
+	stdatomic.add_i64(&a.metrics_collector.data.s3_put_count, 1)
+}
+
+/// record_flush_success records flush success metrics.
+fn (mut a S3StorageAdapter) record_flush_success(start_time time.Time) {
+	elapsed_ms := time.since(start_time).milliseconds()
+	stdatomic.add_i64(&a.metrics_collector.data.flush_success_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.flush_total_ms, int(elapsed_ms))
+}
+
+/// record_compaction_start increments the compaction count.
+fn (mut a S3StorageAdapter) record_compaction_start() {
+	stdatomic.add_i64(&a.metrics_collector.data.compaction_count, 1)
+}
+
+/// record_compaction_error increments the compaction error count.
+fn (mut a S3StorageAdapter) record_compaction_error() {
+	stdatomic.add_i64(&a.metrics_collector.data.compaction_error_count, 1)
+}
+
+/// record_compaction_success records compaction success metrics.
+fn (mut a S3StorageAdapter) record_compaction_success(start_time time.Time, total_size i64) {
+	elapsed_ms := time.since(start_time).milliseconds()
+	stdatomic.add_i64(&a.metrics_collector.data.compaction_success_count, 1)
+	stdatomic.add_i64(&a.metrics_collector.data.compaction_total_ms, int(elapsed_ms))
+	stdatomic.add_i64(&a.metrics_collector.data.compaction_bytes_merged, int(total_size))
+}
+
+/// record_s3_error increments the S3 error count.
+fn (mut a S3StorageAdapter) record_s3_error() {
+	stdatomic.add_i64(&a.metrics_collector.data.s3_error_count, 1)
+}
+
+/// build_object_url constructs the full S3 URL for a given object key.
+fn (a &S3StorageAdapter) build_object_url(key string) string {
+	endpoint := a.get_endpoint()
+	if a.config.use_path_style {
+		return '${endpoint}/${a.config.bucket_name}/${key}'
+	}
+	return '${endpoint}/${key}'
 }

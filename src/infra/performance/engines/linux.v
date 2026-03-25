@@ -253,6 +253,11 @@ fn (mut e LinuxPerformanceEngine) io_uring_write(path string, offset i64, data [
 	}
 }
 
-// TODO: IoUring has a close() method for resource cleanup.
-// PerformanceEngine interface currently lacks a shutdown/cleanup method.
-// Add cleanup support when the interface is extended.
+/// close releases io_uring resources and cached file descriptors.
+pub fn (mut e LinuxPerformanceEngine) close() {
+	if e.io_ring_available {
+		e.io_ring.close()
+		e.io_ring_available = false
+	}
+	e.fd_cache.close_all()
+}

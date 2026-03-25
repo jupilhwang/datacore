@@ -38,16 +38,14 @@ fn init_broker_logging(conf cfg.Config) &observability.Logger {
 	mut logger := observability.get_logger()
 	startup.init_writer_pool(startup.default_writer_pool_config())
 
-	logger.info('Broker configuration summary', observability.field_string('host', conf.broker.host),
-		observability.field_int('port', conf.broker.port), observability.field_int('broker_id',
-		conf.broker.broker_id), observability.field_string('cluster_id', conf.broker.cluster_id),
-		observability.field_int('max_conn', conf.broker.max_connections), observability.field_int('max_req_size',
-		conf.broker.max_request_size))
+	logger.info('Broker configuration summary', port.field_string('host', conf.broker.host),
+		port.field_int('port', conf.broker.port), port.field_int('broker_id', conf.broker.broker_id),
+		port.field_string('cluster_id', conf.broker.cluster_id), port.field_int('max_conn',
+		conf.broker.max_connections), port.field_int('max_req_size', conf.broker.max_request_size))
 
-	logger.info('Observability summary', observability.field_bool('metrics_enabled', conf.observability.metrics.enabled),
-		observability.field_int('metrics_port', conf.observability.metrics.prometheus_port),
-		observability.field_bool('tracing_enabled', conf.observability.tracing.enabled),
-		observability.field_string('log_level', conf.observability.logging.level))
+	logger.info('Observability summary', port.field_bool('metrics_enabled', conf.observability.metrics.enabled),
+		port.field_int('metrics_port', conf.observability.metrics.prometheus_port), port.field_bool('tracing_enabled',
+		conf.observability.tracing.enabled), port.field_string('log_level', conf.observability.logging.level))
 
 	return logger
 }
@@ -68,8 +66,7 @@ fn init_protocol_services(conf cfg.Config, storage port.StoragePort, mut logger 
 
 	audit_logger := auth.new_audit_logger(true)
 	protocol_handler.set_audit_logger(audit_logger)
-	logger.info('Audit logger initialized', observability.field_int('max_buffer_size',
-		audit_logger.max_buffer_size))
+	logger.info('Audit logger initialized', port.field_int('max_buffer_size', audit_logger.max_buffer_size))
 
 	// auth_manager is not configured in the current startup path;
 	// warn so operators are aware that all requests bypass authentication.
@@ -107,11 +104,10 @@ fn start_rest_api_server(conf cfg.Config, storage port.StoragePort, mut logger o
 		}
 		mut schema_registry := schema.new_registry(storage, schema_config)
 		schema_registry.load_from_storage() or {
-			logger.warn('Failed to load schemas from storage', observability.field_string('error',
+			logger.warn('Failed to load schemas from storage', port.field_string('error',
 				'${err}'))
 		}
-		logger.info('Schema registry initialized', observability.field_string('topic',
-			conf.schema_registry.topic))
+		logger.info('Schema registry initialized', port.field_string('topic', conf.schema_registry.topic))
 		schema_api := rest.new_schema_api(schema_registry)
 		rest_server.set_schema_api(schema_api)
 		logger.info('Schema Registry API registered with REST server')
@@ -119,8 +115,8 @@ fn start_rest_api_server(conf cfg.Config, storage port.StoragePort, mut logger o
 
 	rest_server.start_background()
 	cli.print_done()
-	logger.info('REST API server started', observability.field_string('host', conf.rest.host),
-		observability.field_int('port', conf.rest.port))
+	logger.info('REST API server started', port.field_string('host', conf.rest.host),
+		port.field_int('port', conf.rest.port))
 }
 
 // create_tcp_server builds the TCP server with optional rate limiter.
@@ -145,8 +141,8 @@ fn create_tcp_server(conf cfg.Config, protocol_handler kafka.Handler, mut logger
 			window_size_ms:                 i64(rl_cfg.window_ms)
 		})
 		tcp_server.set_rate_limiter(rate_limiter)
-		logger.info('Rate limiter enabled', observability.field_int('max_rps', rl_cfg.max_requests_per_sec),
-			observability.field_int('per_ip_max_rps', rl_cfg.per_ip_max_requests_per_sec))
+		logger.info('Rate limiter enabled', port.field_int('max_rps', rl_cfg.max_requests_per_sec),
+			port.field_int('per_ip_max_rps', rl_cfg.per_ip_max_requests_per_sec))
 	}
 
 	return tcp_server
