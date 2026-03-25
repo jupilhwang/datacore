@@ -17,7 +17,7 @@ mut:
 
 // Client.new creates a new replication Client with the given timeout in milliseconds.
 /// Client.
-pub fn Client.new(timeout_ms int) &Client {
+fn Client.new(timeout_ms int) &Client {
 	return &Client{
 		binary_protocol: BinaryProtocol.new()
 		timeout_ms:      timeout_ms
@@ -27,7 +27,7 @@ pub fn Client.new(timeout_ms int) &Client {
 
 // Client.new_with_pool creates a Client that reuses connections from the given pool.
 /// Client.new_with_pool creates a Client that reuses TCP connections from the given pool.
-pub fn Client.new_with_pool(timeout_ms int, pool &ConnectionPool) &Client {
+fn Client.new_with_pool(timeout_ms int, pool &ConnectionPool) &Client {
 	return &Client{
 		binary_protocol: BinaryProtocol.new()
 		timeout_ms:      timeout_ms
@@ -50,7 +50,7 @@ pub fn Client.new_with_pool(timeout_ms int, pool &ConnectionPool) &Client {
 // - Timeout if no response within Client.timeout_ms
 // - Protocol error if message serialization/deserialization fails
 /// send sends a replication message to a remote broker and waits for response.
-pub fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage) !domain.ReplicationMessage {
+fn (mut c Client) send(broker_address string, msg domain.ReplicationMessage) !domain.ReplicationMessage {
 	if !isnil(c.pool) {
 		return c.send_pooled(broker_address, msg)
 	}
@@ -121,7 +121,7 @@ fn (mut c Client) send_pooled(broker_address string, msg domain.ReplicationMessa
 // - broker_address: target broker address in "host:port" format
 // - msg: ReplicationMessage to send
 /// send_async sends a replication message without waiting for response.
-pub fn (mut c Client) send_async(broker_address string, msg domain.ReplicationMessage) {
+fn (mut c Client) send_async(broker_address string, msg domain.ReplicationMessage) {
 	spawn c.send_fire_forget(broker_address, msg)
 }
 
@@ -151,7 +151,7 @@ fn (mut c Client) send_fire_forget(broker_address string, msg domain.Replication
 // Errors:
 // - All retry attempts exhausted (includes last error message)
 /// send_with_retry sends a replication message with exponential backoff retry logic.
-pub fn (mut c Client) send_with_retry(broker_address string, msg domain.ReplicationMessage, max_retries int) !domain.ReplicationMessage {
+fn (mut c Client) send_with_retry(broker_address string, msg domain.ReplicationMessage, max_retries int) !domain.ReplicationMessage {
 	mut last_error := ''
 
 	for attempt := 0; attempt < max_retries; attempt++ {
@@ -177,6 +177,6 @@ pub fn (mut c Client) send_with_retry(broker_address string, msg domain.Replicat
 // close releases any resources held by the Client.
 // The pool lifecycle is managed externally; close does not shut down a shared pool.
 /// close releases any resources held by the Client.
-pub fn (mut c Client) close() {
+fn (mut c Client) close() {
 	// Pool lifecycle is managed by the caller, not the client.
 }

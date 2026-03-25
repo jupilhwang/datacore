@@ -4,7 +4,7 @@
 module kafka
 
 /// encode encodes ShareGroupHeartbeatResponse to bytes.
-pub fn (r ShareGroupHeartbeatResponse) encode(version i16) []u8 {
+fn (r ShareGroupHeartbeatResponse) encode(version i16) []u8 {
 	is_flexible := true
 	mut writer := new_writer()
 
@@ -87,7 +87,7 @@ pub fn (r ShareGroupHeartbeatResponse) encode(version i16) []u8 {
 }
 
 /// encode encodes ShareFetchResponse to bytes.
-pub fn (r ShareFetchResponse) encode(version i16) []u8 {
+fn (r ShareFetchResponse) encode(version i16) []u8 {
 	is_flexible := true
 	mut writer := new_writer()
 
@@ -230,7 +230,7 @@ pub fn (r ShareFetchResponse) encode(version i16) []u8 {
 }
 
 /// encode encodes ShareAcknowledgeResponse to bytes.
-pub fn (r ShareAcknowledgeResponse) encode(version i16) []u8 {
+fn (r ShareAcknowledgeResponse) encode(version i16) []u8 {
 	is_flexible := true
 	mut writer := new_writer()
 

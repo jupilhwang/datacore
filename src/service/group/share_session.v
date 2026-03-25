@@ -17,14 +17,14 @@ mut:
 }
 
 /// new_share_session_manager creates a new share session manager.
-pub fn new_share_session_manager() &ShareSessionManager {
+fn new_share_session_manager() &ShareSessionManager {
 	return &ShareSessionManager{
 		sessions: map[string]&domain.ShareSession{}
 	}
 }
 
 /// get_or_create_session gets or creates a share session.
-pub fn (mut m ShareSessionManager) get_or_create_session(group_id string, member_id string) &domain.ShareSession {
+fn (mut m ShareSessionManager) get_or_create_session(group_id string, member_id string) &domain.ShareSession {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -32,7 +32,7 @@ pub fn (mut m ShareSessionManager) get_or_create_session(group_id string, member
 }
 
 /// get_session returns a share session if it exists.
-pub fn (mut m ShareSessionManager) get_session(group_id string, member_id string) ?&domain.ShareSession {
+fn (mut m ShareSessionManager) get_session(group_id string, member_id string) ?&domain.ShareSession {
 	m.lock.rlock()
 	defer { m.lock.runlock() }
 
@@ -42,7 +42,7 @@ pub fn (mut m ShareSessionManager) get_session(group_id string, member_id string
 
 /// update_session updates a share session.
 /// Handles adding/removing partitions and incrementing the epoch.
-pub fn (mut m ShareSessionManager) update_session(group_id string, member_id string, epoch i32, partitions_to_add []domain.ShareSessionPartition, partitions_to_remove []domain.ShareSessionPartition) !&domain.ShareSession {
+fn (mut m ShareSessionManager) update_session(group_id string, member_id string, epoch i32, partitions_to_add []domain.ShareSessionPartition, partitions_to_remove []domain.ShareSessionPartition) !&domain.ShareSession {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -89,7 +89,7 @@ pub fn (mut m ShareSessionManager) update_session(group_id string, member_id str
 }
 
 /// close_session closes a share session.
-pub fn (mut m ShareSessionManager) close_session(group_id string, member_id string) {
+fn (mut m ShareSessionManager) close_session(group_id string, member_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -98,13 +98,13 @@ pub fn (mut m ShareSessionManager) close_session(group_id string, member_id stri
 }
 
 /// delete_session deletes a session by key (internal use).
-pub fn (mut m ShareSessionManager) delete_session(group_id string, member_id string) {
+fn (mut m ShareSessionManager) delete_session(group_id string, member_id string) {
 	key := '${group_id}:${member_id}'
 	m.sessions.delete(key)
 }
 
 /// delete_sessions_for_group deletes all sessions for a group.
-pub fn (mut m ShareSessionManager) delete_sessions_for_group(group_id string) {
+fn (mut m ShareSessionManager) delete_sessions_for_group(group_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -121,7 +121,7 @@ pub fn (mut m ShareSessionManager) delete_sessions_for_group(group_id string) {
 
 /// expire_sessions removes sessions that have not been used recently.
 /// Returns a list of expired session keys.
-pub fn (mut m ShareSessionManager) expire_sessions(timeout_ms i64) []string {
+fn (mut m ShareSessionManager) expire_sessions(timeout_ms i64) []string {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 

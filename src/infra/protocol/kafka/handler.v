@@ -5,22 +5,10 @@
 // and produces responses.
 module kafka
 
-import infra.auth
-import infra.compression
-import infra.observability
-import service.cluster
-import service.group
-import service.offset
 import service.port
-import service.schema
-import service.transaction
 import time
 import domain
 import common
-
-/// PartitionAssignerPtr is a pointer type for the partition assignment service,
-/// referencing PartitionAssigner from the service.cluster module.
-pub type PartitionAssignerPtr = &cluster.PartitionAssigner
 
 /// Handler is the core protocol handler that processes Kafka requests and produces responses.
 ///
@@ -35,18 +23,18 @@ pub struct Handler {
 	cluster_id  string
 mut:
 	storage                 port.StoragePort
-	offset_manager          &offset.OffsetManager
-	broker_registry         ?&cluster.BrokerRegistry
-	partition_assigner      ?PartitionAssignerPtr
+	offset_manager          port.OffsetManagerPort
+	broker_registry         ?port.BrokerRegistryPort
+	partition_assigner      ?port.PartitionAssignerPort
 	auth_manager            ?port.AuthManager
 	acl_manager             ?port.AclManager
-	txn_coordinator         ?transaction.TransactionCoordinator
-	share_group_coordinator ?&group.ShareGroupCoordinator
-	schema_registry         ?&schema.SchemaRegistry
-	logger                  &observability.Logger
-	metrics                 &observability.ProtocolMetrics
-	compression_service     &compression.CompressionService
-	audit_logger            ?&auth.AuditLogger
+	txn_coordinator         ?port.TransactionCoordinatorPort
+	share_group_coordinator ?port.ShareGroupCoordinatorPort
+	schema_registry         ?port.SchemaRegistryPort
+	logger                  port.LoggerPort
+	metrics                 port.ProtocolMetricsPort
+	compression_service     port.CompressionPort
+	audit_logger            ?port.AuditLoggerPort
 	// negotiated_mechanism stores the mechanism agreed upon during SaslHandshake
 	// so that handle_sasl_authenticate can use it instead of guessing from bytes
 	negotiated_mechanism ?domain.SaslMechanism
@@ -73,211 +61,13 @@ pub:
 	storage             port.StoragePort
 	auth_manager        ?port.AuthManager
 	acl_manager         ?port.AclManager
-	txn_coordinator     ?transaction.TransactionCoordinator
-	share_coordinator   ?&group.ShareGroupCoordinator
-	compression_service &compression.CompressionService = unsafe { nil }
-	audit_logger        ?&auth.AuditLogger
-}
-
-// StorageSubPorts wraps a StoragePort in a concrete struct, enabling V to satisfy
-// narrower sub-interfaces (TopicStoragePort, OffsetStoragePort, etc.).
-// V does not support narrowing one interface type to another directly; this struct
-// delegates all sub-interface methods to the underlying StoragePort.
-struct StorageSubPorts {
-mut:
-	s port.StoragePort
-}
-
-fn (mut w StorageSubPorts) create_topic(name string, partitions int, config domain.TopicConfig) !domain.TopicMetadata {
-	return w.s.create_topic(name, partitions, config)
-}
-
-fn (mut w StorageSubPorts) delete_topic(name string) ! {
-	return w.s.delete_topic(name)
-}
-
-fn (mut w StorageSubPorts) list_topics() ![]domain.TopicMetadata {
-	return w.s.list_topics()
-}
-
-fn (mut w StorageSubPorts) get_topic(name string) !domain.TopicMetadata {
-	return w.s.get_topic(name)
-}
-
-fn (mut w StorageSubPorts) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
-	return w.s.get_topic_by_id(topic_id)
-}
-
-fn (mut w StorageSubPorts) add_partitions(name string, new_count int) ! {
-	return w.s.add_partitions(name, new_count)
-}
-
-fn (mut w StorageSubPorts) commit_offsets(group_id string, offsets []domain.PartitionOffset) ! {
-	return w.s.commit_offsets(group_id, offsets)
-}
-
-fn (mut w StorageSubPorts) fetch_offsets(group_id string, partitions []domain.TopicPartition) ![]domain.OffsetFetchResult {
-	return w.s.fetch_offsets(group_id, partitions)
-}
-
-/// new_handler_from_config creates a Handler from a HandlerConfig.
-/// This is the single initialization path that all constructor helpers delegate to.
-/// It builds the shared HandlerContext and wires each sub-handler with its
-/// domain-specific dependencies.
-pub fn new_handler_from_config(cfg HandlerConfig) Handler {
-	logger := observability.get_named_logger('kafka.handler')
-	mut sub := StorageSubPorts{
-		s: cfg.storage
-	}
-	offset_mgr := offset.new_offset_manager(sub, sub, observability.new_logger_adapter(logger))
-	metrics := observability.new_protocol_metrics()
-
-	ctx := &HandlerContext{
-		broker_id:           cfg.broker_id
-		host:                cfg.host
-		port:                cfg.broker_port
-		cluster_id:          cfg.cluster_id
-		storage:             cfg.storage
-		logger:              logger
-		metrics:             metrics
-		compression_service: cfg.compression_service
-	}
-
-	return Handler{
-		broker_id:               cfg.broker_id
-		host:                    cfg.host
-		broker_port:             cfg.broker_port
-		cluster_id:              cfg.cluster_id
-		storage:                 cfg.storage
-		offset_manager:          offset_mgr
-		broker_registry:         none
-		partition_assigner:      none
-		auth_manager:            cfg.auth_manager
-		acl_manager:             cfg.acl_manager
-		txn_coordinator:         cfg.txn_coordinator
-		share_group_coordinator: cfg.share_coordinator
-		logger:                  logger
-		metrics:                 metrics
-		compression_service:     cfg.compression_service
-		audit_logger:            cfg.audit_logger
-		handler_ctx:             ctx
-		produce:                 &ProduceSubHandler{
-			ctx:             ctx
-			txn_coordinator: cfg.txn_coordinator
-			schema_registry: none
-		}
-		fetch_handler:           &FetchSubHandler{
-			ctx: ctx
-		}
-		auth:                    &AuthSubHandler{
-			ctx:          ctx
-			auth_manager: cfg.auth_manager
-			acl_manager:  cfg.acl_manager
-			audit_logger: cfg.audit_logger
-		}
-		txn:                     &TransactionSubHandler{
-			ctx:             ctx
-			txn_coordinator: cfg.txn_coordinator
-		}
-		group_handler:           &GroupSubHandler{
-			ctx:            ctx
-			offset_manager: offset_mgr
-		}
-		admin:                   &AdminSubHandler{
-			ctx: ctx
-		}
-		share:                   &ShareGroupSubHandler{
-			ctx:                     ctx
-			share_group_coordinator: cfg.share_coordinator
-		}
-	}
-}
-
-/// new_handler creates a new Kafka protocol handler with storage only.
-///
-/// This is the basic handler with no authentication or ACL.
-/// Suitable for development and testing environments.
-pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_service &compression.CompressionService) Handler {
-	return new_handler_from_config(HandlerConfig{
-		broker_id:           broker_id
-		host:                host
-		broker_port:         broker_port
-		cluster_id:          cluster_id
-		storage:             storage
-		compression_service: compression_service
-	})
-}
-
-/// new_handler_with_auth creates a new Kafka protocol handler with storage and an auth manager.
-///
-/// Use this in environments that require SASL authentication.
-pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager, compression_service &compression.CompressionService) Handler {
-	return new_handler_from_config(HandlerConfig{
-		broker_id:           broker_id
-		host:                host
-		broker_port:         broker_port
-		cluster_id:          cluster_id
-		storage:             storage
-		auth_manager:        auth_manager
-		compression_service: compression_service
-	})
-}
-
-/// new_handler_full creates a fully configured Kafka protocol handler with all components.
-///
-/// Use this in production when authentication, ACL, and transactions are all required.
-pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, compression_service &compression.CompressionService) Handler {
-	return new_handler_from_config(HandlerConfig{
-		broker_id:           broker_id
-		host:                host
-		broker_port:         broker_port
-		cluster_id:          cluster_id
-		storage:             storage
-		auth_manager:        auth_manager
-		acl_manager:         acl_manager
-		txn_coordinator:     txn_coordinator
-		compression_service: compression_service
-	})
-}
-
-/// new_handler_with_share_groups creates a Kafka protocol handler with Share Group support (KIP-932).
-///
-/// Supports queue-based message consumption patterns.
-pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?transaction.TransactionCoordinator, share_coordinator &group.ShareGroupCoordinator, compression_service &compression.CompressionService) Handler {
-	return new_handler_from_config(HandlerConfig{
-		broker_id:           broker_id
-		host:                host
-		broker_port:         broker_port
-		cluster_id:          cluster_id
-		storage:             storage
-		auth_manager:        auth_manager
-		acl_manager:         acl_manager
-		txn_coordinator:     txn_coordinator
-		share_coordinator:   share_coordinator
-		compression_service: compression_service
-	})
-}
-
-/// set_broker_registry sets the broker registry for multi-broker mode.
-///
-/// Used for broker-to-broker coordination in a cluster environment.
-pub fn (mut h Handler) set_broker_registry(registry &cluster.BrokerRegistry) {
-	h.broker_registry = registry
-}
-
-/// set_share_group_coordinator sets the Share Group coordinator on the handler.
-pub fn (mut h Handler) set_share_group_coordinator(coordinator &group.ShareGroupCoordinator) {
-	h.share_group_coordinator = coordinator
-}
-
-/// set_schema_registry sets the schema registry on the handler.
-pub fn (mut h Handler) set_schema_registry(registry &schema.SchemaRegistry) {
-	h.schema_registry = registry
-}
-
-/// set_audit_logger sets the audit logger on the handler.
-pub fn (mut h Handler) set_audit_logger(logger &auth.AuditLogger) {
-	h.audit_logger = logger
+	txn_coordinator     ?port.TransactionCoordinatorPort
+	share_coordinator   ?port.ShareGroupCoordinatorPort
+	compression_service port.CompressionPort
+	audit_logger        ?port.AuditLoggerPort
+	logger              port.LoggerPort
+	metrics             port.ProtocolMetricsPort
+	offset_manager      port.OffsetManagerPort
 }
 
 /// get_topic_schema retrieves the schema configuration for a topic.
@@ -299,8 +89,8 @@ fn (mut h Handler) get_topic_schema(topic_name string) ?domain.Schema {
 /// encode_record_with_schema encodes a record value using the given schema,
 /// then wraps the result in Confluent wire format.
 fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema_obj &domain.Schema) ![]u8 {
-	h.logger.debug('Schema encoding record', observability.field_string('schema_type',
-		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
+	h.logger.debug('Schema encoding record', port.field_string('schema_type', schema_obj.schema_type.str()),
+		port.field_int('schema_id', schema_obj.id))
 
 	encoded_payload := encode_with_schema(record.value, schema_obj.schema_str, schema_obj.schema_type) or {
 		return error('schema encode failed (type=${schema_obj.schema_type.str()}, id=${schema_obj.id}): ${err}')
@@ -311,21 +101,43 @@ fn (mut h Handler) encode_record_with_schema(record &domain.Record, schema_obj &
 /// decode_record_with_schema validates Confluent wire format, strips the header,
 /// and decodes the payload using the given schema.
 fn (mut h Handler) decode_record_with_schema(record_data []u8, schema_obj &domain.Schema) ![]u8 {
-	h.logger.debug('Schema decoding record', observability.field_string('schema_type',
-		schema_obj.schema_type.str()), observability.field_int('schema_id', schema_obj.id))
+	h.logger.debug('Schema decoding record', port.field_string('schema_type', schema_obj.schema_type.str()),
+		port.field_int('schema_id', schema_obj.id))
 
 	wire_schema_id, payload := unwrap_confluent_wire_format(record_data)!
-	h.logger.debug('Wire format parsed', observability.field_int('wire_schema_id', wire_schema_id),
-		observability.field_int('expected_schema_id', schema_obj.id))
+	h.logger.debug('Wire format parsed', port.field_int('wire_schema_id', wire_schema_id),
+		port.field_int('expected_schema_id', schema_obj.id))
 
 	return decode_with_schema(payload, schema_obj.schema_str, schema_obj.schema_type) or {
 		return error('schema decode failed (type=${schema_obj.schema_type.str()}, id=${schema_obj.id}): ${err}')
 	}
 }
 
+/// set_broker_registry sets the broker registry for multi-broker mode.
+///
+/// Used for broker-to-broker coordination in a cluster environment.
+pub fn (mut h Handler) set_broker_registry(registry port.BrokerRegistryPort) {
+	h.broker_registry = registry
+}
+
+/// set_share_group_coordinator sets the Share Group coordinator on the handler.
+pub fn (mut h Handler) set_share_group_coordinator(coordinator port.ShareGroupCoordinatorPort) {
+	h.share_group_coordinator = coordinator
+}
+
+/// set_schema_registry sets the schema registry on the handler.
+pub fn (mut h Handler) set_schema_registry(registry port.SchemaRegistryPort) {
+	h.schema_registry = registry
+}
+
+/// set_audit_logger sets the audit logger on the handler.
+pub fn (mut h Handler) set_audit_logger(logger port.AuditLoggerPort) {
+	h.audit_logger = logger
+}
+
 /// set_partition_assigner sets the partition assignment service on the handler.
 /// Used for dynamic partition assignment.
-pub fn (mut h Handler) set_partition_assigner(assigner PartitionAssignerPtr) {
+pub fn (mut h Handler) set_partition_assigner(assigner port.PartitionAssignerPort) {
 	h.partition_assigner = assigner
 }
 
@@ -338,8 +150,8 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 	start_time := time.now()
 
 	req := parse_request(data) or {
-		h.logger.error('Failed to parse request', observability.field_err_str(err.str()),
-			observability.field_bytes('request_size', data.len))
+		h.logger.error('Failed to parse request', port.field_err_str(err.str()), port.field_bytes('request_size',
+			data.len))
 		return err
 	}
 
@@ -349,9 +161,9 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 	version := req.header.api_version
 	correlation_id := req.header.correlation_id
 
-	h.logger.debug('Processing request', observability.field_string('api', api_key.str()),
-		observability.field_int('version', version), observability.field_int('correlation_id',
-		correlation_id), observability.field_bytes('request_size', data.len))
+	h.logger.debug('Processing request', port.field_string('api', api_key.str()), port.field_int('version',
+		version), port.field_int('correlation_id', correlation_id), port.field_bytes('request_size',
+		data.len))
 
 	mut is_authenticated := false
 	if c := conn {
@@ -376,9 +188,9 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 		elapsed := time.since(start_time)
 		h.metrics.record_request(api_key.str(), elapsed.milliseconds(), true, data.len,
 			sasl_result.response_bytes.len)
-		h.logger.debug('Request completed', observability.field_string('api', api_key.str()),
-			observability.field_int('correlation_id', correlation_id), observability.field_bytes('response_size',
-			sasl_result.response_bytes.len), observability.field_duration('latency', elapsed))
+		h.logger.debug('Request completed', port.field_string('api', api_key.str()), port.field_int('correlation_id',
+			correlation_id), port.field_bytes('response_size', sasl_result.response_bytes.len),
+			port.field_duration('latency', elapsed))
 		return h.finalize_response(api_key, version, correlation_id, sasl_result.response_bytes)
 	}
 
@@ -392,9 +204,9 @@ pub fn (mut h Handler) handle_request(data []u8, mut conn ?&domain.AuthConnectio
 	elapsed := time.since(start_time)
 	h.metrics.record_request(api_key.str(), elapsed.milliseconds(), true, data.len, response_body.len)
 
-	h.logger.debug('Request completed', observability.field_string('api', api_key.str()),
-		observability.field_int('correlation_id', correlation_id), observability.field_bytes('response_size',
-		response_body.len), observability.field_duration('latency', elapsed))
+	h.logger.debug('Request completed', port.field_string('api', api_key.str()), port.field_int('correlation_id',
+		correlation_id), port.field_bytes('response_size', response_body.len), port.field_duration('latency',
+		elapsed))
 
 	return h.finalize_response(api_key, version, correlation_id, response_body)
 }
@@ -407,8 +219,8 @@ fn (mut h Handler) authorize_request(api_key ApiKey, is_authenticated bool, corr
 		return
 	}
 	if !is_authenticated {
-		h.logger.warn('Unauthorized request', observability.field_string('api', api_key.str()),
-			observability.field_int('correlation_id', correlation_id))
+		h.logger.warn('Unauthorized request', port.field_string('api', api_key.str()),
+			port.field_int('correlation_id', correlation_id))
 		return error('${int(domain.ErrorCode.sasl_authentication_failed)}: Authentication required for ${api_key.str()}')
 	}
 }
@@ -552,7 +364,7 @@ fn (mut h Handler) dispatch_request(api_key ApiKey, body []u8, version i16) ![]u
 			h.handle_delete_share_group_state(body, version)!
 		}
 		else {
-			h.logger.warn('Unsupported API key', observability.field_int('api_key', int(api_key)))
+			h.logger.warn('Unsupported API key', port.field_int('api_key', int(api_key)))
 			return error('unsupported API key: ${int(api_key)}')
 		}
 	}
@@ -681,8 +493,8 @@ pub fn (mut h Handler) get_metrics_summary() string {
 	return h.metrics.get_summary()
 }
 
-/// get_metrics returns the protocol metrics struct.
-pub fn (mut h Handler) get_metrics() &observability.ProtocolMetrics {
+/// get_metrics returns the protocol metrics interface.
+pub fn (mut h Handler) get_metrics() port.ProtocolMetricsPort {
 	return h.metrics
 }
 

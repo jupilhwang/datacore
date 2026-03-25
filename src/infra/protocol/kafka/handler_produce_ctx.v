@@ -4,14 +4,13 @@
 // transaction coordinator and schema registry needed by the produce path.
 module kafka
 
-import service.schema
-import service.transaction
+import service.port
 
 /// ProduceSubHandler groups the dependencies needed for produce request handling.
 /// The main Handler delegates produce-related work through this sub-handler.
 pub struct ProduceSubHandler {
 pub mut:
 	ctx             &HandlerContext
-	txn_coordinator ?transaction.TransactionCoordinator
-	schema_registry ?&schema.SchemaRegistry
+	txn_coordinator ?port.TransactionCoordinatorPort
+	schema_registry ?port.SchemaRegistryPort
 }

@@ -27,7 +27,7 @@ pub type MessageHandler = fn (domain.ReplicationMessage) !domain.ReplicationMess
 
 // Server.new creates a new replication Server on the given port with the specified message handler.
 /// Server.
-pub fn Server.new(port int, handler MessageHandler) &Server {
+fn Server.new(port int, handler MessageHandler) &Server {
 	return &Server{
 		port:            port
 		binary_protocol: BinaryProtocol.new()
@@ -40,7 +40,7 @@ pub fn Server.new(port int, handler MessageHandler) &Server {
 
 // start begins listening on the configured port
 /// start begins listening on the configured port.
-pub fn (mut s Server) start() ! {
+fn (mut s Server) start() ! {
 	s.mtx.@lock()
 	if stdatomic.load_i64(&s.running_flag) == 1 {
 		s.mtx.unlock()
@@ -59,7 +59,7 @@ pub fn (mut s Server) start() ! {
 
 // stop shuts down the server
 /// stop shuts down the server.
-pub fn (mut s Server) stop() ! {
+fn (mut s Server) stop() ! {
 	s.mtx.@lock()
 	if stdatomic.load_i64(&s.running_flag) != 1 {
 		s.mtx.unlock()
@@ -147,6 +147,6 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 
 // is_running checks if server is running
 /// is_running returns whether the server is running.
-pub fn (s Server) is_running() bool {
+fn (s Server) is_running() bool {
 	return stdatomic.load_i64(&s.running_flag) == 1
 }

@@ -26,7 +26,7 @@ mut:
 }
 
 /// new_share_partition_manager creates a new share partition manager.
-pub fn new_share_partition_manager(record_storage port.RecordStoragePort, share_storage port.SharePartitionPort) &SharePartitionManager {
+fn new_share_partition_manager(record_storage port.RecordStoragePort, share_storage port.SharePartitionPort) &SharePartitionManager {
 	return &SharePartitionManager{
 		partitions:     map[string]&domain.SharePartition{}
 		record_storage: record_storage
@@ -36,14 +36,14 @@ pub fn new_share_partition_manager(record_storage port.RecordStoragePort, share_
 }
 
 /// set_logger sets the logger for the share partition manager.
-pub fn (mut m SharePartitionManager) set_logger(logger port.LoggerPort) {
+fn (mut m SharePartitionManager) set_logger(logger port.LoggerPort) {
 	m.logger = logger
 }
 
 // Partition management
 
 /// get_or_create_partition gets or creates a share partition.
-pub fn (mut m SharePartitionManager) get_or_create_partition(group_id string, topic_name string, partition i32) &domain.SharePartition {
+fn (mut m SharePartitionManager) get_or_create_partition(group_id string, topic_name string, partition i32) &domain.SharePartition {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -51,7 +51,7 @@ pub fn (mut m SharePartitionManager) get_or_create_partition(group_id string, to
 }
 
 /// get_partition returns a share partition.
-pub fn (mut m SharePartitionManager) get_partition(group_id string, topic_name string, partition i32) ?&domain.SharePartition {
+fn (mut m SharePartitionManager) get_partition(group_id string, topic_name string, partition i32) ?&domain.SharePartition {
 	m.lock.rlock()
 	defer { m.lock.runlock() }
 
@@ -60,7 +60,7 @@ pub fn (mut m SharePartitionManager) get_partition(group_id string, topic_name s
 }
 
 /// delete_partitions_for_group deletes all partitions for a group.
-pub fn (mut m SharePartitionManager) delete_partitions_for_group(group_id string) {
+fn (mut m SharePartitionManager) delete_partitions_for_group(group_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -77,7 +77,7 @@ pub fn (mut m SharePartitionManager) delete_partitions_for_group(group_id string
 
 /// get_partition_stats returns partition statistics for a group.
 /// Returns: (partition count, total acquired, total acknowledged, total released, total rejected)
-pub fn (mut m SharePartitionManager) get_partition_stats(group_id string) (int, i64, i64, i64, i64) {
+fn (mut m SharePartitionManager) get_partition_stats(group_id string) (int, i64, i64, i64, i64) {
 	m.lock.rlock()
 	defer { m.lock.runlock() }
 
@@ -104,7 +104,7 @@ pub fn (mut m SharePartitionManager) get_partition_stats(group_id string) (int, 
 
 /// acquire_records acquires records for a consumer.
 /// Acquired records are locked for the specified duration for that consumer.
-pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id string, topic_name string, partition i32, max_records int, lock_duration_ms i64, max_partition_locks int) []domain.AcquiredRecordInfo {
+fn (mut m SharePartitionManager) acquire_records(group_id string, member_id string, topic_name string, partition i32, max_records int, lock_duration_ms i64, max_partition_locks int) []domain.AcquiredRecordInfo {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -170,7 +170,7 @@ pub fn (mut m SharePartitionManager) acquire_records(group_id string, member_id 
 
 /// acknowledge_records handles record acknowledgements.
 /// Supports three types: accept, release, and reject.
-pub fn (mut m SharePartitionManager) acknowledge_records(group_id string, member_id string, batch domain.AcknowledgementBatch, delivery_attempt_limit i32) domain.ShareAcknowledgeResult {
+fn (mut m SharePartitionManager) acknowledge_records(group_id string, member_id string, batch domain.AcknowledgementBatch, delivery_attempt_limit i32) domain.ShareAcknowledgeResult {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -235,7 +235,7 @@ pub fn (mut m SharePartitionManager) acknowledge_records(group_id string, member
 
 /// release_expired_locks_with_limits releases records whose acquisition locks have expired.
 /// Uses the delivery attempt limits from the provided map.
-pub fn (mut m SharePartitionManager) release_expired_locks_with_limits(group_limits map[string]i32) {
+fn (mut m SharePartitionManager) release_expired_locks_with_limits(group_limits map[string]i32) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -272,7 +272,7 @@ pub fn (mut m SharePartitionManager) release_expired_locks_with_limits(group_lim
 }
 
 /// release_member_records releases all records acquired by a member.
-pub fn (mut m SharePartitionManager) release_member_records(group_id string, member_id string) {
+fn (mut m SharePartitionManager) release_member_records(group_id string, member_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 
@@ -355,7 +355,7 @@ fn (mut m SharePartitionManager) load_state(group_id string, topic_name string, 
 }
 
 /// persist_all_states persists all partition states to storage.
-pub fn (mut m SharePartitionManager) persist_all_states() ! {
+fn (mut m SharePartitionManager) persist_all_states() ! {
 	m.lock.rlock()
 	defer { m.lock.runlock() }
 
@@ -368,7 +368,7 @@ pub fn (mut m SharePartitionManager) persist_all_states() ! {
 }
 
 /// load_all_states loads all partition states for a group from storage.
-pub fn (mut m SharePartitionManager) load_all_states(group_id string) {
+fn (mut m SharePartitionManager) load_all_states(group_id string) {
 	m.lock.@lock()
 	defer { m.lock.unlock() }
 

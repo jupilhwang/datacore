@@ -33,7 +33,7 @@ pub mut:
 }
 
 /// new_parquet_encoder creates a new Parquet encoder.
-pub fn new_parquet_encoder(compression string, max_file_size_mb int) !&ParquetEncoder {
+fn new_parquet_encoder(compression string, max_file_size_mb int) !&ParquetEncoder {
 	comp := parquet_compression_from_string(compression)!
 
 	return &ParquetEncoder{
@@ -46,7 +46,7 @@ pub fn new_parquet_encoder(compression string, max_file_size_mb int) !&ParquetEn
 }
 
 /// default_parquet_schema returns the default Kafka record Parquet schema.
-pub fn default_parquet_schema() ParquetSchema {
+fn default_parquet_schema() ParquetSchema {
 	return ParquetSchema{
 		columns: [
 			ParquetColumn{
@@ -89,7 +89,7 @@ pub fn default_parquet_schema() ParquetSchema {
 }
 
 /// add_record converts a Kafka Record to a Parquet record and adds it.
-pub fn (mut e ParquetEncoder) add_record(topic string, partition int, record domain.Record, offset i64) ! {
+fn (mut e ParquetEncoder) add_record(topic string, partition int, record domain.Record, offset i64) ! {
 	mut headers_json := '{}'
 	if record.headers.len > 0 {
 		mut headers_map := map[string]string{}
@@ -114,24 +114,24 @@ pub fn (mut e ParquetEncoder) add_record(topic string, partition int, record dom
 }
 
 /// add_records adds multiple Kafka Records at once.
-pub fn (mut e ParquetEncoder) add_records(topic string, partition int, records []domain.Record, start_offset i64) ! {
+fn (mut e ParquetEncoder) add_records(topic string, partition int, records []domain.Record, start_offset i64) ! {
 	for i, record in records {
 		e.add_record(topic, partition, record, start_offset + i64(i))!
 	}
 }
 
 /// should_flush checks whether a flush is needed.
-pub fn (e &ParquetEncoder) should_flush(max_rows int) bool {
+fn (e &ParquetEncoder) should_flush(max_rows int) bool {
 	return e.records.len >= max_rows || e.current_size >= e.max_file_size
 }
 
 /// record_count returns the number of records currently in the buffer.
-pub fn (e &ParquetEncoder) record_count() int {
+fn (e &ParquetEncoder) record_count() int {
 	return e.records.len
 }
 
 /// reset resets the encoder.
-pub fn (mut e ParquetEncoder) reset() {
+fn (mut e ParquetEncoder) reset() {
 	e.records = []
 	e.buffer = []
 	e.current_size = 0
@@ -640,7 +640,7 @@ fn build_row_group_metadata(col_metas []ColChunkMeta, record_count int, range_ R
 
 /// encode encodes all records in the current buffer to real Parquet format.
 /// Returns: (Parquet file bytes, metadata)
-pub fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
+fn (mut e ParquetEncoder) encode() !([]u8, ParquetMetadata) {
 	if e.records.len == 0 {
 		return error('no records to encode')
 	}
@@ -756,7 +756,7 @@ fn parse_page_header_num_values(data []u8) !(i32, int) {
 
 // decode_plain_int64_page decodes a PLAIN-encoded int64 data page.
 // Returns the decoded values. Expects required column (no definition levels).
-pub fn decode_plain_int64_page(data []u8) ![]i64 {
+fn decode_plain_int64_page(data []u8) ![]i64 {
 	num_values, data_start := parse_page_header_num_values(data)!
 
 	if data_start + num_values * 8 > data.len {
@@ -774,7 +774,7 @@ pub fn decode_plain_int64_page(data []u8) ![]i64 {
 
 // decode_plain_int32_page decodes a PLAIN-encoded int32 data page.
 // Returns the decoded values. Expects required column (no definition levels).
-pub fn decode_plain_int32_page(data []u8) ![]i32 {
+fn decode_plain_int32_page(data []u8) ![]i32 {
 	num_values, data_start := parse_page_header_num_values(data)!
 
 	if data_start + num_values * 4 > data.len {
@@ -793,7 +793,7 @@ pub fn decode_plain_int32_page(data []u8) ![]i32 {
 // decode_plain_byte_array_page decodes a PLAIN-encoded byte array data page.
 // Returns the decoded values. Expects required column (no definition levels).
 // Each value is encoded as: 4-byte little-endian length followed by the bytes.
-pub fn decode_plain_byte_array_page(data []u8) ![][]u8 {
+fn decode_plain_byte_array_page(data []u8) ![][]u8 {
 	num_values, data_start := parse_page_header_num_values(data)!
 
 	mut values := [][]u8{cap: num_values}

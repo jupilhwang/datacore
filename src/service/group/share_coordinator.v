@@ -34,7 +34,7 @@ mut:
 }
 
 /// new_share_group_coordinator creates a new share group coordinator.
-pub fn new_share_group_coordinator(storage port.TopicStoragePort, record_storage port.RecordStoragePort, share_storage port.SharePartitionPort, config domain.ShareGroupConfig) &ShareGroupCoordinator {
+fn new_share_group_coordinator(storage port.TopicStoragePort, record_storage port.RecordStoragePort, share_storage port.SharePartitionPort, config domain.ShareGroupConfig) &ShareGroupCoordinator {
 	return &ShareGroupCoordinator{
 		groups:            map[string]&domain.ShareGroup{}
 		config:            config
@@ -50,7 +50,7 @@ pub fn new_share_group_coordinator(storage port.TopicStoragePort, record_storage
 // Group management
 
 /// get_or_create_group gets or creates a share group.
-pub fn (mut c ShareGroupCoordinator) get_or_create_group(group_id string) &domain.ShareGroup {
+fn (mut c ShareGroupCoordinator) get_or_create_group(group_id string) &domain.ShareGroup {
 	c.lock.@lock()
 	defer { c.lock.unlock() }
 
@@ -67,7 +67,7 @@ pub fn (mut c ShareGroupCoordinator) get_or_create_group(group_id string) &domai
 }
 
 /// get_group returns a share group by ID.
-pub fn (mut c ShareGroupCoordinator) get_group(group_id string) ?&domain.ShareGroup {
+fn (mut c ShareGroupCoordinator) get_group(group_id string) ?&domain.ShareGroup {
 	c.lock.rlock()
 	defer { c.lock.runlock() }
 	return c.groups[group_id] or { return none }
@@ -75,7 +75,7 @@ pub fn (mut c ShareGroupCoordinator) get_group(group_id string) ?&domain.ShareGr
 
 /// delete_group deletes a share group.
 /// Groups with active members cannot be deleted.
-pub fn (mut c ShareGroupCoordinator) delete_group(group_id string) ! {
+fn (mut c ShareGroupCoordinator) delete_group(group_id string) ! {
 	c.lock.@lock()
 	defer { c.lock.unlock() }
 
@@ -95,7 +95,7 @@ pub fn (mut c ShareGroupCoordinator) delete_group(group_id string) ! {
 }
 
 /// list_groups returns all share groups.
-pub fn (mut c ShareGroupCoordinator) list_groups() []string {
+fn (mut c ShareGroupCoordinator) list_groups() []string {
 	c.lock.rlock()
 	defer { c.lock.runlock() }
 
@@ -109,26 +109,10 @@ pub fn (mut c ShareGroupCoordinator) list_groups() []string {
 // Member management
 
 /// ShareGroupHeartbeatRequest represents a heartbeat request.
-pub struct ShareGroupHeartbeatRequest {
-pub:
-	group_id               string
-	member_id              string
-	member_epoch           i32
-	rack_id                string
-	subscribed_topic_names []string
-}
+pub type ShareGroupHeartbeatRequest = port.ShareGroupHeartbeatRequest
 
 /// ShareGroupHeartbeatResponse represents a heartbeat response.
-pub struct ShareGroupHeartbeatResponse {
-pub:
-	error_code                i16
-	error_message             string
-	member_id                 string
-	member_epoch              i32
-	heartbeat_interval        i32
-	assignment                []domain.SharePartitionAssignment
-	should_compute_assignment bool
-}
+pub type ShareGroupHeartbeatResponse = port.ShareGroupHeartbeatResponse
 
 /// heartbeat handles a share group heartbeat.
 /// Handles new member joins, subscription changes, and rebalancing.
@@ -228,7 +212,7 @@ pub fn (mut c ShareGroupCoordinator) heartbeat(req ShareGroupHeartbeatRequest) S
 }
 
 /// leave_group handles a member leaving the group.
-pub fn (mut c ShareGroupCoordinator) leave_group(group_id string, member_id string) ! {
+fn (mut c ShareGroupCoordinator) leave_group(group_id string, member_id string) ! {
 	c.lock.@lock()
 	defer { c.lock.unlock() }
 
@@ -259,7 +243,7 @@ pub fn (mut c ShareGroupCoordinator) leave_group(group_id string, member_id stri
 }
 
 /// remove_expired_members removes timed-out members.
-pub fn (mut c ShareGroupCoordinator) remove_expired_members() {
+fn (mut c ShareGroupCoordinator) remove_expired_members() {
 	c.lock.@lock()
 	defer { c.lock.unlock() }
 
@@ -352,7 +336,7 @@ pub fn (mut c ShareGroupCoordinator) get_or_create_partition(group_id string, to
 }
 
 /// get_partition returns a share partition.
-pub fn (mut c ShareGroupCoordinator) get_partition(group_id string, topic_name string, partition i32) ?&domain.SharePartition {
+fn (mut c ShareGroupCoordinator) get_partition(group_id string, topic_name string, partition i32) ?&domain.SharePartition {
 	return c.partition_manager.get_partition(group_id, topic_name, partition)
 }
 
@@ -392,7 +376,7 @@ pub fn (mut c ShareGroupCoordinator) acknowledge_records(group_id string, member
 }
 
 /// release_expired_locks releases records whose acquisition locks have expired.
-pub fn (mut c ShareGroupCoordinator) release_expired_locks() {
+fn (mut c ShareGroupCoordinator) release_expired_locks() {
 	c.lock.rlock()
 	// Extract delivery attempt limits for each group
 	mut group_limits := map[string]i32{}
@@ -407,7 +391,7 @@ pub fn (mut c ShareGroupCoordinator) release_expired_locks() {
 // Session management (delegation)
 
 /// get_or_create_session gets or creates a share session.
-pub fn (mut c ShareGroupCoordinator) get_or_create_session(group_id string, member_id string) &domain.ShareSession {
+fn (mut c ShareGroupCoordinator) get_or_create_session(group_id string, member_id string) &domain.ShareSession {
 	return c.session_manager.get_or_create_session(group_id, member_id)
 }
 
@@ -418,7 +402,7 @@ pub fn (mut c ShareGroupCoordinator) update_session(group_id string, member_id s
 }
 
 /// close_session closes a share session.
-pub fn (mut c ShareGroupCoordinator) close_session(group_id string, member_id string) {
+fn (mut c ShareGroupCoordinator) close_session(group_id string, member_id string) {
 	// Release acquired locks
 	c.partition_manager.release_member_records(group_id, member_id)
 
@@ -440,7 +424,7 @@ pub:
 }
 
 /// get_stats returns statistics for a share group.
-pub fn (mut c ShareGroupCoordinator) get_stats(group_id string) ShareGroupStats {
+fn (mut c ShareGroupCoordinator) get_stats(group_id string) ShareGroupStats {
 	c.lock.rlock()
 	group := c.groups[group_id] or {
 		c.lock.runlock()

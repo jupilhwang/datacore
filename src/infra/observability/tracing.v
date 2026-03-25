@@ -33,12 +33,12 @@ pub:
 }
 
 /// is_valid checks whether the context is valid.
-pub fn (c SpanContext) is_valid() bool {
+fn (c SpanContext) is_valid() bool {
 	return c.trace_id.len == 32 && c.span_id.len == 16
 }
 
 /// is_sampled checks whether the span should be recorded.
-pub fn (c SpanContext) is_sampled() bool {
+fn (c SpanContext) is_sampled() bool {
 	return (c.trace_flags & 0x01) != 0
 }
 
@@ -53,7 +53,7 @@ pub:
 pub type SpanValue = bool | f64 | i64 | string | []string
 
 /// Attribute constructors
-pub fn attr_string(key string, value string) SpanAttribute {
+fn attr_string(key string, value string) SpanAttribute {
 	return SpanAttribute{
 		key:   key
 		value: SpanValue(value)
@@ -61,7 +61,7 @@ pub fn attr_string(key string, value string) SpanAttribute {
 }
 
 /// attr_int creates an integer span attribute.
-pub fn attr_int(key string, value i64) SpanAttribute {
+fn attr_int(key string, value i64) SpanAttribute {
 	return SpanAttribute{
 		key:   key
 		value: SpanValue(value)
@@ -69,7 +69,7 @@ pub fn attr_int(key string, value i64) SpanAttribute {
 }
 
 /// attr_float creates a float span attribute.
-pub fn attr_float(key string, value f64) SpanAttribute {
+fn attr_float(key string, value f64) SpanAttribute {
 	return SpanAttribute{
 		key:   key
 		value: SpanValue(value)
@@ -77,7 +77,7 @@ pub fn attr_float(key string, value f64) SpanAttribute {
 }
 
 /// attr_bool creates a boolean span attribute.
-pub fn attr_bool(key string, value bool) SpanAttribute {
+fn attr_bool(key string, value bool) SpanAttribute {
 	return SpanAttribute{
 		key:   key
 		value: SpanValue(value)
@@ -117,7 +117,7 @@ pub mut:
 }
 
 /// set_attribute adds or updates an attribute.
-pub fn (mut s Span) set_attribute(attr SpanAttribute) {
+fn (mut s Span) set_attribute(attr SpanAttribute) {
 	if s.ended {
 		return
 	}
@@ -132,14 +132,14 @@ pub fn (mut s Span) set_attribute(attr SpanAttribute) {
 }
 
 /// set_attributes adds multiple attributes.
-pub fn (mut s Span) set_attributes(attrs ...SpanAttribute) {
+fn (mut s Span) set_attributes(attrs ...SpanAttribute) {
 	for attr in attrs {
 		s.set_attribute(attr)
 	}
 }
 
 /// add_event adds a timestamped event.
-pub fn (mut s Span) add_event(name string, attrs ...SpanAttribute) {
+fn (mut s Span) add_event(name string, attrs ...SpanAttribute) {
 	if s.ended {
 		return
 	}
@@ -151,7 +151,7 @@ pub fn (mut s Span) add_event(name string, attrs ...SpanAttribute) {
 }
 
 /// set_status sets the span status.
-pub fn (mut s Span) set_status(status SpanStatus, msg string) {
+fn (mut s Span) set_status(status SpanStatus, msg string) {
 	if s.ended {
 		return
 	}
@@ -160,7 +160,7 @@ pub fn (mut s Span) set_status(status SpanStatus, msg string) {
 }
 
 /// record_error records an error and sets the status.
-pub fn (mut s Span) record_error(err IError) {
+fn (mut s Span) record_error(err IError) {
 	if s.ended {
 		return
 	}
@@ -170,7 +170,7 @@ pub fn (mut s Span) record_error(err IError) {
 }
 
 /// end finalizes the span.
-pub fn (mut s Span) end() {
+fn (mut s Span) end() {
 	if s.ended {
 		return
 	}
@@ -179,7 +179,7 @@ pub fn (mut s Span) end() {
 }
 
 /// duration returns the span duration.
-pub fn (s Span) duration() time.Duration {
+fn (s Span) duration() time.Duration {
 	if s.ended {
 		return s.end_time - s.start_time
 	}
@@ -207,7 +207,7 @@ mut:
 }
 
 /// new_tracer creates a new tracer.
-pub fn new_tracer(config TracerConfig) &Tracer {
+fn new_tracer(config TracerConfig) &Tracer {
 	return &Tracer{
 		config: config
 		spans:  []
@@ -215,12 +215,12 @@ pub fn new_tracer(config TracerConfig) &Tracer {
 }
 
 /// new_default_tracer creates a tracer with default configuration.
-pub fn new_default_tracer() &Tracer {
+fn new_default_tracer() &Tracer {
 	return new_tracer(TracerConfig{})
 }
 
 /// start_span creates and starts a new span.
-pub fn (mut t Tracer) start_span(name string, opts ...SpanOption) &Span {
+fn (mut t Tracer) start_span(name string, opts ...SpanOption) &Span {
 	mut span_opts := SpanOptions{}
 	for opt in opts {
 		opt.apply(mut span_opts)
@@ -260,7 +260,7 @@ pub fn (mut t Tracer) start_span(name string, opts ...SpanOption) &Span {
 }
 
 /// end_span finalizes the span and potentially exports it.
-pub fn (mut t Tracer) end_span(mut span Span) {
+fn (mut t Tracer) end_span(mut span Span) {
 	span.end()
 }
 
@@ -286,7 +286,7 @@ struct WithParent {
 }
 
 /// with_parent creates a SpanOption that sets the parent context.
-pub fn with_parent(ctx SpanContext) SpanOption {
+fn with_parent(ctx SpanContext) SpanOption {
 	return WithParent{
 		ctx: ctx
 	}
@@ -302,7 +302,7 @@ struct WithKind {
 }
 
 /// with_kind creates a SpanOption that sets the span kind.
-pub fn with_kind(kind SpanKind) SpanOption {
+fn with_kind(kind SpanKind) SpanOption {
 	return WithKind{
 		kind: kind
 	}
@@ -318,7 +318,7 @@ struct WithAttributes {
 }
 
 /// with_attributes creates a SpanOption that sets initial attributes.
-pub fn with_attributes(attrs ...SpanAttribute) SpanOption {
+fn with_attributes(attrs ...SpanAttribute) SpanOption {
 	return WithAttributes{
 		attrs: attrs
 	}
@@ -334,7 +334,7 @@ struct WithLinks {
 }
 
 /// with_links creates a SpanOption that sets span links.
-pub fn with_links(links ...SpanLink) SpanOption {
+fn with_links(links ...SpanLink) SpanOption {
 	return WithLinks{
 		links: links
 	}
@@ -355,7 +355,7 @@ pub interface Sampler {
 pub struct AlwaysOnSampler {}
 
 /// should_sample returns whether to sample the span.
-pub fn (s AlwaysOnSampler) should_sample() bool {
+fn (s AlwaysOnSampler) should_sample() bool {
 	return true
 }
 
@@ -363,7 +363,7 @@ pub fn (s AlwaysOnSampler) should_sample() bool {
 pub struct AlwaysOffSampler {}
 
 /// should_sample returns whether to sample the span.
-pub fn (s AlwaysOffSampler) should_sample() bool {
+fn (s AlwaysOffSampler) should_sample() bool {
 	return false
 }
 
@@ -373,7 +373,7 @@ pub struct RatioSampler {
 }
 
 /// new_ratio_sampler creates a RatioSampler with the given ratio.
-pub fn new_ratio_sampler(ratio f64) RatioSampler {
+fn new_ratio_sampler(ratio f64) RatioSampler {
 	return RatioSampler{
 		ratio: if ratio < 0 {
 			0
@@ -386,7 +386,7 @@ pub fn new_ratio_sampler(ratio f64) RatioSampler {
 }
 
 /// should_sample returns whether to sample the span.
-pub fn (s RatioSampler) should_sample() bool {
+fn (s RatioSampler) should_sample() bool {
 	return rand.f64() < s.ratio
 }
 
@@ -413,7 +413,7 @@ fn generate_span_id() string {
 // Context propagation (W3C Trace Context)
 
 /// extract_context extracts the trace context from headers.
-pub fn extract_context(headers map[string]string) SpanContext {
+fn extract_context(headers map[string]string) SpanContext {
 	traceparent := headers['traceparent'] or { return SpanContext{} }
 
 	// Format: {version}-{trace-id}-{parent-id}-{trace-flags}
@@ -438,7 +438,7 @@ pub fn extract_context(headers map[string]string) SpanContext {
 }
 
 /// inject_context injects the trace context into headers.
-pub fn inject_context(ctx SpanContext, mut headers map[string]string) {
+fn inject_context(ctx SpanContext, mut headers map[string]string) {
 	if !ctx.is_valid() {
 		return
 	}
@@ -455,7 +455,7 @@ pub fn inject_context(ctx SpanContext, mut headers map[string]string) {
 // Span export (OTLP-like JSON format)
 
 /// export_span_json exports a span as JSON.
-pub fn export_span_json(span &Span, tracer &Tracer) string {
+fn export_span_json(span &Span, tracer &Tracer) string {
 	mut sb := []u8{}
 	sb << '{"resourceSpans":[{"resource":{"attributes":['.bytes()
 	sb << '{"key":"service.name","value":{"stringValue":"${tracer.config.service_name}"}}'.bytes()
@@ -533,7 +533,7 @@ fn format_span_value(v SpanValue) string {
 // Convenience functions
 
 /// trace_operation traces a synchronous operation.
-pub fn trace_operation[T](mut tracer Tracer, name string, op fn () !T) !T {
+fn trace_operation[T](mut tracer Tracer, name string, op fn () !T) !T {
 	mut span := tracer.start_span(name)
 	defer {
 		span.end()

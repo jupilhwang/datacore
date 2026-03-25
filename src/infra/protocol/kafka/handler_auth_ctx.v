@@ -5,7 +5,6 @@
 module kafka
 
 import domain
-import infra.auth
 import service.port
 
 /// AuthSubHandler groups the dependencies needed for SASL and ACL request handling.
@@ -15,6 +14,6 @@ pub mut:
 	ctx                  &HandlerContext
 	auth_manager         ?port.AuthManager
 	acl_manager          ?port.AclManager
-	audit_logger         ?&auth.AuditLogger
+	audit_logger         ?port.AuditLoggerPort
 	negotiated_mechanism ?domain.SaslMechanism
 }

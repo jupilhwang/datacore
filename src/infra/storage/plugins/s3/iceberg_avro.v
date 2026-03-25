@@ -217,7 +217,7 @@ fn avro_write_nullable_int_bytes_map(mut buf []u8, m map[int][]u8) {
 
 /// avro_write_int_long_map writes Avro array<{key:int,value:long}> (Iceberg map entry style).
 /// Iceberg spec: map은 array of {key, value} record로 인코딩
-pub fn avro_write_int_long_map(mut buf []u8, m map[int]i64) {
+fn avro_write_int_long_map(mut buf []u8, m map[int]i64) {
 	if m.len == 0 {
 		buf << u8(0)
 		return
@@ -235,7 +235,7 @@ pub fn avro_write_int_long_map(mut buf []u8, m map[int]i64) {
 }
 
 /// avro_write_int_bytes_map writes Avro array<{key:int,value:bytes}> (Iceberg map entry style).
-pub fn avro_write_int_bytes_map(mut buf []u8, m map[int][]u8) {
+fn avro_write_int_bytes_map(mut buf []u8, m map[int][]u8) {
 	if m.len == 0 {
 		buf << u8(0)
 		return
@@ -351,7 +351,7 @@ fn avro_write_nullable_int(mut buf []u8, value int) {
 }
 
 /// iceberg_serialize_long serializes an int64 value to Iceberg binary format (little-endian 8 bytes).
-pub fn iceberg_serialize_long(v i64) []u8 {
+fn iceberg_serialize_long(v i64) []u8 {
 	uv := u64(v)
 	return [
 		u8(uv & 0xFF),
@@ -366,7 +366,7 @@ pub fn iceberg_serialize_long(v i64) []u8 {
 }
 
 /// iceberg_serialize_int serializes an int32 value to Iceberg binary format (little-endian 4 bytes).
-pub fn iceberg_serialize_int(v i32) []u8 {
+fn iceberg_serialize_int(v i32) []u8 {
 	uv := u32(v)
 	return [
 		u8(uv & 0xFF),
@@ -377,6 +377,6 @@ pub fn iceberg_serialize_int(v i32) []u8 {
 }
 
 /// iceberg_serialize_string serializes a string value to Iceberg binary format (UTF-8 bytes).
-pub fn iceberg_serialize_string(s string) []u8 {
+fn iceberg_serialize_string(s string) []u8 {
 	return s.bytes()
 }

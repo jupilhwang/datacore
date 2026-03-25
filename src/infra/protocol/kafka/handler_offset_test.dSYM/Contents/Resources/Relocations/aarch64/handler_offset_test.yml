@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/jhwang/works/test/datacore/src/infra/protocol/kafka/handler_offset_test'
+relocations:     []
+...

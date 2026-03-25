@@ -21,7 +21,7 @@ pub struct ZstdCompressorC {
 
 /// new_zstd_compressor_c creates a new ZstdCompressorC using the C library.
 /// The default compression level is 3.
-pub fn new_zstd_compressor_c() &ZstdCompressorC {
+fn new_zstd_compressor_c() &ZstdCompressorC {
 	return &ZstdCompressorC{
 		level: 3
 	}
@@ -29,7 +29,7 @@ pub fn new_zstd_compressor_c() &ZstdCompressorC {
 
 /// new_zstd_compressor_c_with_level creates a ZstdCompressorC with the specified compression level.
 /// Level: 1-22 (1=fastest, 22=best compression)
-pub fn new_zstd_compressor_c_with_level(level int) &ZstdCompressorC {
+fn new_zstd_compressor_c_with_level(level int) &ZstdCompressorC {
 	mut lvl := level
 	if lvl < 1 {
 		lvl = 1

@@ -167,14 +167,14 @@ pub:
 /// generate_table_uuid generates a UUID for a new table.
 /// seed: deterministic input (e.g. table location or name) for reproducible UUIDs.
 ///       Pass '' to fall back to a timestamp-based value.
-pub fn generate_table_uuid(seed string) string {
+fn generate_table_uuid(seed string) string {
 	input := if seed != '' { seed } else { time.now().str() }
 	hash := md5.sum(input.bytes())
 	return '${hash[0..4].hex()}-${hash[4..6].hex()}-${hash[6..8].hex()}-${hash[8..10].hex()}-${hash[10..16].hex()}'
 }
 
 /// generate_snapshot_id generates a new snapshot ID.
-pub fn generate_snapshot_id() i64 {
+fn generate_snapshot_id() i64 {
 	return time.now().unix_milli()
 }
 
@@ -267,7 +267,7 @@ pub mut:
 }
 
 /// create_partition_spec_from_config creates a partition specification from config.
-pub fn create_partition_spec_from_config(partition_by []string) IcebergPartitionSpec {
+fn create_partition_spec_from_config(partition_by []string) IcebergPartitionSpec {
 	mut fields := []IcebergPartitionField{}
 	mut field_id := 1000
 

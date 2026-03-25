@@ -291,7 +291,7 @@ pub fn (mut r SchemaRegistry) get_schema_by_subject(subject string, version int)
 }
 
 /// get_latest_version retrieves the latest schema version for a subject.
-pub fn (mut r SchemaRegistry) get_latest_version(subject string) !domain.SchemaVersion {
+fn (mut r SchemaRegistry) get_latest_version(subject string) !domain.SchemaVersion {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 
@@ -420,7 +420,7 @@ pub fn (mut r SchemaRegistry) test_compatibility(subject string, schema_str stri
 }
 
 /// get_stats returns registry statistics.
-pub fn (mut r SchemaRegistry) get_stats() RegistryStats {
+fn (mut r SchemaRegistry) get_stats() RegistryStats {
 	r.lock.rlock()
 	defer { r.lock.runlock() }
 

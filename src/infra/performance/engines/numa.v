@@ -79,7 +79,7 @@ pub:
 // NUMA topology detection
 
 /// get_numa_capabilities returns the NUMA capabilities of the current platform.
-pub fn get_numa_capabilities() NumaCapabilities {
+fn get_numa_capabilities() NumaCapabilities {
 	$if linux {
 		available := C.numa_available() >= 0
 		return NumaCapabilities{
@@ -174,7 +174,7 @@ pub fn get_numa_topology() NumaTopology {
 }
 
 /// get_current_node returns the NUMA node of the current thread.
-pub fn get_current_node() int {
+fn get_current_node() int {
 	$if linux {
 		if C.numa_available() < 0 {
 			return 0
@@ -254,7 +254,7 @@ pub enum NumaPolicy {
 }
 
 /// numa_alloc allocates memory on a specific NUMA node.
-pub fn numa_alloc(size usize, node int) NumaMemory {
+fn numa_alloc(size usize, node int) NumaMemory {
 	$if linux {
 		if C.numa_available() < 0 {
 			return numa_alloc_fallback(size)
@@ -525,7 +525,7 @@ pub fn bind_to_node(node int) bool {
 }
 
 /// set_preferred_node sets the preferred NUMA node for allocations.
-pub fn set_preferred_node(node int) {
+fn set_preferred_node(node int) {
 	$if linux {
 		if C.numa_available() >= 0 {
 			C.numa_set_preferred(node)
@@ -534,7 +534,7 @@ pub fn set_preferred_node(node int) {
 }
 
 /// set_local_alloc sets the thread to allocate from the local node.
-pub fn set_local_alloc() {
+fn set_local_alloc() {
 	$if linux {
 		if C.numa_available() >= 0 {
 			C.numa_set_localalloc()
@@ -553,7 +553,7 @@ pub:
 }
 
 /// new_numa_array creates a NUMA-aware array on the local node.
-pub fn new_numa_array(cap int, elem_size int) NumaArray {
+fn new_numa_array(cap int, elem_size int) NumaArray {
 	size := usize(cap * elem_size)
 	mem := numa_alloc_local(size)
 
@@ -565,7 +565,7 @@ pub fn new_numa_array(cap int, elem_size int) NumaArray {
 }
 
 /// new_numa_array_on_node creates an array on the specified node.
-pub fn new_numa_array_on_node(cap int, elem_size int, node int) NumaArray {
+fn new_numa_array_on_node(cap int, elem_size int, node int) NumaArray {
 	size := usize(cap * elem_size)
 	mem := numa_alloc(size, node)
 
@@ -577,16 +577,16 @@ pub fn new_numa_array_on_node(cap int, elem_size int, node int) NumaArray {
 }
 
 /// close frees the NUMA array.
-pub fn (a &NumaArray) close() {
+fn (a &NumaArray) close() {
 	numa_free(a.memory)
 }
 
 /// get_ptr returns a raw pointer for array operations.
-pub fn (a &NumaArray) get_ptr() voidptr {
+fn (a &NumaArray) get_ptr() voidptr {
 	return a.memory.ptr
 }
 
 /// get_node returns the NUMA node on which the array is allocated.
-pub fn (a &NumaArray) get_node() int {
+fn (a &NumaArray) get_node() int {
 	return a.memory.node
 }

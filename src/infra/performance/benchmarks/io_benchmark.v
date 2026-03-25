@@ -83,7 +83,7 @@ pub:
 // Benchmark runner
 
 /// new_io_benchmark_suite creates a new benchmark suite.
-pub fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
+fn new_io_benchmark_suite(config IoBenchmarkConfig) IoBenchmarkSuite {
 	return IoBenchmarkSuite{
 		config:  config
 		results: []IoBenchmarkResults{}
@@ -120,7 +120,7 @@ fn detect_system_capabilities() SystemInfo {
 }
 
 /// run_all runs all configured benchmarks.
-pub fn (mut s IoBenchmarkSuite) run_all() {
+fn (mut s IoBenchmarkSuite) run_all() {
 	if s.config.verbose {
 		println('Starting benchmark suite...')
 		println('System: ${s.system.os_name}, NUMA nodes: ${s.system.numa_nodes}')
@@ -517,7 +517,7 @@ fn calculate_io_results(name string, times []i64, data_size usize) IoBenchmarkRe
 }
 
 /// format_results formats results according to the output format.
-pub fn (s &IoBenchmarkSuite) format_results() string {
+fn (s &IoBenchmarkSuite) format_results() string {
 	match s.config.output_format {
 		.text { return s.format_text() }
 		.json { return s.format_json() }
@@ -666,7 +666,7 @@ fn pad_right(s string, width int) string {
 // Quick benchmark functions
 
 /// run_quick_io_benchmark runs a quick benchmark with default settings.
-pub fn run_quick_io_benchmark() string {
+fn run_quick_io_benchmark() string {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:  50
 		warmup_runs: 5
@@ -678,7 +678,7 @@ pub fn run_quick_io_benchmark() string {
 }
 
 /// run_comprehensive_io_benchmark runs a comprehensive benchmark.
-pub fn run_comprehensive_io_benchmark() string {
+fn run_comprehensive_io_benchmark() string {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:    200
 		warmup_runs:   20
@@ -693,7 +693,7 @@ pub fn run_comprehensive_io_benchmark() string {
 }
 
 /// compare_io_methods returns comparison results for various I/O methods.
-pub fn compare_io_methods(data_size usize, iterations int) []IoBenchmarkResults {
+fn compare_io_methods(data_size usize, iterations int) []IoBenchmarkResults {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:        iterations
 		data_size:         data_size
@@ -706,7 +706,7 @@ pub fn compare_io_methods(data_size usize, iterations int) []IoBenchmarkResults 
 }
 
 /// compare_memory_strategies returns comparison results for memory allocation strategies.
-pub fn compare_memory_strategies(size usize, iterations int) []IoBenchmarkResults {
+fn compare_memory_strategies(size usize, iterations int) []IoBenchmarkResults {
 	mut suite := new_io_benchmark_suite(IoBenchmarkConfig{
 		iterations:      iterations
 		data_size:       size

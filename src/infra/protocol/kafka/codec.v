@@ -16,7 +16,7 @@ pub:
 }
 
 /// new creates a new ByteView from a byte slice.
-pub fn ByteView.new(data []u8) ByteView {
+fn ByteView.new(data []u8) ByteView {
 	return ByteView{
 		data:   data
 		offset: 0
@@ -25,7 +25,7 @@ pub fn ByteView.new(data []u8) ByteView {
 }
 
 /// slice creates a sub-view without copying data.
-pub fn (v ByteView) slice(start int, end int) !ByteView {
+fn (v ByteView) slice(start int, end int) !ByteView {
 	if start < 0 || end > v.length || start > end {
 		return error('slice bounds out of range')
 	}
@@ -37,7 +37,7 @@ pub fn (v ByteView) slice(start int, end int) !ByteView {
 }
 
 /// bytes returns the underlying bytes (zero-copy when offset is 0).
-pub fn (v ByteView) bytes() []u8 {
+fn (v ByteView) bytes() []u8 {
 	if v.length == 0 {
 		return []u8{}
 	}
@@ -45,7 +45,7 @@ pub fn (v ByteView) bytes() []u8 {
 }
 
 /// to_owned returns an owned copy of the data.
-pub fn (v ByteView) to_owned() []u8 {
+fn (v ByteView) to_owned() []u8 {
 	if v.length == 0 {
 		return []u8{}
 	}
@@ -53,7 +53,7 @@ pub fn (v ByteView) to_owned() []u8 {
 }
 
 /// to_string converts the view to a string (zero-copy when possible).
-pub fn (v ByteView) to_string() string {
+fn (v ByteView) to_string() string {
 	if v.length == 0 {
 		return ''
 	}
@@ -61,12 +61,12 @@ pub fn (v ByteView) to_string() string {
 }
 
 /// len returns the length of the view.
-pub fn (v ByteView) len() int {
+fn (v ByteView) len() int {
 	return v.length
 }
 
 /// is_empty returns true if the view has zero length.
-pub fn (v ByteView) is_empty() bool {
+fn (v ByteView) is_empty() bool {
 	return v.length == 0
 }
 
@@ -91,7 +91,7 @@ pub fn (r &BinaryReader) remaining() int {
 }
 
 /// position returns the current read position.
-pub fn (r &BinaryReader) position() int {
+fn (r &BinaryReader) position() int {
 	return r.pos
 }
 
@@ -220,7 +220,7 @@ pub fn (mut r BinaryReader) read_compact_nullable_string() !string {
 }
 
 /// read_bytes_len reads exactly n bytes from the buffer.
-pub fn (mut r BinaryReader) read_bytes_len(len int) ![]u8 {
+fn (mut r BinaryReader) read_bytes_len(len int) ![]u8 {
 	if len < 0 {
 		return []u8{}
 	}
@@ -279,7 +279,7 @@ pub fn (mut r BinaryReader) read_compact_array_len() !int {
 }
 
 /// skip advances the read position by n bytes.
-pub fn (mut r BinaryReader) skip(n int) ! {
+fn (mut r BinaryReader) skip(n int) ! {
 	if r.remaining() < n {
 		return error('not enough data to skip')
 	}
@@ -287,7 +287,7 @@ pub fn (mut r BinaryReader) skip(n int) ! {
 }
 
 /// read_bytes_view reads n bytes as a zero-copy ByteView.
-pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
+fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
 	if len < 0 {
 		return ByteView{}
 	}
@@ -304,13 +304,13 @@ pub fn (mut r BinaryReader) read_bytes_view(len int) !ByteView {
 }
 
 /// read_bytes_as_view reads an i32-length-prefixed byte slice as a zero-copy ByteView.
-pub fn (mut r BinaryReader) read_bytes_as_view() !ByteView {
+fn (mut r BinaryReader) read_bytes_as_view() !ByteView {
 	len := r.read_i32()!
 	return r.read_bytes_view(int(len))!
 }
 
 /// read_compact_bytes_view reads compact bytes as a zero-copy ByteView.
-pub fn (mut r BinaryReader) read_compact_bytes_view() !ByteView {
+fn (mut r BinaryReader) read_compact_bytes_view() !ByteView {
 	len := r.read_uvarint()!
 	if len == 0 {
 		return ByteView{}
@@ -320,7 +320,7 @@ pub fn (mut r BinaryReader) read_compact_bytes_view() !ByteView {
 }
 
 /// peek_bytes_view returns the next n bytes as a zero-copy ByteView without advancing the position.
-pub fn (r &BinaryReader) peek_bytes_view(len int) !ByteView {
+fn (r &BinaryReader) peek_bytes_view(len int) !ByteView {
 	if r.remaining() < len {
 		return error('not enough data to peek')
 	}
@@ -332,7 +332,7 @@ pub fn (r &BinaryReader) peek_bytes_view(len int) !ByteView {
 }
 
 /// remaining_view returns the remaining unread data as a ByteView.
-pub fn (r &BinaryReader) remaining_view() ByteView {
+fn (r &BinaryReader) remaining_view() ByteView {
 	return ByteView{
 		data:   r.data
 		offset: r.pos
@@ -341,7 +341,7 @@ pub fn (r &BinaryReader) remaining_view() ByteView {
 }
 
 /// read_i32_bytes reads an i32-length-prefixed byte slice.
-pub fn (mut r BinaryReader) read_i32_bytes() ![]u8 {
+fn (mut r BinaryReader) read_i32_bytes() ![]u8 {
 	length := r.read_i32()!
 	return r.read_bytes_len(int(length))!
 }
@@ -363,27 +363,27 @@ pub fn (mut r BinaryReader) skip_tagged_fields() ! {
 // These reduce code duplication when parsing flexible vs. non-flexible messages.
 
 /// read_flex_string reads a string in compact format if flexible, otherwise in standard format.
-pub fn (mut r BinaryReader) read_flex_string(flexible bool) !string {
+fn (mut r BinaryReader) read_flex_string(flexible bool) !string {
 	return if flexible { r.read_compact_string()! } else { r.read_string()! }
 }
 
 /// read_flex_nullable_string reads a nullable string in compact format if flexible.
-pub fn (mut r BinaryReader) read_flex_nullable_string(flexible bool) !string {
+fn (mut r BinaryReader) read_flex_nullable_string(flexible bool) !string {
 	return if flexible { r.read_compact_nullable_string()! } else { r.read_nullable_string()! }
 }
 
 /// read_flex_bytes reads bytes in compact format if flexible, otherwise in standard format.
-pub fn (mut r BinaryReader) read_flex_bytes(flexible bool) ![]u8 {
+fn (mut r BinaryReader) read_flex_bytes(flexible bool) ![]u8 {
 	return if flexible { r.read_compact_bytes()! } else { r.read_bytes()! }
 }
 
 /// read_flex_array_len reads an array length in compact format if flexible.
-pub fn (mut r BinaryReader) read_flex_array_len(flexible bool) !int {
+fn (mut r BinaryReader) read_flex_array_len(flexible bool) !int {
 	return if flexible { r.read_compact_array_len()! } else { r.read_array_len()! }
 }
 
 /// skip_flex_tagged_fields skips tagged fields only when in flexible format.
-pub fn (mut r BinaryReader) skip_flex_tagged_fields(flexible bool) ! {
+fn (mut r BinaryReader) skip_flex_tagged_fields(flexible bool) ! {
 	if flexible {
 		r.skip_tagged_fields()!
 	}
@@ -403,7 +403,7 @@ pub fn new_writer() BinaryWriter {
 }
 
 /// new_writer_with_capacity creates a new BinaryWriter with the given initial capacity.
-pub fn new_writer_with_capacity(capacity int) BinaryWriter {
+fn new_writer_with_capacity(capacity int) BinaryWriter {
 	return BinaryWriter{
 		data: []u8{cap: capacity}
 	}
@@ -415,7 +415,7 @@ pub fn (w &BinaryWriter) bytes() []u8 {
 }
 
 /// len returns the number of bytes written.
-pub fn (w &BinaryWriter) len() int {
+fn (w &BinaryWriter) len() int {
 	return w.data.len
 }
 
@@ -435,7 +435,7 @@ pub fn (mut w BinaryWriter) write_i32(val i32) {
 }
 
 /// write_u32 writes an unsigned 32-bit integer in big-endian format.
-pub fn (mut w BinaryWriter) write_u32(val u32) {
+fn (mut w BinaryWriter) write_u32(val u32) {
 	core.write_u32_be(mut w.data, val)
 }
 
@@ -445,7 +445,7 @@ pub fn (mut w BinaryWriter) write_i64(val i64) {
 }
 
 /// write_uvarint writes an unsigned variable-length integer.
-pub fn (mut w BinaryWriter) write_uvarint(val u64) {
+fn (mut w BinaryWriter) write_uvarint(val u64) {
 	mut v := val
 	for v >= 0x80 {
 		w.data << u8(v | 0x80)
@@ -538,13 +538,13 @@ pub fn (mut w BinaryWriter) write_tagged_fields() {
 }
 
 /// write_tagged_field_header writes a tagged field header (tag and size).
-pub fn (mut w BinaryWriter) write_tagged_field_header(tag int, size int) {
+fn (mut w BinaryWriter) write_tagged_field_header(tag int, size int) {
 	w.write_uvarint(u64(tag))
 	w.write_uvarint(u64(size))
 }
 
 /// write_raw appends raw bytes without any length prefix.
-pub fn (mut w BinaryWriter) write_raw(b []u8) {
+fn (mut w BinaryWriter) write_raw(b []u8) {
 	w.data << b
 }
 
@@ -566,7 +566,7 @@ pub mut:
 
 /// parse_record_batch parses a Kafka RecordBatch (v2 format, magic=2).
 /// Returns the parsed records, or an empty slice on failure.
-pub fn parse_record_batch(data []u8) !ParsedRecordBatch {
+fn parse_record_batch(data []u8) !ParsedRecordBatch {
 	if data.len < 12 {
 		return error('data too small')
 	}
@@ -800,7 +800,7 @@ fn crc32c_checksum(data []u8) u32 {
 }
 
 /// encode_record_batch encodes records into the Kafka RecordBatch v2 format.
-pub fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
+fn encode_record_batch(records []domain.Record, base_offset i64) []u8 {
 	if records.len == 0 {
 		return []u8{}
 	}

@@ -15,7 +15,7 @@ pub struct Lz4CompressorC {
 }
 
 /// new_lz4_compressor_c creates a new Lz4CompressorC using the C library.
-pub fn new_lz4_compressor_c() &Lz4CompressorC {
+fn new_lz4_compressor_c() &Lz4CompressorC {
 	return &Lz4CompressorC{}
 }
 

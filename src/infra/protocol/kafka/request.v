@@ -37,7 +37,7 @@ pub:
 ///
 /// Note: ApiVersions requests follow the normal rule (v3+ uses Header v2)
 ///       Only ApiVersions responses are special (always Header v0, KIP-511)
-pub fn get_request_header_version(api_key ApiKey, api_version i16) i16 {
+fn get_request_header_version(api_key ApiKey, api_version i16) i16 {
 	// SaslHandshake always uses Header v1 (non-flexible header)
 	// For ApiVersions, this ensures backward compatibility per KIP-511
 	if api_key == .sasl_handshake {
@@ -61,7 +61,7 @@ pub fn get_request_header_version(api_key ApiKey, api_version i16) i16 {
 /// Important: ApiVersions responses always use Header v0! (KIP-511 special rule)
 /// This ensures clients can always parse ApiVersions responses
 /// before knowing the server's capabilities.
-pub fn get_response_header_version(api_key ApiKey, api_version i16) i16 {
+fn get_response_header_version(api_key ApiKey, api_version i16) i16 {
 	// ApiVersions responses always use Header v0 (KIP-511)
 	// This is the only API to which this special rule applies
 	if api_key == .api_versions {
@@ -118,7 +118,7 @@ pub fn parse_request(data []u8) !Request {
 ///
 /// Flexible versions were introduced in Kafka 2.4,
 /// and each API has its own threshold version.
-pub fn is_flexible_version(api_key ApiKey, version i16) bool {
+fn is_flexible_version(api_key ApiKey, version i16) bool {
 	return match api_key {
 		.produce { version >= 9 }
 		.fetch { version >= 12 }

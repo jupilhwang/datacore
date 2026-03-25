@@ -9,7 +9,7 @@ import rand
 // and heartbeat. Safe to call while the manager is running; the change takes effect on
 // the next heartbeat/assignment cycle.
 /// update_cluster_broker_refs replaces the live list of peer brokers.
-pub fn (mut m Manager) update_cluster_broker_refs(refs []domain.BrokerRef) {
+fn (mut m Manager) update_cluster_broker_refs(refs []domain.BrokerRef) {
 	m.cluster_broker_refs_lock.@lock()
 	m.cluster_broker_refs = refs
 	m.cluster_broker_refs_lock.unlock()

@@ -29,7 +29,7 @@ mut:
 }
 
 /// Creates a new AuthMetrics instance.
-pub fn new_auth_metrics() &AuthMetrics {
+fn new_auth_metrics() &AuthMetrics {
 	return &AuthMetrics{
 		mechanism_attempts: map[string]i64{}
 		mechanism_success:  map[string]i64{}
@@ -37,7 +37,7 @@ pub fn new_auth_metrics() &AuthMetrics {
 }
 
 /// Records an authentication attempt.
-pub fn (mut m AuthMetrics) record_auth_attempt(mechanism string, latency_ms i64, success bool) {
+fn (mut m AuthMetrics) record_auth_attempt(mechanism string, latency_ms i64, success bool) {
 	m.lock.lock()
 	defer { m.lock.unlock() }
 
@@ -61,7 +61,7 @@ pub fn (mut m AuthMetrics) record_auth_attempt(mechanism string, latency_ms i64,
 }
 
 /// Resets all metrics.
-pub fn (mut m AuthMetrics) reset() {
+fn (mut m AuthMetrics) reset() {
 	m.lock.lock()
 	defer { m.lock.unlock() }
 
@@ -75,7 +75,7 @@ pub fn (mut m AuthMetrics) reset() {
 }
 
 /// Returns a metrics summary as a string.
-pub fn (mut m AuthMetrics) get_summary() string {
+fn (mut m AuthMetrics) get_summary() string {
 	m.lock.lock()
 	defer { m.lock.unlock() }
 
@@ -121,7 +121,7 @@ mut:
 
 /// new_auth_service creates a new authentication service.
 /// Initializes authenticators for the specified mechanisms.
-pub fn new_auth_service(user_store port.UserStore, mechanisms []domain.SaslMechanism) &AuthService {
+fn new_auth_service(user_store port.UserStore, mechanisms []domain.SaslMechanism) &AuthService {
 	mut authenticators := map[string]port.SaslAuthenticator{}
 
 	// Create authenticators for each mechanism
@@ -159,7 +159,7 @@ pub fn (s &AuthService) supported_mechanisms() []domain.SaslMechanism {
 }
 
 /// supported_mechanism_strings returns mechanism names as a string array.
-pub fn (s &AuthService) supported_mechanism_strings() []string {
+fn (s &AuthService) supported_mechanism_strings() []string {
 	mut result := []string{}
 	for m in s.mechanisms {
 		result << m.str()
@@ -222,7 +222,7 @@ mut:
 }
 
 /// new_plain_authenticator creates a new PLAIN authenticator.
-pub fn new_plain_authenticator(user_store port.UserStore) &PlainAuthenticator {
+fn new_plain_authenticator(user_store port.UserStore) &PlainAuthenticator {
 	return &PlainAuthenticator{
 		user_store: user_store
 	}
@@ -312,16 +312,16 @@ fn parse_plain_auth(data []u8) ?PlainAuthData {
 // Metrics Query
 
 /// get_metrics_summary returns a summary of authentication metrics.
-pub fn (mut s AuthService) get_metrics_summary() string {
+fn (mut s AuthService) get_metrics_summary() string {
 	return s.metrics.get_summary()
 }
 
 /// get_metrics returns the authentication metrics struct.
-pub fn (mut s AuthService) get_metrics() &AuthMetrics {
+fn (mut s AuthService) get_metrics() &AuthMetrics {
 	return s.metrics
 }
 
 /// reset_metrics resets all authentication metrics.
-pub fn (mut s AuthService) reset_metrics() {
+fn (mut s AuthService) reset_metrics() {
 	s.metrics.reset()
 }

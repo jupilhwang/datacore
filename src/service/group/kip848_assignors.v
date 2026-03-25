@@ -15,7 +15,7 @@ module group
 pub struct RangeAssignor {}
 
 /// new_range_assignor creates a new Range assignor.
-pub fn new_range_assignor() &RangeAssignor {
+fn new_range_assignor() &RangeAssignor {
 	return &RangeAssignor{}
 }
 
@@ -82,7 +82,7 @@ pub fn (a &RangeAssignor) assign(members []MemberSubscription, topics map[string
 pub struct RoundRobinAssignor {}
 
 /// new_round_robin_assignor creates a new Round Robin assignor.
-pub fn new_round_robin_assignor() &RoundRobinAssignor {
+fn new_round_robin_assignor() &RoundRobinAssignor {
 	return &RoundRobinAssignor{}
 }
 
@@ -160,7 +160,7 @@ pub fn (a &RoundRobinAssignor) assign(members []MemberSubscription, topics map[s
 pub struct StickyAssignor {}
 
 /// new_sticky_assignor creates a new Sticky assignor.
-pub fn new_sticky_assignor() &StickyAssignor {
+fn new_sticky_assignor() &StickyAssignor {
 	return &StickyAssignor{}
 }
 
@@ -235,7 +235,7 @@ pub struct CooperativeStickyAssignor {
 }
 
 /// new_cooperative_sticky_assignor creates a new Cooperative Sticky assignor.
-pub fn new_cooperative_sticky_assignor() &CooperativeStickyAssignor {
+fn new_cooperative_sticky_assignor() &CooperativeStickyAssignor {
 	return &CooperativeStickyAssignor{
 		inner: new_sticky_assignor()
 	}
@@ -258,7 +258,7 @@ pub fn (a &CooperativeStickyAssignor) assign(members []MemberSubscription, topic
 pub struct UniformAssignor {}
 
 /// new_uniform_assignor creates a new Uniform assignor.
-pub fn new_uniform_assignor() &UniformAssignor {
+fn new_uniform_assignor() &UniformAssignor {
 	return &UniformAssignor{}
 }
 

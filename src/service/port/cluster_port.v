@@ -5,9 +5,23 @@ module port
 
 import domain
 
-/// BrokerRegistryPort defines broker registration and discovery operations.
-/// Used by services that manage broker lifecycle within the cluster.
+/// BrokerRegistryPort defines read-only broker query operations.
+/// Used by protocol handlers that need broker discovery (ISP-narrowed).
 pub interface BrokerRegistryPort {
+mut:
+	/// Returns information for a specific broker.
+	get_broker(broker_id i32) !domain.BrokerInfo
+
+	/// Returns a list of all registered brokers.
+	list_brokers() ![]domain.BrokerInfo
+
+	/// Returns only active brokers (excluding dead/shutdown).
+	list_active_brokers() ![]domain.BrokerInfo
+}
+
+/// BrokerLifecyclePort defines broker lifecycle mutation operations.
+/// Used by BrokerRegistry service for distributed storage coordination.
+pub interface BrokerLifecyclePort {
 mut:
 	/// Registers a broker with the cluster.
 	/// Returns the assigned broker_id (may differ from the request on conflict).
@@ -18,15 +32,6 @@ mut:
 
 	/// Updates the last heartbeat timestamp for a broker.
 	update_broker_heartbeat(heartbeat domain.BrokerHeartbeat) !
-
-	/// Returns information for a specific broker.
-	get_broker(broker_id i32) !domain.BrokerInfo
-
-	/// Returns a list of all registered brokers.
-	list_brokers() ![]domain.BrokerInfo
-
-	/// Returns only active brokers (excluding dead/shutdown).
-	list_active_brokers() ![]domain.BrokerInfo
 }
 
 /// ClusterStatePort defines cluster-level metadata operations.
@@ -85,6 +90,7 @@ mut:
 /// Implemented in distributed storage adapters (PostgreSQL, S3, etc.).
 pub interface ClusterMetadataPort {
 	BrokerRegistryPort
+	BrokerLifecyclePort
 	ClusterStatePort
 	PartitionAssignmentPort
 	DistributedLockPort

@@ -27,7 +27,7 @@ pub:
 }
 
 /// reset resets the record for reuse.
-pub fn (mut r PooledRecord) reset() {
+fn (mut r PooledRecord) reset() {
 	r.key = r.key[..0]
 	r.value = r.value[..0]
 	r.headers = r.headers[..0]
@@ -72,7 +72,7 @@ pub mut:
 }
 
 /// reset resets the batch for reuse.
-pub fn (mut b PooledRecordBatch) reset() {
+fn (mut b PooledRecordBatch) reset() {
 	b.topic = ''
 	b.partition = 0
 	// Clear records while retaining capacity
@@ -101,7 +101,7 @@ pub fn (b &PooledRecordBatch) size() int {
 }
 
 /// byte_size returns the estimated byte size of the batch.
-pub fn (b &PooledRecordBatch) byte_size() int {
+fn (b &PooledRecordBatch) byte_size() int {
 	mut total := 0
 	for r in b.records {
 		total += r.key.len + r.value.len + 20
@@ -124,7 +124,7 @@ pub mut:
 }
 
 /// reset resets the request for reuse.
-pub fn (mut r PooledRequest) reset() {
+fn (mut r PooledRequest) reset() {
 	r.api_key = 0
 	r.api_version = 0
 	r.correlation_id = 0
@@ -353,7 +353,7 @@ pub fn (s &ObjectPoolStats) hit_rate() f64 {
 }
 
 /// discard_rate returns the discard rate.
-pub fn (s &ObjectPoolStats) discard_rate() f64 {
+fn (s &ObjectPoolStats) discard_rate() f64 {
 	total := s.returns + s.discards
 	if total == 0 {
 		return 0.0

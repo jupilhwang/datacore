@@ -24,7 +24,7 @@ mut:
 }
 
 /// new_transaction_coordinator creates a new transaction coordinator.
-pub fn new_transaction_coordinator(store port.TransactionStore) &TransactionCoordinator {
+fn new_transaction_coordinator(store port.TransactionStore) &TransactionCoordinator {
 	return &TransactionCoordinator{
 		store: store
 	}

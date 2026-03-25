@@ -128,7 +128,7 @@ pub fn (mut a PartitionAssigner) assign_partitions(topic_name string, partition_
 /// rebalance_partitions reassigns partitions based on broker changes.
 /// topic_name: topic name
 /// active_brokers: list of currently active brokers
-pub fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_brokers []domain.BrokerInfo) ![]domain.PartitionAssignment {
+fn (mut a PartitionAssigner) rebalance_partitions(topic_name string, active_brokers []domain.BrokerInfo) ![]domain.PartitionAssignment {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
 
@@ -429,7 +429,7 @@ pub fn (mut a PartitionAssigner) get_partition_leader(topic_name string, partiti
 }
 
 /// get_partition_assignment returns assignment information for a specific partition.
-pub fn (mut a PartitionAssigner) get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment {
+fn (mut a PartitionAssigner) get_partition_assignment(topic_name string, partition i32) !domain.PartitionAssignment {
 	a.lock.rlock()
 	defer { a.lock.runlock() }
 
@@ -441,7 +441,7 @@ pub fn (mut a PartitionAssigner) get_partition_assignment(topic_name string, par
 }
 
 /// list_partition_assignments returns all partition assignments for a topic.
-pub fn (mut a PartitionAssigner) list_partition_assignments(topic_name string) ![]domain.PartitionAssignment {
+fn (mut a PartitionAssigner) list_partition_assignments(topic_name string) ![]domain.PartitionAssignment {
 	a.lock.rlock()
 	defer { a.lock.runlock() }
 
@@ -463,7 +463,7 @@ pub:
 // Configuration Changes
 
 /// set_strategy changes the assignment strategy.
-pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy) {
+fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy) {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
 	a.config.strategy = strategy
@@ -471,7 +471,7 @@ pub fn (mut a PartitionAssigner) set_strategy(strategy domain.AssignmentStrategy
 }
 
 /// set_sticky_assign sets the sticky assignment mode.
-pub fn (mut a PartitionAssigner) set_sticky_assign(enabled bool) {
+fn (mut a PartitionAssigner) set_sticky_assign(enabled bool) {
 	a.lock.@lock()
 	defer { a.lock.unlock() }
 	a.config.sticky_assign = enabled

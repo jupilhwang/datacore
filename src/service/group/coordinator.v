@@ -182,7 +182,7 @@ pub:
 
 /// sync_group handles a group sync request.
 /// Distributes the leader-provided assignment to each member.
-pub fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupResponse {
+fn (mut c GroupCoordinator) sync_group(req SyncGroupRequest) SyncGroupResponse {
 	group := c.storage.load_group(req.group_id) or {
 		return SyncGroupResponse{
 			error_code: i16(domain.ErrorCode.group_id_not_found)
@@ -234,7 +234,7 @@ pub:
 
 /// heartbeat handles a heartbeat request.
 /// Verifies member liveness and notifies whether rebalancing is needed.
-pub fn (mut c GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatResponse {
+fn (mut c GroupCoordinator) heartbeat(req HeartbeatRequest) HeartbeatResponse {
 	group := c.storage.load_group(req.group_id) or {
 		return HeartbeatResponse{
 			error_code: i16(domain.ErrorCode.group_id_not_found)
@@ -308,7 +308,7 @@ pub fn (mut c GroupCoordinator) leave_group(group_id string, member_id string) i
 }
 
 /// list_groups returns a list of all consumer groups.
-pub fn (mut c GroupCoordinator) list_groups() ![]domain.GroupInfo {
+fn (mut c GroupCoordinator) list_groups() ![]domain.GroupInfo {
 	return c.storage.list_groups()
 }
 

@@ -55,7 +55,7 @@ fn create_writer_metadata(config IcebergConfig, table_location string) (IcebergM
 }
 
 /// new_iceberg_writer creates a new Iceberg Writer.
-pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table_location string) !&IcebergWriter {
+fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table_location string) !&IcebergWriter {
 	metadata, schema, partition_spec := create_writer_metadata(config, table_location)
 	return &IcebergWriter{
 		adapter:           adapter
@@ -70,7 +70,7 @@ pub fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table
 
 /// new_iceberg_writer_with_catalog creates a new Iceberg Writer and registers the table in a catalog.
 /// If the table already exists in the catalog, it skips registration without error.
-pub fn new_iceberg_writer_with_catalog(adapter &S3StorageAdapter, config IcebergConfig, table_location string, mut catalog IcebergCatalog, identifier IcebergTableIdentifier) !&IcebergWriter {
+fn new_iceberg_writer_with_catalog(adapter &S3StorageAdapter, config IcebergConfig, table_location string, mut catalog IcebergCatalog, identifier IcebergTableIdentifier) !&IcebergWriter {
 	metadata, schema, partition_spec := create_writer_metadata(config, table_location)
 	mut writer := &IcebergWriter{
 		adapter:           adapter
@@ -91,7 +91,7 @@ pub fn new_iceberg_writer_with_catalog(adapter &S3StorageAdapter, config Iceberg
 
 /// normalize_s3_location strips the s3://bucket/ prefix from a location string,
 /// returning a relative S3 key suitable for use with the adapter.
-pub fn normalize_s3_location(location string) string {
+fn normalize_s3_location(location string) string {
 	if !location.starts_with('s3://') {
 		return location
 	}
@@ -104,7 +104,7 @@ pub fn normalize_s3_location(location string) string {
 }
 
 /// append_records buffers records per partition.
-pub fn (mut w IcebergWriter) append_records(topic string, partition int, records []domain.Record, start_offset i64) ! {
+fn (mut w IcebergWriter) append_records(topic string, partition int, records []domain.Record, start_offset i64) ! {
 	if records.len == 0 {
 		return
 	}
@@ -199,7 +199,7 @@ fn (w &IcebergWriter) partition_values_to_key(values map[string]string) string {
 }
 
 /// should_flush checks whether a flush is needed.
-pub fn (mut w IcebergWriter) should_flush() bool {
+fn (mut w IcebergWriter) should_flush() bool {
 	w.buffer_lock.lock()
 	defer {
 		w.buffer_lock.unlock()
@@ -215,7 +215,7 @@ pub fn (mut w IcebergWriter) should_flush() bool {
 }
 
 /// flush_all_partitions flushes all partition buffers.
-pub fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) ![]IcebergDataFile {
+fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) ![]IcebergDataFile {
 	w.buffer_lock.lock()
 	defer {
 		w.buffer_lock.unlock()

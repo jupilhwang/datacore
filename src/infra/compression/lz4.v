@@ -21,7 +21,7 @@ const lz4_frame_version = u8(0x40)
 const lz4_block_default = u8(0x40)
 
 /// new_lz4_compressor creates a new Lz4Compressor.
-pub fn new_lz4_compressor() &Lz4Compressor {
+fn new_lz4_compressor() &Lz4Compressor {
 	return &Lz4Compressor{}
 }
 

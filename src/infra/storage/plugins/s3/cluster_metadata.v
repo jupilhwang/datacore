@@ -59,7 +59,7 @@ pub fn new_s3_cluster_metadata_adapter(adapter &S3StorageAdapter) &S3ClusterMeta
 /// new_s3_cluster_metadata_with_config creates an adapter with an explicit config.
 /// To prevent config loss during V interface value copy,
 /// holds config internally and forcibly sets it on the adapter too.
-pub fn new_s3_cluster_metadata_with_config(config S3Config) !&S3ClusterMetadataAdapter {
+fn new_s3_cluster_metadata_with_config(config S3Config) !&S3ClusterMetadataAdapter {
 	// V interface value copy 버그 우회: config를 모듈 홀더에 백업
 	set_cluster_metadata_config_backup(config)
 	mut own_adapter := new_s3_adapter(config)!

@@ -1,5 +1,15 @@
 # Progress Log
 
+## v0.52.0 -- Handler DIP + API Surface Reduction (2026-03-25)
+
+- Handler DIP: 10 concrete deps -> 0 (8 new Port interfaces, 4 imports remaining)
+- ISP: BrokerRegistryPort split into query + lifecycle
+- pub fn -> fn: 624 functions across service/infra (38.4% API surface reduction)
+- CHECK: 84.3/100 (Grade B), 0 CRITICAL/HIGH
+- Build: make build SUCCESS, 124/124 tests pass
+
+---
+
 ## v0.51.0 -- God Function Splits (2026-03-25)
 
 - 8 God Functions split across 6 files: tcp.v, handler_metadata.v, handler_produce.v, handler_config.v, handler_fetch.v, handler_offset.v

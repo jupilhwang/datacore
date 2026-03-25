@@ -125,17 +125,17 @@ pub fn (mut s CompressionService) decompress(data []u8, compression_type Compres
 }
 
 /// compress_with_default compresses data using the default compression type.
-pub fn (mut s CompressionService) compress_with_default(data []u8) ![]u8 {
+fn (mut s CompressionService) compress_with_default(data []u8) ![]u8 {
 	return s.compress(data, s.default_compression)
 }
 
 /// decompress_with_default decompresses data using the default compression type.
-pub fn (mut s CompressionService) decompress_with_default(data []u8) ![]u8 {
+fn (mut s CompressionService) decompress_with_default(data []u8) ![]u8 {
 	return s.decompress(data, s.default_compression)
 }
 
 /// get_compressor returns the Compressor for the specified type.
-pub fn (mut s CompressionService) get_compressor(compression_type CompressionType) !Compressor {
+fn (mut s CompressionService) get_compressor(compression_type CompressionType) !Compressor {
 	if compressor := s.compressors[compression_type] {
 		return compressor
 	}
@@ -149,12 +149,12 @@ pub fn (mut s CompressionService) get_compressor(compression_type CompressionTyp
 }
 
 /// set_default_compression sets the default compression type.
-pub fn (mut s CompressionService) set_default_compression(ct CompressionType) {
+fn (mut s CompressionService) set_default_compression(ct CompressionType) {
 	s.default_compression = ct
 	s.logger.info('default compression changed', observability.field_string('type', ct.str()))
 }
 
 /// Returns the current metrics.
-pub fn (s &CompressionService) get_metrics() CompressionMetrics {
+fn (s &CompressionService) get_metrics() CompressionMetrics {
 	return s.metrics
 }

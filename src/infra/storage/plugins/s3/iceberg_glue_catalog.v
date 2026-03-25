@@ -156,7 +156,7 @@ pub fn (mut c GlueCatalog) load_metadata_at(metadata_location string) !IcebergMe
 
 /// export_table loads a single table from HadoopCatalog and upserts it into GlueCatalog.
 /// Returns the metadata that was written to Glue.
-pub fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) !IcebergMetadata {
+fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) !IcebergMetadata {
 	metadata := hadoop_catalog.load_table(identifier)!
 
 	// Prefer metadata.location; fall back to computed warehouse path.
@@ -187,7 +187,7 @@ pub fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hado
 
 /// export_all exports every table in HadoopCatalog (under the given namespaces) to GlueCatalog.
 /// Callers pass the list of namespaces to enumerate; use [[]] for the root namespace.
-pub fn (c &GlueCatalog) export_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergMetadata {
+fn (c &GlueCatalog) export_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergMetadata {
 	mut results := []IcebergMetadata{}
 
 	for ns in namespaces {
@@ -202,14 +202,14 @@ pub fn (c &GlueCatalog) export_all(mut hadoop_catalog HadoopCatalog, namespaces 
 }
 
 /// import_table loads a single table from GlueCatalog and commits its metadata to HadoopCatalog.
-pub fn (c &GlueCatalog) import_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) ! {
+fn (c &GlueCatalog) import_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) ! {
 	metadata := c.load_table(identifier)!
 	hadoop_catalog.commit_metadata(identifier, metadata)!
 }
 
 /// import_all imports every Iceberg table listed in GlueCatalog into HadoopCatalog.
 /// Callers pass the namespaces to enumerate; use [[]] for the root / "default" namespace.
-pub fn (c &GlueCatalog) import_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergTableIdentifier {
+fn (c &GlueCatalog) import_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergTableIdentifier {
 	mut imported := []IcebergTableIdentifier{}
 
 	for ns in namespaces {

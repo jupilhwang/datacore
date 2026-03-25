@@ -9,6 +9,7 @@ mut:
 	info(msg string, fields ...LogField)
 	warn(msg string, fields ...LogField)
 	error(msg string, fields ...LogField)
+	trace(msg string, fields ...LogField)
 }
 
 /// NoopLogger is a silent logger for use when no logger is provided.
@@ -25,3 +26,5 @@ pub fn (mut l NoopLogger) info(msg string, fields ...LogField) {}
 pub fn (mut l NoopLogger) warn(msg string, fields ...LogField) {}
 
 pub fn (mut l NoopLogger) error(msg string, fields ...LogField) {}
+
+pub fn (mut l NoopLogger) trace(msg string, fields ...LogField) {}

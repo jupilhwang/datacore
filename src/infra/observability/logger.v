@@ -91,7 +91,7 @@ pub fn field_int(key string, value i64) port.LogField {
 
 /// field_uint - creates an unsigned integer field
 @[inline]
-pub fn field_uint(key string, value u64) port.LogField {
+fn field_uint(key string, value u64) port.LogField {
 	return port.LogField{
 		key:   key
 		value: '${value}'
@@ -118,7 +118,7 @@ pub fn field_bool(key string, value bool) port.LogField {
 
 /// field_error - creates an error field
 @[inline]
-pub fn field_error(err IError) port.LogField {
+fn field_error(err IError) port.LogField {
 	return port.LogField{
 		key:   'error'
 		value: err.str()
@@ -187,7 +187,7 @@ pub enum OutputFormat {
 }
 
 /// output_format_from_string(s string) OutputFormat - creates OutputFormat from string representation
-pub fn output_format_from_string(s string) OutputFormat {
+fn output_format_from_string(s string) OutputFormat {
 	return match s.to_lower() {
 		'json' { .json }
 		'text', 'plain', 'console' { .text }
@@ -244,12 +244,12 @@ pub fn new_logger(config LoggerConfig) &Logger {
 }
 
 /// new_default_logger() &Logger - creates a Logger instance with default configuration
-pub fn new_default_logger() &Logger {
+fn new_default_logger() &Logger {
 	return new_logger(LoggerConfig{})
 }
 
 /// with_name(name string) &Logger - returns a new Logger instance with a different name for sub-components
-pub fn (l &Logger) with_name(name string) &Logger {
+fn (l &Logger) with_name(name string) &Logger {
 	return &Logger{
 		name:          name
 		level:         l.level
@@ -263,7 +263,7 @@ pub fn (l &Logger) with_name(name string) &Logger {
 }
 
 /// with_context(ctx LogContext) &Logger - returns a new Logger instance with the given context
-pub fn (l &Logger) with_context(ctx LogContext) &Logger {
+fn (l &Logger) with_context(ctx LogContext) &Logger {
 	return &Logger{
 		name:          l.name
 		level:         l.level
@@ -277,7 +277,7 @@ pub fn (l &Logger) with_context(ctx LogContext) &Logger {
 }
 
 /// with_fields(fields ...port.LogField) &Logger - returns a new Logger instance with additional default fields
-pub fn (l &Logger) with_fields(fields ...port.LogField) &Logger {
+fn (l &Logger) with_fields(fields ...port.LogField) &Logger {
 	mut new_fields := l.fields.clone()
 	new_fields << fields
 
@@ -297,12 +297,12 @@ pub fn (l &Logger) with_fields(fields ...port.LogField) &Logger {
 
 /// should_log checks whether the level should be logged (inlined for performance).
 @[inline]
-pub fn (l &Logger) should_log(level LogLevel) bool {
+fn (l &Logger) should_log(level LogLevel) bool {
 	return int(level) >= int(l.level)
 }
 
 /// log(level LogLevel, msg string, fields ...port.LogField) - writes a log entry with the specified level, message, and optional fields
-pub fn (mut l Logger) log(level LogLevel, msg string, fields ...port.LogField) {
+fn (mut l Logger) log(level LogLevel, msg string, fields ...port.LogField) {
 	// Early exit for disabled levels (zero overhead)
 	if !l.should_log(level) {
 		return
@@ -387,7 +387,7 @@ pub fn (mut l Logger) error(msg string, fields ...port.LogField) {
 
 /// fatal - writes a FATAL level log
 @[inline]
-pub fn (mut l Logger) fatal(msg string, fields ...port.LogField) {
+fn (mut l Logger) fatal(msg string, fields ...port.LogField) {
 	l.log(.fatal, msg, ...fields)
 }
 
@@ -413,38 +413,38 @@ fn (l &Logger) map_to_fields(m map[string]string) []port.LogField {
 }
 
 /// debug_map - writes a DEBUG level log using a map for fields
-pub fn (mut l Logger) debug_map(msg string, m map[string]string) {
+fn (mut l Logger) debug_map(msg string, m map[string]string) {
 	if int(l.level) <= int(LogLevel.debug) {
 		l.log(.debug, msg, ...l.map_to_fields(m))
 	}
 }
 
 /// info_map - writes an INFO level log using a map for fields
-pub fn (mut l Logger) info_map(msg string, m map[string]string) {
+fn (mut l Logger) info_map(msg string, m map[string]string) {
 	if int(l.level) <= int(LogLevel.info) {
 		l.log(.info, msg, ...l.map_to_fields(m))
 	}
 }
 
 /// warn_map - writes a WARN level log using a map for fields
-pub fn (mut l Logger) warn_map(msg string, m map[string]string) {
+fn (mut l Logger) warn_map(msg string, m map[string]string) {
 	if int(l.level) <= int(LogLevel.warn) {
 		l.log(.warn, msg, ...l.map_to_fields(m))
 	}
 }
 
 /// error_map - writes an ERROR level log using a map for fields
-pub fn (mut l Logger) error_map(msg string, m map[string]string) {
+fn (mut l Logger) error_map(msg string, m map[string]string) {
 	l.log(.error, msg, ...l.map_to_fields(m))
 }
 
 /// fatal_map - writes a FATAL level log using a map for fields
-pub fn (mut l Logger) fatal_map(msg string, m map[string]string) {
+fn (mut l Logger) fatal_map(msg string, m map[string]string) {
 	l.log(.fatal, msg, ...l.map_to_fields(m))
 }
 
 /// flush() - sends all buffered logs to the OTLP endpoint
-pub fn (mut l Logger) flush() {
+fn (mut l Logger) flush() {
 	if l.otlp_endpoint == '' {
 		return
 	}
@@ -508,42 +508,42 @@ pub fn get_named_logger(name string) &Logger {
 
 /// log_trace writes a TRACE level log using the global logger.
 @[inline]
-pub fn log_trace(msg string, fields ...port.LogField) {
+fn log_trace(msg string, fields ...port.LogField) {
 	mut logger := get_logger()
 	logger.trace(msg, ...fields)
 }
 
 /// log_debug - writes a DEBUG level log using the global logger
 @[inline]
-pub fn log_debug(msg string, fields ...port.LogField) {
+fn log_debug(msg string, fields ...port.LogField) {
 	mut logger := get_logger()
 	logger.debug(msg, ...fields)
 }
 
 /// log_info - writes an INFO level log using the global logger
 @[inline]
-pub fn log_info(msg string, fields ...port.LogField) {
+fn log_info(msg string, fields ...port.LogField) {
 	mut logger := get_logger()
 	logger.info(msg, ...fields)
 }
 
 /// log_warn - writes a WARN level log using the global logger
 @[inline]
-pub fn log_warn(msg string, fields ...port.LogField) {
+fn log_warn(msg string, fields ...port.LogField) {
 	mut logger := get_logger()
 	logger.warn(msg, ...fields)
 }
 
 /// log_error - writes an ERROR level log using the global logger
 @[inline]
-pub fn log_error(msg string, fields ...port.LogField) {
+fn log_error(msg string, fields ...port.LogField) {
 	mut logger := get_logger()
 	logger.error(msg, ...fields)
 }
 
 /// log_fatal - writes a FATAL level log using the global logger
 @[inline]
-pub fn log_fatal(msg string, fields ...port.LogField) {
+fn log_fatal(msg string, fields ...port.LogField) {
 	mut logger := get_logger()
 	logger.fatal(msg, ...fields)
 }
@@ -752,7 +752,7 @@ fn send_otlp_http(endpoint string, payload string) {
 // Utility: log level severity mapping
 
 /// severity_to_level(severity int) LogLevel - converts an OTLP severity number to a LogLevel
-pub fn severity_to_level(severity int) LogLevel {
+fn severity_to_level(severity int) LogLevel {
 	return match true {
 		severity <= 4 { .trace }
 		severity <= 8 { .debug }

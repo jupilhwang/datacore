@@ -40,7 +40,7 @@ mut:
 }
 
 /// new_benchmark_suite creates a new benchmark suite.
-pub fn new_benchmark_suite(config BenchmarkConfig) &BenchmarkSuite {
+fn new_benchmark_suite(config BenchmarkConfig) &BenchmarkSuite {
 	return &BenchmarkSuite{
 		config:  config
 		results: []BenchmarkResult{}
@@ -51,7 +51,7 @@ pub fn new_benchmark_suite(config BenchmarkConfig) &BenchmarkSuite {
 // Buffer pool benchmarks
 
 /// benchmark_buffer_pool_allocation benchmarks buffer allocation performance.
-pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_allocation() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_buffer_pool_allocation() BenchmarkResult {
 	// Warmup
 	for _ in 0 .. s.config.warmup_iterations {
 		buf := s.manager.get_buffer(1024)
@@ -71,7 +71,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_allocation() BenchmarkResult
 }
 
 /// benchmark_buffer_pool_vs_heap compares pool allocation vs heap allocation.
-pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_vs_heap() []BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_buffer_pool_vs_heap() []BenchmarkResult {
 	mut results := []BenchmarkResult{}
 
 	for size in s.config.buffer_sizes {
@@ -99,7 +99,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_vs_heap() []BenchmarkResult 
 }
 
 /// benchmark_buffer_pool_hit_rate benchmarks cache hit rate.
-pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
 	// Pre-warm the pool
 	mut buffers := []&core.Buffer{cap: 100}
 	for _ in 0 .. 100 {
@@ -131,7 +131,7 @@ pub fn (mut s BenchmarkSuite) benchmark_buffer_pool_hit_rate() BenchmarkResult {
 // Object pool benchmarks
 
 /// benchmark_record_pool benchmarks record pool performance.
-pub fn (mut s BenchmarkSuite) benchmark_record_pool() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_record_pool() BenchmarkResult {
 	// Warmup
 	for _ in 0 .. s.config.warmup_iterations {
 		rec := s.manager.get_record()
@@ -150,7 +150,7 @@ pub fn (mut s BenchmarkSuite) benchmark_record_pool() BenchmarkResult {
 }
 
 /// benchmark_batch_pool benchmarks batch pool performance.
-pub fn (mut s BenchmarkSuite) benchmark_batch_pool() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_batch_pool() BenchmarkResult {
 	// Warmup
 	for _ in 0 .. s.config.warmup_iterations {
 		batch := s.manager.get_batch()
@@ -169,7 +169,7 @@ pub fn (mut s BenchmarkSuite) benchmark_batch_pool() BenchmarkResult {
 }
 
 /// benchmark_request_pool benchmarks request pool performance.
-pub fn (mut s BenchmarkSuite) benchmark_request_pool() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_request_pool() BenchmarkResult {
 	// Warmup
 	for _ in 0 .. s.config.warmup_iterations {
 		req := s.manager.get_request()
@@ -190,7 +190,7 @@ pub fn (mut s BenchmarkSuite) benchmark_request_pool() BenchmarkResult {
 // Integration benchmarks
 
 /// benchmark_request_response_cycle simulates a full request/response cycle.
-pub fn (mut s BenchmarkSuite) benchmark_request_response_cycle() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_request_response_cycle() BenchmarkResult {
 	// Simulation: read request -> process -> write response
 	mut times := []i64{cap: s.config.benchmark_iterations}
 
@@ -219,7 +219,7 @@ pub fn (mut s BenchmarkSuite) benchmark_request_response_cycle() BenchmarkResult
 }
 
 /// benchmark_connection_lifecycle simulates a connection lifecycle.
-pub fn (mut s BenchmarkSuite) benchmark_connection_lifecycle() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_connection_lifecycle() BenchmarkResult {
 	mut times := []i64{cap: s.config.benchmark_iterations}
 
 	for _ in 0 .. s.config.benchmark_iterations {
@@ -242,7 +242,7 @@ pub fn (mut s BenchmarkSuite) benchmark_connection_lifecycle() BenchmarkResult {
 }
 
 /// benchmark_storage_operations simulates storage operations using pooling.
-pub fn (mut s BenchmarkSuite) benchmark_storage_operations() BenchmarkResult {
+fn (mut s BenchmarkSuite) benchmark_storage_operations() BenchmarkResult {
 	mut times := []i64{cap: s.config.benchmark_iterations}
 	mut pool := new_storage_record_pool()
 
@@ -304,7 +304,7 @@ fn (s &BenchmarkSuite) calculate_result(name string, times []i64) BenchmarkResul
 // Run all benchmarks
 
 /// run_all runs all benchmarks and returns results.
-pub fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
+fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
 	mut results := []BenchmarkResult{}
 
 	println('╔══════════════════════════════════════════════════════════════╗')
@@ -336,7 +336,7 @@ pub fn (mut s BenchmarkSuite) run_all() []BenchmarkResult {
 }
 
 /// print_results prints benchmark results as a formatted table.
-pub fn (mut s BenchmarkSuite) print_results() {
+fn (mut s BenchmarkSuite) print_results() {
 	println('')
 	println('┌────────────────────────────────┬────────────┬────────────┬────────────┬──────────────┐')
 	println('│ Benchmark                      │ Iterations │ Avg (ns)   │ Min (ns)   │ Ops/sec      │')
@@ -368,7 +368,7 @@ pub fn (mut s BenchmarkSuite) print_results() {
 // Quick benchmark entry point
 
 /// run_quick_benchmark runs a quick benchmark with default configuration.
-pub fn run_quick_benchmark() {
+fn run_quick_benchmark() {
 	performance.init_global_performance(performance.PerformanceConfig{
 		buffer_pool_prewarm: true
 	})

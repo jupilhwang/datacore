@@ -5,12 +5,12 @@
 // ShareAcknowledge, and share group state management.
 module kafka
 
-import service.group
+import service.port
 
 /// ShareGroupSubHandler groups the dependencies needed for share group request handling.
 /// The main Handler delegates share-group-related work through this sub-handler.
 pub struct ShareGroupSubHandler {
 pub mut:
 	ctx                     &HandlerContext
-	share_group_coordinator ?&group.ShareGroupCoordinator
+	share_group_coordinator ?port.ShareGroupCoordinatorPort
 }

@@ -3,7 +3,7 @@
 module encoding
 
 // apply_int32_dictionary applies dictionary indices to get actual values.
-pub fn apply_int32_dictionary(dict_values []i32, indices []i32) []i32 {
+fn apply_int32_dictionary(dict_values []i32, indices []i32) []i32 {
 	mut result := []i32{cap: indices.len}
 	for idx in indices {
 		if idx >= 0 && idx < dict_values.len {
@@ -14,7 +14,7 @@ pub fn apply_int32_dictionary(dict_values []i32, indices []i32) []i32 {
 }
 
 // apply_int64_dictionary applies dictionary indices to get actual values.
-pub fn apply_int64_dictionary(dict_values []i64, indices []i32) []i64 {
+fn apply_int64_dictionary(dict_values []i64, indices []i32) []i64 {
 	mut result := []i64{cap: indices.len}
 	for idx in indices {
 		if idx >= 0 && idx < dict_values.len {
@@ -26,7 +26,7 @@ pub fn apply_int64_dictionary(dict_values []i64, indices []i32) []i64 {
 
 // apply_byte_array_dictionary applies dictionary indices to get actual byte arrays.
 // Silently skips out-of-bounds indices.
-pub fn apply_byte_array_dictionary(dict_values [][]u8, indices []i32) [][]u8 {
+fn apply_byte_array_dictionary(dict_values [][]u8, indices []i32) [][]u8 {
 	mut result := [][]u8{cap: indices.len}
 	for idx in indices {
 		if idx >= 0 && idx < dict_values.len {
@@ -38,7 +38,7 @@ pub fn apply_byte_array_dictionary(dict_values [][]u8, indices []i32) [][]u8 {
 
 // apply_int32_dictionary_safe applies dictionary indices with bounds checking.
 // Returns an error if any index is out of bounds.
-pub fn apply_int32_dictionary_safe(dict_values []i32, indices []i32) ![]i32 {
+fn apply_int32_dictionary_safe(dict_values []i32, indices []i32) ![]i32 {
 	mut result := []i32{cap: indices.len}
 	for idx in indices {
 		if idx < 0 || idx >= dict_values.len {
@@ -51,7 +51,7 @@ pub fn apply_int32_dictionary_safe(dict_values []i32, indices []i32) ![]i32 {
 
 // apply_int64_dictionary_safe applies dictionary indices with bounds checking.
 // Returns an error if any index is out of bounds.
-pub fn apply_int64_dictionary_safe(dict_values []i64, indices []i32) ![]i64 {
+fn apply_int64_dictionary_safe(dict_values []i64, indices []i32) ![]i64 {
 	mut result := []i64{cap: indices.len}
 	for idx in indices {
 		if idx < 0 || idx >= dict_values.len {
@@ -64,7 +64,7 @@ pub fn apply_int64_dictionary_safe(dict_values []i64, indices []i32) ![]i64 {
 
 // apply_byte_array_dictionary_safe applies dictionary indices with bounds checking.
 // Returns an error if any index is out of bounds.
-pub fn apply_byte_array_dictionary_safe(dict_values [][]u8, indices []i32) ![][]u8 {
+fn apply_byte_array_dictionary_safe(dict_values [][]u8, indices []i32) ![][]u8 {
 	mut result := [][]u8{cap: indices.len}
 	for idx in indices {
 		if idx < 0 || idx >= dict_values.len {

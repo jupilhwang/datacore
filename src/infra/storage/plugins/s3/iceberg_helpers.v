@@ -7,7 +7,7 @@ import infra.observability
 
 /// is_iceberg_enabled_with_config checks whether Iceberg is enabled based on config and env var.
 /// 우선순위: env var가 설정된 경우 env var 값 사용, 미설정 시 config.enabled 사용.
-pub fn is_iceberg_enabled_with_config(config IcebergConfig) bool {
+fn is_iceberg_enabled_with_config(config IcebergConfig) bool {
 	iceberg_env := os.getenv('DATACORE_ICEBERG_ENABLED')
 	// env var가 명시적으로 설정된 경우 env var 값이 우선
 	if iceberg_env == 'true' || iceberg_env == '1' {
@@ -92,7 +92,7 @@ fn (mut a S3StorageAdapter) append_to_iceberg(topic string, partition int, recor
 }
 
 /// get_iceberg_writer returns the Iceberg Writer for a specific partition.
-pub fn (mut a S3StorageAdapter) get_iceberg_writer(topic string, partition int) ?&IcebergWriter {
+fn (mut a S3StorageAdapter) get_iceberg_writer(topic string, partition int) ?&IcebergWriter {
 	partition_key := '${topic}:${partition}'
 
 	a.iceberg.mu.rlock()
@@ -104,7 +104,7 @@ pub fn (mut a S3StorageAdapter) get_iceberg_writer(topic string, partition int) 
 }
 
 /// list_iceberg_snapshots returns the list of Iceberg snapshots for a specific partition.
-pub fn (mut a S3StorageAdapter) list_iceberg_snapshots(topic string, partition int) ![]IcebergSnapshot {
+fn (mut a S3StorageAdapter) list_iceberg_snapshots(topic string, partition int) ![]IcebergSnapshot {
 	if writer := a.get_iceberg_writer(topic, partition) {
 		return writer.list_snapshots()
 	}
@@ -112,7 +112,7 @@ pub fn (mut a S3StorageAdapter) list_iceberg_snapshots(topic string, partition i
 }
 
 /// time_travel_iceberg time-travels a specific partition to a specific snapshot.
-pub fn (mut a S3StorageAdapter) time_travel_iceberg(topic string, partition int, snapshot_id i64) bool {
+fn (mut a S3StorageAdapter) time_travel_iceberg(topic string, partition int, snapshot_id i64) bool {
 	if mut writer := a.get_iceberg_writer(topic, partition) {
 		return writer.time_travel(snapshot_id)
 	}

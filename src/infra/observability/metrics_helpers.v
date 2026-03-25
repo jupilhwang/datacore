@@ -357,7 +357,7 @@ fn new_consumer_group_detail_metrics() ConsumerGroupDetailMetrics {
 // Helper functions for recording metrics
 
 /// record_produce records metrics for a produce request.
-pub fn (mut m DataCoreMetrics) record_produce(topic string, bytes i64, records int, success bool, latency_ms f64) {
+fn (mut m DataCoreMetrics) record_produce(topic string, bytes i64, records int, success bool, latency_ms f64) {
 	m.messages_produced_total.inc_by(records)
 	m.bytes_produced_total.inc_by(bytes)
 	m.produce_requests_total.inc()
@@ -376,7 +376,7 @@ pub fn (mut m DataCoreMetrics) record_produce(topic string, bytes i64, records i
 }
 
 /// record_fetch records metrics for a fetch request.
-pub fn (mut m DataCoreMetrics) record_fetch(topic string, bytes i64, records int, success bool, latency_ms f64) {
+fn (mut m DataCoreMetrics) record_fetch(topic string, bytes i64, records int, success bool, latency_ms f64) {
 	m.messages_consumed_total.inc_by(records)
 	m.bytes_consumed_total.inc_by(bytes)
 	m.fetch_requests_total.inc()
@@ -393,7 +393,7 @@ pub fn (mut m DataCoreMetrics) record_fetch(topic string, bytes i64, records int
 }
 
 /// record_connection_open records a connection open event.
-pub fn (mut m DataCoreMetrics) record_connection_open() {
+fn (mut m DataCoreMetrics) record_connection_open() {
 	m.active_connections.inc()
 	m.socket_server.connections_active.inc()
 	m.socket_server.connections_total.inc()
@@ -401,31 +401,31 @@ pub fn (mut m DataCoreMetrics) record_connection_open() {
 }
 
 /// record_connection_close records a connection close event.
-pub fn (mut m DataCoreMetrics) record_connection_close() {
+fn (mut m DataCoreMetrics) record_connection_close() {
 	m.active_connections.dec()
 	m.socket_server.connections_active.dec()
 	m.socket_server.connections_close_rate.inc()
 }
 
 /// record_connection_rejected records a connection rejected event.
-pub fn (mut m DataCoreMetrics) record_connection_rejected() {
+fn (mut m DataCoreMetrics) record_connection_rejected() {
 	m.socket_server.connections_rejected.inc()
 }
 
 /// record_auth_success records an authentication success event.
-pub fn (mut m DataCoreMetrics) record_auth_success() {
+fn (mut m DataCoreMetrics) record_auth_success() {
 	m.auth.successful_authentication_total.inc()
 	m.auth.successful_authentication_rate.inc()
 }
 
 /// record_auth_failure records an authentication failure event.
-pub fn (mut m DataCoreMetrics) record_auth_failure() {
+fn (mut m DataCoreMetrics) record_auth_failure() {
 	m.auth.failed_authentication_total.inc()
 	m.auth.failed_authentication_rate.inc()
 }
 
 /// record_group_state records a consumer group state change.
-pub fn (mut m DataCoreMetrics) record_group_state(protocol string, state string, delta int) {
+fn (mut m DataCoreMetrics) record_group_state(protocol string, state string, delta int) {
 	if protocol == 'consumer' {
 		match state {
 			'empty' { m.group_coordinator.consumer_group_count_empty.inc_by(delta) }
@@ -448,25 +448,25 @@ pub fn (mut m DataCoreMetrics) record_group_state(protocol string, state string,
 }
 
 /// record_offset_commit records an offset commit.
-pub fn (mut m DataCoreMetrics) record_offset_commit() {
+fn (mut m DataCoreMetrics) record_offset_commit() {
 	m.group_coordinator.offset_commit_count.inc()
 	m.group_coordinator.offset_commit_rate.inc()
 }
 
 /// record_storage_append records a storage engine append operation.
-pub fn (mut m DataCoreMetrics) record_storage_append(bytes i64, latency_seconds f64) {
+fn (mut m DataCoreMetrics) record_storage_append(bytes i64, latency_seconds f64) {
 	m.storage.storage_append_total.inc()
 	m.storage.storage_append_latency.observe(latency_seconds)
 }
 
 /// record_storage_fetch records a storage engine fetch operation.
-pub fn (mut m DataCoreMetrics) record_storage_fetch(bytes i64, latency_seconds f64) {
+fn (mut m DataCoreMetrics) record_storage_fetch(bytes i64, latency_seconds f64) {
 	m.storage.storage_fetch_total.inc()
 	m.storage.storage_fetch_latency.observe(latency_seconds)
 }
 
 /// record_request_timing records detailed request timing.
-pub fn (mut m DataCoreMetrics) record_request_timing(queue_time_ms f64, local_time_ms f64, response_queue_time_ms f64, send_time_ms f64) {
+fn (mut m DataCoreMetrics) record_request_timing(queue_time_ms f64, local_time_ms f64, response_queue_time_ms f64, send_time_ms f64) {
 	m.request.request_queue_time_ms.observe(queue_time_ms)
 	m.request.local_time_ms.observe(local_time_ms)
 	m.request.response_queue_time_ms.observe(response_queue_time_ms)
@@ -476,7 +476,7 @@ pub fn (mut m DataCoreMetrics) record_request_timing(queue_time_ms f64, local_ti
 }
 
 /// update_gauges updates gauge metrics (called periodically).
-pub fn (mut m DataCoreMetrics) update_gauges(topics int, partitions int, groups int, storage_bytes i64) {
+fn (mut m DataCoreMetrics) update_gauges(topics int, partitions int, groups int, storage_bytes i64) {
 	m.topic_count.set(topics)
 	m.partition_count.set(partitions)
 	m.consumer_group_count.set(groups)
@@ -486,34 +486,34 @@ pub fn (mut m DataCoreMetrics) update_gauges(topics int, partitions int, groups 
 // Task #15: Share Group metric helpers
 
 /// record_share_group_acquire records a share group record acquisition.
-pub fn (mut m DataCoreMetrics) record_share_group_acquire(count int) {
+fn (mut m DataCoreMetrics) record_share_group_acquire(count int) {
 	m.share_group.acquired.inc_by(count)
 }
 
 /// record_share_group_ack records a share group record acknowledgement.
-pub fn (mut m DataCoreMetrics) record_share_group_ack(count int) {
+fn (mut m DataCoreMetrics) record_share_group_ack(count int) {
 	m.share_group.acked.inc_by(count)
 }
 
 /// record_share_group_release records a share group record release.
-pub fn (mut m DataCoreMetrics) record_share_group_release(count int) {
+fn (mut m DataCoreMetrics) record_share_group_release(count int) {
 	m.share_group.released.inc_by(count)
 }
 
 /// record_share_group_reject records a share group record rejection.
-pub fn (mut m DataCoreMetrics) record_share_group_reject(count int) {
+fn (mut m DataCoreMetrics) record_share_group_reject(count int) {
 	m.share_group.rejected.inc_by(count)
 }
 
 /// update_share_group_sessions updates the active share group session count.
-pub fn (mut m DataCoreMetrics) update_share_group_sessions(count int) {
+fn (mut m DataCoreMetrics) update_share_group_sessions(count int) {
 	m.share_group.active_sessions.set(f64(count))
 }
 
 // Task #15: gRPC Gateway metric helpers
 
 /// record_grpc_request records a gRPC gateway request.
-pub fn (mut m DataCoreMetrics) record_grpc_request(success bool, latency_seconds f64) {
+fn (mut m DataCoreMetrics) record_grpc_request(success bool, latency_seconds f64) {
 	m.grpc_gateway.requests_total.inc()
 	m.grpc_gateway.latency_seconds.observe(latency_seconds)
 	if !success {
@@ -522,14 +522,14 @@ pub fn (mut m DataCoreMetrics) record_grpc_request(success bool, latency_seconds
 }
 
 /// update_grpc_connections updates the active gRPC connection count.
-pub fn (mut m DataCoreMetrics) update_grpc_connections(count int) {
+fn (mut m DataCoreMetrics) update_grpc_connections(count int) {
 	m.grpc_gateway.active_connections.set(f64(count))
 }
 
 // Task #15: Partition detail metric helpers
 
 /// update_partition_metrics updates partition-level detail metrics.
-pub fn (mut m DataCoreMetrics) update_partition_metrics(log_size i64, current_offset i64, lag i64) {
+fn (mut m DataCoreMetrics) update_partition_metrics(log_size i64, current_offset i64, lag i64) {
 	m.partition_detail.log_size.set(f64(log_size))
 	m.partition_detail.current_offset.set(f64(current_offset))
 	m.partition_detail.lag.set(f64(lag))
@@ -538,7 +538,7 @@ pub fn (mut m DataCoreMetrics) update_partition_metrics(log_size i64, current_of
 // Task #15: Consumer group detail metric helpers
 
 /// update_consumer_group_metrics updates consumer group detail metrics.
-pub fn (mut m DataCoreMetrics) update_consumer_group_metrics(members int, lag i64) {
+fn (mut m DataCoreMetrics) update_consumer_group_metrics(members int, lag i64) {
 	m.consumer_group_detail.members.set(f64(members))
 	m.consumer_group_detail.lag.set(f64(lag))
 }

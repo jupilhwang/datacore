@@ -29,7 +29,7 @@ pub mut:
 }
 
 /// Creates new compression metrics.
-pub fn new_compression_metrics() CompressionMetrics {
+fn new_compression_metrics() CompressionMetrics {
 	mut reg := observability.get_registry()
 
 	return CompressionMetrics{
@@ -55,7 +55,7 @@ pub fn new_compression_metrics() CompressionMetrics {
 }
 
 /// Records a compression operation.
-pub fn (mut m CompressionMetrics) record_compress(original_size i64, compressed_size i64, duration time.Duration, success bool) {
+fn (mut m CompressionMetrics) record_compress(original_size i64, compressed_size i64, duration time.Duration, success bool) {
 	m.compress_total.inc()
 	m.bytes_compressed.inc_by(f64(original_size))
 
@@ -74,7 +74,7 @@ pub fn (mut m CompressionMetrics) record_compress(original_size i64, compressed_
 }
 
 /// Records a decompression operation.
-pub fn (mut m CompressionMetrics) record_decompress(compressed_size i64, decompressed_size i64, duration time.Duration, success bool) {
+fn (mut m CompressionMetrics) record_decompress(compressed_size i64, decompressed_size i64, duration time.Duration, success bool) {
 	m.decompress_total.inc()
 	m.bytes_decompressed.inc_by(f64(compressed_size))
 
@@ -96,7 +96,7 @@ pub struct CompressionTimer {
 }
 
 /// start_compress_timer starts a compression timer.
-pub fn (mut m CompressionMetrics) start_compress_timer(size i64) CompressionTimer {
+fn (mut m CompressionMetrics) start_compress_timer(size i64) CompressionTimer {
 	return CompressionTimer{
 		start_time: time.now()
 		metrics:    unsafe { m }
@@ -106,7 +106,7 @@ pub fn (mut m CompressionMetrics) start_compress_timer(size i64) CompressionTime
 }
 
 /// start_decompress_timer starts a decompression timer.
-pub fn (mut m CompressionMetrics) start_decompress_timer(size i64) CompressionTimer {
+fn (mut m CompressionMetrics) start_decompress_timer(size i64) CompressionTimer {
 	return CompressionTimer{
 		start_time: time.now()
 		metrics:    unsafe { m }
@@ -116,7 +116,7 @@ pub fn (mut m CompressionMetrics) start_decompress_timer(size i64) CompressionTi
 }
 
 /// stop stops the timer and records the metric.
-pub fn (mut t CompressionTimer) stop(result_size i64, success bool) {
+fn (mut t CompressionTimer) stop(result_size i64, success bool) {
 	duration := time.since(t.start_time)
 	unsafe {
 		mut metrics := t.metrics

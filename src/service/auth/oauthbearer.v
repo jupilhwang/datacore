@@ -39,7 +39,7 @@ mut:
 /// Uses a passthrough validator: any non-empty token is accepted.
 /// For production, embed custom validation logic in a subtype or use
 /// new_oauthbearer_authenticator_with_store to cross-check the user store.
-pub fn new_oauthbearer_authenticator(validator_unused voidptr) &OAuthBearerAuthenticator {
+fn new_oauthbearer_authenticator(validator_unused voidptr) &OAuthBearerAuthenticator {
 	return &OAuthBearerAuthenticator{
 		user_store: none
 	}
@@ -47,7 +47,7 @@ pub fn new_oauthbearer_authenticator(validator_unused voidptr) &OAuthBearerAuthe
 
 /// new_oauthbearer_authenticator_with_store creates an OAUTHBEARER authenticator
 /// that cross-checks the token principal against the user store.
-pub fn new_oauthbearer_authenticator_with_store(user_store port.UserStore) &OAuthBearerAuthenticator {
+fn new_oauthbearer_authenticator_with_store(user_store port.UserStore) &OAuthBearerAuthenticator {
 	return &OAuthBearerAuthenticator{
 		user_store: user_store
 	}

@@ -287,7 +287,7 @@ fn gather_write_fallback(fd int, buffers []ScatterGatherBuffer) DmaResult {
 
 /// sendfile_native transfers data from a file to a socket without copying to user space.
 /// Returns a DmaResult containing the updated offset position.
-pub fn sendfile_native(out_fd int, in_fd int, offset i64, count i64) DmaResult {
+fn sendfile_native(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 	$if linux {
 		mut off := offset
 		result := C.sendfile(out_fd, in_fd, &off, usize(count))
@@ -323,7 +323,7 @@ fn sendfile_fallback(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 // Splice - Linux-only zero-copy pipe transfer
 
 /// splice_native moves data between file descriptors without copying (Linux only).
-pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult {
+fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult {
 	$if linux {
 		flags := splice_f_move | splice_f_more
 
@@ -352,7 +352,7 @@ pub fn splice_native(fd_in int, fd_out int, count i64, use_pipe bool) DmaResult 
 
 /// copy_file_range_native copies between files without passing through user space (Linux 4.5+).
 /// off_in and off_out are input offsets; the new offsets are returned in DmaResult.
-pub fn copy_file_range_native(fd_in int, off_in i64, fd_out int, off_out i64, count i64) DmaResult {
+fn copy_file_range_native(fd_in int, off_in i64, fd_out int, off_out i64, count i64) DmaResult {
 	$if linux {
 		mut in_off := off_in
 		mut out_off := off_out
@@ -391,14 +391,14 @@ pub mut:
 }
 
 /// new_dma_transfer creates a new DMA transfer handler.
-pub fn new_dma_transfer() DmaTransfer {
+fn new_dma_transfer() DmaTransfer {
 	return DmaTransfer{
 		capabilities: get_platform_capabilities()
 	}
 }
 
 /// scatter_read performs a scatter read with automatic fallback.
-pub fn (mut d DmaTransfer) scatter_read(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
+fn (mut d DmaTransfer) scatter_read(fd int, mut buffers []ScatterGatherBuffer) DmaResult {
 	d.stats.total_transfers++
 
 	result := scatter_read_native(fd, mut buffers)
@@ -414,7 +414,7 @@ pub fn (mut d DmaTransfer) scatter_read(fd int, mut buffers []ScatterGatherBuffe
 }
 
 /// gather_write performs a gather write with automatic fallback.
-pub fn (mut d DmaTransfer) gather_write(fd int, buffers []ScatterGatherBuffer) DmaResult {
+fn (mut d DmaTransfer) gather_write(fd int, buffers []ScatterGatherBuffer) DmaResult {
 	d.stats.total_transfers++
 
 	result := gather_write_native(fd, buffers)
@@ -430,7 +430,7 @@ pub fn (mut d DmaTransfer) gather_write(fd int, buffers []ScatterGatherBuffer) D
 }
 
 /// sendfile performs zero-copy file-to-socket transfer with fallback.
-pub fn (mut d DmaTransfer) sendfile(out_fd int, in_fd int, offset i64, count i64) DmaResult {
+fn (mut d DmaTransfer) sendfile(out_fd int, in_fd int, offset i64, count i64) DmaResult {
 	d.stats.total_transfers++
 
 	if !d.capabilities.has_sendfile {
@@ -451,7 +451,7 @@ pub fn (mut d DmaTransfer) sendfile(out_fd int, in_fd int, offset i64, count i64
 }
 
 /// copy_file copies between files using the best available method.
-pub fn (mut d DmaTransfer) copy_file(fd_in int, fd_out int, count i64) DmaResult {
+fn (mut d DmaTransfer) copy_file(fd_in int, fd_out int, count i64) DmaResult {
 	d.stats.total_transfers++
 
 	$if linux {
@@ -477,12 +477,12 @@ pub fn (mut d DmaTransfer) copy_file(fd_in int, fd_out int, count i64) DmaResult
 }
 
 /// get_stats returns the current DMA statistics.
-pub fn (d &DmaTransfer) get_stats() DmaStats {
+fn (d &DmaTransfer) get_stats() DmaStats {
 	return d.stats
 }
 
 /// zero_copy_ratio returns the ratio of zero-copy transfers.
-pub fn (d &DmaTransfer) zero_copy_ratio() f64 {
+fn (d &DmaTransfer) zero_copy_ratio() f64 {
 	if d.stats.total_transfers == 0 {
 		return 0.0
 	}
@@ -493,7 +493,7 @@ pub fn (d &DmaTransfer) zero_copy_ratio() f64 {
 
 /// get_fd extracts the raw file descriptor from an os.File.
 /// Note: this relies on V internal implementation details.
-pub fn get_fd(file &os.File) int {
+fn get_fd(file &os.File) int {
 	// V's os.File has an internal fd field
 	// Since fd is not directly exposed, this is a workaround
 	$if linux || macos {
@@ -508,7 +508,7 @@ pub fn get_fd(file &os.File) int {
 // Convenience functions for common operations
 
 /// scatter_read_file reads from a file into multiple buffers.
-pub fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) DmaResult {
+fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) DmaResult {
 	// currently using V file API with fallback behavior
 	mut total := i64(0)
 
@@ -536,7 +536,7 @@ pub fn scatter_read_file(mut file os.File, mut buffers []ScatterGatherBuffer) Dm
 }
 
 /// gather_write_file writes from multiple buffers to a file.
-pub fn gather_write_file(mut file os.File, buffers []ScatterGatherBuffer) DmaResult {
+fn gather_write_file(mut file os.File, buffers []ScatterGatherBuffer) DmaResult {
 	mut total := i64(0)
 
 	for buf in buffers {

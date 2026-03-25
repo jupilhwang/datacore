@@ -133,7 +133,7 @@ pub fn crc32_ieee(data []u8) u32 {
 }
 
 /// crc32_update updates a running CRC32.
-pub fn crc32_update(crc u32, data []u8) u32 {
+fn crc32_update(crc u32, data []u8) u32 {
 	mut result := crc ^ 0xffffffff
 	for b in data {
 		idx := int((result ^ u32(b)) & 0xff)

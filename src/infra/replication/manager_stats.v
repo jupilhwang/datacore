@@ -26,7 +26,7 @@ pub fn (mut m Manager) get_stats() domain.ReplicationStats {
 // get_metrics returns a snapshot of the comprehensive replication metrics.
 // Thread-safe; acquires metrics_lock internally.
 /// get_metrics returns a snapshot of the comprehensive replication metrics.
-pub fn (mut m Manager) get_metrics() domain.ReplicationMetricsSnapshot {
+fn (mut m Manager) get_metrics() domain.ReplicationMetricsSnapshot {
 	m.metrics_lock.@lock()
 	result := m.metrics.snapshot()
 	m.metrics_lock.unlock()
@@ -36,7 +36,7 @@ pub fn (mut m Manager) get_metrics() domain.ReplicationMetricsSnapshot {
 // get_partition_metrics returns a copy of the per-partition metrics map.
 // Thread-safe; acquires partition_metrics_lock internally.
 /// get_partition_metrics returns per-partition replication metrics.
-pub fn (mut m Manager) get_partition_metrics() map[string]domain.PartitionMetrics {
+fn (mut m Manager) get_partition_metrics() map[string]domain.PartitionMetrics {
 	m.partition_metrics_lock.@lock()
 	mut result := map[string]domain.PartitionMetrics{}
 	for k, v in m.partition_metrics {
@@ -50,7 +50,7 @@ pub fn (mut m Manager) get_partition_metrics() map[string]domain.PartitionMetric
 // Should be called periodically (e.g., every second) from a background task.
 // Thread-safe; acquires metrics_lock internally.
 /// flush_metrics_rates recomputes per-second throughput rates.
-pub fn (mut m Manager) flush_metrics_rates() {
+fn (mut m Manager) flush_metrics_rates() {
 	m.metrics_lock.@lock()
 	m.metrics.flush_rates()
 	m.metrics_lock.unlock()

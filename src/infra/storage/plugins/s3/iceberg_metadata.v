@@ -10,7 +10,7 @@ fn (w &IcebergWriter) encode_metadata_json() string {
 }
 
 /// write_metadata_file writes the table metadata file to S3.
-pub fn (mut w IcebergWriter) write_metadata_file() !string {
+fn (mut w IcebergWriter) write_metadata_file() !string {
 	// Increment metadata version
 	version := w.table_metadata.snapshots.len
 	metadata_path := 'metadata/${version:05d}-${w.table_metadata.table_uuid}.metadata.json'
@@ -29,7 +29,7 @@ pub fn (mut w IcebergWriter) write_metadata_file() !string {
 /// Step 1: Write manifest file (data file entries).
 /// Step 2: Write manifest-list file (references the manifest).
 /// Step 3: Register snapshot pointing to the manifest-list.
-pub fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic string) !IcebergSnapshot {
+fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic string) !IcebergSnapshot {
 	snapshot_id := generate_snapshot_id()
 	now := time.now()
 
@@ -100,7 +100,7 @@ fn (w &IcebergWriter) generate_manifest_list_path(snapshot_id i64) string {
 }
 
 /// time_travel time-travels to a specific snapshot.
-pub fn (mut w IcebergWriter) time_travel(snapshot_id i64) bool {
+fn (mut w IcebergWriter) time_travel(snapshot_id i64) bool {
 	for snapshot in w.table_metadata.snapshots {
 		if snapshot.snapshot_id == snapshot_id {
 			w.table_metadata.current_snapshot_id = snapshot_id
@@ -111,6 +111,6 @@ pub fn (mut w IcebergWriter) time_travel(snapshot_id i64) bool {
 }
 
 /// list_snapshots returns all snapshots.
-pub fn (w &IcebergWriter) list_snapshots() []IcebergSnapshot {
+fn (w &IcebergWriter) list_snapshots() []IcebergSnapshot {
 	return w.table_metadata.snapshots.clone()
 }

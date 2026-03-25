@@ -19,7 +19,7 @@ pub:
 
 /// zero_copy_file_to_file efficiently transfers data between files.
 /// Falls back to buffered copy since V does not expose sendfile directly.
-pub fn zero_copy_file_to_file(src_path string, dst_path string, offset i64, length i64) TransferResult {
+fn zero_copy_file_to_file(src_path string, dst_path string, offset i64, length i64) TransferResult {
 	// Open source file
 	mut src_file := os.open(src_path) or {
 		return TransferResult{
@@ -118,7 +118,7 @@ pub:
 }
 
 /// scatter_read reads into multiple buffers.
-pub fn scatter_read(mut file os.File, buffers []&core.Buffer) TransferResult {
+fn scatter_read(mut file os.File, buffers []&core.Buffer) TransferResult {
 	mut total := i64(0)
 
 	for buf in buffers {
@@ -149,7 +149,7 @@ pub fn scatter_read(mut file os.File, buffers []&core.Buffer) TransferResult {
 }
 
 /// gather_write writes from multiple buffers.
-pub fn gather_write(mut file os.File, buffers []&core.Buffer) TransferResult {
+fn gather_write(mut file os.File, buffers []&core.Buffer) TransferResult {
 	mut total := i64(0)
 
 	for buf in buffers {
@@ -177,7 +177,7 @@ pub fn gather_write(mut file os.File, buffers []&core.Buffer) TransferResult {
 // Optimized memory operations
 
 /// fast_copy copies bytes with minimal overhead.
-pub fn fast_copy(dst []u8, src []u8) int {
+fn fast_copy(dst []u8, src []u8) int {
 	len := if dst.len < src.len { dst.len } else { src.len }
 
 	// V handles this efficiently
@@ -191,7 +191,7 @@ pub fn fast_copy(dst []u8, src []u8) int {
 }
 
 /// fast_zero fills a buffer with zeros.
-pub fn fast_zero(mut buf []u8) {
+fn fast_zero(mut buf []u8) {
 	for i := 0; i < buf.len; i++ {
 		buf[i] = 0
 	}
@@ -202,7 +202,7 @@ pub fn fast_zero(mut buf []u8) {
 const page_size = 4096
 
 /// allocate_page_aligned allocates a page-aligned buffer.
-pub fn allocate_page_aligned(size int) []u8 {
+fn allocate_page_aligned(size int) []u8 {
 	// Round up to page boundary
 	aligned_size := ((size + page_size - 1) / page_size) * page_size
 	return []u8{len: aligned_size, cap: aligned_size}
@@ -221,7 +221,7 @@ pub mut:
 }
 
 /// average_transfer_size returns the average transfer size.
-pub fn (s &TransferStats) average_transfer_size() f64 {
+fn (s &TransferStats) average_transfer_size() f64 {
 	if s.total_operations == 0 {
 		return 0.0
 	}
@@ -229,7 +229,7 @@ pub fn (s &TransferStats) average_transfer_size() f64 {
 }
 
 /// success_rate returns the success rate.
-pub fn (s &TransferStats) success_rate() f64 {
+fn (s &TransferStats) success_rate() f64 {
 	if s.total_operations == 0 {
 		return 0.0
 	}

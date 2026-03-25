@@ -248,7 +248,7 @@ fn (mut h Handler) decompress_record_data(topic_name string, partition_index i32
 	}
 
 	decompress_start := time.now()
-	decompressed_data := h.compression_service.decompress(compressed_data, compression_type) or {
+	decompressed_data := h.compression_service.decompress(compressed_data, i16(compression_type)) or {
 		decompress_elapsed := time.since(decompress_start)
 		h.logger.error('Decompression failed with error', observability.field_string('topic',
 			topic_name), observability.field_int('partition', int(partition_index)), observability.field_string('compression_type',

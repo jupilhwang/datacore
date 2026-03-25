@@ -54,7 +54,7 @@ pub:
 }
 
 /// new_controller_elector creates a new controller elector
-pub fn new_controller_elector(config ControllerElectorConfig, lock_port ?port.DistributedLockPort, state_port ?port.ClusterStatePort) &ControllerElector {
+fn new_controller_elector(config ControllerElectorConfig, lock_port ?port.DistributedLockPort, state_port ?port.ClusterStatePort) &ControllerElector {
 	return &ControllerElector{
 		broker_id:     config.broker_id
 		lock_port:     lock_port
@@ -71,7 +71,7 @@ pub fn new_controller_elector(config ControllerElectorConfig, lock_port ?port.Di
 
 /// try_become_controller attempts to become the controller
 /// Returns true if this broker becomes the controller
-pub fn (mut e ControllerElector) try_become_controller() !bool {
+fn (mut e ControllerElector) try_become_controller() !bool {
 	e.lock.@lock()
 	defer { e.lock.unlock() }
 
@@ -113,7 +113,7 @@ pub fn (mut e ControllerElector) try_become_controller() !bool {
 }
 
 /// refresh_controller_lock refreshes the controller lock if held
-pub fn (mut e ControllerElector) refresh_controller_lock() !bool {
+fn (mut e ControllerElector) refresh_controller_lock() !bool {
 	e.lock.@lock()
 	defer { e.lock.unlock() }
 
@@ -140,7 +140,7 @@ pub fn (mut e ControllerElector) refresh_controller_lock() !bool {
 }
 
 /// resign_controller voluntarily gives up the controller role
-pub fn (mut e ControllerElector) resign_controller() ! {
+fn (mut e ControllerElector) resign_controller() ! {
 	e.lock.@lock()
 	defer { e.lock.unlock() }
 
@@ -174,17 +174,17 @@ fn (mut e ControllerElector) lose_controller_internal() {
 // Query Operations
 
 /// is_controller returns whether this broker is the controller
-pub fn (e &ControllerElector) is_controller() bool {
+fn (e &ControllerElector) is_controller() bool {
 	return e.is_controller
 }
 
 /// get_controller_id returns the current controller ID (-1 if unknown)
-pub fn (e &ControllerElector) get_controller_id() i32 {
+fn (e &ControllerElector) get_controller_id() i32 {
 	return e.controller_id
 }
 
 /// discover_controller discovers the current controller
-pub fn (mut e ControllerElector) discover_controller() !i32 {
+fn (mut e ControllerElector) discover_controller() !i32 {
 	e.lock.rlock()
 	defer { e.lock.runlock() }
 
@@ -204,13 +204,13 @@ pub fn (mut e ControllerElector) discover_controller() !i32 {
 }
 
 /// start starts the controller election background worker
-pub fn (mut e ControllerElector) start() {
+fn (mut e ControllerElector) start() {
 	e.running = true
 	spawn e.election_loop()
 }
 
 /// stop stops the controller election worker and releases the lock
-pub fn (mut e ControllerElector) stop() {
+fn (mut e ControllerElector) stop() {
 	e.running = false
 	e.resign_controller() or {
 		e.logger.error('ControllerElection: Failed to resign controller error=${err.str()}')
@@ -253,17 +253,17 @@ fn (mut e ControllerElector) election_loop() {
 // Callbacks
 
 /// set_on_become_controller sets the callback for when this broker becomes controller
-pub fn (mut e ControllerElector) set_on_become_controller(callback fn ()) {
+fn (mut e ControllerElector) set_on_become_controller(callback fn ()) {
 	e.on_become_controller = callback
 }
 
 /// set_on_lose_controller sets the callback for when this broker loses the controller role
-pub fn (mut e ControllerElector) set_on_lose_controller(callback fn ()) {
+fn (mut e ControllerElector) set_on_lose_controller(callback fn ()) {
 	e.on_lose_controller = callback
 }
 
 /// set_on_controller_changed sets the callback for when the controller changes
-pub fn (mut e ControllerElector) set_on_controller_changed(callback fn (i32)) {
+fn (mut e ControllerElector) set_on_controller_changed(callback fn (i32)) {
 	e.on_controller_changed = callback
 }
 
@@ -286,7 +286,7 @@ mut:
 }
 
 /// new_controller_task_runner creates a new task runner
-pub fn new_controller_task_runner(elector &ControllerElector) &ControllerTaskRunner {
+fn new_controller_task_runner(elector &ControllerElector) &ControllerTaskRunner {
 	return &ControllerTaskRunner{
 		elector: elector
 		tasks:   []ControllerTask{}
@@ -296,7 +296,7 @@ pub fn new_controller_task_runner(elector &ControllerElector) &ControllerTaskRun
 }
 
 /// add_task adds a task to run when acting as controller
-pub fn (mut r ControllerTaskRunner) add_task(name string, interval time.Duration, task fn () !) {
+fn (mut r ControllerTaskRunner) add_task(name string, interval time.Duration, task fn () !) {
 	r.tasks << ControllerTask{
 		name:     name
 		interval: interval
@@ -305,7 +305,7 @@ pub fn (mut r ControllerTaskRunner) add_task(name string, interval time.Duration
 }
 
 /// start starts all task runners
-pub fn (mut r ControllerTaskRunner) start() {
+fn (mut r ControllerTaskRunner) start() {
 	r.running = true
 	for task in r.tasks {
 		spawn r.run_task(task)
@@ -313,7 +313,7 @@ pub fn (mut r ControllerTaskRunner) start() {
 }
 
 /// stop stops all task runners
-pub fn (mut r ControllerTaskRunner) stop() {
+fn (mut r ControllerTaskRunner) stop() {
 	r.running = false
 }
 

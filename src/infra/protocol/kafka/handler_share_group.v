@@ -3,7 +3,7 @@
 module kafka
 
 import domain
-import service.group
+import service.port
 
 // Handler
 
@@ -28,13 +28,14 @@ fn (mut h Handler) handle_share_group_heartbeat(body []u8, version i16) ![]u8 {
 	}
 
 	// Process heartbeat
-	hb_req := group.ShareGroupHeartbeatRequest{
+	hb_req := port.ShareGroupHeartbeatRequest{
 		group_id:               req.group_id
 		member_id:              req.member_id
 		member_epoch:           req.member_epoch
 		rack_id:                req.rack_id
 		subscribed_topic_names: req.subscribed_topic_names
 	}
+
 	hb_resp := coordinator.heartbeat(hb_req)
 
 	// Convert assignment to response format
@@ -334,6 +335,6 @@ fn (mut h Handler) handle_share_acknowledge(body []u8, version i16) ![]u8 {
 }
 
 // get_share_group_coordinator returns the share group coordinator if available
-fn (mut h Handler) get_share_group_coordinator() ?&group.ShareGroupCoordinator {
+fn (mut h Handler) get_share_group_coordinator() ?port.ShareGroupCoordinatorPort {
 	return h.share_group_coordinator
 }

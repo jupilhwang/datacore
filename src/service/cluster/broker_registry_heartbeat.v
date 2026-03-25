@@ -5,7 +5,7 @@ import domain
 import time
 
 /// send_heartbeat sends a heartbeat for the local broker.
-pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
+fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
 
@@ -21,7 +21,7 @@ pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 
 	// In multi-broker mode with distributed storage
 	if r.capability.supports_multi_broker {
-		if mut mp := r.registry_port {
+		if mut mp := r.lifecycle_port {
 			mp.update_broker_heartbeat(heartbeat)!
 		}
 	}
@@ -31,7 +31,7 @@ pub fn (mut r BrokerRegistry) send_heartbeat(load domain.BrokerLoad) ! {
 }
 
 /// check_expired_brokers checks for brokers that have missed heartbeats.
-pub fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
+fn (mut r BrokerRegistry) check_expired_brokers() ![]i32 {
 	r.lock.@lock()
 	defer { r.lock.unlock() }
 

@@ -8,6 +8,36 @@
 - **Project**: Project name or 'global'
 -->
 
+## ErrorPattern_2026-03-25_pub-removal-external-caller-check
+
+**Category**: Refactoring  
+**Problem**: 대규모 pub fn -> fn 전환 시 V 언어의 모듈 시스템과 테스트 파일 특성을 고려하지 않으면 컴파일 실패 발생.  
+**Pattern**:
+1. V lang에서 _test.v 파일은 별도 module (module xxx_test)로 취급 -- pub 필요 여부가 달라짐
+2. startup.v 등 진입점에서 호출하는 메서드는 반드시 pub 유지 (make build로 검증)
+3. 모듈 내부의 cross-file 호출은 fn으로 충분 (같은 directory = 같은 module)
+4. Port 인터페이스 구현 메서드는 반드시 pub (V duck typing 요구)
+5. 순서: (1) 제거 후 (2) v test로 컴파일 검증 (3) make build로 full 검증 -- 3단계 모두 필요
+
+**Prevention**: pub 제거 전 해당 함수의 호출자를 모듈 경계 기준으로 분류. 테스트 파일과 바이너리 진입점을 반드시 확인. 단계별 검증(v test -> make build)으로 regression 탐지.
+
+---
+
+## ErrorPattern_2026-03-25_handler-dip-port-design
+
+**Category**: Architecture / DIP  
+**Problem**: Handler의 concrete 의존성을 Port 인터페이스로 전환할 때 인터페이스 설계 원칙(ISP)을 위반하기 쉬움.  
+**Pattern**:
+1. Port 인터페이스는 concrete 구현체의 메서드를 그대로 복사하지 말 것 -- handler가 실제로 사용하는 메서드만 포함 (ISP)
+2. BrokerRegistryPort 사례: concrete는 register/deregister/heartbeat + query를 모두 포함하나, handler는 query만 필요 -> ISP split
+3. CompressionType 같은 infra enum은 Port에서 primitive(i16)로 변환하고, Adapter에서 bridge
+4. Factory 패턴(Composition Root)으로 concrete wiring을 handler.v에서 완전히 격리
+5. Sub-handler 패턴 도입 시 Handler 필드와 Sub-handler 필드의 중복 주의 -- 하나만 유지할 것
+
+**Prevention**: Port 인터페이스 설계 시 consumer(handler)가 실제로 호출하는 메서드만 나열. CQS 원칙(Command/Query 분리)을 적용하여 lifecycle(Command)과 query를 별도 Port로 분리. Composition Root에서만 concrete를 조립.
+
+---
+
 ## ErrorPattern_2026-03-25_god-function-extract-pattern
 
 **Category**: Refactoring  

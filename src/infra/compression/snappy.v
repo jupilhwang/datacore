@@ -11,7 +11,7 @@ pub struct SnappyCompressor {
 }
 
 /// new_snappy_compressor creates a new SnappyCompressor.
-pub fn new_snappy_compressor() &SnappyCompressor {
+fn new_snappy_compressor() &SnappyCompressor {
 	return &SnappyCompressor{}
 }
 

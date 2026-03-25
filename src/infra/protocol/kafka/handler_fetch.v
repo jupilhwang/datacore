@@ -524,7 +524,7 @@ fn (mut h Handler) compress_records_for_fetch(records_data []u8, compression_typ
 	}
 
 	// Perform compression
-	compressed := h.compression_service.compress(records_data, compression_type) or {
+	compressed := h.compression_service.compress(records_data, i16(compression_type)) or {
 		h.logger.warn('Compression failed, returning uncompressed data', observability.field_string('topic',
 			topic_name), observability.field_int('partition', partition), observability.field_string('compression_type',
 			compression_type.str()), observability.field_err_str(err.str()))

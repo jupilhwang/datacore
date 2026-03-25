@@ -65,7 +65,7 @@ pub fn new_audit_logger(enabled bool) &AuditLogger {
 }
 
 /// new_audit_logger_with_buffer_size creates a new audit logger with a custom buffer size.
-pub fn new_audit_logger_with_buffer_size(enabled bool, max_buffer_size int) &AuditLogger {
+fn new_audit_logger_with_buffer_size(enabled bool, max_buffer_size int) &AuditLogger {
 	return &AuditLogger{
 		enabled:         enabled
 		max_buffer_size: max_buffer_size
@@ -74,7 +74,7 @@ pub fn new_audit_logger_with_buffer_size(enabled bool, max_buffer_size int) &Aud
 }
 
 /// log_event logs a generic audit event to the buffer.
-pub fn (mut l AuditLogger) log_event(event AuditEvent) {
+fn (mut l AuditLogger) log_event(event AuditEvent) {
 	if !l.enabled {
 		return
 	}
@@ -111,7 +111,7 @@ pub fn (mut l AuditLogger) log_auth_failure(client_ip string, reason string) {
 }
 
 /// log_authorization logs an authorization check event.
-pub fn (mut l AuditLogger) log_authorization(client_ip string, principal string, resource_type string, resource_name string, operation string, authorized bool) {
+fn (mut l AuditLogger) log_authorization(client_ip string, principal string, resource_type string, resource_name string, operation string, authorized bool) {
 	event_type := if authorized {
 		AuditEventType.authorization_success
 	} else {
@@ -150,7 +150,7 @@ pub fn (mut l AuditLogger) get_recent_events(count int) []AuditEvent {
 
 /// get_events_by_type returns events matching the specified type.
 /// Returns at most `count` matching events, ordered from oldest to newest.
-pub fn (mut l AuditLogger) get_events_by_type(event_type AuditEventType, count int) []AuditEvent {
+fn (mut l AuditLogger) get_events_by_type(event_type AuditEventType, count int) []AuditEvent {
 	l.lock.@lock()
 	defer { l.lock.unlock() }
 
@@ -167,7 +167,7 @@ pub fn (mut l AuditLogger) get_events_by_type(event_type AuditEventType, count i
 }
 
 /// clear_buffer removes all events from the buffer.
-pub fn (mut l AuditLogger) clear_buffer() {
+fn (mut l AuditLogger) clear_buffer() {
 	l.lock.@lock()
 	defer { l.lock.unlock() }
 

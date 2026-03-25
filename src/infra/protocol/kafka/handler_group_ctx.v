@@ -5,12 +5,12 @@
 // and consumer group management.
 module kafka
 
-import service.offset
+import service.port
 
 /// GroupSubHandler groups the dependencies needed for consumer group request handling.
 /// The main Handler delegates group-related work through this sub-handler.
 pub struct GroupSubHandler {
 pub mut:
 	ctx            &HandlerContext
-	offset_manager &offset.OffsetManager
+	offset_manager port.OffsetManagerPort
 }

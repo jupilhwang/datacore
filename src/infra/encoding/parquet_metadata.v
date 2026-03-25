@@ -63,12 +63,12 @@ mut:
 	reader ThriftReader
 }
 
-pub fn new_parquet_metadata_parser() ParquetMetadataParser {
+fn new_parquet_metadata_parser() ParquetMetadataParser {
 	return ParquetMetadataParser{}
 }
 
 // parse parses Parquet metadata from a complete file byte slice.
-pub fn (mut p ParquetMetadataParser) parse(data []u8) !ParsedMetadata {
+fn (mut p ParquetMetadataParser) parse(data []u8) !ParsedMetadata {
 	if data.len < 12 {
 		return error('file too small: missing magic bytes')
 	}

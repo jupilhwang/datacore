@@ -40,13 +40,13 @@ pub struct BinaryProtocol {}
 
 // BinaryProtocol.new creates a new BinaryProtocol instance.
 /// BinaryProtocol.new creates a new BinaryProtocol instance.
-pub fn BinaryProtocol.new() BinaryProtocol {
+fn BinaryProtocol.new() BinaryProtocol {
 	return BinaryProtocol{}
 }
 
 // encode converts a ReplicationMessage into compact binary wire format.
 /// encode converts a ReplicationMessage into compact binary wire format.
-pub fn (p BinaryProtocol) encode(msg domain.ReplicationMessage) ![]u8 {
+fn (p BinaryProtocol) encode(msg domain.ReplicationMessage) ![]u8 {
 	payload_size := calc_payload_size(msg)
 	mut buf := []u8{len: 0, cap: 4 + payload_size}
 
@@ -79,7 +79,7 @@ pub fn (p BinaryProtocol) encode(msg domain.ReplicationMessage) ![]u8 {
 
 // decode parses binary wire-format data into a ReplicationMessage.
 /// decode parses binary wire-format data into a ReplicationMessage.
-pub fn (p BinaryProtocol) decode(data []u8) !domain.ReplicationMessage {
+fn (p BinaryProtocol) decode(data []u8) !domain.ReplicationMessage {
 	if data.len < binary_min_frame_size {
 		return error('invalid binary data: too short (${data.len} bytes, need >= ${binary_min_frame_size})')
 	}
@@ -102,7 +102,7 @@ pub fn (p BinaryProtocol) decode(data []u8) !domain.ReplicationMessage {
 
 // read_message reads a complete binary-encoded message from a TCP connection.
 /// read_message reads a complete binary-encoded message from a TCP connection.
-pub fn (p BinaryProtocol) read_message(mut conn net.TcpConn, timeout_ms i64) !domain.ReplicationMessage {
+fn (p BinaryProtocol) read_message(mut conn net.TcpConn, timeout_ms i64) !domain.ReplicationMessage {
 	conn.set_read_timeout(time.Duration(timeout_ms * time.millisecond))
 	mut len_buf := []u8{len: 4}
 	read_exact(mut conn, mut len_buf)!
@@ -123,7 +123,7 @@ pub fn (p BinaryProtocol) read_message(mut conn net.TcpConn, timeout_ms i64) !do
 
 // write_message writes a binary-encoded message to a TCP connection.
 /// write_message writes a binary-encoded message to a TCP connection.
-pub fn (p BinaryProtocol) write_message(mut conn net.TcpConn, msg domain.ReplicationMessage) ! {
+fn (p BinaryProtocol) write_message(mut conn net.TcpConn, msg domain.ReplicationMessage) ! {
 	wire_data := p.encode(msg)!
 	conn.write(wire_data) or { return error('binary write failed: ${err}') }
 }

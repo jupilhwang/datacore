@@ -5,12 +5,12 @@
 // AddOffsetsToTxn, EndTxn, WriteTxnMarkers, and TxnOffsetCommit.
 module kafka
 
-import service.transaction
+import service.port
 
 /// TransactionSubHandler groups the dependencies needed for transaction request handling.
 /// The main Handler delegates transaction-related work through this sub-handler.
 pub struct TransactionSubHandler {
 pub mut:
 	ctx             &HandlerContext
-	txn_coordinator ?transaction.TransactionCoordinator
+	txn_coordinator ?port.TransactionCoordinatorPort
 }

@@ -1,5 +1,22 @@
 # DataCore Changelog
 
+## [v0.52.0] -- 2026-03-25
+
+### Added
+- 8 new Port interfaces for Handler DIP compliance: ProtocolMetricsPort, OffsetManagerPort, CompressionPort, AuditLoggerPort, SchemaRegistryPort, TransactionCoordinatorPort, PartitionAssignerPort, ShareGroupCoordinatorPort
+- ISP split: BrokerRegistryPort (query-only) + BrokerLifecyclePort (lifecycle mutations)
+- CompressionPortAdapter for bridging compression types via Port layer
+- handler_factory.v: Composition Root pattern isolating all concrete dependencies
+
+### Removed
+- 8 concrete imports from handler.v (infra.auth, infra.compression, infra.observability, service.cluster, service.group, service.offset, service.schema, service.transaction)
+- ~624 unnecessary pub fn converted to fn (module-internal visibility)
+- `-enable-globals` flag from Makefile (no global variables in codebase)
+
+### Fixed
+- BrokerRegistryPort ISP split resolving interface mismatch with BrokerRegistry concrete
+- Offset test type references updated for port module migration
+
 ## [v0.51.0] -- 2026-03-25
 
 ### Refactored

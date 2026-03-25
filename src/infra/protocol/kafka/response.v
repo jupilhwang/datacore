@@ -4,7 +4,7 @@ module kafka
 /// Builds a response with a header (non-flexible, Response Header v0).
 /// Used by: ApiVersions (always), SaslHandshake, non-flexible API versions
 /// Note: no tag_buffer in the header!
-pub fn build_response(correlation_id i32, body []u8) []u8 {
+fn build_response(correlation_id i32, body []u8) []u8 {
 	mut writer := new_writer_with_capacity(4 + 4 + body.len)
 
 	// Size (total length excluding the size field itself)
@@ -21,7 +21,7 @@ pub fn build_response(correlation_id i32, body []u8) []u8 {
 /// Builds a flexible response (Response Header v1, includes tag_buffer).
 /// Used by: flexible API versions (except ApiVersions which is always non-flexible)
 /// Important: tag_buffer is at least 1 byte (0x00 for empty tags)
-pub fn build_flexible_response(correlation_id i32, body []u8) []u8 {
+fn build_flexible_response(correlation_id i32, body []u8) []u8 {
 	mut writer := new_writer_with_capacity(4 + 4 + 1 + body.len)
 
 	// Size (total length excluding the size field itself)

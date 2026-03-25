@@ -24,7 +24,7 @@ pub fn (mut m Manager) update_broker_health(broker_id string, health domain.Repl
 // get_broker_health_snapshot returns a copy of the broker health map.
 // Thread-safe; acquires broker_health_lock internally.
 /// get_broker_health_snapshot returns a copy of the broker health map.
-pub fn (mut m Manager) get_broker_health_snapshot() map[string]domain.ReplicationHealth {
+fn (mut m Manager) get_broker_health_snapshot() map[string]domain.ReplicationHealth {
 	m.broker_health_lock.@lock()
 	mut result := map[string]domain.ReplicationHealth{}
 	for k, v in m.broker_health {

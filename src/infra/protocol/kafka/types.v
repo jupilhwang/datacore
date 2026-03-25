@@ -88,7 +88,7 @@ pub enum ApiKey {
 
 /// api_key_from_i16 safely converts an i16 value to an ApiKey enum.
 /// Returns an error for unknown API keys instead of triggering undefined behavior.
-pub fn api_key_from_i16(val i16) !ApiKey {
+fn api_key_from_i16(val i16) !ApiKey {
 	return match val {
 		0 { .produce }
 		1 { .fetch }

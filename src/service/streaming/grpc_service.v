@@ -147,7 +147,7 @@ pub fn (mut s GrpcService) get_send_channel(conn_id string) !chan domain.GrpcStr
 
 // produce handles a produce request
 /// produce handles a produce request.
-pub fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest) domain.GrpcProduceResponse {
+fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest) domain.GrpcProduceResponse {
 	// Verify topic exists
 	topic := s.storage.get_topic(req.topic) or {
 		s.mutex.@lock()
@@ -222,7 +222,7 @@ pub fn (mut s GrpcService) produce(conn_id string, req domain.GrpcProduceRequest
 
 // subscribe adds a subscription for server streaming
 /// subscribe adds a subscription for server streaming.
-pub fn (mut s GrpcService) subscribe(conn_id string, req domain.GrpcConsumeRequest) !domain.GrpcConsumeResponse {
+fn (mut s GrpcService) subscribe(conn_id string, req domain.GrpcConsumeRequest) !domain.GrpcConsumeResponse {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
 
@@ -264,7 +264,7 @@ pub fn (mut s GrpcService) subscribe(conn_id string, req domain.GrpcConsumeReque
 
 // unsubscribe removes a subscription
 /// unsubscribe removes a subscription.
-pub fn (mut s GrpcService) unsubscribe(conn_id string, topic string, partition i32) ! {
+fn (mut s GrpcService) unsubscribe(conn_id string, topic string, partition i32) ! {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
 
@@ -302,7 +302,7 @@ pub fn (mut s GrpcService) unsubscribe(conn_id string, topic string, partition i
 
 // fetch_messages fetches messages for a consume request
 /// fetch_messages fetches messages for a consume request.
-pub fn (mut s GrpcService) fetch_messages(conn_id string, req domain.GrpcConsumeRequest) domain.GrpcConsumeResponse {
+fn (mut s GrpcService) fetch_messages(conn_id string, req domain.GrpcConsumeRequest) domain.GrpcConsumeResponse {
 	// Fetch messages from storage
 	result := s.storage.fetch(req.topic, req.partition, req.offset, req.max_bytes) or {
 		s.mutex.@lock()
@@ -547,7 +547,7 @@ fn (s &GrpcService) create_error_response(code i32, msg string) domain.GrpcStrea
 
 // send_keepalives sends keepalive pings to all connections
 /// send_keepalives sends keepalive pings to all connections.
-pub fn (mut s GrpcService) send_keepalives() {
+fn (mut s GrpcService) send_keepalives() {
 	s.mutex.rlock()
 	connections := s.connections.clone()
 	s.mutex.runlock()
@@ -583,7 +583,7 @@ pub fn (mut s GrpcService) send_keepalives() {
 
 // cleanup_stale_connections removes connections that have timed out
 /// cleanup_stale_connections removes connections that have timed out.
-pub fn (mut s GrpcService) cleanup_stale_connections() []string {
+fn (mut s GrpcService) cleanup_stale_connections() []string {
 	s.mutex.@lock()
 	defer { s.mutex.unlock() }
 

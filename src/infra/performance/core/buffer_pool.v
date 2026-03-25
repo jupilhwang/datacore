@@ -218,7 +218,7 @@ pub fn new_buffer_pool(config PoolConfig) &BufferPool {
 }
 
 /// new_default_pool creates a new buffer pool with default configuration.
-pub fn new_default_pool() &BufferPool {
+fn new_default_pool() &BufferPool {
 	return new_buffer_pool(PoolConfig{})
 }
 
@@ -258,7 +258,7 @@ pub fn (mut p BufferPool) get(min_size int) &Buffer {
 }
 
 /// get_by_class retrieves a buffer of the specified size class from the pool.
-pub fn (mut p BufferPool) get_by_class(sc SizeClass) &Buffer {
+fn (mut p BufferPool) get_by_class(sc SizeClass) &Buffer {
 	p.lock.@lock()
 	defer { p.lock.unlock() }
 

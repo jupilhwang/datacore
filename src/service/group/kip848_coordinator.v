@@ -35,7 +35,7 @@ mut:
 }
 
 /// new_kip848_coordinator creates a new KIP-848 group coordinator.
-pub fn new_kip848_coordinator(storage port.TopicStoragePort) &KIP848GroupCoordinator {
+fn new_kip848_coordinator(storage port.TopicStoragePort) &KIP848GroupCoordinator {
 	mut assignors := map[string]ServerAssignor{}
 	assignors['range'] = new_range_assignor()
 	assignors['roundrobin'] = new_round_robin_assignor()
@@ -67,7 +67,7 @@ pub:
 
 /// process_heartbeat handles a ConsumerGroupHeartbeat request.
 /// Handles new member joins, leaves, and regular heartbeats.
-pub fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
+fn (mut c KIP848GroupCoordinator) process_heartbeat(group_id string,
 	member_id string,
 	member_epoch i32,
 	instance_id ?string,
@@ -401,12 +401,12 @@ fn (mut c KIP848GroupCoordinator) compute_assignment(mut group KIP848ConsumerGro
 }
 
 /// get_group returns a group by ID.
-pub fn (c &KIP848GroupCoordinator) get_group(group_id string) ?&KIP848ConsumerGroup {
+fn (c &KIP848GroupCoordinator) get_group(group_id string) ?&KIP848ConsumerGroup {
 	return c.groups[group_id] or { return none }
 }
 
 /// list_groups returns all groups.
-pub fn (c &KIP848GroupCoordinator) list_groups() []&KIP848ConsumerGroup {
+fn (c &KIP848GroupCoordinator) list_groups() []&KIP848ConsumerGroup {
 	mut result := []&KIP848ConsumerGroup{}
 	for _, g in c.groups {
 		result << g
@@ -415,7 +415,7 @@ pub fn (c &KIP848GroupCoordinator) list_groups() []&KIP848ConsumerGroup {
 }
 
 /// expire_members removes members that have not sent a heartbeat.
-pub fn (mut c KIP848GroupCoordinator) expire_members() ! {
+fn (mut c KIP848GroupCoordinator) expire_members() ! {
 	now := time.now().unix_milli()
 
 	for group_id, mut group in c.groups {

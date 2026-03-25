@@ -88,7 +88,7 @@ pub fn get_global_writer_pool() &WriterPool {
 }
 
 /// new_writer_pool creates a new WriterPool.
-pub fn new_writer_pool(config PoolConfig) &WriterPool {
+fn new_writer_pool(config PoolConfig) &WriterPool {
 	mut pool := &WriterPool{
 		config:      config
 		tiny_pool:   []&PooledWriter{cap: config.max_tiny}

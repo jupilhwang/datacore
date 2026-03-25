@@ -77,7 +77,7 @@ pub interface ApiKeyProvider {
 }
 
 /// frame_from_bytes parses a Frame from raw bytes (request).
-pub fn frame_from_bytes(data []u8) !Frame {
+fn frame_from_bytes(data []u8) !Frame {
 	if data.len < 8 {
 		return error('frame too short: need at least 8 bytes, got ${data.len}')
 	}
@@ -194,7 +194,7 @@ fn parse_body(api_key ApiKey, version i16, data []u8) !Body {
 }
 
 /// frame_response creates a response Frame.
-pub fn frame_response(correlation_id i32, api_key ApiKey, version i16, body Body) Frame {
+fn frame_response(correlation_id i32, api_key ApiKey, version i16, body Body) Frame {
 	return Frame{
 		size:   0
 		header: FrameResponseHeader{
@@ -205,7 +205,7 @@ pub fn frame_response(correlation_id i32, api_key ApiKey, version i16, body Body
 }
 
 /// response_to_bytes encodes the Frame to bytes (for responses).
-pub fn (f Frame) response_to_bytes(api_key ApiKey, version i16) []u8 {
+fn (f Frame) response_to_bytes(api_key ApiKey, version i16) []u8 {
 	// Obtain body bytes
 	body_bytes := encode_body(f.body, version)
 

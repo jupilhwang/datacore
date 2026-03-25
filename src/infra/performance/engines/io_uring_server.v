@@ -439,7 +439,7 @@ pub mut:
 }
 
 /// new_io_uring_server_fallback creates a fallback server object.
-pub fn new_io_uring_server_fallback() IoUringServerFallback {
+fn new_io_uring_server_fallback() IoUringServerFallback {
 	return IoUringServerFallback{
 		available: true
 	}
