@@ -44,24 +44,10 @@ pub fn (mut a S3StorageAdapter) create_topic(name string, partitions int, config
 	a.cache.topic_id_cache[meta.topic_id.hex()] = name
 	a.cache.topic_id_reverse_cache[meta.topic_id.hex()] = name
 
+	// Persist topic_id -> name mapping to S3 for cold-start recovery
+	a.update_topic_id_index_on_create(meta.topic_id.hex(), name)
+
 	return meta
-}
-
-/// build_topic_metadata constructs topic metadata from name, id, partitions, and config.
-fn build_topic_metadata(name string, topic_id []u8, partitions int, config domain.TopicConfig) domain.TopicMetadata {
-	mut config_map := map[string]string{}
-	config_map['retention.ms'] = config.retention_ms.str()
-	config_map['retention.bytes'] = config.retention_bytes.str()
-	config_map['segment.bytes'] = config.segment_bytes.str()
-	config_map['cleanup.policy'] = config.cleanup_policy
-
-	return domain.TopicMetadata{
-		name:            name
-		topic_id:        topic_id
-		partition_count: partitions
-		config:          config_map
-		is_internal:     name.starts_with('_')
-	}
 }
 
 /// initialize_partition_indices creates partition index files on S3.
@@ -126,6 +112,8 @@ fn (mut a S3StorageAdapter) clear_topic_partition_buffers(name string) {
 pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 	validate_identifier(name, 'topic')!
 
+	topic_id_hex := a.get_cached_topic_id_hex(name)
+
 	a.clear_topic_caches(name)
 	a.clear_topic_partition_buffers(name)
 
@@ -138,6 +126,10 @@ pub fn (mut a S3StorageAdapter) delete_topic(name string) ! {
 			'error':  err.str()
 		})
 		return
+	}
+
+	if topic_id_hex.len > 0 {
+		a.update_topic_id_index_on_delete(topic_id_hex)
 	}
 }
 
@@ -215,22 +207,27 @@ pub fn (mut a S3StorageAdapter) get_topic(name string) !domain.TopicMetadata {
 }
 
 /// get_topic_by_id retrieves a topic by topic_id.
-/// Uses O(1) reverse cache lookup; falls back to list_topics on miss.
+/// Uses O(1) reverse cache lookup, then persistent S3 index,
+/// then falls back to list_topics on miss.
 pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMetadata {
-	// Convert topic_id to hex string for map lookup
 	topic_id_hex := topic_id.hex()
 
-	// Check reverse cache first (O(1) lookup)
+	// 1. Check reverse cache (O(1) in-memory lookup)
 	a.cache.topic_lock.rlock()
 	reverse_hit := a.cache.topic_id_reverse_cache[topic_id_hex] or { '' }
 	a.cache.topic_lock.runlock()
 
 	if reverse_hit.len > 0 {
-		// Reverse cache hit — fetch topic directly (at most 1 S3 call)
 		return a.get_topic(reverse_hit)
 	}
 
-	// Reverse cache miss — full scan via list_topics, then populate reverse cache
+	// 2. Try persistent S3 index (single GET, avoids full scan)
+	persistent_hit := a.lookup_topic_name_from_persistent_index(topic_id_hex)
+	if persistent_hit.len > 0 {
+		return a.get_topic(persistent_hit)
+	}
+
+	// 3. Fallback: full scan via list_topics
 	topics := a.list_topics()!
 
 	a.cache.topic_lock.@lock()
@@ -241,7 +238,6 @@ pub fn (mut a S3StorageAdapter) get_topic_by_id(topic_id []u8) !domain.TopicMeta
 	}
 	a.cache.topic_lock.unlock()
 
-	// Find matching topic
 	for t in topics {
 		if t.topic_id == topic_id {
 			return t

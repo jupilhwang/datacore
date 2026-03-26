@@ -1,44 +1,59 @@
 module transaction
 
 import domain
+import service.port
 
-/// MockS3TransactionClient is a test double for S3TransactionClient.
-/// Stores objects in an in-memory map for unit testing without S3.
-struct MockS3TransactionClient {
+/// MockObjectStoreForTxn is an in-memory test double satisfying port.ObjectStorePort.
+struct MockObjectStoreForTxn {
 mut:
 	objects map[string][]u8
 }
 
-fn (mut c MockS3TransactionClient) get_object(key string) ![]u8 {
-	if data := c.objects[key] {
-		return data.clone()
+fn (mut c MockObjectStoreForTxn) get_object(key string, range_start i64, range_end i64) !([]u8, string) {
+	if key in c.objects {
+		return c.objects[key].clone(), ''
 	}
 	return error('Object not found: ${key}')
 }
 
-fn (mut c MockS3TransactionClient) put_object(key string, data []u8) ! {
+fn (mut c MockObjectStoreForTxn) put_object(key string, data []u8) ! {
 	c.objects[key] = data.clone()
 }
 
-fn (mut c MockS3TransactionClient) delete_object(key string) ! {
+fn (mut c MockObjectStoreForTxn) delete_object(key string) ! {
 	if key !in c.objects {
 		return error('Object not found: ${key}')
 	}
 	c.objects.delete(key)
 }
 
-fn (mut c MockS3TransactionClient) list_objects(prefix string) ![]string {
-	mut keys := []string{}
-	for k, _ in c.objects {
+fn (mut c MockObjectStoreForTxn) list_objects(prefix string) ![]port.ObjectInfo {
+	mut result := []port.ObjectInfo{}
+	for k, v in c.objects {
 		if k.starts_with(prefix) {
-			keys << k
+			result << port.ObjectInfo{
+				key:  k
+				size: i64(v.len)
+			}
 		}
 	}
-	return keys
+	return result
+}
+
+fn (mut c MockObjectStoreForTxn) delete_objects_with_prefix(prefix string) ! {
+	mut to_delete := []string{}
+	for k, _ in c.objects {
+		if k.starts_with(prefix) {
+			to_delete << k
+		}
+	}
+	for k in to_delete {
+		c.objects.delete(k)
+	}
 }
 
 fn create_test_s3_store() &S3TransactionStore {
-	return new_s3_transaction_store(&MockS3TransactionClient{}, S3TransactionConfig{})
+	return new_s3_transaction_store(&MockObjectStoreForTxn{}, S3TransactionConfig{})
 }
 
 fn create_test_metadata(id string) domain.TransactionMetadata {

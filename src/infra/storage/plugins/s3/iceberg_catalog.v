@@ -5,6 +5,7 @@ module s3
 import time
 import json
 import sync
+import service.port
 
 /// IcebergCatalog defines the Iceberg table catalog interface.
 pub interface IcebergCatalog {
@@ -25,19 +26,13 @@ struct CachedIcebergMetadata {
 	cached_at time.Time
 }
 
-/// ObjectStore provides basic object storage operations for catalog backends.
-interface ObjectStore {
-mut:
-	put_object(key string, data []u8) !
-	get_object(key string, range_start i64, range_end i64) !([]u8, string)
-	list_objects(prefix string) ![]S3Object
-	delete_objects_with_prefix(prefix string) !
-}
+// NOTE: Object storage operations are defined in service/port/object_store_port.v
+// (ObjectStoreReaderPort, ObjectStoreWriterPort, ObjectStorePort).
 
 /// HadoopCatalog is an S3-based Hadoop catalog implementation.
 pub struct HadoopCatalog {
 pub mut:
-	adapter    ObjectStore
+	adapter    port.ObjectStorePort
 	warehouse  string
 	properties map[string]string
 	// Iceberg metadata cache
@@ -73,7 +68,7 @@ fn (mut c HadoopCatalog) invalidate_cache(key string) {
 }
 
 /// new_hadoop_catalog creates a new Hadoop catalog.
-pub fn new_hadoop_catalog(adapter ObjectStore, warehouse string) &HadoopCatalog {
+pub fn new_hadoop_catalog(adapter port.ObjectStorePort, warehouse string) &HadoopCatalog {
 	return &HadoopCatalog{
 		adapter:    adapter
 		warehouse:  normalize_s3_location(warehouse)

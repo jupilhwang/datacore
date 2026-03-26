@@ -4,6 +4,7 @@
 module schema
 
 import common
+import x.json2
 
 // AvroEncoder provides binary encoding and decoding for Avro data
 /// AvroEncoder provides binary encoding and decoding for Avro data.
@@ -649,7 +650,6 @@ fn parse_json_bytes(json_str string) ?[]u8 {
 		items := parse_json_array(json_str) or { return none }
 		mut result := []u8{}
 		for item in items {
-			// Parse individual byte values
 			val := item.int()
 			if val >= 0 && val <= 255 {
 				result << u8(val)
@@ -660,10 +660,9 @@ fn parse_json_bytes(json_str string) ?[]u8 {
 		return result
 	}
 
-	// Handle base64 encoded string
+	// Handle quoted string (hex or raw bytes)
 	if json_str.starts_with('"') {
 		str := parse_json_string_value(json_str) or { return none }
-		// Simple hex or base64 handling
 		if str.starts_with('0x') || str.starts_with('0X') {
 			hex_str := str[2..]
 			if hex_str.len % 2 != 0 {
@@ -697,7 +696,8 @@ fn parse_json_long(json_str string) ?i64 {
 	if trimmed == 'null' {
 		return none
 	}
-	return trimmed.i64()
+	raw := json2.decode[json2.Any](trimmed) or { return none }
+	return raw.i64()
 }
 
 fn parse_json_float(json_str string) ?f64 {
@@ -705,7 +705,8 @@ fn parse_json_float(json_str string) ?f64 {
 	if trimmed == 'null' {
 		return none
 	}
-	return trimmed.f64()
+	raw := json2.decode[json2.Any](trimmed) or { return none }
+	return raw.f64()
 }
 
 fn parse_json_double(json_str string) ?f64 {
@@ -714,13 +715,8 @@ fn parse_json_double(json_str string) ?f64 {
 
 fn parse_json_bool(json_str string) ?bool {
 	trimmed := json_str.trim_space()
-	if trimmed == 'true' {
-		return true
-	}
-	if trimmed == 'false' {
-		return false
-	}
-	return none
+	raw := json2.decode[json2.Any](trimmed) or { return none }
+	return raw.bool()
 }
 
 fn is_json_null(json_str string) bool {

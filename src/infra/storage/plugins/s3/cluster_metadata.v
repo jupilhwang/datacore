@@ -7,6 +7,32 @@ import time
 import json
 import infra.observability
 
+// CAS (Compare-And-Swap) retry constants for conditional S3 PUTs.
+// Exponential backoff delays in milliseconds for each retry attempt.
+const cas_max_retries = 3
+const cas_backoff_delays = [50, 200]
+
+/// is_etag_mismatch_error checks whether the given error is an S3 ETag mismatch (HTTP 412).
+fn is_etag_mismatch_error(err IError) bool {
+	return err is S3ETagMismatchError
+}
+
+/// cas_backoff_ms returns the backoff duration in milliseconds for a CAS retry attempt.
+/// Clamps to the last configured delay if the attempt exceeds the backoff_delays length.
+fn cas_backoff_ms(attempt int) int {
+	if attempt < cas_backoff_delays.len {
+		return cas_backoff_delays[attempt]
+	}
+	return cas_backoff_delays[cas_backoff_delays.len - 1]
+}
+
+/// CasResult represents the outcome of a single CAS attempt.
+enum CasResult {
+	success
+	etag_mismatch
+	version_conflict
+}
+
 // V interface value copy 버그 우회: 모듈 수준 const holder로 config 백업 보존
 struct ClusterMetadataConfigHolder {
 mut:
@@ -235,28 +261,27 @@ pub fn (mut a S3ClusterMetadataAdapter) get_cluster_metadata() !domain.ClusterMe
 	}
 }
 
-/// update_cluster_metadata updates the cluster metadata.
-/// Checks version for optimistic locking.
+/// update_cluster_metadata updates the cluster metadata with ETag-based CAS.
+/// Performs GET(etag) -> version check -> PUT_IF_MATCH(etag) with retry on conflict.
 pub fn (mut a S3ClusterMetadataAdapter) update_cluster_metadata(metadata domain.ClusterMetadata) ! {
 	a.ensure_adapter_config()
 	key := a.cluster_metadata_key()
 
-	// Version check for optimistic locking
-	existing, _ := a.adapter.get_object(key, 0, -1) or { []u8{}, '' }
-	if existing.len > 0 {
-		current := json.decode(domain.ClusterMetadata, existing.bytestr()) or {
-			return error('failed to decode existing metadata')
+	for attempt in 0 .. cas_max_retries {
+		cas_result := a.try_update_cluster_metadata(key, metadata)
+		if cas_result == CasResult.success {
+			return
 		}
-		if current.metadata_version >= metadata.metadata_version {
+		if cas_result == CasResult.version_conflict {
 			return error('metadata version conflict')
 		}
+		// ETag mismatch: retry with backoff
+		if attempt < cas_max_retries - 1 {
+			a.log_cas_retry('update_cluster_metadata', key, attempt)
+			time.sleep(cas_backoff_ms(attempt) * time.millisecond)
+		}
 	}
-
-	mut updated := metadata
-	updated.updated_at = time.now().unix_milli()
-
-	data := json.encode(updated).bytes()
-	a.adapter.put_object(key, data)!
+	return error('CAS conflict: update_cluster_metadata failed after ${cas_max_retries} retries')
 }
 
 /// get_partition_assignment retrieves assignment information for a specific topic-partition.
@@ -432,9 +457,9 @@ pub fn (mut a S3ClusterMetadataAdapter) list_all_partition_assignments() ![]doma
 	return assignments
 }
 
-/// update_partition_assignment updates a partition assignment.
+/// update_partition_assignment updates a partition assignment with ETag-based CAS.
 /// S3 key: {prefix}/__cluster/assignments/{topic}/{partition}.json
-/// Includes retry logic for reliable persistence.
+/// Performs GET(etag) -> encode -> CAS_PUT with retry on ETag mismatch.
 pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment domain.PartitionAssignment) ! {
 	a.ensure_adapter_config()
 	key := a.partition_assignment_key(assignment.topic_name, assignment.partition)
@@ -447,55 +472,20 @@ pub fn (mut a S3ClusterMetadataAdapter) update_partition_assignment(assignment d
 		'key':              key
 	})
 
-	data := json.encode(assignment).bytes()
-
-	// Retry logic
-	mut last_error := ''
-	for retry in 0 .. a.adapter.config.max_retries {
-		if retry > 0 {
-			observability.log_with_context('s3', .debug, 'PartitionAssignment', 'Retrying partition assignment update',
-				{
-				'topic':     assignment.topic_name
-				'partition': assignment.partition.str()
-				'retry':     retry.str()
-			})
-			time.sleep(a.adapter.config.retry_delay_ms * time.millisecond)
+	for attempt in 0 .. cas_max_retries {
+		result := a.try_cas_put_assignment(key, assignment)
+		if result == CasResult.success {
+			a.log_assignment_success(assignment, attempt)
+			return
 		}
-
-		a.adapter.put_object(key, data) or {
-			last_error = err.str()
-			continue
+		if attempt < cas_max_retries - 1 {
+			a.log_cas_retry('update_partition_assignment', key, attempt)
+			time.sleep(cas_backoff_ms(attempt) * time.millisecond)
 		}
-
-		// Success metric
-		a.adapter.metrics_collector.mu.@lock()
-		a.adapter.metrics_collector.data.s3_put_count++
-		a.adapter.metrics_collector.mu.unlock()
-
-		observability.log_with_context('s3', .info, 'PartitionAssignment', 'Successfully updated partition assignment',
-			{
-			'topic':     assignment.topic_name
-			'partition': assignment.partition.str()
-			'retry':     retry.str()
-		})
-		return
 	}
 
-	// All retries failed
-	a.adapter.metrics_collector.mu.@lock()
-	a.adapter.metrics_collector.data.s3_error_count++
-	a.adapter.metrics_collector.mu.unlock()
-
-	observability.log_with_context('s3', .error, 'PartitionAssignment', 'Failed to update partition assignment after retries',
-		{
-		'topic':       assignment.topic_name
-		'partition':   assignment.partition.str()
-		'key':         key
-		'error':       last_error
-		'max_retries': a.adapter.config.max_retries.str()
-	})
-
-	return error('failed to update partition assignment after ${a.adapter.config.max_retries} retries: ${last_error}')
+	a.record_assignment_error(assignment, key)
+	return error('CAS conflict: update_partition_assignment failed after ${cas_max_retries} retries')
 }
 
 // Distributed Locking
@@ -508,39 +498,65 @@ struct LockInfo {
 	acquired_at i64
 }
 
-/// try_acquire_lock attempts to acquire a distributed lock.
-/// The lock is automatically released when the TTL expires.
+/// try_acquire_lock attempts to acquire a distributed lock with ETag-based CAS.
+/// Uses GET(etag) -> check -> PUT_IF_MATCH(etag) for existing locks.
+/// Uses put_object_if_not_exists for new locks. No retry on 412 (another holder won).
 pub fn (mut a S3ClusterMetadataAdapter) try_acquire_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
 	a.ensure_adapter_config()
 	key := a.lock_key(lock_name)
 	now := time.now().unix_milli()
 
 	// Check if lock exists and is valid
-	existing, _ := a.adapter.get_object(key, 0, -1) or { []u8{}, '' }
+	existing, etag := a.adapter.get_object(key, 0, -1) or { []u8{}, '' }
 	if existing.len > 0 {
 		lock_info := json.decode(LockInfo, existing.bytestr()) or {
-			// Corrupted lock; attempt acquisition
-			return a.create_lock(key, lock_name, holder_id, ttl_ms)
+			// Corrupted lock; attempt acquisition with CAS
+			return a.create_lock_with_cas(key, lock_name, holder_id, ttl_ms, etag)
 		}
 
-		// Check if lock has expired
 		if lock_info.expires_at > now {
-			// Lock is still held by someone
 			if lock_info.holder_id == holder_id {
-				// Already holding the lock; renew
 				return a.refresh_lock(lock_name, holder_id, ttl_ms)
 			}
 			return false
 		}
-		// Lock expired; can acquire
+		// Lock expired; acquire with CAS to prevent race
+		return a.create_lock_with_cas(key, lock_name, holder_id, ttl_ms, etag)
 	}
 
-	return a.create_lock(key, lock_name, holder_id, ttl_ms)
+	return a.create_new_lock(key, lock_name, holder_id, ttl_ms)
 }
 
-/// create_lock creates a new lock.
-fn (mut a S3ClusterMetadataAdapter) create_lock(key string, lock_name string, holder_id string, ttl_ms i64) !bool {
-	a.ensure_adapter_config()
+/// create_lock_with_cas overwrites an existing lock using ETag-based conditional PUT.
+/// Returns false on 412 (another holder acquired the lock first).
+fn (mut a S3ClusterMetadataAdapter) create_lock_with_cas(key string, lock_name string, holder_id string, ttl_ms i64, etag string) !bool {
+	data := a.encode_lock(lock_name, holder_id, ttl_ms)
+	if etag.len > 0 {
+		a.adapter.put_object_if_match(key, data, etag) or {
+			if is_etag_mismatch_error(err) {
+				return false
+			}
+			return err
+		}
+		return true
+	}
+	a.adapter.put_object(key, data)!
+	return true
+}
+
+/// create_new_lock creates a brand-new lock using put_object_if_not_exists.
+/// Returns false on 412 (another holder created the lock first).
+fn (mut a S3ClusterMetadataAdapter) create_new_lock(key string, lock_name string, holder_id string, ttl_ms i64) !bool {
+	data := a.encode_lock(lock_name, holder_id, ttl_ms)
+	a.adapter.put_object_if_not_exists(key, data) or {
+		// Another holder created the lock between our GET and PUT
+		return false
+	}
+	return true
+}
+
+/// encode_lock creates the JSON-encoded lock data.
+fn (a &S3ClusterMetadataAdapter) encode_lock(lock_name string, holder_id string, ttl_ms i64) []u8 {
 	now := time.now().unix_milli()
 	lock_info := LockInfo{
 		lock_name:   lock_name
@@ -548,10 +564,7 @@ fn (mut a S3ClusterMetadataAdapter) create_lock(key string, lock_name string, ho
 		expires_at:  now + ttl_ms
 		acquired_at: now
 	}
-
-	data := json.encode(lock_info).bytes()
-	a.adapter.put_object(key, data)!
-	return true
+	return json.encode(lock_info).bytes()
 }
 
 /// release_lock releases a distributed lock.
@@ -589,14 +602,14 @@ pub fn (mut a S3ClusterMetadataAdapter) release_lock(lock_name string, holder_id
 	a.adapter.delete_object(key)!
 }
 
-/// refresh_lock refreshes the TTL of a distributed lock.
+/// refresh_lock refreshes the TTL of a distributed lock with ETag-based CAS.
+/// Returns false if the lock was modified by another holder between GET and PUT.
 pub fn (mut a S3ClusterMetadataAdapter) refresh_lock(lock_name string, holder_id string, ttl_ms i64) !bool {
 	a.ensure_adapter_config()
 	key := a.lock_key(lock_name)
 	now := time.now().unix_milli()
 
-	// Check if lock is held
-	existing, _ := a.adapter.get_object(key, 0, -1) or { return false }
+	existing, etag := a.adapter.get_object(key, 0, -1) or { return false }
 	if existing.len == 0 {
 		return false
 	}
@@ -606,13 +619,21 @@ pub fn (mut a S3ClusterMetadataAdapter) refresh_lock(lock_name string, holder_id
 		return false
 	}
 
-	// Refresh lock
 	lock_info = LockInfo{
 		...lock_info
 		expires_at: now + ttl_ms
 	}
 
 	data := json.encode(lock_info).bytes()
+	if etag.len > 0 {
+		a.adapter.put_object_if_match(key, data, etag) or {
+			if is_etag_mismatch_error(err) {
+				return false
+			}
+			return err
+		}
+		return true
+	}
 	a.adapter.put_object(key, data)!
 	return true
 }
@@ -693,4 +714,88 @@ fn (a &S3ClusterMetadataAdapter) all_assignments_prefix() string {
 /// lock_key returns the S3 key for a distributed lock.
 fn (a &S3ClusterMetadataAdapter) lock_key(lock_name string) string {
 	return '${a.adapter.config.prefix}__cluster/locks/${lock_name}.json'
+}
+
+// CAS Helpers
+
+/// try_update_cluster_metadata performs a single GET-check-CAS_PUT attempt.
+fn (mut a S3ClusterMetadataAdapter) try_update_cluster_metadata(key string, metadata domain.ClusterMetadata) CasResult {
+	existing, etag := a.adapter.get_object(key, 0, -1) or { []u8{}, '' }
+	if existing.len > 0 {
+		current := json.decode(domain.ClusterMetadata, existing.bytestr()) or {
+			return CasResult.etag_mismatch
+		}
+		if current.metadata_version >= metadata.metadata_version {
+			return CasResult.version_conflict
+		}
+	}
+
+	mut updated := metadata
+	updated.updated_at = time.now().unix_milli()
+	data := json.encode(updated).bytes()
+
+	return a.cas_put(key, data, etag)
+}
+
+/// cas_put writes data to S3 with ETag-based conditional PUT.
+/// Falls back to unconditional PUT when etag is empty (new object).
+fn (mut a S3ClusterMetadataAdapter) cas_put(key string, data []u8, etag string) CasResult {
+	if etag.len > 0 {
+		a.adapter.put_object_if_match(key, data, etag) or {
+			if is_etag_mismatch_error(err) {
+				return CasResult.etag_mismatch
+			}
+			return CasResult.etag_mismatch
+		}
+		return CasResult.success
+	}
+	a.adapter.put_object(key, data) or { return CasResult.etag_mismatch }
+	return CasResult.success
+}
+
+/// log_cas_retry logs a CAS retry attempt with context.
+fn (a &S3ClusterMetadataAdapter) log_cas_retry(operation string, key string, attempt int) {
+	observability.log_with_context('s3', .warn, 'ClusterMetadata', 'CAS retry on ETag mismatch',
+		{
+		'operation':  operation
+		'key':        key
+		'attempt':    (attempt + 1).str()
+		'backoff_ms': cas_backoff_ms(attempt).str()
+	})
+}
+
+/// try_cas_put_assignment performs GET(etag) -> encode -> CAS_PUT for a partition assignment.
+fn (mut a S3ClusterMetadataAdapter) try_cas_put_assignment(key string, assignment domain.PartitionAssignment) CasResult {
+	_, etag := a.adapter.get_object(key, 0, -1) or { []u8{}, '' }
+	data := json.encode(assignment).bytes()
+	return a.cas_put(key, data, etag)
+}
+
+/// log_assignment_success logs and records metrics for a successful partition assignment update.
+fn (mut a S3ClusterMetadataAdapter) log_assignment_success(assignment domain.PartitionAssignment, attempt int) {
+	a.adapter.metrics_collector.mu.@lock()
+	a.adapter.metrics_collector.data.s3_put_count++
+	a.adapter.metrics_collector.mu.unlock()
+
+	observability.log_with_context('s3', .info, 'PartitionAssignment', 'Successfully updated partition assignment',
+		{
+		'topic':     assignment.topic_name
+		'partition': assignment.partition.str()
+		'attempt':   attempt.str()
+	})
+}
+
+/// record_assignment_error logs and records metrics for a failed partition assignment update.
+fn (mut a S3ClusterMetadataAdapter) record_assignment_error(assignment domain.PartitionAssignment, key string) {
+	a.adapter.metrics_collector.mu.@lock()
+	a.adapter.metrics_collector.data.s3_error_count++
+	a.adapter.metrics_collector.mu.unlock()
+
+	observability.log_with_context('s3', .error, 'PartitionAssignment', 'Failed to update partition assignment after CAS retries',
+		{
+		'topic':       assignment.topic_name
+		'partition':   assignment.partition.str()
+		'key':         key
+		'max_retries': cas_max_retries.str()
+	})
 }
