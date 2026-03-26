@@ -1,5 +1,22 @@
 # Progress Log
 
+## v0.54.0 -- Deferred Issues v5: 5 Items Resolved (2026-03-26)
+
+### Resolved Items
+- #1 S3 Range-request: RecordIndex generation on all append/compaction paths
+- #2 topic_id persistent reverse index for cold start O(1) lookup
+- #3 JSON parser stdlib migration: -550 lines manual parsing -> json2.decode
+- #4 ObjectStore interface promoted to port layer with ISP (Reader/Writer/Full)
+- #5 Config CAS: ETag-based compare-and-swap on cluster metadata and locks
+
+### Results
+- 25 files changed, +1903 / -920 lines
+- 138/138 tests pass, build SUCCESS
+- 8 new files created, 4 dead functions removed
+- Net code reduction: -550 lines (JSON parser migration)
+
+---
+
 ## v0.53.0 -- Codebase Health v4: 20 Issues Fixed (2026-03-25)
 
 ### P1 -- CRITICAL (3 items)
