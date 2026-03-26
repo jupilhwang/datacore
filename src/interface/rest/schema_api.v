@@ -12,17 +12,19 @@
 module rest
 
 import domain
-import service.schema
+import service.port
 import json
 
 /// SchemaAPI provides REST API handlers for the Schema Registry.
+/// Depends on SchemaRegistryRestPort abstraction (DIP).
 pub struct SchemaAPI {
 mut:
-	registry &schema.SchemaRegistry
+	registry port.SchemaRegistryRestPort
 }
 
 /// new_schema_api creates a new Schema REST API handler.
-pub fn new_schema_api(registry &schema.SchemaRegistry) &SchemaAPI {
+/// Accepts any implementation satisfying SchemaRegistryRestPort.
+pub fn new_schema_api(registry port.SchemaRegistryRestPort) &SchemaAPI {
 	return &SchemaAPI{
 		registry: registry
 	}

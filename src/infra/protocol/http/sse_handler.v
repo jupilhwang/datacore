@@ -12,7 +12,8 @@ import infra.observability
 
 /// SSEHandler handles SSE HTTP requests.
 pub struct SSEHandler {
-	config domain.SSEConfig
+	config          domain.SSEConfig
+	allowed_origins []string
 pub mut:
 	sse_service &streaming.SSEService
 	storage     port.StoragePort
@@ -111,13 +112,16 @@ pub fn (mut h SSEHandler) handle_sse_request(request SSERequest) !(int, map[stri
 	}
 
 	// return SSE headers
-	headers := {
-		'Content-Type':                'text/event-stream'
-		'Cache-Control':               'no-cache'
-		'Connection':                  'keep-alive'
-		'X-Accel-Buffering':           'no'
-		'Access-Control-Allow-Origin': '*'
-		'X-SSE-Connection-Id':         conn_id
+	mut headers := {
+		'Content-Type':        'text/event-stream'
+		'Cache-Control':       'no-cache'
+		'Connection':          'keep-alive'
+		'X-Accel-Buffering':   'no'
+		'X-SSE-Connection-Id': conn_id
+	}
+
+	if cors_origin := resolve_cors_origin(h.allowed_origins, request.origin) {
+		headers['Access-Control-Allow-Origin'] = cors_origin
 	}
 
 	// record metrics
@@ -198,6 +202,7 @@ pub:
 	client_ip     string
 	user_agent    string
 	last_event_id string
+	origin        string
 }
 
 /// parse_sse_request parses an SSE request from HTTP request data.
@@ -234,6 +239,7 @@ pub fn parse_sse_request(path string, query map[string]string, headers map[strin
 	// parse headers
 	user_agent := headers['User-Agent'] or { headers['user-agent'] or { 'unknown' } }
 	last_event_id := headers['Last-Event-ID'] or { headers['last-event-id'] or { '' } }
+	origin := headers['Origin'] or { headers['origin'] or { '' } }
 
 	// handle Last-Event-ID for reconnection
 	mut final_offset := offset_str
@@ -254,6 +260,7 @@ pub fn parse_sse_request(path string, query map[string]string, headers map[strin
 		client_ip:     client_ip
 		user_agent:    user_agent
 		last_event_id: last_event_id
+		origin:        origin
 	}
 }
 
@@ -319,6 +326,19 @@ pub fn (mut w SSEResponseWriter) close() ! {
 }
 
 // Statistics
+
+/// resolve_cors_origin determines the Access-Control-Allow-Origin header value.
+/// Returns the origin string to set, or none if the header should not be set.
+/// Empty allowed_origins or presence of '*' means allow all (backward compatible).
+fn resolve_cors_origin(allowed_origins []string, request_origin string) ?string {
+	if allowed_origins.len == 0 || '*' in allowed_origins {
+		return '*'
+	}
+	if request_origin.len > 0 && request_origin in allowed_origins {
+		return request_origin
+	}
+	return none
+}
 
 /// get_stats returns SSE service statistics.
 pub fn (mut h SSEHandler) get_stats() port.StreamingStats {

@@ -61,10 +61,13 @@ fn reject_forbidden_host(host string) ! {
 
 	lower := host.to_lower()
 
-	// IPv4-mapped IPv6 (::ffff:x.x.x.x): extract and validate the IPv4 part
+	// IPv4-mapped IPv6 (::ffff:x.x.x.x): extract and validate the IPv4 part.
+	// The suffix after ::ffff: MUST be valid IPv4; reject malformed addresses.
 	if lower.starts_with('::ffff:') {
 		ipv4_part := host[7..]
-		octets := parse_ipv4_octets(ipv4_part) or { return }
+		octets := parse_ipv4_octets(ipv4_part) or {
+			return error('malformed IPv4-mapped IPv6 address: ${host}')
+		}
 		reject_private_ip(octets, host)!
 		return
 	}
@@ -85,9 +88,12 @@ fn reject_forbidden_host(host string) ! {
 		return error('endpoint resolves to link-local address (IPv6 fe80::/10): ${host}')
 	}
 
-	// Standard IPv4 private range validation
-	octets := parse_ipv4_octets(host) or { return }
-	reject_private_ip(octets, host)!
+	// Only apply private IP check when the host is an IPv4 address.
+	// If parsing fails, the host is a domain name -- allow it through.
+	// NOTE: DNS-based SSRF protection (resolving domain to IP) is out of scope.
+	if octets := parse_ipv4_octets(host) {
+		reject_private_ip(octets, host)!
+	}
 }
 
 /// parse_ipv4_octets tries to parse a host string as an IPv4 address.

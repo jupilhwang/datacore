@@ -80,22 +80,29 @@ pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.Au
 	a.client_nonce = client_first.nonce
 
 	// Look up user
-	user := a.user_store.get_user(a.username) or {
+	_ := a.user_store.get_user(a.username) or {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
 
-	// SCRAM credentials: generate consistent salt based on username
-	// In production, should be loaded from ScramCredentials table
-	// Here we generate a deterministic salt based on username for consistency
-	a.salt = generate_user_salt(a.username)
-	a.iterations = default_iterations
-
-	// Derive keys from password
-	salted_password := pbkdf2_sha256(user.password_hash.bytes(), a.salt, a.iterations)
-	a.salted_password = salted_password
-	a.stored_key = compute_stored_key(salted_password)
-	a.server_key = compute_server_key(salted_password)
+	// Use pre-computed SCRAM credentials if available (RFC 5802 compliant)
+	if creds := a.user_store.get_scram_credentials(a.username) {
+		a.salt = creds.salt
+		a.iterations = creds.iterations
+		a.stored_key = creds.stored_key
+		a.server_key = creds.server_key
+	} else {
+		// Fallback: derive keys from password_hash (backward compatibility)
+		user := a.user_store.get_user(a.username) or {
+			a.state = .failed
+			return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
+		}
+		a.salt = generate_user_salt(a.username)
+		a.iterations = default_iterations
+		salted_password := pbkdf2_sha256(user.password_hash.bytes(), a.salt, a.iterations)
+		a.stored_key = compute_stored_key(salted_password)
+		a.server_key = compute_server_key(salted_password)
+	}
 
 	// Generate server nonce
 	a.server_nonce = generate_nonce()
@@ -139,31 +146,24 @@ pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 	// Complete auth_message
 	a.auth_message = a.auth_message + ',' + client_final.without_proof
 
-	// Compute ClientKey (derived from salted_password)
-	client_key := compute_client_key_from_salted(a.salted_password)
-
-	// Verify client signature
 	// ClientSignature = HMAC(StoredKey, AuthMessage)
 	client_signature := hmac_sha256(a.stored_key, a.auth_message.bytes())
 
-	// ClientProof = ClientKey XOR ClientSignature
-	// Therefore ClientKey = ClientProof XOR ClientSignature
-	// Verify: received ClientProof XOR ClientSignature == ClientKey
-
 	// Base64-decoded client proof
-	// V's base64.decode doesn't return errors, so validate by result length
 	client_proof := base64.decode(client_final.proof)
 	if client_proof.len == 0 && client_final.proof.len > 0 {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Invalid proof encoding')
 	}
 
-	// Recover ClientKey from the proof sent by client
+	// RFC 5802: Recover ClientKey and verify via StoredKey
 	// RecoveredClientKey = ClientProof XOR ClientSignature
 	recovered_client_key := xor_bytes(client_proof, client_signature)
+	// Verify: H(RecoveredClientKey) == StoredKey
+	recovered_stored_key_arr := sha256.sum256(recovered_client_key)
+	recovered_stored_key := recovered_stored_key_arr[..].clone()
 
-	// Compare recovered ClientKey with computed ClientKey
-	if !constant_time_compare(recovered_client_key, client_key) {
+	if !constant_time_compare(recovered_stored_key, a.stored_key) {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
@@ -470,20 +470,29 @@ pub fn (mut a ScramSha512Authenticator) authenticate(auth_bytes []u8) !domain.Au
 	a.client_nonce = client_first.nonce
 
 	// Look up user
-	user := a.user_store.get_user(a.username) or {
+	_ := a.user_store.get_user(a.username) or {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
 
-	// Generate deterministic salt based on username
-	a.salt = generate_user_salt(a.username)
-	a.iterations = default_iterations
-
-	// Derive keys from password using SHA-512
-	salted_password := pbkdf2_sha512(user.password_hash.bytes(), a.salt, a.iterations)
-	a.salted_password = salted_password
-	a.stored_key = compute_stored_key_sha512(salted_password)
-	a.server_key = compute_server_key_sha512(salted_password)
+	// Use pre-computed SCRAM credentials if available (RFC 5802 compliant)
+	if creds := a.user_store.get_scram_credentials(a.username) {
+		a.salt = creds.salt
+		a.iterations = creds.iterations
+		a.stored_key = creds.stored_key
+		a.server_key = creds.server_key
+	} else {
+		// Fallback: derive keys from password_hash (backward compatibility)
+		user := a.user_store.get_user(a.username) or {
+			a.state = .failed
+			return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
+		}
+		a.salt = generate_user_salt(a.username)
+		a.iterations = default_iterations
+		salted_password := pbkdf2_sha512(user.password_hash.bytes(), a.salt, a.iterations)
+		a.stored_key = compute_stored_key_sha512(salted_password)
+		a.server_key = compute_server_key_sha512(salted_password)
+	}
 
 	// Generate server nonce
 	a.server_nonce = generate_nonce()
@@ -523,9 +532,6 @@ pub fn (mut a ScramSha512Authenticator) step(response []u8) !domain.AuthResult {
 	// Complete auth_message
 	a.auth_message = a.auth_message + ',' + client_final.without_proof
 
-	// Compute ClientKey (derived from salted_password using SHA-512)
-	client_key := compute_client_key_from_salted_sha512(a.salted_password)
-
 	// ClientSignature = HMAC-SHA-512(StoredKey, AuthMessage)
 	client_signature := hmac_sha512(a.stored_key, a.auth_message.bytes())
 
@@ -536,10 +542,14 @@ pub fn (mut a ScramSha512Authenticator) step(response []u8) !domain.AuthResult {
 		return domain.auth_failure(.sasl_authentication_failed, 'Invalid proof encoding')
 	}
 
-	// Recover ClientKey from proof
+	// RFC 5802: Recover ClientKey and verify via StoredKey
+	// RecoveredClientKey = ClientProof XOR ClientSignature
 	recovered_client_key := xor_bytes(client_proof, client_signature)
+	// Verify: H(RecoveredClientKey) == StoredKey
+	recovered_stored_key_arr := sha512.sum512(recovered_client_key)
+	recovered_stored_key := recovered_stored_key_arr[..].clone()
 
-	if !constant_time_compare(recovered_client_key, client_key) {
+	if !constant_time_compare(recovered_stored_key, a.stored_key) {
 		a.state = .failed
 		return domain.auth_failure(.sasl_authentication_failed, 'Authentication failed')
 	}
@@ -602,4 +612,44 @@ fn compute_server_key_sha512(salted_password []u8) []u8 {
 /// compute_client_key_from_salted_sha512 computes ClientKey from SaltedPassword using SHA-512.
 fn compute_client_key_from_salted_sha512(salted_password []u8) []u8 {
 	return hmac_sha512(salted_password, 'Client Key'.bytes())
+}
+
+// SCRAM Credential Registration
+
+/// register_scram_sha256_credentials pre-computes and stores SCRAM-SHA-256
+/// credentials for a user. Must be called after create_user for SCRAM-SHA-256 users.
+/// Per RFC 5802, stores (salt, iterations, StoredKey, ServerKey).
+pub fn register_scram_sha256_credentials(mut store port.UserStore, username string, password string) ! {
+	salt := generate_user_salt(username)
+	iterations := default_iterations
+	salted_password := pbkdf2_sha256(password.bytes(), salt, iterations)
+	stored_key := compute_stored_key(salted_password)
+	server_key := compute_server_key(salted_password)
+
+	store.store_scram_credentials(username, domain.ScramCredentials{
+		username:   username
+		salt:       salt
+		iterations: iterations
+		stored_key: stored_key
+		server_key: server_key
+	})!
+}
+
+/// register_scram_sha512_credentials pre-computes and stores SCRAM-SHA-512
+/// credentials for a user. Must be called after create_user for SCRAM-SHA-512 users.
+/// Per RFC 5802, stores (salt, iterations, StoredKey, ServerKey).
+pub fn register_scram_sha512_credentials(mut store port.UserStore, username string, password string) ! {
+	salt := generate_user_salt(username)
+	iterations := default_iterations
+	salted_password := pbkdf2_sha512(password.bytes(), salt, iterations)
+	stored_key := compute_stored_key_sha512(salted_password)
+	server_key := compute_server_key_sha512(salted_password)
+
+	store.store_scram_credentials(username, domain.ScramCredentials{
+		username:   username
+		salt:       salt
+		iterations: iterations
+		stored_key: stored_key
+		server_key: server_key
+	})!
 }

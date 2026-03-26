@@ -223,6 +223,10 @@ fn test_scram_sha512_full_authentication_success() {
 		assert false, 'user creation should not fail'
 		return
 	}
+	register_scram_sha512_credentials(mut store, 'alice', 'secret123') or {
+		assert false, 'scram credential registration should not fail'
+		return
+	}
 
 	mut auth := new_scram_sha512_authenticator(store)
 

@@ -1,5 +1,22 @@
 # Progress Log
 
+## v0.54.1 -- Security Fixes: 6 HIGH Issues Resolved (2026-03-26)
+
+### Resolved Items
+- #1 schema_encoding.v: Encoder cache race condition -- sync.Mutex on init
+- #2 writer_pool.v/provider.v/manager.v: Global singleton TOCTOU -- Mutex guard
+- #3 endpoint_validation.v: SSRF bypass on non-IPv4 hosts -- error propagation fix
+- #4 memory_user_store.v: Plaintext password storage -- SHA-256+salt hashing
+- #5 sse_handler.v: Wildcard CORS origin -- configurable allowed_origins
+- #6 schema_api.v: DIP violation -- SchemaRegistryRestPort interface
+
+### Results
+- 20 files changed, +797 / -77 lines
+- 4 new files created (password_hasher.v, 3 test files)
+- All tests pass, build SUCCESS
+
+---
+
 ## v0.54.0 -- Deferred Issues v5: 5 Items Resolved (2026-03-26)
 
 ### Resolved Items

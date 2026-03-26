@@ -1,5 +1,20 @@
 # DataCore Changelog
 
+## [v0.54.1] -- 2026-03-26
+
+### Fixed
+- schema_encoding.v: sync.Mutex on encoder cache init (race condition on concurrent encode)
+- writer_pool.v/provider.v/manager.v: Mutex on global singleton init (TOCTOU on first access)
+- endpoint_validation.v: SSRF bypass on non-IPv4 hosts (or{return} changed to propagated error)
+- memory_user_store.v: SHA-256+salt password hashing (was plaintext storage)
+- sse_handler.v: Configurable CORS allowed_origins via SseConfig (was wildcard *)
+- schema_api.v: SchemaRegistryRestPort interface for DIP compliance (was concrete import)
+- scram.v: Separate ScramCredentialStore for PBKDF2 compatibility (was shared UserStore)
+
+### Added
+- password_hasher.v: Dedicated hash/verify utility module (SHA-256+salt, constant-time compare)
+- password_hasher_test.v, sse_handler_test.v, schema_api_test.v: Regression tests for all fixes
+
 ## [v0.54.0] -- 2026-03-26
 
 ### Added

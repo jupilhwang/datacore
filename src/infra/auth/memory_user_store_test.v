@@ -10,7 +10,8 @@ fn test_memory_user_store_create_user() {
 	user := store.create_user('alice', 'secret123', .plain) or { panic(err) }
 
 	assert user.username == 'alice'
-	assert user.password_hash == 'secret123'
+	assert user.password_hash.contains(':'), 'password should be stored as salt:hash'
+	assert user.password_hash != 'secret123', 'password should not be stored as plaintext'
 	assert user.mechanism == .plain
 	assert user.created_at > 0
 	assert user.updated_at > 0
@@ -24,7 +25,7 @@ fn test_memory_user_store_get_user() {
 	user := store.get_user('alice') or { panic(err) }
 
 	assert user.username == 'alice'
-	assert user.password_hash == 'secret123'
+	assert user.password_hash.contains(':'), 'password should be stored as salt:hash'
 }
 
 /// test_memory_user_store_get_user_not_found tests that an error is returned when looking up a non-existent user.
@@ -59,7 +60,8 @@ fn test_memory_user_store_update_password() {
 	store.update_password('alice', 'newpass') or { panic(err) }
 
 	user := store.get_user('alice') or { panic(err) }
-	assert user.password_hash == 'newpass'
+	assert user.password_hash != 'newpass', 'updated password should not be plaintext'
+	assert user.password_hash.contains(':'), 'updated password should be salt:hash format'
 	assert user.updated_at >= user.created_at
 }
 
@@ -162,17 +164,19 @@ fn test_memory_user_store_validate_password_user_not_found() {
 
 /// test_memory_user_store_with_preloaded_users tests that the store is correctly initialized with preloaded users.
 fn test_memory_user_store_with_preloaded_users() {
+	admin_hash := hash_password('adminpass')
+	user1_hash := hash_password('user1pass')
 	users := [
 		domain.User{
 			username:      'admin'
-			password_hash: 'adminpass'
+			password_hash: admin_hash
 			mechanism:     .plain
 			created_at:    1000
 			updated_at:    1000
 		},
 		domain.User{
 			username:      'user1'
-			password_hash: 'user1pass'
+			password_hash: user1_hash
 			mechanism:     .plain
 			created_at:    1000
 			updated_at:    1000
@@ -183,7 +187,7 @@ fn test_memory_user_store_with_preloaded_users() {
 
 	admin := store.get_user('admin') or { panic(err) }
 	assert admin.username == 'admin'
-	assert admin.password_hash == 'adminpass'
+	assert admin.password_hash == admin_hash
 
 	user1 := store.get_user('user1') or { panic(err) }
 	assert user1.username == 'user1'

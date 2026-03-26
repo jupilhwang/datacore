@@ -1,5 +1,6 @@
 module performance
 
+import sync
 import infra.observability
 import infra.performance.core
 import infra.performance.engines
@@ -106,6 +107,7 @@ struct GlobalPerformanceHolder {
 mut:
 	instance &PerformanceManager = unsafe { nil }
 	is_init  bool
+	lock     sync.Mutex
 }
 
 // Module-level singleton holder
@@ -114,6 +116,8 @@ const global_holder = &GlobalPerformanceHolder{}
 /// init_global_performance initializes the global performance manager.
 pub fn init_global_performance(config core.PerformanceConfig) {
 	mut holder := unsafe { global_holder }
+	holder.lock.@lock()
+	defer { holder.lock.unlock() }
 	if !holder.is_init {
 		unsafe {
 			holder.instance = new_performance_manager(config)
@@ -124,10 +128,14 @@ pub fn init_global_performance(config core.PerformanceConfig) {
 
 /// get_global_performance returns the global performance manager.
 pub fn get_global_performance() &PerformanceManager {
-	holder := unsafe { global_holder }
+	mut holder := unsafe { global_holder }
+	holder.lock.@lock()
+	defer { holder.lock.unlock() }
 	if !holder.is_init {
-		// Not initialized — use safe defaults
-		init_global_performance(core.PerformanceConfig{})
+		unsafe {
+			holder.instance = new_performance_manager(core.PerformanceConfig{})
+			holder.is_init = true
+		}
 	}
 	return unsafe { holder.instance }
 }

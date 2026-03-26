@@ -26,6 +26,13 @@ mut:
 	/// Validates a password for PLAIN authentication.
 	/// Returns true if the password matches.
 	validate_password(username string, password string) !bool
+
+	/// Retrieves pre-computed SCRAM credentials for a user.
+	/// Returns error if no SCRAM credentials are stored.
+	get_scram_credentials(username string) !domain.ScramCredentials
+
+	/// Stores pre-computed SCRAM credentials for a user.
+	store_scram_credentials(username string, creds domain.ScramCredentials) !
 }
 
 /// SaslAuthenticator is an interface for SASL authentication.

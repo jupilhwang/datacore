@@ -147,3 +147,98 @@ fn test_avro_full_roundtrip_with_wire_format() {
 	assert decoded_str.contains('"age"')
 	assert decoded_str.contains('30')
 }
+
+// --- Concurrent safety tests ---
+
+fn test_ensure_encoders_cached_concurrent_safety() {
+	// Reset cache to force concurrent re-initialization
+	unsafe {
+		mut holder := g_encoder_cache_holder
+		holder.cached = false
+	}
+	num_threads := 10
+	ch := chan string{cap: num_threads}
+
+	mut threads := []thread{}
+	for _ in 0 .. num_threads {
+		threads << spawn fn [ch] () {
+			ensure_encoders_cached() or {
+				ch <- 'error: ${err.msg()}'
+				return
+			}
+			ch <- 'ok'
+		}()
+	}
+
+	for t in threads {
+		t.wait()
+	}
+
+	// All threads must complete without error
+	mut ok_count := 0
+	for _ in 0 .. num_threads {
+		msg := <-ch
+		if msg == 'ok' {
+			ok_count++
+		}
+	}
+	assert ok_count == num_threads, 'all ${num_threads} threads should succeed, got ${ok_count}'
+
+	// Cache must be properly initialized after concurrent calls
+	holder := unsafe { g_encoder_cache_holder }
+	assert holder.cached, 'cache should be initialized after concurrent init'
+
+	// Encoders must produce correct results after concurrent initialization
+	result := encode_with_schema('42'.bytes(), '{"type":"int"}', .avro)!
+	assert result.len == 1
+	assert result[0] == 0x54
+}
+
+fn test_concurrent_encode_decode_with_schema() {
+	// Ensure cache is initialized before concurrent encode/decode
+	ensure_encoders_cached()!
+
+	num_threads := 8
+	ch := chan string{cap: num_threads}
+	schema_str := '{"type":"int"}'
+
+	mut threads := []thread{}
+	for i in 0 .. num_threads {
+		threads << spawn fn [ch, schema_str, i] () {
+			// Even threads encode, odd threads decode
+			if i % 2 == 0 {
+				encoded := encode_with_schema('42'.bytes(), schema_str, .avro) or {
+					ch <- 'encode error: ${err.msg()}'
+					return
+				}
+				if encoded.len != 1 || encoded[0] != 0x54 {
+					ch <- 'encode mismatch'
+					return
+				}
+			} else {
+				decoded := decode_with_schema([u8(0x54)], schema_str, .avro) or {
+					ch <- 'decode error: ${err.msg()}'
+					return
+				}
+				if decoded.bytestr() != '42' {
+					ch <- 'decode mismatch'
+					return
+				}
+			}
+			ch <- 'ok'
+		}()
+	}
+
+	for t in threads {
+		t.wait()
+	}
+
+	mut ok_count := 0
+	for _ in 0 .. num_threads {
+		msg := <-ch
+		if msg == 'ok' {
+			ok_count++
+		}
+	}
+	assert ok_count == num_threads, 'all ${num_threads} concurrent ops should succeed, got ${ok_count}'
+}

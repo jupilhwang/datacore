@@ -334,6 +334,51 @@ fn test_config_save_file_permissions() {
 	assert perm == 0o600, 'config file permissions must be 0600 (owner-only), got 0o${perm:o}'
 }
 
+// --- SSRF endpoint validation tests ---
+
+fn test_validate_s3_endpoint_rejects_private_ipv4() {
+	// 10.0.0.0/8 range must be rejected as private address (SSRF prevention)
+	validate_s3_endpoint('http://10.0.0.1:9000') or {
+		assert err.msg().contains('private address')
+		return
+	}
+	assert false, 'should reject private IPv4 (10.0.0.1)'
+}
+
+fn test_validate_s3_endpoint_allows_public_ipv4() {
+	// Public IPv4 addresses must be allowed
+	validate_s3_endpoint('http://54.231.0.1:9000') or {
+		assert false, 'public IPv4 should be allowed: ${err}'
+		return
+	}
+}
+
+fn test_validate_s3_endpoint_allows_domain_name() {
+	// Domain names must pass through -- DNS-based SSRF protection is out of scope
+	validate_s3_endpoint('https://s3.amazonaws.com') or {
+		assert false, 'domain name should be allowed: ${err}'
+		return
+	}
+}
+
+fn test_validate_s3_endpoint_rejects_localhost() {
+	// localhost must be rejected as loopback address
+	validate_s3_endpoint('http://localhost:9000') or {
+		assert err.msg().contains('loopback')
+		return
+	}
+	assert false, 'should reject localhost'
+}
+
+fn test_validate_s3_endpoint_rejects_malformed_ipv4_mapped_ipv6() {
+	// ::ffff: prefix with non-IPv4 suffix is malformed and must be rejected
+	validate_s3_endpoint('http://[::ffff:not-an-ip]') or {
+		assert err.msg().contains('malformed')
+		return
+	}
+	assert false, 'should reject malformed IPv4-mapped IPv6 address'
+}
+
 fn test_rate_limit_config_in_full_config_load() {
 	// Verify RateLimitConfig is accessible via Config.broker.rate_limit
 	toml_content := '
