@@ -9,8 +9,9 @@ import time
 /// Provides user creation, lookup, update, deletion, and password validation.
 pub struct MemoryUserStore {
 mut:
-	users map[string]domain.User
-	lock  sync.RwMutex
+	users     map[string]domain.User
+	scram_map map[string]domain.ScramCredentials
+	lock      sync.RwMutex
 }
 
 /// new_memory_user_store creates a new in-memory user store.
@@ -52,7 +53,7 @@ pub fn (mut s MemoryUserStore) create_user(username string, password string, mec
 	now := time.now().unix()
 	user := domain.User{
 		username:      username
-		password_hash: password
+		password_hash: hash_password(password)
 		mechanism:     mechanism
 		created_at:    now
 		updated_at:    now
@@ -70,7 +71,7 @@ pub fn (mut s MemoryUserStore) update_password(username string, new_password str
 	if user := s.users[username] {
 		s.users[username] = domain.User{
 			...user
-			password_hash: new_password
+			password_hash: hash_password(new_password)
 			updated_at:    time.now().unix()
 		}
 		return
@@ -108,8 +109,29 @@ pub fn (mut s MemoryUserStore) validate_password(username string, password strin
 	defer { s.lock.runlock() }
 
 	if user := s.users[username] {
-		// In production, hashed passwords should be compared
-		return user.password_hash == password
+		return verify_password(password, user.password_hash)
 	}
 	return error('user not found: ${username}')
+}
+
+/// get_scram_credentials retrieves pre-computed SCRAM credentials for a user.
+pub fn (mut s MemoryUserStore) get_scram_credentials(username string) !domain.ScramCredentials {
+	s.lock.@rlock()
+	defer { s.lock.runlock() }
+
+	if creds := s.scram_map[username] {
+		return creds
+	}
+	return error('scram credentials not found: ${username}')
+}
+
+/// store_scram_credentials stores pre-computed SCRAM credentials for a user.
+pub fn (mut s MemoryUserStore) store_scram_credentials(username string, creds domain.ScramCredentials) ! {
+	s.lock.@lock()
+	defer { s.lock.unlock() }
+
+	if username !in s.users {
+		return error('user not found: ${username}')
+	}
+	s.scram_map[username] = creds
 }

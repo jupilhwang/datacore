@@ -6,6 +6,7 @@ module kafka
 
 import domain
 import service.schema
+import sync
 
 // confluent_wire_magic is the magic byte for Confluent wire format.
 const confluent_wire_magic = u8(0x00)
@@ -40,6 +41,7 @@ fn unwrap_confluent_wire_format(data []u8) !(int, []u8) {
 // 모듈 수준 캐시 홀더 (const holder 패턴으로 __global 대체)
 struct EncoderCacheHolder {
 mut:
+	mu               sync.Mutex
 	avro_encoder     schema.AvroEncoder
 	json_encoder     schema.JsonEncoder
 	protobuf_encoder schema.ProtobufEncoder
@@ -49,17 +51,30 @@ mut:
 const g_encoder_cache_holder = &EncoderCacheHolder{}
 
 /// ensure_encoders_cached는 최초 사용 시 모든 인코더 캐시를 초기화한다.
+/// Mutex로 동시 접근 시 한 번만 초기화되도록 보장한다.
 fn ensure_encoders_cached() ! {
 	mut holder := unsafe { g_encoder_cache_holder }
+	holder.mu.@lock()
 	if holder.cached {
+		holder.mu.unlock()
 		return
 	}
 	unsafe {
-		holder.avro_encoder = schema.new_avro_encoder()!
-		holder.json_encoder = schema.new_json_encoder()!
-		holder.protobuf_encoder = schema.new_protobuf_encoder()!
+		holder.avro_encoder = schema.new_avro_encoder() or {
+			holder.mu.unlock()
+			return err
+		}
+		holder.json_encoder = schema.new_json_encoder() or {
+			holder.mu.unlock()
+			return err
+		}
+		holder.protobuf_encoder = schema.new_protobuf_encoder() or {
+			holder.mu.unlock()
+			return err
+		}
 		holder.cached = true
 	}
+	holder.mu.unlock()
 }
 
 /// get_or_create_avro_encoder는 캐시된 Avro 인코더를 반환한다.

@@ -59,6 +59,7 @@ struct GlobalWriterPoolHolder {
 mut:
 	instance &WriterPool = unsafe { nil }
 	is_init  bool
+	lock     sync.Mutex
 }
 
 // 모듈 수준 싱글톤 홀더
@@ -68,6 +69,8 @@ const g_writer_pool_holder = &GlobalWriterPoolHolder{}
 /// 애플리케이션 시작 시 한 번 호출해야 한다.
 pub fn init_global_writer_pool(config PoolConfig) {
 	mut holder := unsafe { g_writer_pool_holder }
+	holder.lock.@lock()
+	defer { holder.lock.unlock() }
 	if !holder.is_init {
 		unsafe {
 			holder.instance = new_writer_pool(config)
@@ -80,9 +83,14 @@ pub fn init_global_writer_pool(config PoolConfig) {
 /// init_global_writer_pool()이 먼저 호출되어야 한다.
 /// 초기화되지 않은 경우 기본 설정으로 자동 초기화한다.
 pub fn get_global_writer_pool() &WriterPool {
-	holder := unsafe { g_writer_pool_holder }
+	mut holder := unsafe { g_writer_pool_holder }
+	holder.lock.@lock()
+	defer { holder.lock.unlock() }
 	if !holder.is_init {
-		init_global_writer_pool(PoolConfig{})
+		unsafe {
+			holder.instance = new_writer_pool(PoolConfig{})
+			holder.is_init = true
+		}
 	}
 	return unsafe { holder.instance }
 }

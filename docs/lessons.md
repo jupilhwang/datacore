@@ -8,6 +8,35 @@
 - **Project**: Project name or 'global'
 -->
 
+## Pattern_2026-03-26_ObjectStore-ISP-ReaderWriter
+
+- **Category**: Architecture / ISP
+- **Pattern**: ObjectStorePort를 Reader(get_object, list_objects) / Writer(put_object, delete_object, delete_objects) / Composite(Reader+Writer) 3단계로 분리. S3TransactionClient(3 메서드)가 ObjectStorePort(5 메서드)를 만족시키지만, 실제 소비자(iceberg_catalog)는 ObjectStoreReaderPort(2 메서드)만 요구.
+- **Root cause**: 단일 ObjectStore 인터페이스에 read/write가 혼재하여, read-only 소비자도 write 의존성을 강제 수용.
+- **Fix**: ISP split -- ObjectStoreReaderPort, ObjectStoreWriterPort, ObjectStorePort(=Reader+Writer). 각 소비자가 최소 인터페이스만 의존.
+- **Prevention**: 새 Port 인터페이스 설계 시 CQS(Command/Query Separation) 관점에서 read-only, write-only, full 3계층 분리를 기본으로 적용. 소비자가 실제로 호출하는 메서드만 인터페이스에 포함(ISP).
+- **Project**: DataCore
+
+## Pattern_2026-03-26_JSON-stdlib-migration
+
+- **Category**: Refactoring / Performance
+- **Pattern**: json2.decode[json2.Any](raw) + as_map()/arr() 패턴으로 수동 character-scanning JSON 파서 550줄 제거. 핵심: 한 번 decode -> map[string]json2.Any 순회 vs 반복 extract_json_string() 호출(매번 전체 re-parse).
+- **Root cause**: 프로젝트 초기 x.json2가 experimental 단계일 때 수동 파서를 작성. stdlib 안정화 이후에도 마이그레이션이 지연됨.
+- **Fix**: decode-once-access-map 패턴으로 hot-path 전환. legacy extract_* 함수는 단일 필드 추출 전용으로 유지하되, hot-path에서는 사용 금지.
+- **Prevention**: stdlib에 동등 기능이 존재하면 수동 구현 대신 stdlib 우선 사용. 마이그레이션 시 hot-path(다수 필드 접근)와 cold-path(단일 필드 추출)를 구분하여 패턴 선택.
+- **Project**: DataCore
+
+## Pattern_2026-03-26_ETag-CAS-retry
+
+- **Category**: Concurrency / Distributed Systems
+- **Pattern**: S3 conditional PUT(If-Match/If-None-Match)로 lock-free 낙관적 동시성 제어. retry 시 data conflict(version mismatch)와 CAS conflict(etag mismatch)를 구분하여 처리. backoff는 지수적(100ms, 200ms, 400ms) + jitter.
+- **Root cause**: cluster_metadata의 read-modify-write가 락 없이 수행되어 last-write-wins 경합 발생.
+- **Fix**: CasResult enum(success/etag_mismatch/data_conflict/max_retries), cas_put 헬퍼, is_etag_mismatch_error 판별, 3-retry + exponential backoff.
+- **Prevention**: 분산 스토리지의 read-modify-write는 항상 CAS(Compare-And-Swap)를 기본으로 적용. retry 로직에서 conflict 유형(version vs etag vs transient)을 구분하여 각기 다른 복구 전략 사용.
+- **Project**: DataCore
+
+---
+
 ## ErrorPattern_2026-03-25_TOCTOU-cache-refresh
 - Pattern: Read cache under rlock, fetch external data, write back stale value under write lock
 - Root cause: Lock downgrade gap allows concurrent writes to be lost

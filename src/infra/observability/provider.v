@@ -144,8 +144,8 @@ fn (mut p TelemetryProvider) init_otlp_exporter() {
 	unsafe {
 		mut holder := otlp_holder
 		holder.lock.@lock()
+		defer { holder.lock.unlock() }
 		holder.exporter = p.otlp_exporter
-		holder.lock.unlock()
 	}
 }
 
