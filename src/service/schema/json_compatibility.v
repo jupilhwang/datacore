@@ -2,6 +2,8 @@
 // Provides compatibility checking for JSON Schema
 module schema
 
+import x.json2
+
 // JSON Schema Types
 
 // JsonSchemaInfo represents parsed JSON Schema information for compatibility checking
@@ -152,97 +154,85 @@ fn parse_json_schema_info(schema_str string) JsonSchemaInfo {
 		properties: map[string]JsonPropertyInfo{}
 	}
 
-	// Extract type
-	info.schema_type = extract_json_string(schema_str, 'type') or { '' }
+	raw := json2.decode[json2.Any](schema_str) or { return info }
+	obj := raw.as_map()
 
-	// Extract required
-	info.required = parse_json_string_array(schema_str, 'required') or { []string{} }
-
-	// Extract additionalProperties
-	if schema_str.contains('"additionalProperties":false')
-		|| schema_str.contains('"additionalProperties": false') {
-		info.additional_properties = false
+	if v := obj['type'] {
+		info.schema_type = v.str()
 	}
 
-	// Extract properties
-	if props_start := schema_str.index('"properties"') {
-		props_json := extract_json_object_value(schema_str, props_start + 12)
-		if props_json.len > 0 {
-			info.properties = parse_json_properties_info(props_json)
+	if req_val := obj['required'] {
+		for item in req_val.arr() {
+			info.required << item.str()
 		}
 	}
 
-	// Extract numeric constraints
-	if min_val := extract_json_float(schema_str, 'minimum') {
-		info.minimum = min_val
-		info.has_minimum = true
-	}
-	if max_val := extract_json_float(schema_str, 'maximum') {
-		info.maximum = max_val
-		info.has_maximum = true
+	if ap_val := obj['additionalProperties'] {
+		if ap_val.json_str() == 'false' {
+			info.additional_properties = false
+		}
 	}
 
-	// Extract string/array constraints
-	info.min_length = extract_json_int(schema_str, 'minLength') or { 0 }
-	info.max_length = extract_json_int(schema_str, 'maxLength') or { 0 }
-	info.min_items = extract_json_int(schema_str, 'minItems') or { 0 }
-	info.max_items = extract_json_int(schema_str, 'maxItems') or { 0 }
+	if props_val := obj['properties'] {
+		info.properties = build_properties_info_from_map(props_val.as_map())
+	}
 
-	// Extract enum
-	info.enum_values = parse_json_string_array(schema_str, 'enum') or { []string{} }
-
-	// Check for default
-	info.has_default = schema_str.contains('"default"')
+	apply_schema_info_constraints(mut info, obj)
+	info.has_default = 'default' in obj
 
 	return info
 }
 
-fn parse_json_properties_info(props_json string) map[string]JsonPropertyInfo {
+fn apply_schema_info_constraints(mut info JsonSchemaInfo, obj map[string]json2.Any) {
+	if v := obj['minimum'] {
+		info.minimum = v.f64()
+		info.has_minimum = true
+	}
+	if v := obj['maximum'] {
+		info.maximum = v.f64()
+		info.has_maximum = true
+	}
+	if v := obj['minLength'] {
+		info.min_length = v.int()
+	}
+	if v := obj['maxLength'] {
+		info.max_length = v.int()
+	}
+	if v := obj['minItems'] {
+		info.min_items = v.int()
+	}
+	if v := obj['maxItems'] {
+		info.max_items = v.int()
+	}
+	if enum_val := obj['enum'] {
+		for item in enum_val.arr() {
+			info.enum_values << item.str()
+		}
+	}
+}
+
+fn build_properties_info_from_map(props_map map[string]json2.Any) map[string]JsonPropertyInfo {
 	mut result := map[string]JsonPropertyInfo{}
 
-	mut pos := 1
+	for name, val in props_map {
+		prop_obj := val.as_map()
+		mut prop_info := JsonPropertyInfo{}
 
-	for pos < props_json.len - 1 {
-		// Skip whitespace and commas
-		for pos < props_json.len && (props_json[pos] == ` `
-			|| props_json[pos] == `\t` || props_json[pos] == `\n`
-			|| props_json[pos] == `,`) {
-			pos += 1
+		if v := prop_obj['type'] {
+			prop_info.prop_type = v.str()
 		}
 
-		if pos >= props_json.len - 1 || props_json[pos] != `"` {
-			break
-		}
+		prop_info.has_default = 'default' in prop_obj
+		prop_json := val.json_str()
+		prop_info.nullable = prop_info.prop_type == 'null' || prop_json.contains('"null"')
 
-		// Read property name
-		name_end := props_json.index_after('"', pos + 1) or { break }
-		prop_name := props_json[pos + 1..name_end]
-		pos = name_end + 1
-
-		// Skip colon and whitespace
-		for pos < props_json.len && (props_json[pos] == `:` || props_json[pos] == ` `
-			|| props_json[pos] == `\t` || props_json[pos] == `\n`) {
-			pos += 1
-		}
-
-		// Read property schema
-		if pos < props_json.len && props_json[pos] == `{` {
-			prop_schema := extract_json_object_value(props_json, pos)
-			if prop_schema.len > 0 {
-				mut prop_info := JsonPropertyInfo{}
-				prop_info.prop_type = extract_json_string(prop_schema, 'type') or { '' }
-				prop_info.has_default = prop_schema.contains('"default"')
-				prop_info.nullable = prop_info.prop_type == 'null' || prop_schema.contains('"null"')
-				prop_info.enum_values = parse_json_string_array(prop_schema, 'enum') or {
-					[]string{}
-				}
-
-				result[prop_name] = prop_info
-				pos += prop_schema.len
-			} else {
-				pos += 1
+		if enum_val := prop_obj['enum'] {
+			for item in enum_val.arr() {
+				prop_info.enum_values << item.str()
 			}
 		}
+
+		result[name] = prop_info
 	}
 
 	return result

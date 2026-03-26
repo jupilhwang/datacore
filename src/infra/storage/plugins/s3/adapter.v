@@ -414,6 +414,7 @@ fn (a &S3StorageAdapter) share_partition_key(group_id string, topic string, part
 // Note: async_flush_partition, flush_worker, flush_buffer_to_s3 have been moved to buffer_manager.v.
 
 /// start_workers starts flush, compaction, and sync linger workers.
+/// Also loads the persistent topic_id index on cold start.
 pub fn (mut a S3StorageAdapter) start_workers() {
 	// Mutex guard eliminates TOCTOU between load and store.
 	// Workers use atomic load on is_running_flag in their hot loop.
@@ -425,6 +426,9 @@ pub fn (mut a S3StorageAdapter) start_workers() {
 		return
 	}
 	stdatomic.store_i64(&a.is_running_flag, 1)
+
+	// Populate topic_id reverse cache from persistent S3 index
+	a.populate_cache_from_topic_id_index()
 
 	mut worker_count := 2
 	if a.config.sync_linger_ms > 0 {

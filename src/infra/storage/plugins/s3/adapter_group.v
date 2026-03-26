@@ -2,6 +2,7 @@
 module s3
 
 import domain
+import service.port
 import time
 import json
 import sync.stdatomic
@@ -123,7 +124,7 @@ pub fn (mut a S3StorageAdapter) list_groups() ![]domain.GroupInfo {
 }
 
 /// extract_group_ids_from_objects extracts unique group IDs from S3 object keys.
-fn extract_group_ids_from_objects(objects []S3Object) []string {
+fn extract_group_ids_from_objects(objects []port.ObjectInfo) []string {
 	mut group_ids := []string{}
 	mut seen := map[string]bool{}
 

@@ -1,8 +1,8 @@
 # DataCore Remaining Issues Plan
 
-Updated: 2026-03-25 | Version: v0.53.0 | Branch: feature/codebase-health-v4
+Updated: 2026-03-26 | Version: v0.54.0 | Branch: feature/codebase-health-v5
 
-## Session History (v0.50.9 ~ v0.53.0)
+## Session History (v0.50.9 ~ v0.54.0)
 
 | Version | Branch | Summary | Grade |
 |---------|--------|---------|:-----:|
@@ -11,6 +11,7 @@ Updated: 2026-03-25 | Version: v0.53.0 | Branch: feature/codebase-health-v4
 | v0.52.0 | feature/codebase-health-v3 | Handler DIP (8 concrete->Port), pub removal 624 (38.4%), ISP split | B (84.3) |
 | v0.52.1 | feature/codebase-health-v3 | field_* unification 309, SubHandler fields 18 removed, auth warning | B (85.1) |
 | v0.53.0 | feature/codebase-health-v4 | 20 remaining issues fixed (P1-P4), 72 files, +3443/-1186 | B+ (87.3) |
+| v0.54.0 | feature/codebase-health-v5 | 5 deferred issues resolved, -550 lines JSON migration, ObjectStore ISP | - |
 
 ---
 
@@ -20,27 +21,25 @@ No remaining codebase health issues. All 20 items resolved in v0.53.0.
 
 ---
 
-## Deferred (separate planning needed)
-
-These items require new feature development, not codebase health improvements:
+## Blocked (external dependency)
 
 | Item | Source | Notes |
 |------|--------|-------|
-| S3 Range-request random-access fetch | S3 Review CRIT-8 | New feature, 6h |
-| S3 topic_id reverse index | S3 Review CRIT-9 | New feature, 4h |
-| Custom JSON parser -> stdlib replacement | S3 Review HIGH-16 | Risky, 4h |
-| ObjectStore interface introduction | S3 Review HIGH-15 | Architecture, 2h |
-| S3 Config 3-way replication merge | S3 Review CRIT-10 | Complex, 3h |
 | gRPC HTTP/2 limitation | FUTURE_FEATURES.md | Blocked by V lang |
 | CRC32C hardware acceleration | FUTURE_FEATURES.md | Platform-specific |
 | parse/encode function further splits | v2 Plan | Protocol-spec dependent |
 
 ---
 
-## Completed Items (v0.50.8 ~ v0.53.0)
+## Completed Items (v0.50.8 ~ v0.54.0)
 
 | Item | Version | Notes |
 |------|---------|-------|
+| S3 Range-request RecordIndex on all paths | v0.54.0 | v5 Deferred #1 |
+| topic_id persistent reverse index | v0.54.0 | v5 Deferred #2 |
+| JSON parser stdlib migration (-550 lines) | v0.54.0 | v5 Deferred #3 |
+| ObjectStore ISP port (Reader/Writer/Full) | v0.54.0 | v5 Deferred #4 |
+| Config CAS ETag compare-and-swap | v0.54.0 | v5 Deferred #5 |
 | config.v split (969 -> 14 files) | v0.50.8 | S3 Review Phase 2 |
 | S3StorageAdapter decomposition (1243 -> 49 files) | v0.50.8 | S3 Review Phase 2 |
 | StoragePort ISP (17 methods -> 6 interfaces) | v0.50.8 | S3 Review Phase 2 |

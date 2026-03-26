@@ -5,6 +5,7 @@ module s3
 
 import encoding.xml
 import net.http
+import service.port
 import time
 import sync.stdatomic
 import infra.observability
@@ -58,15 +59,8 @@ fn is_network_error(err IError) bool {
 		|| err_str.contains('net.tcp: timed out')
 }
 
-/// S3Object represents an object from S3 list results.
-/// Holds individual object information parsed from a ListObjectsV2 API response.
-pub struct S3Object {
-pub:
-	key           string
-	size          i64
-	last_modified time.Time
-	etag          string
-}
+// NOTE: Object metadata is represented by port.ObjectInfo (defined in service/port/object_store_port.v).
+// S3-specific parsing functions below convert XML responses into port.ObjectInfo values.
 
 /// prepare_s3_request creates an HTTP request with standard S3 timeouts.
 fn prepare_s3_request(method http.Method, url string, headers http.Header, data string) !http.Request {
@@ -337,8 +331,8 @@ fn (mut a S3StorageAdapter) delete_objects_with_prefix(prefix string) ! {
 /// Uses the ListObjectsV2 API with automatic pagination via IsTruncated and
 /// NextContinuationToken to handle result sets larger than MaxKeys=1000.
 /// Includes retry logic to handle network issues such as OpenSSL errors.
-fn (mut a S3StorageAdapter) list_objects(prefix string) ![]S3Object {
-	mut all_objects := []S3Object{}
+fn (mut a S3StorageAdapter) list_objects(prefix string) ![]port.ObjectInfo {
+	mut all_objects := []port.ObjectInfo{}
 	mut continuation_token := ''
 
 	for {
@@ -472,7 +466,7 @@ fn (a &S3StorageAdapter) get_host() string {
 /// ListObjectsPage holds a single page of S3 ListObjectsV2 results
 /// including pagination state for iterating beyond MaxKeys=1000.
 struct ListObjectsPage {
-	objects                 []S3Object
+	objects                 []port.ObjectInfo
 	is_truncated            bool
 	next_continuation_token string
 }
@@ -506,7 +500,7 @@ fn parse_list_objects_page(body string) ListObjectsPage {
 
 /// parse_list_objects_response parses an S3 ListObjectsV2 XML response,
 /// extracting Key, Size, LastModified, and ETag from each Contents element.
-fn parse_list_objects_response(body string) []S3Object {
+fn parse_list_objects_response(body string) []port.ObjectInfo {
 	doc := xml.XMLDocument.from_string(body) or { return [] }
 	return parse_contents_to_objects(doc.root.get_elements_by_tag('Contents'))
 }
@@ -521,9 +515,9 @@ fn xml_node_text(node xml.XMLNode) string {
 	return ''
 }
 
-/// parse_contents_to_objects converts a list of XML Contents nodes into S3Objects.
-fn parse_contents_to_objects(contents_nodes []xml.XMLNode) []S3Object {
-	mut objects := []S3Object{cap: contents_nodes.len}
+/// parse_contents_to_objects converts a list of XML Contents nodes into port.ObjectInfo values.
+fn parse_contents_to_objects(contents_nodes []xml.XMLNode) []port.ObjectInfo {
+	mut objects := []port.ObjectInfo{cap: contents_nodes.len}
 	for node in contents_nodes {
 		mut key := ''
 		mut size := i64(0)
@@ -548,7 +542,7 @@ fn parse_contents_to_objects(contents_nodes []xml.XMLNode) []S3Object {
 				}
 			}
 		}
-		objects << S3Object{
+		objects << port.ObjectInfo{
 			key:           key
 			size:          size
 			last_modified: last_modified

@@ -94,7 +94,7 @@ fn (mut a S3StorageAdapter) sync_append_immediate(topic string, partition int, s
 	start_time := time.now()
 	base_offset_val := stored_records[0].offset
 	end_offset := stored_records[stored_records.len - 1].offset
-	segment_data := encode_stored_records(stored_records)
+	segment_data, record_index := encode_stored_records_with_index(stored_records)
 	segment_key := a.log_segment_key(topic, partition, base_offset_val, end_offset)
 
 	a.put_object(segment_key, segment_data) or {
@@ -106,7 +106,7 @@ fn (mut a S3StorageAdapter) sync_append_immediate(topic string, partition int, s
 
 	a.index_update_lock.lock()
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset_val,
-		end_offset, segment_data.len, []RecordIndex{}) or {
+		end_offset, segment_data.len, record_index) or {
 		a.index_update_lock.unlock()
 		a.record_sync_append_index_error()
 		return error('durable append failed (acks=${required_acks}): index update error: ${err}')
@@ -126,7 +126,7 @@ fn (mut a S3StorageAdapter) flush_sync_linger_buffer(topic string, partition int
 	start_time := time.now()
 	base_offset_val := buf.records[0].offset
 	end_offset := buf.records[buf.records.len - 1].offset
-	segment_data := encode_stored_records(buf.records)
+	segment_data, record_index := encode_stored_records_with_index(buf.records)
 	segment_key := a.log_segment_key(topic, partition, base_offset_val, end_offset)
 
 	// S3 PUT
@@ -145,7 +145,7 @@ fn (mut a S3StorageAdapter) flush_sync_linger_buffer(topic string, partition int
 	// Index update
 	a.index_update_lock.lock()
 	a.update_partition_index_with_segment(topic, partition, segment_key, base_offset_val,
-		end_offset, segment_data.len, []RecordIndex{}) or {
+		end_offset, segment_data.len, record_index) or {
 		a.index_update_lock.unlock()
 		a.record_sync_append_index_error()
 		err_result := LingerResult{

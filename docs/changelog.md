@@ -1,5 +1,27 @@
 # DataCore Changelog
 
+## [v0.54.0] -- 2026-03-26
+
+### Added
+- ObjectStoreReaderPort/ObjectStoreWriterPort/ObjectStorePort ISP interfaces (service/port)
+- S3 topic_id persistent reverse index (cold start O(1) lookup)
+- Config CAS with ETag-based compare-and-swap (3-retry, exponential backoff)
+- RecordIndex generation on all S3 append and compaction paths
+- 70+ new regression tests (JSON parser, CAS, RecordIndex, ObjectStore)
+
+### Changed
+- JSON manual parsing -> V stdlib json2.decode migration (-550 lines)
+- S3Object -> port.ObjectInfo domain abstraction
+- S3TransactionClient -> port.ObjectStorePort (DIP)
+- Iceberg ObjectStore -> port.ObjectStorePort (DIP)
+- cluster_metadata: update/lock operations use conditional PUT (If-Match/If-None-Match)
+
+### Removed
+- 4 dead JSON parsing functions (extract_json_object, unescape_json_bytes, hex_to_int, read_json_value)
+- S3Object struct (replaced by port.ObjectInfo)
+- S3TransactionClient interface (replaced by ObjectStorePort)
+- Iceberg-local ObjectStore interface (replaced by port-layer version)
+
 ## [v0.53.0] -- 2026-03-25
 
 ### Added

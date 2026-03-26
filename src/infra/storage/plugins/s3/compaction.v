@@ -285,21 +285,27 @@ fn (mut a S3StorageAdapter) download_segments_parallel(segments []LogSegment) ![
 	return merged_data
 }
 
-/// create_merged_segment creates a new segment with merged data and uploads it to S3.
+/// create_merged_segment decodes merged data, re-encodes with RecordIndex,
+/// uploads the result to S3, and returns the new LogSegment.
 fn (mut a S3StorageAdapter) create_merged_segment(topic string, partition int, segments []LogSegment, merged_data []u8) !LogSegment {
 	new_start_offset := segments[0].start_offset
 	new_end_offset := segments[segments.len - 1].end_offset
 	new_key := a.log_segment_key(topic, partition, new_start_offset, new_end_offset)
 
+	// Decode and re-encode to rebuild RecordIndex for Range Request support
+	all_records := decode_stored_records(merged_data)
+	reencoded_data, record_index := encode_stored_records_with_index(all_records)
+
 	// Upload new merged segment to S3
-	a.put_object(new_key, merged_data)!
+	a.put_object(new_key, reencoded_data)!
 
 	return LogSegment{
 		start_offset: new_start_offset
 		end_offset:   new_end_offset
 		key:          new_key
-		size_bytes:   i64(merged_data.len)
+		size_bytes:   i64(reencoded_data.len)
 		created_at:   time.now()
+		record_index: record_index
 	}
 }
 

@@ -63,13 +63,14 @@ fn (mut a S3StorageAdapter) merge_segments_server_side(topic string, partition i
 		a.multipart_copy_segments(dest_key, segments)!
 	}
 
-	// Update index with merged segment
+	// Update index with merged segment (includes composite record_index)
 	new_segment := LogSegment{
 		start_offset: new_start_offset
 		end_offset:   new_end_offset
 		key:          dest_key
 		size_bytes:   total_size
 		created_at:   time.now()
+		record_index: build_merged_record_index(segments)
 	}
 
 	a.update_index_with_merged_segment(topic, partition, mut index, segments, new_segment)!

@@ -3,17 +3,12 @@ module transaction
 
 import domain
 import json
+import service.port
 import sync
 
-/// S3TransactionClient provides object storage operations for transaction persistence.
-/// Decouples S3TransactionStore from concrete HTTP implementations (DIP).
-pub interface S3TransactionClient {
-mut:
-	get_object(key string) ![]u8
-	put_object(key string, data []u8) !
-	delete_object(key string) !
-	list_objects(prefix string) ![]string
-}
+// NOTE: Object storage operations are defined by port.ObjectStorePort
+// (service/port/object_store_port.v). The former S3TransactionClient
+// interface has been replaced with port.ObjectStorePort to follow DIP.
 
 /// S3TransactionConfig holds the configuration for S3-based transaction storage.
 pub struct S3TransactionConfig {
@@ -26,13 +21,13 @@ pub:
 /// Key pattern: {prefix}/{transactional_id}/state.json
 pub struct S3TransactionStore {
 mut:
-	client S3TransactionClient
+	client port.ObjectStorePort
 	config S3TransactionConfig
 	lock   sync.RwMutex
 }
 
 /// new_s3_transaction_store creates a new S3-based transaction store.
-pub fn new_s3_transaction_store(client S3TransactionClient, config S3TransactionConfig) &S3TransactionStore {
+pub fn new_s3_transaction_store(client port.ObjectStorePort, config S3TransactionConfig) &S3TransactionStore {
 	return &S3TransactionStore{
 		client: client
 		config: config
@@ -50,7 +45,7 @@ pub fn (mut s S3TransactionStore) get_transaction(transactional_id string) !doma
 	defer { s.lock.unlock() }
 
 	key := s.build_key(transactional_id)
-	data := s.client.get_object(key) or {
+	data, _ := s.client.get_object(key, -1, -1) or {
 		return error('transactional_id not found: ${transactional_id}')
 	}
 
@@ -84,11 +79,13 @@ pub fn (mut s S3TransactionStore) list_transactions() ![]domain.TransactionMetad
 	defer { s.lock.unlock() }
 
 	prefix := '${s.config.prefix}/'
-	keys := s.client.list_objects(prefix) or { return error('failed to list transactions: ${err}') }
+	objects := s.client.list_objects(prefix) or {
+		return error('failed to list transactions: ${err}')
+	}
 
-	mut result := []domain.TransactionMetadata{cap: keys.len}
-	for key in keys {
-		data := s.client.get_object(key) or { continue }
+	mut result := []domain.TransactionMetadata{cap: objects.len}
+	for obj in objects {
+		data, _ := s.client.get_object(obj.key, -1, -1) or { continue }
 		metadata := json.decode(domain.TransactionMetadata, data.bytestr()) or { continue }
 		result << metadata
 	}

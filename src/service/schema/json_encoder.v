@@ -3,6 +3,7 @@
 module schema
 
 import regex
+import x.json2
 
 // JsonEncoder provides JSON schema validation and encoding
 /// JsonEncoder provides JSON schema validation and encoding.
@@ -286,126 +287,115 @@ mut:
 }
 
 fn parse_json_schema(schema_str string) !&JsonSchema {
+	raw := json2.decode[json2.Any](schema_str)!
+	return build_json_schema_from_map(raw.as_map())
+}
+
+// build_json_schema_from_map recursively builds a JsonSchema from a decoded JSON map.
+// Terminates when no nested 'properties' or 'items' keys exist in the map.
+fn build_json_schema_from_map(obj map[string]json2.Any) !&JsonSchema {
 	mut result := &JsonSchema{
 		properties: map[string]&JsonSchema{}
 	}
 
-	// Extract type
-	if type_val := extract_json_string(schema_str, 'type') {
-		result.schema_type = type_val
+	if v := obj['type'] {
+		result.schema_type = v.str()
 	}
 
-	// Extract properties
-	if props_start := schema_str.index('"properties"') {
-		props_json := extract_json_object_value(schema_str, props_start + 12)
-		if props_json.len > 0 {
-			result.properties = parse_schema_properties(props_json)
+	if props_val := obj['properties'] {
+		for name, prop_any in props_val.as_map() {
+			result.properties[name] = build_json_schema_from_map(prop_any.as_map())!
 		}
 	}
 
-	// Extract required
-	result.required = parse_json_string_array(schema_str, 'required') or { []string{} }
-
-	// Extract additionalProperties
-	if schema_str.contains('"additionalProperties":false')
-		|| schema_str.contains('"additionalProperties": false') {
-		result.additional_properties = false
-	}
-
-	// Extract items (for arrays)
-	if items_start := schema_str.index('"items"') {
-		items_json := extract_json_object_value(schema_str, items_start + 7)
-		if items_json.len > 0 {
-			if inner := parse_json_schema(items_json) {
-				result.items_schema = inner
-			}
+	if req_val := obj['required'] {
+		for item in req_val.arr() {
+			result.required << item.str()
 		}
 	}
 
-	// Extract numeric constraints
-	result.min_length = extract_json_int(schema_str, 'minLength') or { 0 }
-	result.max_length = extract_json_int(schema_str, 'maxLength') or { 0 }
-	result.min_items = extract_json_int(schema_str, 'minItems') or { 0 }
-	result.max_items = extract_json_int(schema_str, 'maxItems') or { 0 }
-	result.min_properties = extract_json_int(schema_str, 'minProperties') or { 0 }
-	result.max_properties = extract_json_int(schema_str, 'maxProperties') or { 0 }
-
-	if min_val := extract_json_float(schema_str, 'minimum') {
-		result.minimum = min_val
-		result.has_minimum = true
-	}
-	if max_val := extract_json_float(schema_str, 'maximum') {
-		result.maximum = max_val
-		result.has_maximum = true
-	}
-	if ex_min := extract_json_float(schema_str, 'exclusiveMinimum') {
-		result.exclusive_minimum = ex_min
-		result.has_exclusive_minimum = true
-	}
-	if ex_max := extract_json_float(schema_str, 'exclusiveMaximum') {
-		result.exclusive_maximum = ex_max
-		result.has_exclusive_maximum = true
-	}
-	if multiple := extract_json_float(schema_str, 'multipleOf') {
-		result.multiple_of = multiple
+	if ap_val := obj['additionalProperties'] {
+		if ap_val.json_str() == 'false' {
+			result.additional_properties = false
+		}
 	}
 
-	// Extract string constraints
-	result.pattern = extract_json_string(schema_str, 'pattern') or { '' }
-	result.format = extract_json_string(schema_str, 'format') or { '' }
-	result.enum_values = parse_json_string_array(schema_str, 'enum') or { []string{} }
+	if items_val := obj['items'] {
+		items_map := items_val.as_map()
+		if items_map.len > 0 {
+			result.items_schema = build_json_schema_from_map(items_map)!
+		}
+	}
 
-	// Extract uniqueItems
-	result.unique_items = schema_str.contains('"uniqueItems":true')
-		|| schema_str.contains('"uniqueItems": true')
+	apply_int_constraints(mut result, obj)
+	apply_float_constraints(mut result, obj)
+	apply_string_constraints(mut result, obj)
 
 	return result
 }
 
-fn parse_schema_properties(props_json string) map[string]&JsonSchema {
-	mut result := map[string]&JsonSchema{}
+fn apply_string_constraints(mut schema JsonSchema, obj map[string]json2.Any) {
+	if v := obj['pattern'] {
+		schema.pattern = v.str()
+	}
+	if v := obj['format'] {
+		schema.format = v.str()
+	}
 
-	// Simple property extraction
-	mut pos := 1
-
-	for pos < props_json.len - 1 {
-		// Skip whitespace
-		for pos < props_json.len && (props_json[pos] == ` `
-			|| props_json[pos] == `\t` || props_json[pos] == `\n`
-			|| props_json[pos] == `,`) {
-			pos += 1
-		}
-
-		if pos >= props_json.len - 1 || props_json[pos] != `"` {
-			break
-		}
-
-		// Read property name
-		name_end := props_json.index_after('"', pos + 1) or { break }
-		prop_name := props_json[pos + 1..name_end]
-		pos = name_end + 1
-
-		// Skip colon and whitespace
-		for pos < props_json.len && (props_json[pos] == `:` || props_json[pos] == ` `
-			|| props_json[pos] == `\t` || props_json[pos] == `\n`) {
-			pos += 1
-		}
-
-		// Read property schema (object)
-		if pos < props_json.len && props_json[pos] == `{` {
-			prop_schema := extract_json_object_value(props_json, pos)
-			if prop_schema.len > 0 {
-				if schema := parse_json_schema(prop_schema) {
-					result[prop_name] = schema
-				}
-				pos += prop_schema.len
-			} else {
-				pos += 1
-			}
+	if enum_val := obj['enum'] {
+		for item in enum_val.arr() {
+			schema.enum_values << item.str()
 		}
 	}
 
-	return result
+	if v := obj['uniqueItems'] {
+		if v.json_str() == 'true' {
+			schema.unique_items = true
+		}
+	}
+}
+
+fn apply_int_constraints(mut schema JsonSchema, obj map[string]json2.Any) {
+	if v := obj['minLength'] {
+		schema.min_length = v.int()
+	}
+	if v := obj['maxLength'] {
+		schema.max_length = v.int()
+	}
+	if v := obj['minItems'] {
+		schema.min_items = v.int()
+	}
+	if v := obj['maxItems'] {
+		schema.max_items = v.int()
+	}
+	if v := obj['minProperties'] {
+		schema.min_properties = v.int()
+	}
+	if v := obj['maxProperties'] {
+		schema.max_properties = v.int()
+	}
+}
+
+fn apply_float_constraints(mut schema JsonSchema, obj map[string]json2.Any) {
+	if v := obj['minimum'] {
+		schema.minimum = v.f64()
+		schema.has_minimum = true
+	}
+	if v := obj['maximum'] {
+		schema.maximum = v.f64()
+		schema.has_maximum = true
+	}
+	if v := obj['exclusiveMinimum'] {
+		schema.exclusive_minimum = v.f64()
+		schema.has_exclusive_minimum = true
+	}
+	if v := obj['exclusiveMaximum'] {
+		schema.exclusive_maximum = v.f64()
+		schema.has_exclusive_maximum = true
+	}
+	if v := obj['multipleOf'] {
+		schema.multiple_of = v.f64()
+	}
 }
 
 // JSON Utility Functions

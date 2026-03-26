@@ -85,6 +85,31 @@ fn binary_search_record_index(index []RecordIndex, target_offset i64) int {
 	return result
 }
 
+/// build_merged_record_index combines record indexes from multiple segments,
+/// adjusting byte positions by cumulative segment sizes for server-side copy.
+/// Segments without record_index are skipped (byte offset still accumulates).
+fn build_merged_record_index(segments []LogSegment) []RecordIndex {
+	mut total_entries := 0
+	for seg in segments {
+		total_entries += seg.record_index.len
+	}
+
+	mut merged := []RecordIndex{cap: total_entries}
+	mut byte_offset := i64(0)
+
+	for seg in segments {
+		for ri in seg.record_index {
+			merged << RecordIndex{
+				offset:        ri.offset
+				byte_position: ri.byte_position + byte_offset
+			}
+		}
+		byte_offset += seg.size_bytes
+	}
+
+	return merged
+}
+
 /// CachedPartitionIndex holds a cached partition index with metadata.
 struct CachedPartitionIndex {
 	index     PartitionIndex
