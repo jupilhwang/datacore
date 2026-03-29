@@ -1,5 +1,28 @@
 # Progress Log
 
+## v0.55.0 -- Codebase Health v6: Performance + DIP + Typed Errors (2026-03-29)
+
+### Summary
+Performance hot-path optimization, DIP violation fixes, and typed error introduction.
+
+### Changes
+- 12 performance optimizations: clone elimination, mutex removal, zero-copy UUID, stdatomic metrics
+- 7 DIP fixes: StreamingServicePorts, SchemaEncoderPort, IcebergCatalog port migration, RestServer handler ports
+- SCRAM deduplication: SHA-256/512 merged into generic ScramAuthCore (-85 lines)
+- Typed errors: domain.StorageError with StorageErrorCode enum (10 sites + string fallback)
+- 15 magic numbers extracted to named constants across 10 files
+- 21 contextual error messages added, 38 doc comments fixed
+- Bug fix: store_with_auto_create partition_not_found misrouting (HIGH)
+- Bug fix: flaky rate_limiter_test.v timing issue
+- Bug fix: broker_startup_helpers.v missing domain. type prefix
+
+### Results
+- 86 files changed, +2015 / -1347 lines
+- 12 new files (7 source + 5 test)
+- 146/146 tests pass, build SUCCESS
+
+---
+
 ## v0.54.1 -- Security Fixes: 6 HIGH Issues Resolved (2026-03-26)
 
 ### Resolved Items
