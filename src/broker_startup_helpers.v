@@ -155,14 +155,20 @@ fn create_tcp_server(conf cfg.Config, protocol_handler kafka.Handler, mut logger
 
 // create_sse_handler builds the SSE protocol handler at the composition root.
 // Concrete types are assembled here and injected into RestServer via SSEHandlerPort.
-fn create_sse_handler(storage port.StoragePort, sse_config SSEConfig) &proto_http.SSEHandler {
+// vfmt off
+// (vfmt strips domain. prefix from params, but the compiler requires it)
+fn create_sse_handler(storage port.StoragePort, sse_config domain.SSEConfig) &proto_http.SSEHandler {
+	// vfmt on
 	sse_service := streaming.new_sse_service(storage, sse_config)
 	return proto_http.new_sse_handler(sse_service, storage, sse_config)
 }
 
 // create_ws_handler builds the WebSocket protocol handler at the composition root.
 // Concrete types are assembled here and injected into RestServer via WebSocketHandlerPort.
-fn create_ws_handler(storage port.StoragePort, ws_config WebSocketConfig) &proto_http.WebSocketHandler {
+// vfmt off
+// (vfmt strips domain. prefix from params, but the compiler requires it)
+fn create_ws_handler(storage port.StoragePort, ws_config domain.WebSocketConfig) &proto_http.WebSocketHandler {
+	// vfmt on
 	ws_service := streaming.new_websocket_service(storage, ws_config)
 	return proto_http.new_websocket_handler(ws_service, storage, ws_config)
 }
