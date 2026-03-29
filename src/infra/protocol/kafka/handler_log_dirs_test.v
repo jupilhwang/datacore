@@ -14,7 +14,7 @@ fn create_log_dirs_test_handler() (&memory.MemoryStorageAdapter, Handler) {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 	return storage, handler
 }
 

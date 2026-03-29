@@ -45,7 +45,7 @@ fn test_token_bucket_exhaustion() {
 }
 
 fn test_token_bucket_refill_over_time() {
-	mut bucket := new_token_bucket(10.0, 10.0) // 10 tokens/ms refill
+	mut bucket := new_token_bucket(10.0, 0.01) // 0.01 tokens/ms (10 tokens/sec)
 
 	// Exhaust all tokens
 	for _ in 0 .. 10 {
@@ -53,8 +53,8 @@ fn test_token_bucket_refill_over_time() {
 	}
 	assert bucket.try_consume(1.0) == false
 
-	// Wait for refill (sleep 5ms should refill ~50 tokens, capped at 10)
-	time.sleep(5 * time.millisecond)
+	// Wait for refill (sleep 200ms should refill ~2 tokens at 0.01/ms)
+	time.sleep(200 * time.millisecond)
 
 	// Should have tokens again after refill
 	assert bucket.try_consume(1.0) == true

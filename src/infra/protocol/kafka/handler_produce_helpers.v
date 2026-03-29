@@ -296,7 +296,12 @@ fn (mut h Handler) decompress_record_data(topic_name string, partition_index i32
 // store_with_auto_create appends records to storage, auto-creating the topic if not found.
 fn (mut h Handler) store_with_auto_create(topic_name string, partition_index i32, records []domain.Record, acks i16) !domain.AppendResult {
 	return h.storage.append(topic_name, int(partition_index), records, acks) or {
-		if err.str().contains('not found') {
+		is_topic_not_found := if err is domain.StorageError {
+			err.error_code == .topic_not_found
+		} else {
+			err.str().contains('topic not found')
+		}
+		if is_topic_not_found {
 			num_partitions := if int(partition_index) >= 1 { int(partition_index) + 1 } else { 1 }
 			h.storage.create_topic(topic_name, num_partitions, domain.TopicConfig{})!
 			return h.storage.append(topic_name, int(partition_index), records, acks)

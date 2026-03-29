@@ -16,7 +16,7 @@ fn create_test_handler_with_acl() kafka.Handler {
 
 	// Use new_handler_full (9 args: broker_id, host, port, cluster_id, storage, auth_manager, acl_manager, txn_coordinator, compression_service)
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		acl_manager, none, compression_service)
+		acl_manager, none, kafka.new_compression_port_adapter(compression_service))
 }
 
 struct AclMockStorage {}

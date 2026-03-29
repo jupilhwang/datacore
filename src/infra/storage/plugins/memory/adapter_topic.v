@@ -36,7 +36,7 @@ pub fn (mut a MemoryStorageAdapter) create_topic(name string, partitions int, co
 			{
 			'topic': name
 		})
-		return error('topic already exists')
+		return error('topic already exists: ${name}')
 	}
 
 	// Generate UUID v4 for topic_id - initialize array at once
@@ -120,7 +120,7 @@ pub fn (mut a MemoryStorageAdapter) delete_topic(name string) ! {
 
 	topic := a.topics[name] or {
 		a.inc_error()
-		return error('topic not found')
+		return error('topic not found: ${name}')
 	}
 
 	// Remove from topic_id_index cache
@@ -157,7 +157,7 @@ pub fn (mut a MemoryStorageAdapter) get_topic(name string) !domain.TopicMetadata
 	}
 
 	a.inc_error()
-	return error('topic not found')
+	return domain.new_storage_error(.topic_not_found, 'topic not found: ${name}')
 }
 
 /// get_topic_by_id retrieves a topic by topic_id.
@@ -174,7 +174,7 @@ pub fn (mut a MemoryStorageAdapter) get_topic_by_id(topic_id []u8) !domain.Topic
 		}
 	}
 
-	return error('topic not found')
+	return domain.new_storage_error(.topic_not_found, 'topic not found: ${topic_id_hex}')
 }
 
 /// add_partitions adds partitions to a topic.
@@ -182,7 +182,7 @@ pub fn (mut a MemoryStorageAdapter) add_partitions(name string, new_count int) !
 	a.topics_lock.@lock()
 	defer { a.topics_lock.unlock() }
 
-	mut topic := a.topics[name] or { return error('topic not found') }
+	mut topic := a.topics[name] or { return error('topic not found: ${name}') }
 
 	// Check current partition count based on mmap mode
 	current := if topic.use_mmap { topic.mmap_partitions.len } else { topic.partitions.len }

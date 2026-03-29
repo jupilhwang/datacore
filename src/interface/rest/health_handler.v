@@ -35,14 +35,12 @@ struct LiveResponse {
 // handle_health handles the /health endpoint.
 // Returns full health status including storage state.
 fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
-	// Check storage health
 	storage_status := s.storage.health_check() or {
 		resp := HealthResponse{
 			status:  'unhealthy'
 			storage: 'error'
 		}
 		s.send_json(mut conn, 503, json.encode(resp))
-		conn.close() or {}
 		return
 	}
 
@@ -67,21 +65,18 @@ fn (mut s RestServer) handle_health(mut conn net.TcpConn) {
 		version:        app_version
 	}
 	s.send_json(mut conn, http_status, json.encode(resp))
-	conn.close() or {}
 }
 
 // handle_ready handles the /ready endpoint.
 // Returns whether the server is ready to receive traffic.
 fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
 	if s.ready {
-		// Additional readiness checks possible
 		storage_status := s.storage.health_check() or {
 			resp := ReadyResponse{
 				ready:  false
 				reason: 'storage_unavailable'
 			}
 			s.send_json(mut conn, 503, json.encode(resp))
-			conn.close() or {}
 			return
 		}
 
@@ -91,7 +86,6 @@ fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
 				reason: 'storage_unhealthy'
 			}
 			s.send_json(mut conn, 503, json.encode(resp))
-			conn.close() or {}
 			return
 		}
 
@@ -106,17 +100,14 @@ fn (mut s RestServer) handle_ready(mut conn net.TcpConn) {
 		}
 		s.send_json(mut conn, 503, json.encode(resp))
 	}
-	conn.close() or {}
 }
 
 // handle_live handles the /live endpoint.
 // Returns whether the server process is alive.
 fn (mut s RestServer) handle_live(mut conn net.TcpConn) {
-	// Liveness check - only verify that the server is running
 	if s.running {
 		s.send_json(mut conn, 200, json.encode(LiveResponse{ alive: true }))
 	} else {
 		s.send_json(mut conn, 503, json.encode(LiveResponse{ alive: false }))
 	}
-	conn.close() or {}
 }

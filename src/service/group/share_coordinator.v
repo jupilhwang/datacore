@@ -216,10 +216,10 @@ fn (mut c ShareGroupCoordinator) leave_group(group_id string, member_id string) 
 	c.lock.@lock()
 	defer { c.lock.unlock() }
 
-	mut group := c.groups[group_id] or { return error('group not found') }
+	mut group := c.groups[group_id] or { return error('group not found: ${group_id}') }
 
 	if member_id !in group.members {
-		return error('member not found')
+		return error('member not found: ${member_id} in group ${group_id}')
 	}
 
 	// Remove member

@@ -126,7 +126,7 @@ pub fn (mut m MmapFile) unmap_region(region &MmapRegion) ! {
 			return
 		}
 	}
-	return error('region not found')
+	return error('region not found: offset=${region.offset}, length=${region.length}')
 }
 
 /// sync_region synchronizes a dirty region to disk.

@@ -7,22 +7,11 @@ import json
 import sync
 import service.port
 
-/// IcebergCatalog defines the Iceberg table catalog interface.
-pub interface IcebergCatalog {
-mut:
-	create_table(identifier IcebergTableIdentifier, schema IcebergSchema, spec IcebergPartitionSpec, location string) !IcebergMetadata
-	load_table(identifier IcebergTableIdentifier) !IcebergMetadata
-	load_metadata_at(metadata_location string) !IcebergMetadata
-	update_table(identifier IcebergTableIdentifier, metadata IcebergMetadata) !
-	drop_table(identifier IcebergTableIdentifier) !
-	list_tables(namespace []string) ![]IcebergTableIdentifier
-	namespace_exists(namespace []string) bool
-	create_namespace(namespace []string) !
-}
+// NOTE: IcebergCatalog interface is defined in service/port/iceberg_catalog_port.v
 
 /// CachedIcebergMetadata holds cached Iceberg table metadata.
 struct CachedIcebergMetadata {
-	metadata  IcebergMetadata
+	metadata  port.IcebergMetadata
 	cached_at time.Time
 }
 
@@ -41,7 +30,7 @@ pub mut:
 }
 
 /// cache_put stores metadata in cache with eviction logic.
-fn (mut c HadoopCatalog) cache_put(cache_key string, metadata IcebergMetadata) {
+fn (mut c HadoopCatalog) cache_put(cache_key string, metadata port.IcebergMetadata) {
 	c.metadata_lock.@lock()
 	defer { c.metadata_lock.unlock() }
 
@@ -77,7 +66,7 @@ pub fn new_hadoop_catalog(adapter port.ObjectStorePort, warehouse string) &Hadoo
 }
 
 /// create_table creates a new Iceberg table.
-pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, schema IcebergSchema, spec IcebergPartitionSpec, location string) !IcebergMetadata {
+pub fn (mut c HadoopCatalog) create_table(identifier port.IcebergTableIdentifier, schema port.IcebergSchema, spec port.IcebergPartitionSpec, location string) !port.IcebergMetadata {
 	// Generate table path
 	table_path := c.table_path(identifier)
 
@@ -88,11 +77,11 @@ pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, sch
 
 	// Generate table UUID deterministically from location so the same table
 	// recreated at the same path always yields the same UUID.
-	table_uuid := generate_table_uuid(location)
+	table_uuid := port.generate_table_uuid(location)
 	now := time.now()
 
 	// Create initial metadata
-	mut metadata := IcebergMetadata{
+	mut metadata := port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          table_uuid
 		location:            location
@@ -123,7 +112,7 @@ pub fn (mut c HadoopCatalog) create_table(identifier IcebergTableIdentifier, sch
 }
 
 /// load_table loads an existing Iceberg table.
-pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !IcebergMetadata {
+pub fn (mut c HadoopCatalog) load_table(identifier port.IcebergTableIdentifier) !port.IcebergMetadata {
 	// Check cache first
 	cache_key := c.table_path(identifier)
 	c.metadata_lock.rlock()
@@ -137,7 +126,7 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 
 	table_path := c.table_path(identifier)
 
-	// Fetch version hint file (existence check; actual value unused — latest file is found by listing)
+	// Fetch version hint file (existence check; actual value unused -- latest file is found by listing)
 	version_hint_path := '${table_path}/metadata/version-hint.text'
 	_, _ := c.adapter.get_object(version_hint_path, -1, -1) or {
 		return error('Table not found: ${identifier.name}')
@@ -183,7 +172,7 @@ pub fn (mut c HadoopCatalog) load_table(identifier IcebergTableIdentifier) !Iceb
 }
 
 /// update_table updates the table metadata.
-pub fn (mut c HadoopCatalog) update_table(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
+pub fn (mut c HadoopCatalog) update_table(identifier port.IcebergTableIdentifier, metadata port.IcebergMetadata) ! {
 	table_path := c.table_path(identifier)
 
 	// Optimistic concurrency control: create new version metadata file
@@ -202,7 +191,7 @@ pub fn (mut c HadoopCatalog) update_table(identifier IcebergTableIdentifier, met
 }
 
 /// drop_table drops the table.
-pub fn (mut c HadoopCatalog) drop_table(identifier IcebergTableIdentifier) ! {
+pub fn (mut c HadoopCatalog) drop_table(identifier port.IcebergTableIdentifier) ! {
 	table_path := c.table_path(identifier)
 
 	// Check table existence
@@ -218,15 +207,15 @@ pub fn (mut c HadoopCatalog) drop_table(identifier IcebergTableIdentifier) ! {
 }
 
 /// list_tables lists all tables in the namespace.
-pub fn (mut c HadoopCatalog) list_tables(namespace []string) ![]IcebergTableIdentifier {
-	mut identifiers := []IcebergTableIdentifier{}
+pub fn (mut c HadoopCatalog) list_tables(namespace []string) ![]port.IcebergTableIdentifier {
+	mut identifiers := []port.IcebergTableIdentifier{}
 
 	// Generate namespace path
 	ns_path := c.namespace_path(namespace)
 	prefix := '${ns_path}/'
 
 	// Fetch list of all objects in the namespace
-	objects := c.adapter.list_objects(prefix) or { return []IcebergTableIdentifier{} }
+	objects := c.adapter.list_objects(prefix) or { return []port.IcebergTableIdentifier{} }
 
 	// Collect table list (directories with a metadata folder)
 	mut seen_tables := map[string]bool{}
@@ -237,7 +226,7 @@ pub fn (mut c HadoopCatalog) list_tables(namespace []string) ![]IcebergTableIden
 			table_name := parts[namespace.len]
 			if table_name !in seen_tables && table_name != '' {
 				seen_tables[table_name] = true
-				identifiers << IcebergTableIdentifier{
+				identifiers << port.IcebergTableIdentifier{
 					namespace: namespace
 					name:      table_name
 				}
@@ -276,7 +265,7 @@ pub fn (mut c HadoopCatalog) create_namespace(namespace []string) ! {
 }
 
 /// load_metadata_at loads Iceberg metadata from a specific metadata file path.
-pub fn (mut c HadoopCatalog) load_metadata_at(metadata_location string) !IcebergMetadata {
+pub fn (mut c HadoopCatalog) load_metadata_at(metadata_location string) !port.IcebergMetadata {
 	// Check cache first
 	c.metadata_lock.rlock()
 	if cached := c.metadata_cache[metadata_location] {
@@ -300,7 +289,7 @@ pub fn (mut c HadoopCatalog) load_metadata_at(metadata_location string) !Iceberg
 
 /// commit_metadata writes the given metadata as a new versioned metadata JSON file to S3
 /// and updates the version-hint.text pointer.
-fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
+fn (mut c HadoopCatalog) commit_metadata(identifier port.IcebergTableIdentifier, metadata port.IcebergMetadata) ! {
 	table_path := c.table_path(identifier)
 
 	// Derive next version number from existing snapshot count (same convention as update_table)
@@ -316,7 +305,7 @@ fn (mut c HadoopCatalog) commit_metadata(identifier IcebergTableIdentifier, meta
 	c.invalidate_cache(table_path)
 }
 
-fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {
+fn (mut c HadoopCatalog) table_exists(identifier port.IcebergTableIdentifier) bool {
 	table_path := c.table_path(identifier)
 	metadata_path := '${table_path}/metadata/'
 
@@ -325,7 +314,7 @@ fn (mut c HadoopCatalog) table_exists(identifier IcebergTableIdentifier) bool {
 }
 
 /// table_path returns the S3 path for the table.
-fn (mut c HadoopCatalog) table_path(identifier IcebergTableIdentifier) string {
+fn (mut c HadoopCatalog) table_path(identifier port.IcebergTableIdentifier) string {
 	ns_path := c.namespace_path(identifier.namespace)
 	return '${ns_path}/${identifier.name}'
 }
@@ -340,20 +329,20 @@ fn (mut c HadoopCatalog) namespace_path(namespace []string) string {
 
 /// encode_metadata encodes metadata as a JSON string using standard json.encode.
 /// Output uses kebab-case keys per the Iceberg specification.
-fn encode_metadata(metadata IcebergMetadata) string {
+fn encode_metadata(metadata port.IcebergMetadata) string {
 	return json.encode(metadata)
 }
 
 /// decode_metadata decodes a JSON string into IcebergMetadata.
 /// Handles both kebab-case (Iceberg standard) and camelCase (legacy) keys
 /// by normalizing camelCase to kebab-case before decoding.
-fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
+fn (mut c HadoopCatalog) decode_metadata(json_str string) !port.IcebergMetadata {
 	if json_str == '' {
 		return error('Empty metadata JSON')
 	}
 
 	normalized := normalize_metadata_json_keys(json_str)
-	mut metadata := json.decode(IcebergMetadata, normalized) or {
+	mut metadata := json.decode(port.IcebergMetadata, normalized) or {
 		return error('Failed to decode metadata JSON: ${err}')
 	}
 
@@ -362,7 +351,7 @@ fn (mut c HadoopCatalog) decode_metadata(json_str string) !IcebergMetadata {
 		metadata.format_version = 2
 	}
 	if metadata.table_uuid == '' {
-		metadata.table_uuid = generate_table_uuid(json_str)
+		metadata.table_uuid = port.generate_table_uuid(json_str)
 	}
 	if metadata.last_updated_ms == 0 {
 		metadata.last_updated_ms = time.now().unix_milli()

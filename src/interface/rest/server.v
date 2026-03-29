@@ -22,6 +22,28 @@ import net
 import service.port
 import time
 
+const max_rest_body_size = 1024 * 1024
+
+// Handler port interfaces (ISP: RestServer depends only on the methods it uses)
+
+/// SSEHandlerPort abstracts SSE handler operations used by RestServer.
+/// Defined here (consumer-side) because method signatures reference proto_http types.
+pub interface SSEHandlerPort {
+mut:
+	handle_sse_request(request proto_http.SSERequest) !(int, map[string]string, bool)
+	start_streaming(conn_id string, mut writer proto_http.SSEResponseWriter)
+	get_stats() port.StreamingStats
+	unregister_connection(conn_id string) !
+}
+
+/// WebSocketHandlerPort abstracts WebSocket handler operations used by RestServer.
+pub interface WebSocketHandlerPort {
+mut:
+	handle_upgrade(mut conn net.TcpConn, headers map[string]string, client_ip string) !string
+	start_connection(conn_id string, mut conn net.TcpConn)
+	get_stats() port.WebSocketServiceStats
+}
+
 // REST API server
 
 /// RestServerConfig is a struct holding REST server configuration.
@@ -37,16 +59,15 @@ pub mut:
 }
 
 /// RestServer provides an HTTP-based REST API server.
-/// Supports SSE and WebSocket streaming.
+/// Depends on handler port interfaces (DIP), not concrete infra types.
 pub struct RestServer {
 	config RestServerConfig
 mut:
 	storage             port.StoragePort
-	sse_handler         &proto_http.SSEHandler
-	ws_handler          &proto_http.WebSocketHandler
+	sse_handler         SSEHandlerPort
+	ws_handler          WebSocketHandlerPort
 	schema_api          &SchemaAPI
 	iceberg_catalog_api &IcebergCatalogAPI
-	metrics             observability.DataCoreMetrics
 	start_time          time.Time
 	running             bool
 	ready               bool
@@ -67,23 +88,23 @@ struct RestErrorResponse {
 	message    string @[json: 'message']
 }
 
-/// new_rest_server - creates a new REST API server
-pub fn new_rest_server(config RestServerConfig, storage port.StoragePort) &RestServer {
+/// new_rest_server creates a new REST API server.
+/// Handlers are injected from the composition root (DIP).
+pub fn new_rest_server(config RestServerConfig, storage port.StoragePort, sse_handler SSEHandlerPort, ws_handler WebSocketHandlerPort) &RestServer {
 	return &RestServer{
 		config:              config
 		storage:             storage
-		sse_handler:         proto_http.new_sse_handler(storage, config.sse_config)
-		ws_handler:          proto_http.new_websocket_handler(storage, config.ws_config)
+		sse_handler:         sse_handler
+		ws_handler:          ws_handler
 		schema_api:          &SchemaAPI(unsafe { nil })
 		iceberg_catalog_api: &IcebergCatalogAPI(unsafe { nil })
-		metrics:             observability.new_datacore_metrics()
 		start_time:          time.now()
 		running:             false
 		ready:               false
 	}
 }
 
-/// default_rest_config - returns default REST server configuration
+/// default_rest_config returns default REST server configuration
 pub fn default_rest_config() RestServerConfig {
 	return RestServerConfig{
 		host:            '0.0.0.0'
@@ -95,21 +116,21 @@ pub fn default_rest_config() RestServerConfig {
 	}
 }
 
-/// set_schema_api - sets the Schema API handler
+/// set_schema_api sets the Schema API handler
 pub fn (mut s RestServer) set_schema_api(api &SchemaAPI) {
 	unsafe {
 		s.schema_api = api
 	}
 }
 
-/// set_iceberg_catalog_api - sets the Iceberg Catalog API handler
+/// set_iceberg_catalog_api sets the Iceberg Catalog API handler
 pub fn (mut s RestServer) set_iceberg_catalog_api(api &IcebergCatalogAPI) {
 	unsafe {
 		s.iceberg_catalog_api = api
 	}
 }
 
-/// start - starts the REST API server (blocking)
+/// start starts the REST API server (blocking)
 pub fn (mut s RestServer) start() ! {
 	mut listener := net.listen_tcp(.ip, '${s.config.host}:${s.config.port}')!
 	s.running = true
@@ -143,14 +164,14 @@ pub fn (mut s RestServer) start() ! {
 	listener.close() or {}
 }
 
-/// start_background - starts the REST API server in background
+/// start_background starts the REST API server in background
 pub fn (mut s RestServer) start_background() {
 	spawn fn [mut s] () {
 		s.start() or { eprintln('[REST] Failed to start server: ${err}') }
 	}()
 }
 
-/// stop - stops the REST API server
+/// stop stops the REST API server
 pub fn (mut s RestServer) stop() {
 	s.running = false
 	println('[REST] Server stopped')
@@ -158,18 +179,18 @@ pub fn (mut s RestServer) stop() {
 
 // handle_connection handles a single HTTP connection.
 fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
+	defer {
+		conn.close() or {}
+	}
+
 	// Read HTTP request - use buffered reader to read headers and body to prevent data loss
 	mut reader := io.new_buffered_reader(reader: conn)
 
 	// Read request line
-	request_line := reader.read_line() or {
-		conn.close() or {}
-		return
-	}
+	request_line := reader.read_line() or { return }
 	parts := request_line.trim_right('\r\n').split(' ')
 	if parts.len < 2 {
 		s.send_error(mut conn, 400, 40001, 'Bad Request')
-		conn.close() or {}
 		return
 	}
 
@@ -204,7 +225,7 @@ fn (mut s RestServer) handle_connection(mut conn net.TcpConn) {
 	mut body := ''
 	content_length_str := headers['Content-Length'] or { headers['content-length'] or { '0' } }
 	content_length := content_length_str.int()
-	if content_length > 0 && content_length <= 1024 * 1024 {
+	if content_length > 0 && content_length <= max_rest_body_size {
 		mut body_buf := []u8{len: content_length}
 		reader.read(mut body_buf) or {
 			observability.log_with_context('rest', .warn, 'Server', 'failed to read request body',
@@ -309,7 +330,6 @@ fn (mut s RestServer) route_request(parsed ParsedRequest, client_ip string, mut 
 
 	// Not found
 	s.send_error(mut conn, 404, 40401, 'Not Found')
-	conn.close() or {}
 }
 
 // Response helpers

@@ -158,7 +158,9 @@ pub fn (mut s MmapPartitionStore) append(records [][]u8) !(i64, int) {
 
 		// Create a new segment if the current one is full
 		if active.remaining_capacity() < record_frame.len {
-			active.flush() or {}
+			active.flush() or {
+				eprintln('[MmapPartition] flush before segment rollover failed: ${err}')
+			}
 			s.create_new_segment()!
 			active = s.active_segment or { return error('failed to create new segment') }
 		}
@@ -177,7 +179,7 @@ pub fn (mut s MmapPartitionStore) append(records [][]u8) !(i64, int) {
 
 	// Flush immediately if sync_on_write is enabled
 	if s.sync_on_write {
-		active.flush() or {}
+		active.flush() or { eprintln('[MmapPartition] sync_on_write flush failed: ${err}') }
 	}
 
 	return base_offset, written

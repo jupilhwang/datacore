@@ -37,7 +37,7 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 
 	topic := a.lookup_topic_read(topic_name) or {
 		a.inc_error()
-		return error('topic not found')
+		return err
 	}
 
 	// mmap mode branch (v0.33.0)
@@ -47,7 +47,7 @@ pub fn (mut a MemoryStorageAdapter) append(topic_name string, partition int, rec
 
 	if partition < 0 || partition >= topic.partitions.len {
 		a.inc_error()
-		return error('partition out of range')
+		return domain.new_storage_error(.partition_not_found, 'partition out of range')
 	}
 
 	// Write lock only for the specific partition
@@ -150,7 +150,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 
 	topic := a.lookup_topic_read(topic_name) or {
 		a.inc_error()
-		return error('topic not found')
+		return err
 	}
 
 	// mmap mode branch (v0.33.0)
@@ -160,7 +160,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 
 	if partition < 0 || partition >= topic.partitions.len {
 		a.inc_error()
-		return error('partition out of range')
+		return domain.new_storage_error(.partition_not_found, 'partition out of range')
 	}
 
 	// Partition read lock
@@ -227,7 +227,7 @@ pub fn (mut a MemoryStorageAdapter) fetch(topic_name string, partition int, offs
 /// fetch_mmap retrieves records in mmap mode. (v0.33.0)
 fn (mut a MemoryStorageAdapter) fetch_mmap(topic &TopicStore, partition int, offset i64, max_bytes int) !domain.FetchResult {
 	if partition < 0 || partition >= topic.mmap_partitions.len {
-		return error('partition out of range')
+		return domain.new_storage_error(.partition_not_found, 'partition out of range')
 	}
 
 	mut mmap_part := topic.mmap_partitions[partition]
@@ -291,10 +291,10 @@ fn (mut a MemoryStorageAdapter) fetch_mmap(topic &TopicStore, partition int, off
 
 /// delete_records deletes records before the specified offset.
 pub fn (mut a MemoryStorageAdapter) delete_records(topic_name string, partition int, before_offset i64) ! {
-	topic := a.lookup_topic_read(topic_name) or { return error('topic not found') }
+	topic := a.lookup_topic_read(topic_name) or { return err }
 
 	if partition < 0 || partition >= topic.partitions.len {
-		return error('partition out of range')
+		return domain.new_storage_error(.partition_not_found, 'partition out of range')
 	}
 
 	mut part := topic.partitions[partition]
@@ -311,12 +311,12 @@ pub fn (mut a MemoryStorageAdapter) delete_records(topic_name string, partition 
 
 /// get_partition_info retrieves partition information.
 pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partition int) !domain.PartitionInfo {
-	topic := a.lookup_topic_read(topic_name) or { return error('topic not found') }
+	topic := a.lookup_topic_read(topic_name) or { return err }
 
 	// mmap mode branch (v0.33.0)
 	if topic.use_mmap {
 		if partition < 0 || partition >= topic.mmap_partitions.len {
-			return error('partition out of range')
+			return domain.new_storage_error(.partition_not_found, 'partition out of range')
 		}
 
 		mmap_part := topic.mmap_partitions[partition]
@@ -330,7 +330,7 @@ pub fn (mut a MemoryStorageAdapter) get_partition_info(topic_name string, partit
 	}
 
 	if partition < 0 || partition >= topic.partitions.len {
-		return error('partition out of range')
+		return domain.new_storage_error(.partition_not_found, 'partition out of range')
 	}
 
 	mut part := topic.partitions[partition]

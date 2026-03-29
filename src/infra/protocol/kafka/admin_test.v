@@ -16,10 +16,11 @@ mut:
 	fail_delete bool
 }
 
-fn get_test_compression_service() &compression.CompressionService {
-	return compression.new_default_compression_service() or {
+fn get_test_compression_service() &CompressionPortAdapter {
+	cs := compression.new_default_compression_service() or {
 		panic('failed to create compression service: ${err}')
 	}
+	return new_compression_port_adapter(cs)
 }
 
 fn new_mock_storage() &MockStorage {

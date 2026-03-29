@@ -7,35 +7,36 @@ import time
 import json
 import crypto.md5
 import sync
+import service.port
 
 /// IcebergWriter provides functionality for writing data to Iceberg tables.
 pub struct IcebergWriter {
 pub mut:
 	adapter           &S3StorageAdapter
 	config            IcebergConfig
-	table_metadata    IcebergMetadata
+	table_metadata    port.IcebergMetadata
 	partition_buffers map[string][]parquet.ParquetRecord
 	buffer_lock       sync.Mutex
-	current_schema    IcebergSchema
-	partition_spec    IcebergPartitionSpec
+	current_schema    port.IcebergSchema
+	partition_spec    port.IcebergPartitionSpec
 	file_counter      int
 	// catalog integration (optional)
-	table_identifier IcebergTableIdentifier
+	table_identifier port.IcebergTableIdentifier
 }
 
 /// create_writer_metadata builds the initial IcebergMetadata, schema, and partition spec
 /// for a new writer. Extracted to avoid duplication between new_iceberg_writer variants.
-fn create_writer_metadata(config IcebergConfig, table_location string) (IcebergMetadata, IcebergSchema, IcebergPartitionSpec) {
-	schema := create_default_schema()
+fn create_writer_metadata(config IcebergConfig, table_location string) (port.IcebergMetadata, port.IcebergSchema, port.IcebergPartitionSpec) {
+	schema := port.create_default_schema()
 	partition_spec := if config.partition_by.len > 0 {
 		create_partition_spec_from_config(config.partition_by)
 	} else {
-		create_default_partition_spec()
+		port.create_default_partition_spec()
 	}
 	format_version := if config.format_version > 0 { config.format_version } else { 2 }
-	metadata := IcebergMetadata{
+	metadata := port.IcebergMetadata{
 		format_version:      format_version
-		table_uuid:          generate_table_uuid(table_location)
+		table_uuid:          port.generate_table_uuid(table_location)
 		location:            table_location
 		last_updated_ms:     time.now().unix_milli()
 		schemas:             [schema]
@@ -70,7 +71,7 @@ fn new_iceberg_writer(adapter &S3StorageAdapter, config IcebergConfig, table_loc
 
 /// new_iceberg_writer_with_catalog creates a new Iceberg Writer and registers the table in a catalog.
 /// If the table already exists in the catalog, it skips registration without error.
-fn new_iceberg_writer_with_catalog(adapter &S3StorageAdapter, config IcebergConfig, table_location string, mut catalog IcebergCatalog, identifier IcebergTableIdentifier) !&IcebergWriter {
+fn new_iceberg_writer_with_catalog(adapter &S3StorageAdapter, config IcebergConfig, table_location string, mut catalog port.IcebergCatalog, identifier port.IcebergTableIdentifier) !&IcebergWriter {
 	metadata, schema, partition_spec := create_writer_metadata(config, table_location)
 	mut writer := &IcebergWriter{
 		adapter:           adapter
@@ -271,13 +272,13 @@ fn (mut w IcebergWriter) flush_all_partitions(topic string, partition int) ![]Ic
 
 /// collect_column_stats populates column statistics in data_file from Parquet metadata.
 fn (w &IcebergWriter) collect_column_stats(mut data_file IcebergDataFile, metadata parquet.ParquetMetadata) {
-	// 컬럼 이름 -> field_id 매핑 생성
+	// column name -> field_id mapping
 	mut name_to_field_id := map[string]int{}
 	for field in w.current_schema.fields {
 		name_to_field_id[field.name] = field.id
 	}
 
-	// Parquet 메타데이터에서 컬럼 통계 추출 후 DataFile에 기록
+	// Extract column stats from Parquet metadata and record in DataFile
 	for row_group in metadata.row_groups {
 		for chunk in row_group.columns {
 			field_id := name_to_field_id[chunk.column_name] or { continue }

@@ -9,6 +9,7 @@ import crypto.hmac
 import crypto.sha256
 import encoding.base64
 import sync
+import service.port
 
 /// GlueCatalog is an AWS Glue Data Catalog implementation.
 /// Connects to AWS Glue via HTTP API with SigV4 authentication.
@@ -41,12 +42,12 @@ pub fn new_glue_catalog(adapter &S3StorageAdapter, region string, warehouse stri
 }
 
 /// create_table creates a new table in Glue.
-pub fn (c &GlueCatalog) create_table(identifier IcebergTableIdentifier, schema IcebergSchema, spec IcebergPartitionSpec, location string) !IcebergMetadata {
+pub fn (c &GlueCatalog) create_table(identifier port.IcebergTableIdentifier, schema port.IcebergSchema, spec port.IcebergPartitionSpec, location string) !port.IcebergMetadata {
 	db_name := if identifier.namespace.len > 0 { identifier.namespace[0] } else { 'default' }
-	table_uuid := generate_table_uuid(location)
+	table_uuid := port.generate_table_uuid(location)
 	now := time.now()
 
-	metadata := IcebergMetadata{
+	metadata := port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          table_uuid
 		location:            location
@@ -77,7 +78,7 @@ pub fn (c &GlueCatalog) create_table(identifier IcebergTableIdentifier, schema I
 }
 
 /// load_table loads a table from Glue.
-pub fn (c &GlueCatalog) load_table(identifier IcebergTableIdentifier) !IcebergMetadata {
+pub fn (c &GlueCatalog) load_table(identifier port.IcebergTableIdentifier) !port.IcebergMetadata {
 	db_name := if identifier.namespace.len > 0 { identifier.namespace[0] } else { 'default' }
 
 	request_body := '{"DatabaseName":"${db_name}","Name":"${identifier.name}"}'
@@ -89,7 +90,7 @@ pub fn (c &GlueCatalog) load_table(identifier IcebergTableIdentifier) !IcebergMe
 }
 
 /// update_table updates a Glue table.
-pub fn (c &GlueCatalog) update_table(identifier IcebergTableIdentifier, metadata IcebergMetadata) ! {
+pub fn (c &GlueCatalog) update_table(identifier port.IcebergTableIdentifier, metadata port.IcebergMetadata) ! {
 	db_name := if identifier.namespace.len > 0 { identifier.namespace[0] } else { 'default' }
 
 	metadata_json := encode_metadata(metadata)
@@ -103,7 +104,7 @@ pub fn (c &GlueCatalog) update_table(identifier IcebergTableIdentifier, metadata
 }
 
 /// drop_table drops a Glue table.
-pub fn (c &GlueCatalog) drop_table(identifier IcebergTableIdentifier) ! {
+pub fn (c &GlueCatalog) drop_table(identifier port.IcebergTableIdentifier) ! {
 	db_name := if identifier.namespace.len > 0 { identifier.namespace[0] } else { 'default' }
 
 	request_body := '{"DatabaseName":"${db_name}","Name":"${identifier.name}"}'
@@ -113,7 +114,7 @@ pub fn (c &GlueCatalog) drop_table(identifier IcebergTableIdentifier) ! {
 }
 
 /// list_tables retrieves the list of tables from Glue.
-pub fn (c &GlueCatalog) list_tables(namespace []string) ![]IcebergTableIdentifier {
+pub fn (c &GlueCatalog) list_tables(namespace []string) ![]port.IcebergTableIdentifier {
 	db_name := if namespace.len > 0 { namespace[0] } else { 'default' }
 
 	request_body := '{"DatabaseName":"${db_name}"}'
@@ -148,7 +149,7 @@ pub fn (c &GlueCatalog) create_namespace(namespace []string) ! {
 }
 
 /// load_metadata_at loads Iceberg metadata from a specific metadata file path via S3 adapter.
-pub fn (mut c GlueCatalog) load_metadata_at(metadata_location string) !IcebergMetadata {
+pub fn (mut c GlueCatalog) load_metadata_at(metadata_location string) !port.IcebergMetadata {
 	data, _ := c.adapter.get_object(metadata_location, -1, -1) or {
 		return error('Failed to read metadata at ${metadata_location}: ${err}')
 	}
@@ -160,7 +161,7 @@ pub fn (mut c GlueCatalog) load_metadata_at(metadata_location string) !IcebergMe
 
 /// export_table loads a single table from HadoopCatalog and upserts it into GlueCatalog.
 /// Returns the metadata that was written to Glue.
-fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) !IcebergMetadata {
+fn (c &GlueCatalog) export_table(identifier port.IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) !port.IcebergMetadata {
 	metadata := hadoop_catalog.load_table(identifier)!
 
 	// Prefer metadata.location; fall back to computed warehouse path.
@@ -171,16 +172,20 @@ fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hadoop_c
 	}
 
 	// Determine current schema and partition spec for create_table signature.
-	schema := if metadata.schemas.len > 0 { metadata.schemas[0] } else { create_default_schema() }
+	schema := if metadata.schemas.len > 0 {
+		metadata.schemas[0]
+	} else {
+		port.create_default_schema()
+	}
 	spec := if metadata.partition_specs.len > 0 {
 		metadata.partition_specs[0]
 	} else {
-		create_default_partition_spec()
+		port.create_default_partition_spec()
 	}
 
 	// Upsert: try create first, fall back to update when the table already exists in Glue.
 	c.create_table(identifier, schema, spec, location) or {
-		// Table already exists in Glue — sync metadata via update_table instead.
+		// Table already exists in Glue -- sync metadata via update_table instead.
 		c.update_table(identifier, metadata) or {
 			return error('export_table failed: create_table failed, update_table also failed for ${identifier.name}: ${err}')
 		}
@@ -191,8 +196,8 @@ fn (c &GlueCatalog) export_table(identifier IcebergTableIdentifier, mut hadoop_c
 
 /// export_all exports every table in HadoopCatalog (under the given namespaces) to GlueCatalog.
 /// Callers pass the list of namespaces to enumerate; use [[]] for the root namespace.
-fn (c &GlueCatalog) export_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergMetadata {
-	mut results := []IcebergMetadata{}
+fn (c &GlueCatalog) export_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]port.IcebergMetadata {
+	mut results := []port.IcebergMetadata{}
 
 	for ns in namespaces {
 		tables := hadoop_catalog.list_tables(ns)!
@@ -206,15 +211,15 @@ fn (c &GlueCatalog) export_all(mut hadoop_catalog HadoopCatalog, namespaces [][]
 }
 
 /// import_table loads a single table from GlueCatalog and commits its metadata to HadoopCatalog.
-fn (c &GlueCatalog) import_table(identifier IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) ! {
+fn (c &GlueCatalog) import_table(identifier port.IcebergTableIdentifier, mut hadoop_catalog HadoopCatalog) ! {
 	metadata := c.load_table(identifier)!
 	hadoop_catalog.commit_metadata(identifier, metadata)!
 }
 
 /// import_all imports every Iceberg table listed in GlueCatalog into HadoopCatalog.
 /// Callers pass the namespaces to enumerate; use [[]] for the root / "default" namespace.
-fn (c &GlueCatalog) import_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]IcebergTableIdentifier {
-	mut imported := []IcebergTableIdentifier{}
+fn (c &GlueCatalog) import_all(mut hadoop_catalog HadoopCatalog, namespaces [][]string) ![]port.IcebergTableIdentifier {
+	mut imported := []port.IcebergTableIdentifier{}
 
 	for ns in namespaces {
 		tables := c.list_tables(ns)!
@@ -233,7 +238,6 @@ fn (c &GlueCatalog) import_all(mut hadoop_catalog HadoopCatalog, namespaces [][]
 fn (c &GlueCatalog) call_glue_api(action string, body string) !string {
 	url := c.glue_endpoint
 	now := time.now()
-	// AWS SigV4 date formats: YYYYMMDDTHHmmssZ and YYYYMMDD
 	amz_date := now.custom_format('YYYYMMDDTHHmmss') + 'Z'
 	date_stamp := now.custom_format('YYYYMMDD')
 
@@ -253,7 +257,6 @@ fn (c &GlueCatalog) call_glue_api(action string, body string) !string {
 		req_headers['X-Amz-Security-Token'] = c.session_token
 	}
 
-	// Build authorization header if credentials are present
 	if c.access_key.len > 0 && c.secret_key.len > 0 {
 		auth := c.sigv4_authorization('POST', '/', '', req_headers, body, date_stamp,
 			amz_date)
@@ -286,7 +289,6 @@ fn (c &GlueCatalog) sigv4_authorization(method string, uri string, query string,
 	service := 'glue'
 	algorithm := 'AWS4-HMAC-SHA256'
 
-	// Canonical headers (sorted)
 	mut sorted_keys := headers.keys()
 	sorted_keys.sort()
 	mut canonical_headers := ''
@@ -311,12 +313,7 @@ fn (c &GlueCatalog) sigv4_authorization(method string, uri string, query string,
 }
 
 /// sigv4_signing_key derives the SigV4 signing key with daily caching.
-/// The signing key depends on (secret_key, date_stamp, region, service)
-/// and remains valid for an entire UTC day, eliminating 4 redundant
-/// HMAC-SHA256 computations per request.
-/// Thread-safe: protected by signing_key_lock mutex.
 fn (c &GlueCatalog) sigv4_signing_key(date_stamp string, service string) []u8 {
-	// Check cache (lock scope: read only)
 	unsafe {
 		mut self := c
 		self.signing_key_lock.@lock()
@@ -327,13 +324,11 @@ fn (c &GlueCatalog) sigv4_signing_key(date_stamp string, service string) []u8 {
 		}
 		self.signing_key_lock.unlock()
 	}
-	// Cache miss: compute new signing key (4-step HMAC-SHA256 chain)
 	k_date := hmac.new(('AWS4' + c.secret_key).bytes(), date_stamp.bytes(), sha256.sum,
 		sha256.block_size)
 	k_region := hmac.new(k_date, c.region.bytes(), sha256.sum, sha256.block_size)
 	k_service := hmac.new(k_region, service.bytes(), sha256.sum, sha256.block_size)
 	k_signing := hmac.new(k_service, 'aws4_request'.bytes(), sha256.sum, sha256.block_size)
-	// Update cache (lock scope: write only)
 	unsafe {
 		mut self := c
 		self.signing_key_lock.@lock()
@@ -347,8 +342,7 @@ fn (c &GlueCatalog) sigv4_signing_key(date_stamp string, service string) []u8 {
 }
 
 /// build_create_table_request builds the Glue CreateTable JSON request body.
-fn (c &GlueCatalog) build_create_table_request(db_name string, table_name string, location string, metadata_json string, schema IcebergSchema, spec IcebergPartitionSpec) string {
-	// Encode metadata_json as base64 for Glue parameter storage
+fn (c &GlueCatalog) build_create_table_request(db_name string, table_name string, location string, metadata_json string, schema port.IcebergSchema, spec port.IcebergPartitionSpec) string {
 	metadata_b64 := base64.encode(metadata_json.bytes())
 
 	mut col_defs := strings.new_builder(512)
@@ -381,8 +375,7 @@ fn (c &GlueCatalog) build_update_table_request(db_name string, table_name string
 }
 
 /// parse_glue_table_response parses the Glue GetTable response into IcebergMetadata.
-fn (c &GlueCatalog) parse_glue_table_response(response string, identifier IcebergTableIdentifier) !IcebergMetadata {
-	// Extract iceberg_metadata parameter (base64-encoded metadata JSON)
+fn (c &GlueCatalog) parse_glue_table_response(response string, identifier port.IcebergTableIdentifier) !port.IcebergMetadata {
 	if params_str := json_extract_object(response, 'Parameters') {
 		if metadata_b64 := json_extract_string(params_str, 'iceberg_metadata') {
 			metadata_json_bytes := base64.decode(metadata_b64)
@@ -392,21 +385,20 @@ fn (c &GlueCatalog) parse_glue_table_response(response string, identifier Iceber
 		}
 	}
 
-	// Fallback: reconstruct from Glue table structure
 	location_str := if loc := json_extract_string(response, 'Location') {
 		loc
 	} else {
 		'${c.warehouse}/${identifier.name}'
 	}
 
-	return IcebergMetadata{
+	return port.IcebergMetadata{
 		format_version:      2
-		table_uuid:          generate_table_uuid(location_str)
+		table_uuid:          port.generate_table_uuid(location_str)
 		location:            location_str
 		last_updated_ms:     time.now().unix_milli()
-		schemas:             [create_default_schema()]
+		schemas:             [port.create_default_schema()]
 		current_schema_id:   0
-		partition_specs:     [create_default_partition_spec()]
+		partition_specs:     [port.create_default_partition_spec()]
 		default_spec_id:     0
 		snapshots:           []
 		current_snapshot_id: 0
@@ -417,19 +409,18 @@ fn (c &GlueCatalog) parse_glue_table_response(response string, identifier Iceber
 }
 
 /// parse_glue_tables_response parses the Glue GetTables response into table identifiers.
-fn (c &GlueCatalog) parse_glue_tables_response(response string, namespace []string) []IcebergTableIdentifier {
-	mut identifiers := []IcebergTableIdentifier{}
+fn (c &GlueCatalog) parse_glue_tables_response(response string, namespace []string) []port.IcebergTableIdentifier {
+	mut identifiers := []port.IcebergTableIdentifier{}
 
 	table_list_str := json_extract_array(response, 'TableList') or { return identifiers }
 	items := json_split_array_items(table_list_str)
 
 	for item in items {
 		name := json_extract_string(item, 'Name') or { continue }
-		// Only return Iceberg tables
 		if params_str := json_extract_object(item, 'Parameters') {
 			if table_type := json_extract_string(params_str, 'table_type') {
 				if table_type == 'ICEBERG' {
-					identifiers << IcebergTableIdentifier{
+					identifiers << port.IcebergTableIdentifier{
 						namespace: namespace
 						name:      name
 					}

@@ -51,19 +51,27 @@ fn (mut w StorageSubPorts) fetch_offsets(group_id string, partitions []domain.To
 	return w.s.fetch_offsets(group_id, partitions)
 }
 
-// CompressionPortAdapter bridges the concrete CompressionService (which uses
-// CompressionType enum) to the port.CompressionPort interface (which uses i16).
-struct CompressionPortAdapter {
+/// CompressionPortAdapter bridges the concrete CompressionService (which uses
+/// CompressionType enum) to the port.CompressionPort interface (which uses i16).
+pub struct CompressionPortAdapter {
 mut:
 	inner &compression.CompressionService
 }
 
-fn (mut a CompressionPortAdapter) compress(data []u8, compression_type i16) ![]u8 {
+/// new_compression_port_adapter creates a CompressionPortAdapter wrapping the given
+/// CompressionService so that it satisfies the port.CompressionPort interface.
+pub fn new_compression_port_adapter(svc &compression.CompressionService) &CompressionPortAdapter {
+	return &CompressionPortAdapter{
+		inner: svc
+	}
+}
+
+pub fn (mut a CompressionPortAdapter) compress(data []u8, compression_type i16) ![]u8 {
 	ct := compression.compression_type_from_i16(compression_type)!
 	return a.inner.compress(data, ct)
 }
 
-fn (mut a CompressionPortAdapter) decompress(data []u8, compression_type i16) ![]u8 {
+pub fn (mut a CompressionPortAdapter) decompress(data []u8, compression_type i16) ![]u8 {
 	ct := compression.compression_type_from_i16(compression_type)!
 	return a.inner.decompress(data, ct)
 }
@@ -93,16 +101,13 @@ pub fn new_handler_from_config(cfg HandlerConfig) Handler {
 
 // build_default_handler_config creates a HandlerConfig with default logger, metrics,
 // and offset manager using the concrete implementations.
-fn build_default_handler_config(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_svc &compression.CompressionService) HandlerConfig {
+fn build_default_handler_config(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_port port.CompressionPort) HandlerConfig {
 	logger := observability.get_named_logger('kafka.handler')
 	mut sub := StorageSubPorts{
 		s: storage
 	}
 	offset_mgr := offset.new_offset_manager(sub, sub, observability.new_logger_adapter(logger))
 	metrics := observability.new_protocol_metrics()
-	comp_adapter := &CompressionPortAdapter{
-		inner: compression_svc
-	}
 
 	return HandlerConfig{
 		broker_id:           broker_id
@@ -110,7 +115,7 @@ fn build_default_handler_config(broker_id i32, host string, broker_port i32, clu
 		broker_port:         broker_port
 		cluster_id:          cluster_id
 		storage:             storage
-		compression_service: comp_adapter
+		compression_service: compression_port
 		logger:              logger
 		metrics:             metrics
 		offset_manager:      offset_mgr
@@ -121,7 +126,7 @@ fn build_default_handler_config(broker_id i32, host string, broker_port i32, clu
 ///
 /// This is the basic handler with no authentication or ACL.
 /// Suitable for development and testing environments.
-pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_service &compression.CompressionService) Handler {
+pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, compression_service port.CompressionPort) Handler {
 	cfg := build_default_handler_config(broker_id, host, broker_port, cluster_id, storage,
 		compression_service)
 	return new_handler_from_config(cfg)
@@ -130,7 +135,7 @@ pub fn new_handler(broker_id i32, host string, broker_port i32, cluster_id strin
 /// new_handler_with_auth creates a new Kafka protocol handler with storage and an auth manager.
 ///
 /// Use this in environments that require SASL authentication.
-pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager, compression_service &compression.CompressionService) Handler {
+pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager port.AuthManager, compression_service port.CompressionPort) Handler {
 	mut cfg := build_default_handler_config(broker_id, host, broker_port, cluster_id,
 		storage, compression_service)
 	cfg = HandlerConfig{
@@ -143,7 +148,7 @@ pub fn new_handler_with_auth(broker_id i32, host string, broker_port i32, cluste
 /// new_handler_full creates a fully configured Kafka protocol handler with all components.
 ///
 /// Use this in production when authentication, ACL, and transactions are all required.
-pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?port.TransactionCoordinatorPort, compression_service &compression.CompressionService) Handler {
+pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?port.TransactionCoordinatorPort, compression_service port.CompressionPort) Handler {
 	mut cfg := build_default_handler_config(broker_id, host, broker_port, cluster_id,
 		storage, compression_service)
 	cfg = HandlerConfig{
@@ -158,7 +163,7 @@ pub fn new_handler_full(broker_id i32, host string, broker_port i32, cluster_id 
 /// new_handler_with_share_groups creates a Kafka protocol handler with Share Group support (KIP-932).
 ///
 /// Supports queue-based message consumption patterns.
-pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?port.TransactionCoordinatorPort, share_coordinator port.ShareGroupCoordinatorPort, compression_service &compression.CompressionService) Handler {
+pub fn new_handler_with_share_groups(broker_id i32, host string, broker_port i32, cluster_id string, storage port.StoragePort, auth_manager ?port.AuthManager, acl_manager ?port.AclManager, txn_coordinator ?port.TransactionCoordinatorPort, share_coordinator port.ShareGroupCoordinatorPort, compression_service port.CompressionPort) Handler {
 	mut cfg := build_default_handler_config(broker_id, host, broker_port, cluster_id,
 		storage, compression_service)
 	cfg = HandlerConfig{

@@ -162,7 +162,7 @@ pub fn (mut a PostgresStorageAdapter) get_topic(name string) !domain.TopicMetada
 	if metadata := a.topic_cache[name] {
 		return metadata
 	}
-	return error('topic not found')
+	return error('topic not found: ${name}')
 }
 
 /// get_topic_by_id retrieves a topic by topic_id.
@@ -176,7 +176,7 @@ pub fn (mut a PostgresStorageAdapter) get_topic_by_id(topic_id []u8) !domain.Top
 			return metadata
 		}
 	}
-	return error('topic not found')
+	return error('topic not found: ${topic_id_hex}')
 }
 
 /// add_partitions adds partitions to a topic.
@@ -184,7 +184,7 @@ pub fn (mut a PostgresStorageAdapter) add_partitions(name string, new_count int)
 	a.cache_lock.rlock()
 	topic := a.topic_cache[name] or {
 		a.cache_lock.runlock()
-		return error('topic not found')
+		return error('topic not found: ${name}')
 	}
 	current := topic.partition_count
 	a.cache_lock.runlock()

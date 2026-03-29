@@ -360,7 +360,15 @@ fn (mut h Handler) apply_fetch_schema_decoding(topic_name string, records []doma
 // fetch_partition_data fetches data for a single partition and builds the response.
 fn (mut h Handler) fetch_partition_data(topic_name string, p FetchRequestPartition, preferred_compression i16) FetchPartitionResult {
 	result := h.storage.fetch(topic_name, int(p.partition), p.fetch_offset, p.partition_max_bytes) or {
-		error_code := if err.str().contains('not found') {
+		error_code := if err is domain.StorageError {
+			if err.is_not_found() {
+				i16(ErrorCode.unknown_topic_or_partition)
+			} else if err.is_out_of_range() {
+				i16(ErrorCode.offset_out_of_range)
+			} else {
+				i16(ErrorCode.unknown_server_error)
+			}
+		} else if err.str().contains('not found') {
 			i16(ErrorCode.unknown_topic_or_partition)
 		} else if err.str().contains('out of range') {
 			i16(ErrorCode.offset_out_of_range)

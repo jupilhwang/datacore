@@ -95,7 +95,7 @@ fn create_find_coordinator_handler() Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service init failed: ${err}')
 	}
-	return new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	return new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 }
 
 // -- coordinator_key_type_str 테스트 --

@@ -2,10 +2,12 @@
 //
 // Implements the standard Confluent Schema Registry wire format:
 //   [0x00] + [4-byte big-endian schema ID] + [encoded payload]
+//
+// Encoder instances are created by schema_encoding_factory.v (DIP isolation).
 module kafka
 
 import domain
-import service.schema
+import service.port
 import sync
 
 // confluent_wire_magic is the magic byte for Confluent wire format.
@@ -38,20 +40,19 @@ fn unwrap_confluent_wire_format(data []u8) !(int, []u8) {
 	return sid, data[confluent_wire_header_size..]
 }
 
-// 모듈 수준 캐시 홀더 (const holder 패턴으로 __global 대체)
 struct EncoderCacheHolder {
 mut:
 	mu               sync.Mutex
-	avro_encoder     schema.AvroEncoder
-	json_encoder     schema.JsonEncoder
-	protobuf_encoder schema.ProtobufEncoder
+	avro_encoder     ?port.SchemaEncoderPort
+	json_encoder     ?port.SchemaEncoderPort
+	protobuf_encoder ?port.SchemaEncoderPort
 	cached           bool
 }
 
 const g_encoder_cache_holder = &EncoderCacheHolder{}
 
-/// ensure_encoders_cached는 최초 사용 시 모든 인코더 캐시를 초기화한다.
-/// Mutex로 동시 접근 시 한 번만 초기화되도록 보장한다.
+/// ensure_encoders_cached initializes all encoder caches on first use.
+/// Mutex guarantees only one initialization under concurrent access.
 fn ensure_encoders_cached() ! {
 	mut holder := unsafe { g_encoder_cache_holder }
 	holder.mu.@lock()
@@ -60,15 +61,15 @@ fn ensure_encoders_cached() ! {
 		return
 	}
 	unsafe {
-		holder.avro_encoder = schema.new_avro_encoder() or {
+		holder.avro_encoder = new_avro_encoder_port() or {
 			holder.mu.unlock()
 			return err
 		}
-		holder.json_encoder = schema.new_json_encoder() or {
+		holder.json_encoder = new_json_encoder_port() or {
 			holder.mu.unlock()
 			return err
 		}
-		holder.protobuf_encoder = schema.new_protobuf_encoder() or {
+		holder.protobuf_encoder = new_protobuf_encoder_port() or {
 			holder.mu.unlock()
 			return err
 		}
@@ -77,28 +78,28 @@ fn ensure_encoders_cached() ! {
 	holder.mu.unlock()
 }
 
-/// get_or_create_avro_encoder는 캐시된 Avro 인코더를 반환한다.
-fn get_or_create_avro_encoder() !schema.AvroEncoder {
+/// get_or_create_avro_encoder returns the cached Avro encoder port.
+fn get_or_create_avro_encoder() !port.SchemaEncoderPort {
 	ensure_encoders_cached()!
 	holder := unsafe { g_encoder_cache_holder }
-	return holder.avro_encoder
+	return holder.avro_encoder or { return error('avro encoder not initialized') }
 }
 
-/// get_or_create_json_encoder는 캐시된 JSON 인코더를 반환한다.
-fn get_or_create_json_encoder() !schema.JsonEncoder {
+/// get_or_create_json_encoder returns the cached JSON encoder port.
+fn get_or_create_json_encoder() !port.SchemaEncoderPort {
 	ensure_encoders_cached()!
 	holder := unsafe { g_encoder_cache_holder }
-	return holder.json_encoder
+	return holder.json_encoder or { return error('json encoder not initialized') }
 }
 
-/// get_or_create_protobuf_encoder는 캐시된 Protobuf 인코더를 반환한다.
-fn get_or_create_protobuf_encoder() !schema.ProtobufEncoder {
+/// get_or_create_protobuf_encoder returns the cached Protobuf encoder port.
+fn get_or_create_protobuf_encoder() !port.SchemaEncoderPort {
 	ensure_encoders_cached()!
 	holder := unsafe { g_encoder_cache_holder }
-	return holder.protobuf_encoder
+	return holder.protobuf_encoder or { return error('protobuf encoder not initialized') }
 }
 
-/// encode_with_schema dispatches encode to the correct concrete encoder.
+/// encode_with_schema dispatches encode to the correct encoder via port interface.
 fn encode_with_schema(data []u8, schema_str string, schema_type domain.SchemaType) ![]u8 {
 	return match schema_type {
 		.avro {
@@ -116,7 +117,7 @@ fn encode_with_schema(data []u8, schema_str string, schema_type domain.SchemaTyp
 	}
 }
 
-/// decode_with_schema dispatches decode to the correct concrete encoder.
+/// decode_with_schema dispatches decode to the correct encoder via port interface.
 fn decode_with_schema(data []u8, schema_str string, schema_type domain.SchemaType) ![]u8 {
 	return match schema_type {
 		.avro {

@@ -20,7 +20,7 @@ fn create_test_handler_with_transaction() kafka.Handler {
 
 	// Use new_handler_full
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		none, *txn_coordinator, compression_service)
+		none, *txn_coordinator, kafka.new_compression_port_adapter(compression_service))
 }
 
 struct TransactionMockStorage {}
@@ -637,7 +637,7 @@ fn create_test_handler_with_write_txn_markers_storage() !kafka.Handler {
 	txn_coordinator := transaction.new_transaction_coordinator(txn_store)
 	compression_service := compression.new_compression_service(compression.CompressionConfig{})!
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		none, *txn_coordinator, compression_service)
+		none, *txn_coordinator, kafka.new_compression_port_adapter(compression_service))
 }
 
 // Mock storage with topic support for WriteTxnMarkers tests

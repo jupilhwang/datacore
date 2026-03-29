@@ -185,7 +185,7 @@ fn (mut a MemoryStorageAdapter) lookup_topic_read(topic_name string) !&TopicStor
 	a.topics_lock.rlock()
 	topic := a.topics[topic_name] or {
 		a.topics_lock.runlock()
-		return error('topic not found')
+		return domain.new_storage_error(.topic_not_found, 'topic not found: ${topic_name}')
 	}
 	a.topics_lock.runlock()
 	return topic

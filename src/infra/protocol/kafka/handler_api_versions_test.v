@@ -14,7 +14,7 @@ fn create_api_versions_handler() kafka.Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, cs)
+	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, kafka.new_compression_port_adapter(cs))
 }
 
 // -- ApiVersions 핸들러 테스트 --

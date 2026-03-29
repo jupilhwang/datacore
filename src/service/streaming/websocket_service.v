@@ -32,19 +32,9 @@ pub mut:
 	last_ping     i64
 }
 
-// WebSocketStats holds WebSocket service statistics
-/// WebSocketStats holds WebSocket service statistics.
-pub struct WebSocketStats {
-pub mut:
-	active_connections  int
-	total_subscriptions int
-	messages_sent       i64
-	messages_received   i64
-	bytes_sent          i64
-	bytes_received      i64
-	connections_created i64
-	connections_closed  i64
-}
+// WebSocketStats is a type alias for port.WebSocketServiceStats.
+// Defined in port layer; aliased here for backward compatibility.
+pub type WebSocketStats = port.WebSocketServiceStats
 
 // new_websocket_service creates a new WebSocket service
 /// new_websocket_service creates a new WebSocket service.
@@ -490,10 +480,19 @@ fn (mut s WebSocketService) cleanup_stale_connections() []string {
 
 // get_stats returns WebSocket service statistics
 /// get_stats returns WebSocket service statistics.
-pub fn (mut s WebSocketService) get_stats() WebSocketStats {
+pub fn (mut s WebSocketService) get_stats() port.WebSocketServiceStats {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
-	return s.stats
+	return port.WebSocketServiceStats{
+		active_connections:  s.stats.active_connections
+		total_subscriptions: s.stats.total_subscriptions
+		messages_sent:       s.stats.messages_sent
+		messages_received:   s.stats.messages_received
+		bytes_sent:          s.stats.bytes_sent
+		bytes_received:      s.stats.bytes_received
+		connections_created: s.stats.connections_created
+		connections_closed:  s.stats.connections_closed
+	}
 }
 
 // Helper Functions

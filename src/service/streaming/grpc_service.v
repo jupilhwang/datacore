@@ -625,10 +625,22 @@ fn (mut s GrpcService) cleanup_stale_connections() []string {
 
 // get_stats returns gRPC service statistics
 /// get_stats returns gRPC service statistics.
-pub fn (mut s GrpcService) get_stats() GrpcStats {
+pub fn (mut s GrpcService) get_stats() port.GrpcServiceStats {
 	s.mutex.rlock()
 	defer { s.mutex.runlock() }
-	return s.stats
+	return port.GrpcServiceStats{
+		active_connections:  s.stats.active_connections
+		total_subscriptions: s.stats.total_subscriptions
+		produce_requests:    s.stats.produce_requests
+		consume_requests:    s.stats.consume_requests
+		messages_produced:   s.stats.messages_produced
+		messages_consumed:   s.stats.messages_consumed
+		bytes_produced:      s.stats.bytes_produced
+		bytes_consumed:      s.stats.bytes_consumed
+		connections_created: s.stats.connections_created
+		connections_closed:  s.stats.connections_closed
+		errors:              s.stats.errors
+	}
 }
 
 // Helper Functions

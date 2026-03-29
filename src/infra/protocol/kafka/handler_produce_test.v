@@ -14,7 +14,7 @@ fn create_produce_test_handler() (&memory.MemoryStorageAdapter, Handler) {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 	return storage, handler
 }
 
@@ -299,4 +299,69 @@ fn test_build_produce_error_response_legacy() {
 	encoded := build_produce_error_response(req, i16(ErrorCode.unknown_server_error),
 		7)
 	assert encoded.len > 0, 'legacy 에러 응답은 비어있으면 안 된다'
+}
+
+// -- store_with_auto_create: partition_not_found vs topic_not_found 구분 테스트 --
+
+fn test_produce_partition_not_found_returns_partition_error() {
+	mut storage, mut handler := create_produce_test_handler()
+
+	// 토픽을 1개 파티션으로 생성
+	storage.create_topic('partition-test', 1, domain.TopicConfig{}) or {
+		panic('토픽 생성 실패: ${err}')
+	}
+
+	record_bytes := make_record_batch_bytes('k'.bytes(), 'v'.bytes())
+
+	// 존재하지 않는 파티션(5)에 produce -- partition_not_found 에러가 반환되어야 한다
+	req := ProduceRequest{
+		acks:       -1
+		timeout_ms: 3000
+		topic_data: [
+			ProduceRequestTopic{
+				name:           'partition-test'
+				partition_data: [
+					ProduceRequestPartition{
+						index:   5
+						records: record_bytes
+					},
+				]
+			},
+		]
+	}
+
+	resp := handler.process_produce(req, 7) or { panic('process_produce 실패: ${err}') }
+
+	assert resp.topics.len == 1
+	partition_resp := resp.topics[0].partitions[0]
+	// partition_not_found는 auto-create가 아닌 unknown_topic_or_partition(3) 에러를 반환해야 한다
+	assert partition_resp.error_code == i16(ErrorCode.unknown_topic_or_partition), 'partition_not_found는 unknown_topic_or_partition(3)을 반환해야 하지만 실제: ${partition_resp.error_code}'
+}
+
+fn test_produce_auto_create_still_works_for_missing_topic() {
+	_, mut handler := create_produce_test_handler()
+
+	// 존재하지 않는 토픽에 produce -- 자동 생성 후 성공해야 한다
+	record_bytes := make_record_batch_bytes('k'.bytes(), 'v'.bytes())
+
+	req := ProduceRequest{
+		acks:       1
+		timeout_ms: 3000
+		topic_data: [
+			ProduceRequestTopic{
+				name:           'new-auto-topic'
+				partition_data: [
+					ProduceRequestPartition{
+						index:   0
+						records: record_bytes
+					},
+				]
+			},
+		]
+	}
+
+	resp := handler.process_produce(req, 7) or { panic('process_produce 실패: ${err}') }
+
+	assert resp.topics.len == 1
+	assert resp.topics[0].partitions[0].error_code == 0, '존재하지 않는 토픽은 자동 생성 후 성공(0)해야 하지만 실제: ${resp.topics[0].partitions[0].error_code}'
 }

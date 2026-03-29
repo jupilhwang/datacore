@@ -3,6 +3,7 @@ module s3
 
 import json
 import time
+import service.port
 
 /// encode_metadata_json encodes table metadata as JSON using standard json.encode.
 fn (w &IcebergWriter) encode_metadata_json() string {
@@ -29,7 +30,7 @@ fn (mut w IcebergWriter) write_metadata_file() !string {
 /// Step 1: Write manifest file (data file entries).
 /// Step 2: Write manifest-list file (references the manifest).
 /// Step 3: Register snapshot pointing to the manifest-list.
-fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic string) !IcebergSnapshot {
+fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic string) !port.IcebergSnapshot {
 	snapshot_id := generate_snapshot_id()
 	now := time.now()
 
@@ -70,7 +71,7 @@ fn (mut w IcebergWriter) create_snapshot(data_files []IcebergDataFile, topic str
 	}
 
 	// Step 3: Create snapshot pointing to the manifest-list
-	snapshot := IcebergSnapshot{
+	snapshot := port.IcebergSnapshot{
 		snapshot_id:   snapshot_id
 		timestamp_ms:  now.unix_milli()
 		manifest_list: manifest_list_path
@@ -111,6 +112,6 @@ fn (mut w IcebergWriter) time_travel(snapshot_id i64) bool {
 }
 
 /// list_snapshots returns all snapshots.
-fn (w &IcebergWriter) list_snapshots() []IcebergSnapshot {
+fn (w &IcebergWriter) list_snapshots() []port.IcebergSnapshot {
 	return w.table_metadata.snapshots.clone()
 }

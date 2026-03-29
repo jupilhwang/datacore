@@ -4,6 +4,8 @@ module observability
 
 import net
 
+const http_read_buffer_size = 4096
+
 // MetricsServer serves metrics over HTTP
 /// MetricsServer serves metrics over HTTP.
 pub struct MetricsServer {
@@ -45,7 +47,7 @@ fn (s MetricsServer) handle_connection(mut conn net.TcpConn) {
 	defer { conn.close() or {} }
 
 	// Read request (simple HTTP/1.1 parsing using direct socket read)
-	mut buf := []u8{len: 4096}
+	mut buf := []u8{len: http_read_buffer_size}
 	bytes_read := conn.read(mut buf) or { return }
 	if bytes_read == 0 {
 		return

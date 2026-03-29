@@ -7,7 +7,6 @@ import os
 import time
 import config as cfg
 import domain
-import infra.compression
 import infra.observability
 import infra.performance.core as perf_core
 import interface.grpc as iface_grpc
@@ -91,9 +90,9 @@ fn init_s3_storage(conf cfg.Config, mut logger observability.Logger) !StorageRes
 }
 
 // init_protocol_handler creates and returns the Kafka protocol handler.
-pub fn init_protocol_handler(conf cfg.Config, storage port.StoragePort, compression_service &compression.CompressionService) kafka.Handler {
+pub fn init_protocol_handler(conf cfg.Config, storage port.StoragePort, compression_port port.CompressionPort) kafka.Handler {
 	return kafka.new_handler(conf.broker.broker_id, conf.broker.advertised_host, conf.broker.port,
-		conf.broker.cluster_id, storage, compression_service)
+		conf.broker.cluster_id, storage, compression_port)
 }
 
 // ClusterRegistryResult holds the broker registry and cluster metadata port.
