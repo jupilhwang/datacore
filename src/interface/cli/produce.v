@@ -5,7 +5,7 @@ module cli
 import net
 import os
 import time
-import infra.protocol.kafka.crc32c
+import common
 
 // ProduceOptions holds produce command options
 /// ProduceOptions holds produce command options.
@@ -412,7 +412,7 @@ fn build_record_batch(messages []ProduceMessage) []u8 {
 	// CRC field position: batch_len_pos(4) + partition_leader_epoch(4) + magic(1) = 17 (0-indexed)
 	crc_pos := batch_len_pos + 4 + 4 + 1
 	crc_data_start := crc_pos + 4
-	crc := crc32c.calculate(batch[crc_data_start..])
+	crc := common.crc32c(batch[crc_data_start..])
 	batch[crc_pos] = u8(crc >> 24)
 	batch[crc_pos + 1] = u8((crc >> 16) & 0xff)
 	batch[crc_pos + 2] = u8((crc >> 8) & 0xff)
@@ -498,7 +498,6 @@ fn parse_produce_response(response []u8) !ProduceResult {
 }
 
 /// print_produce_help prints produce command help.
-/// print_produce_help - prints produce command help
 pub fn print_produce_help() {
 	println('\x1b[33mProduce Command:\x1b[0m')
 	println('')

@@ -17,7 +17,7 @@ fn create_acl_handler_with_manager() kafka.Handler {
 		panic('compression service 생성 실패: ${err}')
 	}
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		acl_manager, none, cs)
+		acl_manager, none, kafka.new_compression_port_adapter(cs))
 }
 
 fn create_acl_handler_without_manager() kafka.Handler {
@@ -25,7 +25,7 @@ fn create_acl_handler_without_manager() kafka.Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, cs)
+	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, kafka.new_compression_port_adapter(cs))
 }
 
 // -- DescribeAcls 핸들러 테스트 --

@@ -6,6 +6,8 @@ import os
 import sync
 import time
 
+const config_debounce_interval = 100 * time.millisecond
+
 /// ConfigCallback is the reload callback function type.
 pub type ConfigCallback = fn (Config)
 
@@ -138,7 +140,7 @@ fn (mut w ConfigWatcher) watch_loop() {
 /// reload_config reloads the configuration file and notifies callbacks.
 fn (mut w ConfigWatcher) reload_config() {
 	// brief delay to ensure the file write is complete
-	time.sleep(100 * time.millisecond)
+	time.sleep(config_debounce_interval)
 
 	new_config := load_config(w.file_path) or {
 		println('[ConfigWatcher] Failed to reload config: ${err}')

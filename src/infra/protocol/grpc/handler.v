@@ -4,24 +4,25 @@ module grpc
 import domain
 import net
 import service.port
-import service.streaming
 import time
 import infra.observability
 import infra.performance.core
+
+const default_grpc_max_bytes = 1048576
+const grpc_send_poll_interval = 50 * time.millisecond
 
 // GrpcHandler handles gRPC connections over HTTP/2.
 /// GrpcHandler handles gRPC connections over HTTP/2.
 pub struct GrpcHandler {
 	config domain.GrpcConfig
 pub mut:
-	grpc_service &streaming.GrpcService
+	grpc_service port.GrpcServicePort
 	storage      port.StoragePort
 	metrics      &observability.ProtocolMetrics
 }
 
 /// new_grpc_handler creates a new gRPC handler.
-pub fn new_grpc_handler(storage port.StoragePort, config domain.GrpcConfig) &GrpcHandler {
-	grpc_service := streaming.new_grpc_service(storage, config)
+pub fn new_grpc_handler(grpc_service port.GrpcServicePort, storage port.StoragePort, config domain.GrpcConfig) &GrpcHandler {
 	metrics := observability.new_protocol_metrics()
 	return &GrpcHandler{
 		config:       config
@@ -104,7 +105,7 @@ fn (mut h GrpcHandler) poll_loop(conn_id string) {
 			last_poll = now
 		}
 
-		time.sleep(50 * time.millisecond)
+		time.sleep(grpc_send_poll_interval)
 	}
 }
 
@@ -337,7 +338,7 @@ fn (h &GrpcHandler) parse_consume_request(data []u8) !domain.GrpcStreamRequest {
 	max_bytes := if pos + 4 <= data.len {
 		int(core.read_i32_be(data[pos..pos + 4]))
 	} else {
-		1048576
+		default_grpc_max_bytes
 	}
 
 	return domain.GrpcStreamRequest{
@@ -638,13 +639,19 @@ fn (h &GrpcHandler) encode_pong_response(resp domain.GrpcPongResponse) []u8 {
 /// send_error sends an error frame.
 fn (mut h GrpcHandler) send_error(mut conn net.TcpConn, code i32, message string) {
 	data := h.encode_error_response(code, message)
-	h.send_frame(mut conn, data, false) or {}
+	h.send_frame(mut conn, data, false) or {
+		observability.log_with_context('grpc', .error, 'Send', 'Failed to send error frame: ${err}',
+			{
+			'code':    code.str()
+			'message': message
+		})
+	}
 }
 
 // Statistics
 
 /// get_stats returns gRPC service statistics.
-pub fn (mut h GrpcHandler) get_stats() streaming.GrpcStats {
+pub fn (mut h GrpcHandler) get_stats() port.GrpcServiceStats {
 	return h.grpc_service.get_stats()
 }
 

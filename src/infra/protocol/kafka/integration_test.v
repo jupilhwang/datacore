@@ -37,7 +37,7 @@ fn create_full_integration_handler() kafka.Handler {
 	}
 
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'integration-test-cluster', storage,
-		auth_service, acl_manager, *txn_coordinator, compression_service)
+		auth_service, acl_manager, *txn_coordinator, kafka.new_compression_port_adapter(compression_service))
 }
 
 // Mock Storage for integration tests

@@ -41,10 +41,8 @@ struct WSStatsResponse {
 
 // handle_websocket handles a WebSocket upgrade request.
 fn (mut s RestServer) handle_websocket(headers map[string]string, client_ip string, mut conn net.TcpConn) {
-	// Handle upgrade
 	conn_id := s.ws_handler.handle_upgrade(mut conn, headers, client_ip) or {
 		s.send_error(mut conn, 400, 40001, 'WebSocket upgrade failed: ${err}')
-		conn.close() or {}
 		return
 	}
 
@@ -66,7 +64,6 @@ fn (mut s RestServer) handle_ws_stats(mut conn net.TcpConn) {
 		connections_closed:  stats.connections_closed
 	}
 	s.send_json(mut conn, 200, json.encode(resp))
-	conn.close() or {}
 }
 
 // SSE handler
@@ -76,20 +73,17 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 	// Parse SSE request
 	request := proto_http.parse_sse_request(path, query, headers, client_ip) or {
 		s.send_error(mut conn, 400, 40001, 'Invalid SSE request: ${err}')
-		conn.close() or {}
 		return
 	}
 
 	// Handle SSE request
 	status, resp_headers, should_stream := s.sse_handler.handle_sse_request(request) or {
 		s.send_error(mut conn, 500, 50001, 'Internal server error')
-		conn.close() or {}
 		return
 	}
 
 	if !should_stream {
 		s.send_error(mut conn, status, 50001, 'SSE request failed')
-		conn.close() or {}
 		return
 	}
 
@@ -97,7 +91,6 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 	conn_id := resp_headers['X-SSE-Connection-Id'] or { '' }
 	if conn_id == '' {
 		s.send_error(mut conn, 500, 50001, 'Failed to create SSE connection')
-		conn.close() or {}
 		return
 	}
 
@@ -109,8 +102,7 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 	header_str += '\r\n'
 
 	conn.write_string(header_str) or {
-		s.sse_handler.sse_service.unregister_connection(conn_id) or {}
-		conn.close() or {}
+		s.sse_handler.unregister_connection(conn_id) or {}
 		return
 	}
 
@@ -121,8 +113,7 @@ fn (mut s RestServer) handle_sse(path string, query map[string]string, headers m
 		data:       '{"connection_id":"${conn_id}","topic":"${request.topic}"}'
 	}
 	conn.write_string(connected_event.encode()) or {
-		s.sse_handler.sse_service.unregister_connection(conn_id) or {}
-		conn.close() or {}
+		s.sse_handler.unregister_connection(conn_id) or {}
 		return
 	}
 
@@ -143,7 +134,6 @@ fn (mut s RestServer) handle_sse_stats(mut conn net.TcpConn) {
 		connections_closed:  stats.connections_closed
 	}
 	s.send_json(mut conn, 200, json.encode(resp))
-	conn.close() or {}
 }
 
 // Iceberg Catalog API handler
@@ -154,14 +144,11 @@ fn (mut s RestServer) handle_iceberg_catalog_api(method string, path string, hea
 	unsafe {
 		if s.iceberg_catalog_api == 0 {
 			s.send_error(mut conn, 503, 50301, 'Iceberg Catalog not available')
-			conn.close() or {}
 			return
 		}
 	}
-	// Handle Iceberg Catalog API request
 	status, resp_body := s.iceberg_catalog_api.handle_request(method, path, body)
 	s.send_json(mut conn, status, resp_body)
-	conn.close() or {}
 }
 
 // Schema Registry API handler
@@ -172,20 +159,17 @@ fn (mut s RestServer) handle_schema_api(method string, path string, headers map[
 	unsafe {
 		if s.schema_api == 0 {
 			s.send_error(mut conn, 503, 50301, 'Schema Registry not available')
-			conn.close() or {}
 			return
 		}
 	}
 	status, resp_body := s.schema_api.handle_request(method, path, body)
 	s.send_json(mut conn, status, resp_body)
-	conn.close() or {}
 }
 
 // Static file handler
 
 // serve_static_file serves static files from the static directory.
 fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
-	// Determine file path
 	file_path := if path == '/' || path == '/index.html' {
 		os.join_path(s.config.static_dir, 'test_client.html')
 	} else if path.starts_with('/static/') {
@@ -199,27 +183,21 @@ fn (s &RestServer) serve_static_file(path string, mut conn net.TcpConn) {
 	abs_file_path := os.real_path(file_path)
 	if !abs_file_path.starts_with(abs_static_dir) {
 		s.send_error(mut conn, 403, 40301, 'Forbidden')
-		conn.close() or {}
 		return
 	}
 
-	// Read file
 	content := os.read_file(file_path) or {
 		s.send_error(mut conn, 404, 40401, 'File not found')
-		conn.close() or {}
 		return
 	}
 
-	// Determine content type
 	content_type := get_content_type(file_path)
 
-	// Send response
 	response := 'HTTP/1.1 200 OK\r\n' + 'Content-Type: ${content_type}\r\n' +
 		'Content-Length: ${content.len}\r\n' + 'Cache-Control: no-cache\r\n' +
 		'Connection: close\r\n' + '\r\n' + content
 
 	conn.write_string(response) or {}
-	conn.close() or {}
 }
 
 // get_content_type returns the content type for a file.

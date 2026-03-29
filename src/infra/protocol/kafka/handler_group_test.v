@@ -164,7 +164,7 @@ fn create_group_test_handler() Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service init failed: ${err}')
 	}
-	return new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	return new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 }
 
 // -- process_list_groups 테스트 --
@@ -197,7 +197,7 @@ fn test_process_list_groups_empty() {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service init failed: ${err}')
 	}
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 	req := ListGroupsRequest{
 		states_filter: []
 	}
@@ -330,7 +330,7 @@ fn test_process_describe_groups_state_strings() {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service init failed: ${err}')
 	}
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 	req := DescribeGroupsRequest{
 		groups:                        ['prep-group', 'completing-group', 'dead-group']
 		include_authorized_operations: false
@@ -411,7 +411,7 @@ fn test_process_delete_groups_dead_group_success() {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service init failed: ${err}')
 	}
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 	req := DeleteGroupsRequest{
 		groups_names: ['dead-group']
 	}
@@ -435,7 +435,7 @@ fn test_process_delete_groups_multiple_mixed() {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service init failed: ${err}')
 	}
-	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, cs)
+	mut handler := new_handler(1, 'localhost', 9092, 'test-cluster', storage, new_compression_port_adapter(cs))
 	req := DeleteGroupsRequest{
 		groups_names: ['empty-group', 'test-group-1', 'nonexistent', 'dead-group', '']
 	}

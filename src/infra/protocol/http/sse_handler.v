@@ -3,10 +3,11 @@ module http
 
 import domain
 import service.port
-import service.streaming
 import net
 import time
 import infra.observability
+
+const sse_poll_interval = 10 * time.millisecond
 
 // SSE handler
 
@@ -15,14 +16,13 @@ pub struct SSEHandler {
 	config          domain.SSEConfig
 	allowed_origins []string
 pub mut:
-	sse_service &streaming.SSEService
+	sse_service port.SSEServicePort
 	storage     port.StoragePort
 	metrics     &observability.ProtocolMetrics
 }
 
 /// new_sse_handler creates a new SSE handler.
-pub fn new_sse_handler(storage port.StoragePort, config domain.SSEConfig) &SSEHandler {
-	sse_service := streaming.new_sse_service(storage, config)
+pub fn new_sse_handler(sse_service port.SSEServicePort, storage port.StoragePort, config domain.SSEConfig) &SSEHandler {
 	metrics := observability.new_protocol_metrics()
 	return &SSEHandler{
 		config:      config
@@ -182,7 +182,7 @@ pub fn (mut h SSEHandler) start_streaming(conn_id string, mut writer SSEResponse
 		}
 
 		// short sleep to prevent busy loop
-		time.sleep(10 * time.millisecond)
+		time.sleep(sse_poll_interval)
 	}
 
 	// cleanup
@@ -343,6 +343,13 @@ fn resolve_cors_origin(allowed_origins []string, request_origin string) ?string 
 /// get_stats returns SSE service statistics.
 pub fn (mut h SSEHandler) get_stats() port.StreamingStats {
 	return h.sse_service.get_stats()
+}
+
+/// unregister_connection removes an SSE connection.
+/// Wraps sse_service.unregister_connection to satisfy SSEHandlerPort
+/// and avoid Law of Demeter violations from direct field access.
+pub fn (mut h SSEHandler) unregister_connection(conn_id string) ! {
+	h.sse_service.unregister_connection(conn_id)!
 }
 
 /// get_connections returns all active SSE connections.

@@ -35,6 +35,17 @@ pub enum GroupState {
 	dead
 }
 
+/// str returns the Kafka protocol wire-format name for the group state.
+pub fn (s GroupState) str() string {
+	return match s {
+		.empty { 'Empty' }
+		.preparing_rebalance { 'PreparingRebalance' }
+		.completing_rebalance { 'CompletingRebalance' }
+		.stable { 'Stable' }
+		.dead { 'Dead' }
+	}
+}
+
 /// GroupMember represents a member of a consumer group.
 /// member_id: unique member identifier
 /// group_instance_id: instance ID for static membership

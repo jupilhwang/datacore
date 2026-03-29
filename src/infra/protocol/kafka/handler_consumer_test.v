@@ -14,7 +14,7 @@ fn create_consumer_handler() kafka.Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, cs)
+	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, kafka.new_compression_port_adapter(cs))
 }
 
 fn create_consumer_handler_with_topics() kafka.Handler {
@@ -22,7 +22,7 @@ fn create_consumer_handler_with_topics() kafka.Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, cs)
+	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, kafka.new_compression_port_adapter(cs))
 }
 
 // ConsumerGroupHeartbeat 요청 빌더 (API Key 68, v0, always flexible)

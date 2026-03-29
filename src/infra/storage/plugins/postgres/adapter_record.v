@@ -104,7 +104,7 @@ pub fn (mut a PostgresStorageAdapter) append(topic_name string, partition int, r
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
 		a.inc_error()
-		return error('topic not found')
+		return error('topic not found: ${topic_name}')
 	}
 	a.cache_lock.runlock()
 
@@ -179,7 +179,7 @@ pub fn (mut a PostgresStorageAdapter) fetch(topic_name string, partition int, of
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
 		a.inc_error()
-		return error('topic not found')
+		return error('topic not found: ${topic_name}')
 	}
 	a.cache_lock.runlock()
 
@@ -253,7 +253,7 @@ pub fn (mut a PostgresStorageAdapter) delete_records(topic_name string, partitio
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
-		return error('topic not found')
+		return error('topic not found: ${topic_name}')
 	}
 	a.cache_lock.runlock()
 
@@ -287,7 +287,7 @@ pub fn (mut a PostgresStorageAdapter) get_partition_info(topic_name string, part
 	a.cache_lock.rlock()
 	topic := a.topic_cache[topic_name] or {
 		a.cache_lock.runlock()
-		return error('topic not found')
+		return error('topic not found: ${topic_name}')
 	}
 	a.cache_lock.runlock()
 

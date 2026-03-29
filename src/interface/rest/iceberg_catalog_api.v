@@ -4,19 +4,19 @@
 module rest
 
 import json
-import infra.storage.plugins.s3
+import service.port
 
 /// IcebergCatalogAPI is the handler for the Iceberg REST Catalog API.
 pub struct IcebergCatalogAPI {
 mut:
-	catalog        s3.IcebergCatalog
+	catalog        port.IcebergCatalog
 	warehouse      string
 	prefix         string
 	format_version int
 }
 
 /// new_iceberg_catalog_api creates a new Iceberg Catalog API.
-pub fn new_iceberg_catalog_api(catalog s3.IcebergCatalog, warehouse string, format_version int) &IcebergCatalogAPI {
+pub fn new_iceberg_catalog_api(catalog port.IcebergCatalog, warehouse string, format_version int) &IcebergCatalogAPI {
 	return &IcebergCatalogAPI{
 		catalog:        catalog
 		warehouse:      warehouse
@@ -62,7 +62,7 @@ fn (mut api IcebergCatalogAPI) handle_config(method string) (int, string) {
 		return api.error_response(405, 'Method not allowed')
 	}
 
-	config := s3.new_catalog_config(api.warehouse, api.format_version)
+	config := new_catalog_config(api.warehouse, api.format_version)
 	return 200, config.to_json()
 }
 
@@ -164,15 +164,14 @@ fn (mut api IcebergCatalogAPI) handle_transactions(method string, parts []string
 // Namespace endpoint implementations
 
 fn (mut api IcebergCatalogAPI) list_namespaces() (int, string) {
-	// Return default namespace list (in real implementation, query from catalog)
-	resp := s3.ListNamespacesResponse{
+	resp := ListNamespacesResponse{
 		namespaces: [['default']]
 	}
 	return 200, resp.to_json()
 }
 
 fn (mut api IcebergCatalogAPI) create_namespace(body string) (int, string) {
-	req := json.decode(s3.CreateNamespaceRequest, body) or {
+	req := json.decode(CreateNamespaceRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
@@ -180,12 +179,11 @@ fn (mut api IcebergCatalogAPI) create_namespace(body string) (int, string) {
 		return api.error_response(400, 'Namespace is required')
 	}
 
-	// Create namespace in catalog
 	api.catalog.create_namespace(req.namespace) or {
 		return api.error_response(500, 'Failed to create namespace: ${err}')
 	}
 
-	resp := s3.CreateNamespaceResponse{
+	resp := CreateNamespaceResponse{
 		namespace:  req.namespace
 		properties: req.properties
 	}
@@ -199,7 +197,7 @@ fn (mut api IcebergCatalogAPI) get_namespace(namespace string) (int, string) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
 
-	resp := s3.GetNamespaceResponse{
+	resp := GetNamespaceResponse{
 		namespace:  ns
 		properties: {}
 	}
@@ -207,14 +205,12 @@ fn (mut api IcebergCatalogAPI) get_namespace(namespace string) (int, string) {
 }
 
 fn (mut api IcebergCatalogAPI) delete_namespace(namespace string) (int, string) {
-	// Namespace can only be deleted when empty
 	ns := [namespace]
 
 	if !api.catalog.namespace_exists(ns) {
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
 
-	// Cannot delete if tables exist
 	tables := api.catalog.list_tables(ns) or {
 		return api.error_response(500, 'Failed to list tables: ${err}')
 	}
@@ -227,7 +223,7 @@ fn (mut api IcebergCatalogAPI) delete_namespace(namespace string) (int, string) 
 }
 
 fn (mut api IcebergCatalogAPI) update_namespace_properties(namespace string, body string) (int, string) {
-	req := json.decode(s3.UpdateNamespacePropertiesRequest, body) or {
+	req := json.decode(UpdateNamespacePropertiesRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
@@ -236,7 +232,7 @@ fn (mut api IcebergCatalogAPI) update_namespace_properties(namespace string, bod
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
 
-	resp := s3.UpdateNamespacePropertiesResponse{
+	resp := UpdateNamespacePropertiesResponse{
 		updated: req.updates.keys()
 		removed: req.removals
 		missing: []
@@ -257,22 +253,22 @@ fn (mut api IcebergCatalogAPI) list_tables(namespace string) (int, string) {
 		return api.error_response(500, 'Failed to list tables: ${err}')
 	}
 
-	mut identifiers := []s3.TableIdentifierRest{}
+	mut identifiers := []TableIdentifierRest{}
 	for table in tables {
-		identifiers << s3.TableIdentifierRest{
+		identifiers << TableIdentifierRest{
 			namespace: table.namespace
 			name:      table.name
 		}
 	}
 
-	resp := s3.ListTablesResponse{
+	resp := ListTablesResponse{
 		identifiers: identifiers
 	}
 	return 200, resp.to_json()
 }
 
 fn (mut api IcebergCatalogAPI) create_table(namespace string, body string) (int, string) {
-	req := json.decode(s3.CreateTableRequest, body) or {
+	req := json.decode(CreateTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
@@ -285,12 +281,11 @@ fn (mut api IcebergCatalogAPI) create_table(namespace string, body string) (int,
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
 
-	identifier := s3.IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: ns
 		name:      req.name
 	}
 
-	// Convert REST schema to internal format
 	schema := api.rest_schema_to_internal(req.schema)
 	spec := api.rest_partition_spec_to_internal(req.partition_spec)
 
@@ -304,16 +299,16 @@ fn (mut api IcebergCatalogAPI) create_table(namespace string, body string) (int,
 		return api.error_response(500, 'Failed to create table: ${err}')
 	}
 
-	resp := s3.LoadTableResponse{
+	resp := LoadTableResponse{
 		metadata_location: '${location}/metadata/v1.metadata.json'
-		metadata:          s3.metadata_to_rest(metadata, location)
+		metadata:          metadata_to_rest(metadata, location)
 		config:            {}
 	}
 	return 200, resp.to_json()
 }
 
 fn (mut api IcebergCatalogAPI) load_table(namespace string, table string) (int, string) {
-	identifier := s3.IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: [namespace]
 		name:      table
 	}
@@ -324,30 +319,28 @@ fn (mut api IcebergCatalogAPI) load_table(namespace string, table string) (int, 
 
 	location := metadata.location
 
-	resp := s3.LoadTableResponse{
+	resp := LoadTableResponse{
 		metadata_location: '${location}/metadata/v${metadata.format_version}.metadata.json'
-		metadata:          s3.metadata_to_rest(metadata, location)
+		metadata:          metadata_to_rest(metadata, location)
 		config:            {}
 	}
 	return 200, resp.to_json()
 }
 
 fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body string) (int, string) {
-	req := json.decode(s3.CommitTableRequest, body) or {
+	req := json.decode(CommitTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
-	identifier := s3.IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: [namespace]
 		name:      table
 	}
 
-	// Load current metadata
 	mut metadata := api.catalog.load_table(identifier) or {
 		return api.error_response(404, 'Table not found: ${namespace}.${table}')
 	}
 
-	// Validate requirements
 	for requirement in req.requirements {
 		match requirement.typ {
 			'assert-current-schema-id' {
@@ -364,7 +357,6 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 		}
 	}
 
-	// Apply updates
 	for update in req.updates {
 		match update.action {
 			'add-schema' {
@@ -382,7 +374,7 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 				metadata.default_spec_id = update.spec.spec_id
 			}
 			'add-snapshot' {
-				snapshot := s3.IcebergSnapshot{
+				snapshot := port.IcebergSnapshot{
 					snapshot_id:   update.snapshot.snapshot_id
 					timestamp_ms:  update.snapshot.timestamp_ms
 					manifest_list: update.snapshot.manifest_list
@@ -408,20 +400,19 @@ fn (mut api IcebergCatalogAPI) commit_table(namespace string, table string, body
 		}
 	}
 
-	// Save metadata
 	api.catalog.update_table(identifier, metadata) or {
 		return api.error_response(500, 'Failed to update table: ${err}')
 	}
 
-	resp := s3.CommitTableResponse{
+	resp := CommitTableResponse{
 		metadata_location: '${metadata.location}/metadata/v${metadata.format_version}.metadata.json'
-		metadata:          s3.metadata_to_rest(metadata, metadata.location)
+		metadata:          metadata_to_rest(metadata, metadata.location)
 	}
 	return 200, resp.to_json()
 }
 
 fn (mut api IcebergCatalogAPI) drop_table(namespace string, table string) (int, string) {
-	identifier := s3.IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: [namespace]
 		name:      table
 	}
@@ -434,7 +425,7 @@ fn (mut api IcebergCatalogAPI) drop_table(namespace string, table string) (int, 
 }
 
 fn (mut api IcebergCatalogAPI) register_table(namespace string, body string) (int, string) {
-	req := json.decode(s3.RegisterTableRequest, body) or {
+	req := json.decode(RegisterTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
@@ -450,42 +441,39 @@ fn (mut api IcebergCatalogAPI) register_table(namespace string, body string) (in
 		return api.error_response(404, 'Namespace not found: ${namespace}')
 	}
 
-	identifier := s3.IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: ns
 		name:      req.name
 	}
 
-	// Load metadata from the given metadata_location path via catalog
 	metadata := api.catalog.load_metadata_at(req.metadata_location) or {
 		return api.error_response(404, 'Metadata not accessible at: ${req.metadata_location}: ${err}')
 	}
 
-	// Persist the registration in the catalog
 	api.catalog.update_table(identifier, metadata) or {
-		// Table may not exist yet — create it
 		api.catalog.create_table(identifier, if metadata.schemas.len > 0 {
 			metadata.schemas[0]
 		} else {
-			s3.create_default_schema()
+			port.create_default_schema()
 		}, if metadata.partition_specs.len > 0 {
 			metadata.partition_specs[0]
 		} else {
-			s3.create_default_partition_spec()
+			port.create_default_partition_spec()
 		}, metadata.location) or {
 			return api.error_response(500, 'Failed to register table: ${err}')
 		}
 	}
 
-	resp := s3.LoadTableResponse{
+	resp := LoadTableResponse{
 		metadata_location: req.metadata_location
-		metadata:          s3.metadata_to_rest(metadata, metadata.location)
+		metadata:          metadata_to_rest(metadata, metadata.location)
 		config:            {}
 	}
 	return 200, resp.to_json()
 }
 
 fn (mut api IcebergCatalogAPI) rename_table(body string) (int, string) {
-	req := json.decode(s3.RenameTableRequest, body) or {
+	req := json.decode(RenameTableRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
@@ -496,26 +484,23 @@ fn (mut api IcebergCatalogAPI) rename_table(body string) (int, string) {
 		return api.error_response(400, 'Destination table name is required')
 	}
 
-	src := s3.IcebergTableIdentifier{
+	src := port.IcebergTableIdentifier{
 		namespace: req.source.namespace
 		name:      req.source.name
 	}
-	dst := s3.IcebergTableIdentifier{
+	dst := port.IcebergTableIdentifier{
 		namespace: req.destination.namespace
 		name:      req.destination.name
 	}
 
-	// Load source table metadata
 	metadata := api.catalog.load_table(src) or {
 		return api.error_response(404, 'Source table not found: ${req.source.namespace.join('.')}.${req.source.name}')
 	}
 
-	// Ensure destination namespace exists
 	if !api.catalog.namespace_exists(dst.namespace) {
 		return api.error_response(404, 'Destination namespace not found: ${dst.namespace.join('.')}')
 	}
 
-	// Create destination table with copied metadata
 	dst_location := '${api.warehouse}/${dst.namespace.join('/')}/${dst.name}'
 	mut dst_metadata := metadata
 	dst_metadata.location = dst_location
@@ -523,36 +508,32 @@ fn (mut api IcebergCatalogAPI) rename_table(body string) (int, string) {
 	api.catalog.create_table(dst, if dst_metadata.schemas.len > 0 {
 		dst_metadata.schemas[0]
 	} else {
-		s3.create_default_schema()
+		port.create_default_schema()
 	}, if dst_metadata.partition_specs.len > 0 {
 		dst_metadata.partition_specs[0]
 	} else {
-		s3.create_default_partition_spec()
+		port.create_default_partition_spec()
 	}, dst_location) or {
 		return api.error_response(409, 'Destination table already exists or create failed: ${err}')
 	}
 
-	// Update with full metadata
 	api.catalog.update_table(dst, dst_metadata) or {
 		return api.error_response(500, 'Failed to update destination table: ${err}')
 	}
 
-	// Drop source table
 	api.catalog.drop_table(src) or {
 		// Log but don't fail - destination is created
-		// In production, this would require a compensating transaction
 	}
 
 	return 204, ''
 }
 
 fn (mut api IcebergCatalogAPI) report_metrics(namespace string, table string, body string) (int, string) {
-	// Metric reporting is currently ignored (logging only)
 	return 204, ''
 }
 
 fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
-	req := json.decode(s3.CommitTransactionRequest, body) or {
+	req := json.decode(CommitTransactionRequest, body) or {
 		return api.error_response(400, 'Invalid request: ${err}')
 	}
 
@@ -560,20 +541,18 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 		return api.error_response(400, 'No table changes provided')
 	}
 
-	mut committed := []s3.CommittedTableChange{}
+	mut committed := []CommittedTableChange{}
 
 	for change in req.table_changes {
-		identifier := s3.IcebergTableIdentifier{
+		identifier := port.IcebergTableIdentifier{
 			namespace: change.identifier.namespace
 			name:      change.identifier.name
 		}
 
-		// Load current metadata for this table
 		mut metadata := api.catalog.load_table(identifier) or {
 			return api.error_response(404, 'Table not found: ${change.identifier.namespace.join('.')}.${change.identifier.name}')
 		}
 
-		// Validate requirements
 		for requirement in change.requirements {
 			match requirement.typ {
 				'assert-current-schema-id' {
@@ -590,7 +569,7 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 					return api.error_response(409, 'Table already exists: ${change.identifier.name}')
 				}
 				'assert-table-exists' {
-					// Already loaded successfully — requirement satisfied
+					// Already loaded successfully
 				}
 				'assert-ref-snapshot-id' {
 					if metadata.current_snapshot_id != requirement.snapshot_id {
@@ -601,7 +580,6 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 			}
 		}
 
-		// Apply updates
 		for update in change.updates {
 			match update.action {
 				'add-schema' {
@@ -619,7 +597,7 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 					metadata.default_spec_id = update.spec.spec_id
 				}
 				'add-snapshot' {
-					snapshot := s3.IcebergSnapshot{
+					snapshot := port.IcebergSnapshot{
 						snapshot_id:   update.snapshot.snapshot_id
 						timestamp_ms:  update.snapshot.timestamp_ms
 						manifest_list: update.snapshot.manifest_list
@@ -648,27 +626,26 @@ fn (mut api IcebergCatalogAPI) commit_transaction(body string) (int, string) {
 			}
 		}
 
-		// Persist updated metadata
 		api.catalog.update_table(identifier, metadata) or {
 			return api.error_response(500, 'Failed to commit table ${change.identifier.name}: ${err}')
 		}
 
-		committed << s3.CommittedTableChange{
+		committed << CommittedTableChange{
 			identifier:        change.identifier
 			metadata_location: '${metadata.location}/metadata/v${metadata.format_version}.metadata.json'
 		}
 	}
 
-	resp := s3.CommitTransactionResponse{
+	resp := CommitTransactionResponse{
 		committed_changes: committed
 	}
 	return 200, resp.to_json()
 }
 
-fn (api &IcebergCatalogAPI) rest_schema_to_internal(schema s3.SchemaRest) s3.IcebergSchema {
-	mut fields := []s3.IcebergField{}
+fn (api &IcebergCatalogAPI) rest_schema_to_internal(schema SchemaRest) port.IcebergSchema {
+	mut fields := []port.IcebergField{}
 	for field in schema.fields {
-		fields << s3.IcebergField{
+		fields << port.IcebergField{
 			id:            field.id
 			name:          field.name
 			typ:           field.typ
@@ -676,17 +653,17 @@ fn (api &IcebergCatalogAPI) rest_schema_to_internal(schema s3.SchemaRest) s3.Ice
 			default_value: field.initial_default
 		}
 	}
-	return s3.IcebergSchema{
+	return port.IcebergSchema{
 		schema_id:            schema.schema_id
 		fields:               fields
 		identifier_field_ids: schema.identifier_field_ids
 	}
 }
 
-fn (api &IcebergCatalogAPI) rest_partition_spec_to_internal(spec s3.PartitionSpecRest) s3.IcebergPartitionSpec {
-	mut fields := []s3.IcebergPartitionField{}
+fn (api &IcebergCatalogAPI) rest_partition_spec_to_internal(spec PartitionSpecRest) port.IcebergPartitionSpec {
+	mut fields := []port.IcebergPartitionField{}
 	for field in spec.fields {
-		fields << s3.IcebergPartitionField{
+		fields << port.IcebergPartitionField{
 			source_id:      field.source_id
 			field_id:       field.field_id
 			name:           field.name
@@ -694,13 +671,13 @@ fn (api &IcebergCatalogAPI) rest_partition_spec_to_internal(spec s3.PartitionSpe
 			transform_args: field.transform_args
 		}
 	}
-	return s3.IcebergPartitionSpec{
+	return port.IcebergPartitionSpec{
 		spec_id: spec.spec_id
 		fields:  fields
 	}
 }
 
 fn (api &IcebergCatalogAPI) error_response(code int, message string) (int, string) {
-	err := s3.iceberg_error(code, message)
+	err := iceberg_error(code, message)
 	return code, err.to_json()
 }

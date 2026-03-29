@@ -47,8 +47,7 @@ mut:
 	server_key      []u8
 }
 
-/// new_scram_sha256_authenticator - creates a new SCRAM-SHA-256 authenticator
-/// new_scram_sha256_authenticator - creates a new SCRAM-SHA-256 authenticator
+/// new_scram_sha256_authenticator creates a new SCRAM-SHA-256 authenticator
 fn new_scram_sha256_authenticator(user_store port.UserStore) &ScramSha256Authenticator {
 	return &ScramSha256Authenticator{
 		user_store: user_store
@@ -57,14 +56,12 @@ fn new_scram_sha256_authenticator(user_store port.UserStore) &ScramSha256Authent
 	}
 }
 
-/// mechanism - returns the SASL mechanism type
-/// mechanism - returns the SASL mechanism type
+/// mechanism returns the SASL mechanism type
 pub fn (a &ScramSha256Authenticator) mechanism() domain.SaslMechanism {
 	return .scram_sha_256
 }
 
-/// authenticate - handles the first step of SCRAM-SHA-256 authentication
-/// authenticate - handles the first step of SCRAM-SHA-256 authentication
+/// authenticate handles the first step of SCRAM-SHA-256 authentication
 pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.AuthResult {
 	if a.state != .initial {
 		return domain.auth_failure(.illegal_sasl_state, 'SCRAM authenticator already in use')
@@ -124,8 +121,7 @@ pub fn (mut a ScramSha256Authenticator) authenticate(auth_bytes []u8) !domain.Au
 	}
 }
 
-/// step - handles subsequent steps of SCRAM authentication
-/// step - handles subsequent steps of SCRAM authentication
+/// step handles subsequent steps of SCRAM authentication
 pub fn (mut a ScramSha256Authenticator) step(response []u8) !domain.AuthResult {
 	if a.state != .server_first_sent {
 		return domain.auth_failure(.illegal_sasl_state, 'Invalid SCRAM state for step')

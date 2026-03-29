@@ -4,15 +4,16 @@ module main
 
 import config as cfg
 import domain
-import interface.cli
 import interface.rest
 import interface.server
 import infra.auth
 import infra.compression
 import infra.observability
+import infra.protocol.http as proto_http
 import infra.protocol.kafka
 import service.port
 import service.schema
+import service.streaming
 import startup
 
 // init_broker_logging initializes the global logger and writer pool,
@@ -53,16 +54,18 @@ fn init_broker_logging(conf cfg.Config) &observability.Logger {
 // init_protocol_services creates the compression service, protocol handler,
 // and attaches the audit logger.
 fn init_protocol_services(conf cfg.Config, storage port.StoragePort, mut logger observability.Logger) kafka.Handler {
-	cli.print_progress('Initializing compression service')
+	observability.log_with_context('startup', .info, 'Init', 'Initializing compression service',
+		{})
 	compression_service := compression.new_default_compression_service() or {
-		cli.print_failed('Failed to initialize compression service: ${err}')
+		observability.log_with_context('startup', .error, 'Init', 'Failed to initialize compression service: ${err}',
+			{})
 		exit(1)
 	}
-	cli.print_done()
+	comp_port := kafka.new_compression_port_adapter(compression_service)
 
-	cli.print_progress('Initializing Kafka protocol handler')
-	mut protocol_handler := startup.init_protocol_handler(conf, storage, compression_service)
-	cli.print_done()
+	observability.log_with_context('startup', .info, 'Init', 'Initializing Kafka protocol handler',
+		{})
+	mut protocol_handler := startup.init_protocol_handler(conf, storage, comp_port)
 
 	audit_logger := auth.new_audit_logger(true)
 	protocol_handler.set_audit_logger(audit_logger)
@@ -79,7 +82,8 @@ fn init_protocol_services(conf cfg.Config, storage port.StoragePort, mut logger 
 // start_rest_api_server initializes and starts the REST API server with
 // optional schema registry support.
 fn start_rest_api_server(conf cfg.Config, storage port.StoragePort, mut logger observability.Logger) {
-	cli.print_progress('Starting REST API server (SSE/WebSocket)')
+	observability.log_with_context('startup', .info, 'Init', 'Starting REST API server (SSE/WebSocket)',
+		{})
 	rest_config := rest.RestServerConfig{
 		host:            conf.rest.host
 		port:            conf.rest.port
@@ -94,10 +98,12 @@ fn start_rest_api_server(conf cfg.Config, storage port.StoragePort, mut logger o
 			ping_interval_ms: conf.rest.ws_ping_interval_ms
 		}
 	}
-	mut rest_server := rest.new_rest_server(rest_config, storage)
+	mut rest_server := rest.new_rest_server(rest_config, storage, create_sse_handler(storage,
+		rest_config.sse_config), create_ws_handler(storage, rest_config.ws_config))
 
 	if conf.schema_registry.enabled {
-		cli.print_progress('Initializing schema registry')
+		observability.log_with_context('startup', .info, 'Init', 'Initializing schema registry',
+			{})
 		schema_config := schema.RegistryConfig{
 			default_compatibility: .backward
 			auto_register:         true
@@ -114,7 +120,6 @@ fn start_rest_api_server(conf cfg.Config, storage port.StoragePort, mut logger o
 	}
 
 	rest_server.start_background()
-	cli.print_done()
 	logger.info('REST API server started', port.field_string('host', conf.rest.host),
 		port.field_int('port', conf.rest.port))
 }
@@ -146,4 +151,24 @@ fn create_tcp_server(conf cfg.Config, protocol_handler kafka.Handler, mut logger
 	}
 
 	return tcp_server
+}
+
+// create_sse_handler builds the SSE protocol handler at the composition root.
+// Concrete types are assembled here and injected into RestServer via SSEHandlerPort.
+// vfmt off
+// (vfmt strips domain. prefix from params, but the compiler requires it)
+fn create_sse_handler(storage port.StoragePort, sse_config domain.SSEConfig) &proto_http.SSEHandler {
+	// vfmt on
+	sse_service := streaming.new_sse_service(storage, sse_config)
+	return proto_http.new_sse_handler(sse_service, storage, sse_config)
+}
+
+// create_ws_handler builds the WebSocket protocol handler at the composition root.
+// Concrete types are assembled here and injected into RestServer via WebSocketHandlerPort.
+// vfmt off
+// (vfmt strips domain. prefix from params, but the compiler requires it)
+fn create_ws_handler(storage port.StoragePort, ws_config domain.WebSocketConfig) &proto_http.WebSocketHandler {
+	// vfmt on
+	ws_service := streaming.new_websocket_service(storage, ws_config)
+	return proto_http.new_websocket_handler(ws_service, storage, ws_config)
 }

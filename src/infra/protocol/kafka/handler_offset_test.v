@@ -331,10 +331,11 @@ fn test_group_fetch_partitions_by_topic_empty() {
 
 // -- process_offset_commit 테스트 --
 
-fn create_offset_test_compression() &compression.CompressionService {
-	return compression.new_default_compression_service() or {
+fn create_offset_test_compression() &CompressionPortAdapter {
+	cs := compression.new_default_compression_service() or {
 		panic('compression service init failed: ${err}')
 	}
+	return new_compression_port_adapter(cs)
 }
 
 fn test_process_offset_commit_success() {

@@ -8,6 +8,32 @@
 - **Project**: Project name or 'global'
 -->
 
+## Pattern_2026-03-29_hot-path-clone-elimination
+
+- **Category**: Performance / V lang
+- **Pattern**: V lang의 `[]u8.clone()`은 hot path에서 가장 큰 성능 저하 원인. `raw_records.clone()` 제거만으로 produce 요청당 수 MB 할당 제거.
+- **Rule**: hot path에서 clone이 필요한지 "downstream에서 mutation하는가?"로 판단. Read-only면 reference copy 충분.
+- **Prevention**: hot path에서 `clone()` 호출 발견 시 downstream 코드 경로 전체를 추적하여 실제 mutation 여부를 확인. Read-only 경로면 clone 제거. 의심 시 `mut` 파라미터 유무로 판별.
+- **Project**: DataCore
+
+## Pattern_2026-03-29_typed-error-auto-create-trap
+
+- **Category**: Error Handling / Side Effects
+- **Pattern**: `is_not_found()`가 여러 에러 코드를 묶을 때, auto-create 같은 side-effect가 있는 분기에서 의도치 않은 코드가 트리거됨. `partition_not_found`가 topic auto-create를 유발하는 버그.
+- **Rule**: side-effect 있는 에러 분기에서는 항상 가장 구체적인 에러 코드를 체크할 것. 범용 is_*() 메서드 사용 금지.
+- **Prevention**: 에러 분기에서 side-effect(create, delete, modify) 동작이 있으면 구체적 에러 코드(예: `topic_not_found`)만 매칭. `is_not_found()` 같은 범용 그룹 메서드는 read-only 분기에서만 사용.
+- **Project**: DataCore
+
+## Pattern_2026-03-29_streaming-port-isp
+
+- **Category**: Architecture / ISP / Clean Architecture
+- **Pattern**: gRPC/WebSocket/SSE 핸들러가 concrete streaming service를 직접 import하면 infra->service 역방향 의존. 프로토콜별 Port 인터페이스 분리가 Clean Architecture 해결책.
+- **Rule**: infra handler가 service 구현체를 직접 참조하면 ISP Port를 만들어 service/port에 정의하고, composition root(interface layer)에서 주입.
+- **Prevention**: 새 infra handler 작성 시 service 직접 import 여부를 즉시 확인. import가 있으면 Port 인터페이스를 service/port에 정의하고, handler는 Port만 의존하도록 리팩토링. composition root(startup.v 또는 factory)에서 concrete를 주입.
+- **Project**: DataCore
+
+---
+
 ## Pattern_2026-03-26_ObjectStore-ISP-ReaderWriter
 
 - **Category**: Architecture / ISP

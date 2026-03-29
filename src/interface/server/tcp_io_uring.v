@@ -17,6 +17,8 @@ import service.port
 import sync
 import time
 
+const io_uring_recv_buf_size = 65536
+
 // io_uring integrated server
 
 /// IoUringTcpServer is an io_uring based TCP server.
@@ -123,7 +125,7 @@ fn (mut s IoUringTcpServer) start_io_uring_mode() ! {
 			queue_depth:      s.config.io_uring_queue_depth
 			backlog:          128
 			max_connections:  s.config.max_connections
-			recv_buffer_size: 65536
+			recv_buffer_size: io_uring_recv_buf_size
 			multi_accept:     8
 			use_sqpoll:       s.config.io_uring_sqpoll
 		}
@@ -182,7 +184,10 @@ fn (mut s IoUringTcpServer) io_uring_event_loop() {
 			}
 
 			// Submit
-			uring.submit() or {}
+			uring.submit() or {
+				s.logger.error('[io_uring] submit failed', port.field_string('error',
+					err.str()))
+			}
 		}
 	}
 }
@@ -199,7 +204,7 @@ fn (mut s IoUringTcpServer) handle_io_uring_accept(client_fd int) {
 		remote_addr:    'unknown'
 		connected_at:   now
 		last_active_at: now
-		recv_buf:       []u8{cap: 65536}
+		recv_buf:       []u8{cap: io_uring_recv_buf_size}
 		expected_size:  -1
 	}
 

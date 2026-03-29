@@ -238,7 +238,7 @@ fn create_test_handler_with_auth() kafka.Handler {
 	}
 
 	return kafka.new_handler_with_auth(1, '127.0.0.1', 9092, 'test-cluster', storage,
-		auth_service, compression_service)
+		auth_service, kafka.new_compression_port_adapter(compression_service))
 }
 
 fn create_mock_storage() port.StoragePort {

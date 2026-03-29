@@ -139,3 +139,78 @@ pub fn streaming_error_message(err StreamingError) string {
 		.write_failed { 'Write failed' }
 	}
 }
+
+// Protocol-specific service port interfaces (ISP: each handler depends only on the methods it uses)
+
+/// GrpcServicePort abstracts gRPC streaming service operations.
+/// Used by the gRPC protocol handler to decouple from the concrete service implementation.
+pub interface GrpcServicePort {
+mut:
+	register_connection(conn domain.GrpcConnection) !string
+	unregister_connection(conn_id string) !
+	get_send_channel(conn_id string) !chan domain.GrpcStreamResponse
+	get_connection(conn_id string) !domain.GrpcConnection
+	poll_and_send()
+	handle_stream_request(conn_id string, req domain.GrpcStreamRequest) domain.GrpcStreamResponse
+	get_stats() GrpcServiceStats
+	list_connections() []domain.GrpcConnection
+}
+
+/// GrpcServiceStats holds gRPC service statistics.
+pub struct GrpcServiceStats {
+pub mut:
+	active_connections  int
+	total_subscriptions int
+	produce_requests    i64
+	consume_requests    i64
+	messages_produced   i64
+	messages_consumed   i64
+	bytes_produced      i64
+	bytes_consumed      i64
+	connections_created i64
+	connections_closed  i64
+	errors              i64
+}
+
+/// WebSocketServicePort abstracts WebSocket streaming service operations.
+/// Used by the WebSocket protocol handler to decouple from the concrete service implementation.
+pub interface WebSocketServicePort {
+mut:
+	register_connection(conn domain.WebSocketConnection) !string
+	unregister_connection(conn_id string) !
+	get_send_channel(conn_id string) !chan string
+	get_connection(conn_id string) !domain.WebSocketConnection
+	poll_and_send()
+	send_message(conn_id string, response domain.WebSocketResponse) !
+	handle_message(conn_id string, msg domain.WebSocketMessage) !domain.WebSocketResponse
+	get_stats() WebSocketServiceStats
+	list_connections() []domain.WebSocketConnection
+}
+
+/// WebSocketServiceStats holds WebSocket service statistics.
+pub struct WebSocketServiceStats {
+pub mut:
+	active_connections  int
+	total_subscriptions int
+	messages_sent       i64
+	messages_received   i64
+	bytes_sent          i64
+	bytes_received      i64
+	connections_created i64
+	connections_closed  i64
+}
+
+/// SSEServicePort abstracts SSE streaming service operations.
+/// Used by the SSE protocol handler to decouple from the concrete service implementation.
+pub interface SSEServicePort {
+mut:
+	register_connection(conn domain.SSEConnection) !string
+	unregister_connection(conn_id string) !
+	subscribe(conn_id string, sub domain.Subscription) !
+	set_writer(conn_id string, writer &SSEWriterPort) !
+	get_subscriptions(conn_id string) []domain.Subscription
+	stream_messages(conn_id string, sub_id string) !
+	poll_messages_for_connection(conn_id string) !(int, i64)
+	get_stats() StreamingStats
+	list_connections() []domain.SSEConnection
+}

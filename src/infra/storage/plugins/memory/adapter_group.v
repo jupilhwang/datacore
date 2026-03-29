@@ -43,7 +43,7 @@ pub fn (mut a MemoryStorageAdapter) load_group(group_id string) !domain.Consumer
 	}
 
 	a.inc_error()
-	return error('group not found')
+	return error('group not found: ${group_id}')
 }
 
 /// delete_group deletes a consumer group.
@@ -55,7 +55,7 @@ pub fn (mut a MemoryStorageAdapter) delete_group(group_id string) ! {
 
 	if group_id !in a.groups {
 		a.inc_error()
-		return error('group not found')
+		return error('group not found: ${group_id}')
 	}
 	a.groups.delete(group_id)
 	a.offsets.delete(group_id)
@@ -75,13 +75,7 @@ pub fn (mut a MemoryStorageAdapter) list_groups() ![]domain.GroupInfo {
 		result << domain.GroupInfo{
 			group_id:      group.group_id
 			protocol_type: group.protocol_type
-			state:         match group.state {
-				.empty { 'Empty' }
-				.preparing_rebalance { 'PreparingRebalance' }
-				.completing_rebalance { 'CompletingRebalance' }
-				.stable { 'Stable' }
-				.dead { 'Dead' }
-			}
+			state:         group.state.str()
 		}
 	}
 	return result

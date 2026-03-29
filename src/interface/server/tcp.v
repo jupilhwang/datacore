@@ -19,6 +19,10 @@ import time
 import domain
 import infra.observability
 
+const initial_recv_buffer_cap = 65536
+const cleanup_loop_interval = 60 * time.second
+const stats_log_interval = 300 * time.second
+
 /// ServerConfig is a struct holding server configuration.
 /// Contains various options controlling TCP server behavior.
 pub struct ServerConfig {
@@ -339,12 +343,12 @@ fn (s &Server) read_request_size(mut conn net.TcpConn, client_addr string) !int 
 
 	if request_size <= 0 {
 		eprintln('[Connection] Invalid request size: ${request_size} from ${client_addr}')
-		return error('invalid request size')
+		return error('invalid request size: ${request_size} from ${client_addr}')
 	}
 
 	if request_size > s.config.max_request_size {
 		eprintln('[Connection] Request too large: ${request_size} > ${s.config.max_request_size} from ${client_addr}')
-		return error('request too large')
+		return error('request too large: ${request_size} (max: ${s.config.max_request_size}) from ${client_addr}')
 	}
 
 	return request_size
@@ -523,7 +527,7 @@ fn (mut s Server) handle_connection(mut conn net.TcpConn) {
 	}
 
 	mut pipeline := new_pipeline(s.config.max_pending_requests)
-	initial_buf_cap := 65536
+	initial_buf_cap := initial_recv_buffer_cap
 	mut request_buf := []u8{len: initial_buf_cap}
 
 	for s.is_running() {
@@ -589,7 +593,7 @@ fn (mut s Server) cleanup_loop() {
 		if closed > 0 {
 			println('[Cleanup] Closed ${closed} idle connections')
 		}
-		time.sleep(60 * time.second)
+		time.sleep(cleanup_loop_interval)
 	}
 }
 
@@ -597,7 +601,7 @@ fn (mut s Server) cleanup_loop() {
 /// Every 5 minutes, prints active connections, total connections, and rejected connections.
 fn (mut s Server) stats_loop() {
 	for s.is_running() {
-		time.sleep(300 * time.second)
+		time.sleep(stats_log_interval)
 
 		if !s.is_running() {
 			break

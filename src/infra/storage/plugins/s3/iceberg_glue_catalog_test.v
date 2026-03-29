@@ -3,11 +3,11 @@
 // using a mock/no-op S3StorageAdapter where the adapter is never called.
 module s3
 
+import service.port
+
 // --- helpers ---
 
 // build_test_hadoop_catalog returns a HadoopCatalog backed by a zero-value adapter.
-// Tests that only exercise encode/decode or metadata construction are safe to run
-// without a real S3 backend.
 fn build_test_hadoop_catalog() HadoopCatalog {
 	return HadoopCatalog{
 		adapter:    &S3StorageAdapter{}
@@ -30,15 +30,15 @@ fn build_test_glue_catalog() GlueCatalog {
 }
 
 // build_test_metadata returns a minimal IcebergMetadata for testing.
-fn build_test_metadata(table_name string) IcebergMetadata {
-	return IcebergMetadata{
+fn build_test_metadata(table_name string) port.IcebergMetadata {
+	return port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          '11111111-2222-3333-4444-555555555555'
 		location:            's3://test-bucket/warehouse/testdb/${table_name}'
 		last_updated_ms:     1700000000000
-		schemas:             [create_default_schema()]
+		schemas:             [port.create_default_schema()]
 		current_schema_id:   0
-		partition_specs:     [create_default_partition_spec()]
+		partition_specs:     [port.create_default_partition_spec()]
 		default_spec_id:     0
 		snapshots:           []
 		current_snapshot_id: 0
@@ -51,18 +51,15 @@ fn build_test_metadata(table_name string) IcebergMetadata {
 // --- commit_metadata tests ---
 
 fn test_commit_metadata_encodes_and_builds_path() {
-	// Verify that encode_metadata produces valid JSON that can be decoded back.
 	mut hadoop := build_test_hadoop_catalog()
 	metadata := build_test_metadata('events')
 
 	encoded := encode_metadata(metadata)
 
-	// Must be non-empty JSON
 	assert encoded.len > 0
 	assert encoded.starts_with('{')
 	assert encoded.ends_with('}')
 
-	// Round-trip: decode the encoded JSON
 	decoded := hadoop.decode_metadata(encoded) or { panic('decode failed: ${err}') }
 	assert decoded.table_uuid == metadata.table_uuid
 	assert decoded.location == metadata.location
@@ -72,22 +69,17 @@ fn test_commit_metadata_encodes_and_builds_path() {
 }
 
 fn test_commit_metadata_version_path_formula() {
-	// The metadata path formula used by commit_metadata:
-	// new_version = metadata.snapshots.len + 1
-	// path = table_path/metadata/{new_version:05d}-{uuid}.metadata.json
 	mut hadoop := build_test_hadoop_catalog()
 
-	identifier := IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: ['testdb']
 		name:      'events'
 	}
 	metadata := build_test_metadata('events')
 
-	// snapshots.len == 0 => new_version == 1
 	expected_version := metadata.snapshots.len + 1
 	expected_prefix := '${expected_version:05d}-${metadata.table_uuid}.metadata.json'
 
-	// Derive path using same logic as commit_metadata
 	table_path := hadoop.table_path(identifier)
 	computed_path := '${table_path}/metadata/${expected_prefix}'
 
@@ -97,8 +89,6 @@ fn test_commit_metadata_version_path_formula() {
 // --- encode/decode round-trip for sync scenarios ---
 
 fn test_export_table_metadata_roundtrip() {
-	// Simulate the metadata that export_table would transfer:
-	// load from Hadoop (decode) -> pass to Glue (encode) -> store in Glue parameters.
 	mut hadoop := build_test_hadoop_catalog()
 	original := build_test_metadata('orders')
 
@@ -111,26 +101,23 @@ fn test_export_table_metadata_roundtrip() {
 }
 
 fn test_import_table_metadata_preservation() {
-	// Simulate the metadata that import_table would write to HadoopCatalog.
-	// GlueCatalog.parse_glue_table_response decodes base64-encoded metadata JSON.
-	// Here we just verify the encode -> decode pipeline preserves all fields.
 	mut hadoop := build_test_hadoop_catalog()
-	metadata := IcebergMetadata{
+	metadata := port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          'aaaabbbb-cccc-dddd-eeee-ffffffffffff'
 		location:            's3://glue-bucket/warehouse/db/tbl'
 		last_updated_ms:     1710000000000
 		schemas:             [
-			IcebergSchema{
+			port.IcebergSchema{
 				schema_id: 0
 				fields:    [
-					IcebergField{
+					port.IcebergField{
 						id:       1
 						name:     'id'
 						typ:      'long'
 						required: true
 					},
-					IcebergField{
+					port.IcebergField{
 						id:       2
 						name:     'payload'
 						typ:      'string'
@@ -141,10 +128,10 @@ fn test_import_table_metadata_preservation() {
 		]
 		current_schema_id:   0
 		partition_specs:     [
-			IcebergPartitionSpec{
+			port.IcebergPartitionSpec{
 				spec_id: 0
 				fields:  [
-					IcebergPartitionField{
+					port.IcebergPartitionField{
 						source_id: 1
 						field_id:  1000
 						name:      'id_bucket'
@@ -178,25 +165,22 @@ fn test_import_table_metadata_preservation() {
 // --- export_all / import_all logic tests (path-only, no adapter I/O) ---
 
 fn test_export_all_result_accumulation() {
-	// Verify that the metadata list returned by export_all accumulates one entry
-	// per table. We test the accumulation logic via a simulated loop, mirroring
-	// the implementation.
 	tables := [
-		IcebergTableIdentifier{
+		port.IcebergTableIdentifier{
 			namespace: ['db']
 			name:      'table_a'
 		},
-		IcebergTableIdentifier{
+		port.IcebergTableIdentifier{
 			namespace: ['db']
 			name:      'table_b'
 		},
-		IcebergTableIdentifier{
+		port.IcebergTableIdentifier{
 			namespace: ['db']
 			name:      'table_c'
 		},
 	]
 
-	mut results := []IcebergMetadata{}
+	mut results := []port.IcebergMetadata{}
 	for tbl in tables {
 		results << build_test_metadata(tbl.name)
 	}
@@ -208,19 +192,18 @@ fn test_export_all_result_accumulation() {
 }
 
 fn test_import_all_identifier_accumulation() {
-	// Mirror the accumulation loop in import_all: verify identifiers are collected.
 	tables := [
-		IcebergTableIdentifier{
+		port.IcebergTableIdentifier{
 			namespace: ['default']
 			name:      'events'
 		},
-		IcebergTableIdentifier{
+		port.IcebergTableIdentifier{
 			namespace: ['default']
 			name:      'metrics'
 		},
 	]
 
-	mut imported := []IcebergTableIdentifier{}
+	mut imported := []port.IcebergTableIdentifier{}
 	for tbl in tables {
 		imported << tbl
 	}
@@ -234,7 +217,7 @@ fn test_import_all_identifier_accumulation() {
 
 fn test_hadoop_table_path_single_namespace() {
 	mut hadoop := build_test_hadoop_catalog()
-	identifier := IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: ['mydb']
 		name:      'mytable'
 	}
@@ -244,7 +227,7 @@ fn test_hadoop_table_path_single_namespace() {
 
 fn test_hadoop_table_path_empty_namespace() {
 	mut hadoop := build_test_hadoop_catalog()
-	identifier := IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: []
 		name:      'roottable'
 	}
@@ -254,7 +237,7 @@ fn test_hadoop_table_path_empty_namespace() {
 
 fn test_hadoop_table_path_nested_namespace() {
 	mut hadoop := build_test_hadoop_catalog()
-	identifier := IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: ['a', 'b', 'c']
 		name:      'deep'
 	}
@@ -265,7 +248,6 @@ fn test_hadoop_table_path_nested_namespace() {
 // --- upsert branch determination (create vs update) ---
 
 fn test_export_table_upsert_prefers_existing_location() {
-	// When metadata.location is set, export_table must pass it as-is to Glue.
 	metadata := build_test_metadata('sales')
 	location := if metadata.location.len > 0 {
 		metadata.location
@@ -276,21 +258,20 @@ fn test_export_table_upsert_prefers_existing_location() {
 }
 
 fn test_export_table_upsert_falls_back_to_warehouse_path() {
-	// When metadata.location is empty, derive location from warehouse + namespace + name.
 	mut hadoop := build_test_hadoop_catalog()
 	glue := build_test_glue_catalog()
-	identifier := IcebergTableIdentifier{
+	identifier := port.IcebergTableIdentifier{
 		namespace: ['testdb']
 		name:      'pageviews'
 	}
-	empty_location_metadata := IcebergMetadata{
+	empty_location_metadata := port.IcebergMetadata{
 		format_version:      2
-		table_uuid:          generate_table_uuid('')
+		table_uuid:          port.generate_table_uuid('')
 		location:            ''
 		last_updated_ms:     1700000000000
-		schemas:             [create_default_schema()]
+		schemas:             [port.create_default_schema()]
 		current_schema_id:   0
-		partition_specs:     [create_default_partition_spec()]
+		partition_specs:     [port.create_default_partition_spec()]
 		default_spec_id:     0
 		snapshots:           []
 		current_snapshot_id: 0
@@ -305,10 +286,6 @@ fn test_export_table_upsert_falls_back_to_warehouse_path() {
 	assert location == 's3://test-bucket/warehouse/testdb/pageviews'
 }
 
-// test_glue_sigv4_signing_key_cache_populated verifies that sigv4_signing_key
-// populates the signing key cache for subsequent reuse.
-// The signing key depends on (secret_key, date_stamp, region, service) and
-// remains valid for an entire UTC day.
 fn test_glue_sigv4_signing_key_cache_populated() {
 	catalog := build_test_glue_catalog()
 	date_stamp := '20260325'
@@ -316,15 +293,11 @@ fn test_glue_sigv4_signing_key_cache_populated() {
 	key := catalog.sigv4_signing_key(date_stamp, 'glue')
 	assert key.len > 0
 
-	// Verify cache was populated with the computed key
 	assert catalog.signing_key_cache.date_day == date_stamp
 	assert catalog.signing_key_cache.key.len > 0
 	assert catalog.signing_key_cache.key == key
 }
 
-// test_glue_sigv4_signing_key_same_date_returns_identical_key verifies that
-// calling sigv4_signing_key twice with the same date_stamp returns identical
-// bytes, confirming the cache hit path works correctly.
 fn test_glue_sigv4_signing_key_same_date_returns_identical_key() {
 	catalog := build_test_glue_catalog()
 
@@ -335,9 +308,6 @@ fn test_glue_sigv4_signing_key_same_date_returns_identical_key() {
 	assert key1.len > 0
 }
 
-// test_glue_sigv4_signing_key_different_date_invalidates_cache verifies that
-// sigv4_signing_key produces a different key when the date_stamp changes
-// and the cache is updated to the new date.
 fn test_glue_sigv4_signing_key_different_date_invalidates_cache() {
 	catalog := build_test_glue_catalog()
 

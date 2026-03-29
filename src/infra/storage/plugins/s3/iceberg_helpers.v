@@ -4,24 +4,21 @@ module s3
 import os
 import domain
 import infra.observability
+import service.port
 
 /// is_iceberg_enabled_with_config checks whether Iceberg is enabled based on config and env var.
-/// 우선순위: env var가 설정된 경우 env var 값 사용, 미설정 시 config.enabled 사용.
 fn is_iceberg_enabled_with_config(config IcebergConfig) bool {
 	iceberg_env := os.getenv('DATACORE_ICEBERG_ENABLED')
-	// env var가 명시적으로 설정된 경우 env var 값이 우선
 	if iceberg_env == 'true' || iceberg_env == '1' {
 		return true
 	}
 	if iceberg_env == 'false' || iceberg_env == '0' {
 		return false
 	}
-	// env var 미설정 시 config.enabled 사용
 	return config.enabled
 }
 
 /// is_iceberg_enabled checks whether the Iceberg table format is enabled.
-/// 어댑터에 저장된 iceberg_config를 사용하여 활성화 여부를 판단.
 fn (a &S3StorageAdapter) is_iceberg_enabled() bool {
 	return is_iceberg_enabled_with_config(a.iceberg.config)
 }
@@ -37,8 +34,6 @@ fn (mut a S3StorageAdapter) get_or_create_iceberg_writer(topic string, partition
 	}
 	a.iceberg.mu.runlock()
 
-	// 어댑터에 저장된 iceberg_config 사용 (런타임 config와 연결)
-	// format_version 미설정 시 안정 스펙 기본값 2 적용
 	mut config := a.iceberg.config
 	if config.format_version == 0 {
 		config.format_version = 2
@@ -104,7 +99,7 @@ fn (mut a S3StorageAdapter) get_iceberg_writer(topic string, partition int) ?&Ic
 }
 
 /// list_iceberg_snapshots returns the list of Iceberg snapshots for a specific partition.
-fn (mut a S3StorageAdapter) list_iceberg_snapshots(topic string, partition int) ![]IcebergSnapshot {
+fn (mut a S3StorageAdapter) list_iceberg_snapshots(topic string, partition int) ![]port.IcebergSnapshot {
 	if writer := a.get_iceberg_writer(topic, partition) {
 		return writer.list_snapshots()
 	}

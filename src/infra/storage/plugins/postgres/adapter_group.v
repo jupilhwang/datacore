@@ -50,7 +50,7 @@ pub fn (mut a PostgresStorageAdapter) load_group(group_id string) !domain.Consum
 		group_id)!
 
 	if rows.len == 0 {
-		return error('group not found')
+		return error('group not found: ${group_id}')
 	}
 
 	row := rows[0]

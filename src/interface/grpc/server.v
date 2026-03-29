@@ -15,7 +15,11 @@ import infra.observability
 import infra.protocol.grpc as proto_grpc
 import net
 import service.port
+import service.streaming
 import time
+
+const grpc_read_timeout = 30 * time.second
+const grpc_write_timeout = 30 * time.second
 
 // GrpcServer configuration
 
@@ -42,7 +46,8 @@ mut:
 
 /// new_grpc_server creates a new gRPC server.
 pub fn new_grpc_server(config GrpcServerConfig, storage port.StoragePort, grpc_config domain.GrpcConfig) &GrpcServer {
-	handler := proto_grpc.new_grpc_handler(storage, grpc_config)
+	grpc_service := streaming.new_grpc_service(storage, grpc_config)
+	handler := proto_grpc.new_grpc_handler(grpc_service, storage, grpc_config)
 	return &GrpcServer{
 		config:  config
 		handler: handler
@@ -111,8 +116,8 @@ pub fn (mut s GrpcServer) stop() {
 /// handle_connection handles a single gRPC connection.
 fn (mut s GrpcServer) handle_connection(mut conn net.TcpConn, client_ip string) {
 	// Set read/write deadline to avoid hanging on slow clients
-	conn.set_read_timeout(time.Duration(30 * time.second))
-	conn.set_write_timeout(time.Duration(30 * time.second))
+	conn.set_read_timeout(time.Duration(grpc_read_timeout))
+	conn.set_write_timeout(time.Duration(grpc_write_timeout))
 
 	s.handler.handle_connection(mut conn, client_ip)
 }

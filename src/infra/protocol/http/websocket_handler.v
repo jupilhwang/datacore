@@ -6,11 +6,13 @@ import encoding.base64
 import domain
 import json
 import net
-import service.streaming
 import service.port
 import time
 import infra.observability
 import infra.performance.core
+
+const ws_large_payload_threshold = 65536
+const ws_send_poll_interval = 50 * time.millisecond
 
 // WebSocket handler
 
@@ -18,14 +20,13 @@ import infra.performance.core
 pub struct WebSocketHandler {
 	config domain.WebSocketConfig
 pub mut:
-	ws_service &streaming.WebSocketService
+	ws_service port.WebSocketServicePort
 	storage    port.StoragePort
 	metrics    &observability.ProtocolMetrics
 }
 
 /// new_websocket_handler creates a new WebSocket handler.
-pub fn new_websocket_handler(storage port.StoragePort, config domain.WebSocketConfig) &WebSocketHandler {
-	ws_service := streaming.new_websocket_service(storage, config)
+pub fn new_websocket_handler(ws_service port.WebSocketServicePort, storage port.StoragePort, config domain.WebSocketConfig) &WebSocketHandler {
 	metrics := observability.new_protocol_metrics()
 	return &WebSocketHandler{
 		config:     config
@@ -308,7 +309,7 @@ fn (mut h WebSocketHandler) poll_loop(conn_id string) {
 			last_poll = now
 		}
 
-		time.sleep(50 * time.millisecond)
+		time.sleep(ws_send_poll_interval)
 	}
 }
 
@@ -408,7 +409,7 @@ fn (mut h WebSocketHandler) send_frame(mut conn net.TcpConn, opcode WebSocketOpc
 	// second byte: payload length (server frames are not masked)
 	if payload.len < 126 {
 		frame << u8(payload.len)
-	} else if payload.len < 65536 {
+	} else if payload.len < ws_large_payload_threshold {
 		frame << u8(126)
 		core.write_i16_be(mut frame, i16(payload.len))
 	} else {
@@ -431,19 +432,37 @@ fn (mut h WebSocketHandler) handle_text_message(conn_id string, payload []u8) {
 	// parse JSON message
 	msg := parse_ws_message(message) or {
 		response := domain.new_ws_error_response('INVALID_MESSAGE', 'Failed to parse message: ${err}')
-		h.ws_service.send_message(conn_id, response) or {}
+		h.ws_service.send_message(conn_id, response) or {
+			observability.log_with_context('websocket', .warn, 'SendMessage', 'Failed to send error response',
+				{
+				'conn_id': conn_id
+				'error':   err.msg()
+			})
+		}
 		return
 	}
 
 	// Message handling
 	response := h.ws_service.handle_message(conn_id, msg) or {
 		err_response := domain.new_ws_error_response('INTERNAL_ERROR', 'Failed to handle message: ${err}')
-		h.ws_service.send_message(conn_id, err_response) or {}
+		h.ws_service.send_message(conn_id, err_response) or {
+			observability.log_with_context('websocket', .warn, 'SendMessage', 'Failed to send error response',
+				{
+				'conn_id': conn_id
+				'error':   err.msg()
+			})
+		}
 		return
 	}
 
 	// send response
-	h.ws_service.send_message(conn_id, response) or {}
+	h.ws_service.send_message(conn_id, response) or {
+		observability.log_with_context('websocket', .warn, 'SendMessage', 'Failed to send response',
+			{
+			'conn_id': conn_id
+			'error':   err.msg()
+		})
+	}
 }
 
 /// handle_binary_message handles a binary message.
@@ -457,7 +476,13 @@ fn (mut h WebSocketHandler) handle_pong(conn_id string) {
 	// update last pong timestamp
 	h.ws_service.handle_message(conn_id, domain.WebSocketMessage{
 		action: .ping
-	}) or {}
+	}) or {
+		observability.log_with_context('websocket', .warn, 'HandlePong', 'Failed to handle pong',
+			{
+			'conn_id': conn_id
+			'error':   err.msg()
+		})
+	}
 }
 
 /// handle_close handles a close frame.
@@ -518,7 +543,7 @@ fn ws_message_from_json(raw WsMessageJson) !domain.WebSocketMessage {
 // Statistics
 
 /// get_stats returns WebSocket service statistics.
-pub fn (mut h WebSocketHandler) get_stats() streaming.WebSocketStats {
+pub fn (mut h WebSocketHandler) get_stats() port.WebSocketServiceStats {
 	return h.ws_service.get_stats()
 }
 

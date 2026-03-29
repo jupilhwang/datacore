@@ -18,5 +18,4 @@ fn (s &RestServer) handle_metrics(mut conn net.TcpConn) {
 		metrics_output
 
 	conn.write_string(response) or {}
-	conn.close() or {}
 }

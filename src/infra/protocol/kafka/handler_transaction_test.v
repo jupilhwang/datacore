@@ -20,7 +20,7 @@ fn create_txn_handler_with_coordinator() kafka.Handler {
 		panic('compression service 생성 실패: ${err}')
 	}
 	return kafka.new_handler_full(1, '127.0.0.1', 9092, 'test-cluster', storage, none,
-		none, *txn_coordinator, cs)
+		none, *txn_coordinator, kafka.new_compression_port_adapter(cs))
 }
 
 fn create_txn_handler_without_coordinator() kafka.Handler {
@@ -28,7 +28,7 @@ fn create_txn_handler_without_coordinator() kafka.Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, cs)
+	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, kafka.new_compression_port_adapter(cs))
 }
 
 // InitProducerId 실행 후 producer_id, epoch을 반환하는 헬퍼

@@ -279,7 +279,7 @@ const crc32c_table = [
 
 // CPU feature detection
 
-/// cpu_supports_hw_crc32c - checks if hardware CRC32-C acceleration is available.
+/// cpu_supports_hw_crc32c checks if hardware CRC32-C acceleration is available.
 /// Returns false because no hardware CRC32-C computation path exists yet.
 /// The `calculate()` function always uses software paths (Slicing-by-8 or basic table).
 /// When a C interop hardware CRC function is added (SSE4.2 or ARM CRC32),
@@ -294,15 +294,14 @@ pub fn cpu_supports_hw_crc32c() bool {
 	return false
 }
 
-/// cpu_supports_sse42 - checks if SSE4.2 CRC32-C support is available
+/// cpu_supports_sse42 checks if SSE4.2 CRC32-C support is available
 pub fn cpu_supports_sse42() bool {
 	return cpu_supports_hw_crc32c()
 }
 
 // CRC32-C implementation
 
-/// crc32c_sw - software-based CRC32-C calculation using table lookup
-/// crc32c_sw - software-based CRC32-C calculation using table lookup
+/// crc32c_sw software-based CRC32-C calculation using table lookup
 pub fn crc32c_sw(data []u8) u32 {
 	mut crc := u32(0xFFFFFFFF)
 	for b in data {
@@ -345,8 +344,7 @@ fn crc32c_slicing8(data []u8) u32 {
 
 // Public API
 
-/// calculate - calculates CRC32-C checksum
-/// calculate - calculates CRC32-C checksum
+/// calculate calculates CRC32-C checksum
 pub fn calculate(data []u8) u32 {
 	if data.len == 0 {
 		return 0
@@ -359,14 +357,12 @@ pub fn calculate(data []u8) u32 {
 	return crc32c_sw(data)
 }
 
-/// init - returns initial value for incremental CRC32-C calculation
-/// init - returns initial value for incremental CRC32-C calculation
+/// init returns initial value for incremental CRC32-C calculation
 pub fn init() u32 {
 	return 0xFFFFFFFF
 }
 
-/// update - updates existing CRC value with additional data
-/// update - updates existing CRC value with additional data
+/// update updates existing CRC value with additional data
 pub fn update(crc u32, data []u8) u32 {
 	if data.len == 0 {
 		return crc
@@ -380,14 +376,12 @@ pub fn update(crc u32, data []u8) u32 {
 	return c
 }
 
-/// finalize - completes incremental CRC calculation and returns final checksum
-/// finalize - completes incremental CRC calculation and returns final checksum
+/// finalize completes incremental CRC calculation and returns final checksum
 pub fn finalize(crc u32) u32 {
 	return crc ^ 0xFFFFFFFF
 }
 
-/// is_hardware_accelerated - checks if hardware acceleration is available
-/// is_hardware_accelerated - checks if hardware acceleration is available
+/// is_hardware_accelerated checks if hardware acceleration is available
 pub fn is_hardware_accelerated() bool {
 	return cpu_supports_hw_crc32c()
 }

@@ -21,7 +21,7 @@ fn create_sasl_handler_plain_only() kafka.Handler {
 		panic('compression service 생성 실패: ${err}')
 	}
 	return kafka.new_handler_with_auth(1, '127.0.0.1', 9092, 'test-cluster', storage,
-		auth_service, cs)
+		auth_service, kafka.new_compression_port_adapter(cs))
 }
 
 fn create_sasl_handler_multi_mechanism() kafka.Handler {
@@ -34,7 +34,7 @@ fn create_sasl_handler_multi_mechanism() kafka.Handler {
 		panic('compression service 생성 실패: ${err}')
 	}
 	return kafka.new_handler_with_auth(1, '127.0.0.1', 9092, 'test-cluster', storage,
-		auth_service, cs)
+		auth_service, kafka.new_compression_port_adapter(cs))
 }
 
 fn create_sasl_handler_no_auth() kafka.Handler {
@@ -42,7 +42,7 @@ fn create_sasl_handler_no_auth() kafka.Handler {
 	cs := compression.new_default_compression_service() or {
 		panic('compression service 생성 실패: ${err}')
 	}
-	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, cs)
+	return kafka.new_handler(1, '127.0.0.1', 9092, 'test-cluster', storage, kafka.new_compression_port_adapter(cs))
 }
 
 // PLAIN 인증 바이트 생성 헬퍼
@@ -382,7 +382,7 @@ fn create_sasl_handler_with_audit_logger() (kafka.Handler, &infra_auth.AuditLogg
 	}
 	audit_logger := infra_auth.new_audit_logger(true)
 	mut handler := kafka.new_handler_with_auth(1, '127.0.0.1', 9092, 'test-cluster', storage,
-		auth_service, cs)
+		auth_service, kafka.new_compression_port_adapter(cs))
 	handler.set_audit_logger(audit_logger)
 	return handler, audit_logger
 }

@@ -1,11 +1,14 @@
 # DataCore Remaining Issues Plan
 
-Updated: 2026-03-26 | Version: v0.54.0 | Branch: feature/codebase-health-v5
+Updated: 2026-03-29 | Version: v0.55.0 | Branch: feature/codebase-health-v6
 
-## Session History (v0.50.9 ~ v0.54.0)
+## Session History (v0.50.9 ~ v0.55.0)
 
 | Version | Branch | Summary | Grade |
 |---------|--------|---------|:-----:|
+| v0.55.0 | feature/codebase-health-v6 | Performance hot-path, DIP violations, typed errors, SCRAM dedup, 86 files +2015/-1347 | - |
+| v0.54.1 | feature/codebase-health-v5 | Security fixes: 6 HIGH issues (race condition, SSRF, plaintext passwords, CORS) | - |
+| v0.54.0 | feature/codebase-health-v5 | 5 deferred issues resolved, -550 lines JSON migration, ObjectStore ISP | - |
 | v0.50.9 | feature/codebase-health-v1 | Error swallowing 17 fixes, dedup -302 lines, architecture cleanup, dead code -289 lines | B (87.8) |
 | v0.51.0 | feature/codebase-health-v2 | God Function 8 splits (1,413->404 lines), 4 dead fn deleted | B+ (89.1) |
 | v0.52.0 | feature/codebase-health-v3 | Handler DIP (8 concrete->Port), pub removal 624 (38.4%), ISP split | B (84.3) |
@@ -35,6 +38,15 @@ No remaining codebase health issues. All 20 items resolved in v0.53.0.
 
 | Item | Version | Notes |
 |------|---------|-------|
+| Performance hot-path clone elimination | v0.55.0 | v6 produce/fetch/metadata |
+| StreamingServicePorts DIP (gRPC/WS/SSE) | v0.55.0 | v6 Architecture |
+| SchemaEncoderPort + factory pattern | v0.55.0 | v6 Architecture |
+| IcebergCatalog port migration | v0.55.0 | v6 Architecture |
+| RestServer SSE/WS handler ports | v0.55.0 | v6 Architecture |
+| SCRAM SHA-256/512 dedup (-85 lines) | v0.55.0 | v6 Refactoring |
+| domain.StorageError typed errors | v0.55.0 | v6 Refactoring |
+| 15 magic numbers -> named constants | v0.55.0 | v6 Refactoring |
+| store_with_auto_create misrouting fix | v0.55.0 | v6 Bug fix (HIGH) |
 | S3 Range-request RecordIndex on all paths | v0.54.0 | v5 Deferred #1 |
 | topic_id persistent reverse index | v0.54.0 | v5 Deferred #2 |
 | JSON parser stdlib migration (-550 lines) | v0.54.0 | v5 Deferred #3 |

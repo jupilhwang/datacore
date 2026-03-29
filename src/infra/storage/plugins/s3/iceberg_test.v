@@ -2,6 +2,8 @@
 // and REST API operations.
 module s3
 
+import service.port
+
 // --- JSON helper tests (kept functions for Glue response parsing) ---
 
 fn test_json_extract_string() {
@@ -63,10 +65,10 @@ fn test_normalize_metadata_json_keys_nested() {
 // --- Metadata encode/decode roundtrip via json.encode/json.decode ---
 
 fn test_decode_metadata_roundtrip() {
-	schema := create_default_schema()
-	spec := create_default_partition_spec()
+	schema := port.create_default_schema()
+	spec := port.create_default_partition_spec()
 
-	original := IcebergMetadata{
+	original := port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          '11111111-2222-3333-4444-555555555555'
 		location:            's3://test-bucket/warehouse/mydb/mytable'
@@ -75,10 +77,10 @@ fn test_decode_metadata_roundtrip() {
 		default_spec_id:     0
 		current_snapshot_id: 0
 		schemas:             [
-			IcebergSchema{
+			port.IcebergSchema{
 				schema_id: 0
 				fields:    [
-					IcebergField{
+					port.IcebergField{
 						id:       1
 						name:     'offset'
 						typ:      'long'
@@ -88,10 +90,10 @@ fn test_decode_metadata_roundtrip() {
 			},
 		]
 		partition_specs:     [
-			IcebergPartitionSpec{
+			port.IcebergPartitionSpec{
 				spec_id: 0
 				fields:  [
-					IcebergPartitionField{
+					port.IcebergPartitionField{
 						source_id: 2
 						field_id:  1000
 						name:      'ts_day'
@@ -239,12 +241,10 @@ fn test_avro_sync_marker_different_sources() {
 // --- Manifest encoding test (no adapter calls needed) ---
 
 fn test_encode_manifest_produces_avro_magic() {
-	schema := create_default_schema()
-	spec := create_default_partition_spec()
+	schema := port.create_default_schema()
+	spec := port.create_default_partition_spec()
 
-	// We need a minimal IcebergWriter for encode_manifest
-	// The function is receiver fn but doesn't call adapter
-	metadata := IcebergMetadata{
+	metadata := port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          '00000000-0000-0000-0000-000000000001'
 		current_schema_id:   0
@@ -282,9 +282,9 @@ fn test_encode_manifest_produces_avro_magic() {
 }
 
 fn test_encode_manifest_empty_files() {
-	schema := create_default_schema()
-	spec := create_default_partition_spec()
-	metadata := IcebergMetadata{
+	schema := port.create_default_schema()
+	spec := port.create_default_partition_spec()
+	metadata := port.IcebergMetadata{
 		format_version:  2
 		table_uuid:      '00000000-0000-0000-0000-000000000002'
 		schemas:         [schema]
@@ -302,9 +302,9 @@ fn test_encode_manifest_empty_files() {
 }
 
 fn test_encode_manifest_multiple_files() {
-	schema := create_default_schema()
-	spec := create_default_partition_spec()
-	metadata := IcebergMetadata{
+	schema := port.create_default_schema()
+	spec := port.create_default_partition_spec()
+	metadata := port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          '00000000-0000-0000-0000-000000000003'
 		current_snapshot_id: 42
@@ -353,7 +353,7 @@ fn test_iceberg_type_to_glue() {
 // --- Helper for building a test writer without a real adapter ---
 // encode_manifest does not call any adapter methods, so a pointer to a zero-value
 // S3StorageAdapter is sufficient for these unit tests.
-fn build_test_writer(metadata IcebergMetadata, schema IcebergSchema, spec IcebergPartitionSpec) IcebergWriter {
+fn build_test_writer(metadata port.IcebergMetadata, schema port.IcebergSchema, spec port.IcebergPartitionSpec) IcebergWriter {
 	return IcebergWriter{
 		adapter:           &S3StorageAdapter{}
 		config:            IcebergConfig{
@@ -469,9 +469,9 @@ fn test_manifest_entry_has_column_stats() {
 
 // test_manifest_with_stats_encodes_non_null: encode_manifest with stats is larger than without
 fn test_manifest_with_stats_encodes_non_null() {
-	schema := create_default_schema()
-	spec := create_default_partition_spec()
-	metadata := IcebergMetadata{
+	schema := port.create_default_schema()
+	spec := port.create_default_partition_spec()
+	metadata := port.IcebergMetadata{
 		format_version:      2
 		table_uuid:          '00000000-0000-0000-0000-000000000099'
 		current_snapshot_id: 99

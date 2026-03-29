@@ -9,6 +9,7 @@ import time
 import net.http
 import config as cfg
 import startup
+import infra.observability
 import interface.cli
 import service.port
 
@@ -48,12 +49,13 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	cli.print_banner(app)
 
 	// Load configuration with CLI args priority
-	cli.print_progress('Loading configuration')
+	observability.log_with_context('startup', .info, 'Init', 'Loading configuration',
+		{})
 	conf := cfg.load_config_with_args(opts.config_path, cli_args) or {
-		cli.print_failed('${err}')
+		observability.log_with_context('startup', .error, 'Init', 'Failed to load config: ${err}',
+			{})
 		return error('Failed to load config')
 	}
-	cli.print_done()
 
 	// Print startup info
 	cli.print_startup_info(conf.broker.host, conf.broker.port, conf.broker.broker_id,
@@ -65,14 +67,15 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 	// === Clean Architecture: Dependency Injection ===
 
 	// 1. Initialize storage engine
-	cli.print_progress('Initializing storage engine (${conf.storage.engine})')
+	observability.log_with_context('startup', .info, 'Init', 'Initializing storage engine (${conf.storage.engine})',
+		{})
 	mut storage_result := startup.init_storage(conf, mut logger) or {
-		cli.print_failed('Failed to initialize storage: ${err}')
+		observability.log_with_context('startup', .error, 'Init', 'Failed to initialize storage: ${err}',
+			{})
 		exit(1)
 	}
 	mut storage := storage_result.storage
 	s3_adapter_ref := storage_result.s3_adapter
-	cli.print_done()
 
 	// 2. Initialize protocol handler with compression and audit
 	mut protocol_handler := init_protocol_services(conf, storage, mut logger)
@@ -98,11 +101,12 @@ fn start_broker(app &cli.App, opts cli.CliOptions, args []string) ! {
 
 	// 6. Start gRPC gateway if enabled
 	if conf.grpc.enabled {
-		cli.print_progress('Starting gRPC gateway')
+		observability.log_with_context('startup', .info, 'Init', 'Starting gRPC gateway',
+			{})
 		startup.init_grpc_server(conf, storage, mut logger) or {
-			cli.print_failed('Failed to start gRPC gateway')
+			observability.log_with_context('startup', .error, 'Init', 'Failed to start gRPC gateway: ${err}',
+				{})
 		}
-		cli.print_done()
 	}
 
 	// 7. Start heartbeat worker
@@ -148,18 +152,19 @@ fn stop_broker(opts cli.CliOptions) ! {
 		return
 	}
 
-	cli.print_progress('Stopping broker (PID: ${pid})')
+	observability.log_with_context('startup', .info, 'Shutdown', 'Stopping broker (PID: ${pid})',
+		{})
 
 	// Send SIGTERM (or SIGKILL if force)
 	signal := if opts.force { 'KILL' } else { 'TERM' }
 	result := os.execute('kill -${signal} ${pid}')
 
 	if result.exit_code != 0 {
-		cli.print_failed('Failed to stop broker')
+		observability.log_with_context('startup', .error, 'Shutdown', 'Failed to stop broker',
+			{})
 		return error('Failed to send signal to process')
 	}
 
-	cli.print_done()
 	cli.remove_pid(opts.pid_path)
 	println('\x1b[32m✓\x1b[0m Broker stopped.')
 }

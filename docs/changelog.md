@@ -1,5 +1,47 @@
 # DataCore Changelog
 
+## [v0.55.0] -- 2026-03-29
+
+### Performance
+- Eliminated unnecessary `raw_records.clone()` in produce hot path
+- Fixed double record batch encoding in fetch path (schema check before encode)
+- Removed pipeline mutex (single-coroutine per-connection design)
+- Removed replica_nodes/isr_nodes clone per partition in metadata responses
+- Optimized pipeline: O(1) timeout check, eliminated response array clone
+- Inline bit-shift in BinaryReader (no temp slice creation)
+- Added read_uuid_view() ByteView for zero-copy UUID access
+- Increased BinaryWriter default capacity 256->1024
+- Worker pool metrics: mutex replaced with stdatomic operations
+- Pre-allocated TCP size buffer (per-connection, not per-request)
+- Cached client IP on connection accept (eliminate repeated string parsing)
+- Added request-level topic metadata cache (eliminate repeated storage lookups)
+
+### Architecture (DIP)
+- Created GrpcServicePort, WebSocketServicePort, SSEServicePort -- infra no longer imports concrete streaming services
+- Created SchemaEncoderPort + schema_encoding_factory.v (composition root pattern)
+- Moved IcebergCatalog interface from s3 to service/port/iceberg_catalog_port.v
+- Created SSEHandlerPort/WebSocketHandlerPort for RestServer DIP compliance
+- Moved CRC32C utility from infra.protocol.kafka to common/crc32c.v
+- Handler factory accepts port.CompressionPort (eliminated startup's infra.compression import)
+- Replaced cli.print_progress/done/failed with observability.log_with_context in startup helpers
+
+### Refactoring
+- Deduplicated SCRAM SHA-256/512 into generic ScramAuthCore with ScramHashType enum (-85 lines)
+- Extracted UUID v4 generation to common/uuid.v (eliminated 2 duplicate implementations)
+- Added GroupState.str() method (eliminated inline match duplication)
+- Introduced domain.StorageError typed error codes with StorageErrorCode enum
+- Extracted 15 magic numbers to named constants across 10 files
+- Added context to 21 error messages (topic name, group_id, client_addr)
+- Fixed 38 doc comments (dash style -> direct style, removed 11 duplicate lines)
+- Removed dead code: generate_salt(), commented protobuf code
+
+### Fixed
+- Fixed store_with_auto_create() misrouting partition_not_found as topic auto-create trigger
+- Added error logging to 4 previously silent or{} patterns (mmap flush, io_uring submit, gRPC send, WebSocket send)
+- Applied defer conn.close() pattern in REST handlers (~30 manual close calls removed)
+- Fixed flaky rate_limiter_test.v: reduced refill rate to prevent timing-dependent token refill during exhaust loop
+- Fixed broker_startup_helpers.v: added domain. prefix to SSEConfig/WebSocketConfig type references
+
 ## [v0.54.1] -- 2026-03-26
 
 ### Fixed
