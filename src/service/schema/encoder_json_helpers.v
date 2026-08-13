@@ -23,7 +23,7 @@ fn parse_json_string_value(s string) ?string {
 // parse_json_array parses a JSON array, returning each element as its raw JSON string
 fn parse_json_array(s string) ?[]string {
 	raw := json2.decode[json2.Any](s.trim_space()) or { return none }
-	arr := raw.arr()
+	arr := raw.as_array()
 	mut items := []string{}
 	for item in arr {
 		items << item.json_str()

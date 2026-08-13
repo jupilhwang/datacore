@@ -94,7 +94,7 @@ fn avro_generate_sync_marker(source string) []u8 {
 /// avro_write_varint writes a zigzag-encoded varint to the buffer.
 fn avro_write_varint(mut buf []u8, n i64) {
 	// Zigzag encoding: (n << 1) ^ (n >> 63)
-	mut v := u64((n << 1) ^ (n >> 63))
+	mut v := (u64(n) << 1) ^ (u64(n) >> 63)
 	for {
 		if v <= 0x7F {
 			buf << u8(v)

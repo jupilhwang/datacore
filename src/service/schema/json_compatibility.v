@@ -162,7 +162,7 @@ fn parse_json_schema_info(schema_str string) JsonSchemaInfo {
 	}
 
 	if req_val := obj['required'] {
-		for item in req_val.arr() {
+		for item in req_val.as_array() {
 			info.required << item.str()
 		}
 	}
@@ -205,7 +205,7 @@ fn apply_schema_info_constraints(mut info JsonSchemaInfo, obj map[string]json2.A
 		info.max_items = v.int()
 	}
 	if enum_val := obj['enum'] {
-		for item in enum_val.arr() {
+		for item in enum_val.as_array() {
 			info.enum_values << item.str()
 		}
 	}
@@ -227,7 +227,7 @@ fn build_properties_info_from_map(props_map map[string]json2.Any) map[string]Jso
 		prop_info.nullable = prop_info.prop_type == 'null' || prop_json.contains('"null"')
 
 		if enum_val := prop_obj['enum'] {
-			for item in enum_val.arr() {
+			for item in enum_val.as_array() {
 				prop_info.enum_values << item.str()
 			}
 		}

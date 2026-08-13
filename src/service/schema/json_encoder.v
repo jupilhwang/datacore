@@ -309,7 +309,7 @@ fn build_json_schema_from_map(obj map[string]json2.Any) !&JsonSchema {
 	}
 
 	if req_val := obj['required'] {
-		for item in req_val.arr() {
+		for item in req_val.as_array() {
 			result.required << item.str()
 		}
 	}
@@ -343,7 +343,7 @@ fn apply_string_constraints(mut schema JsonSchema, obj map[string]json2.Any) {
 	}
 
 	if enum_val := obj['enum'] {
-		for item in enum_val.arr() {
+		for item in enum_val.as_array() {
 			schema.enum_values << item.str()
 		}
 	}

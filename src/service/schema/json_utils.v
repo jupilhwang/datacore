@@ -44,7 +44,7 @@ fn parse_json_string_array(json_str string, key string) ?[]string {
 	raw := json2.decode[json2.Any](json_str) or { return none }
 	obj := raw.as_map()
 	arr_val := obj[key] or { return none }
-	arr := arr_val.arr()
+	arr := arr_val.as_array()
 	mut result := []string{}
 	for item in arr {
 		result << item.str()
