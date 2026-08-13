@@ -10,7 +10,7 @@ on:
     branches: [main]
 
 env:
-  V_VERSION: "0.5"
+  V_VERSION: "0.5.1"
 
 jobs:
   lint:
